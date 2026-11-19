@@ -23,20 +23,19 @@ CARRIER = "01HZZZZZZZZZZZZZZZZZZZZZZC"
 WIN, LOSE = "01HZZZZZZZZZZZZZZZZZZZZZZD", "01HZZZZZZZZZZZZZZZZZZZZZZE"
 
 
-def test_the_revision_is_0102_chained_on_0100() -> None:
+def test_the_revision_is_0102_on_0101() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    # the head is pinned by the newest migration (0103)
-    assert script.get_revision("0102").down_revision == "0100"
+    assert script.get_revision("0102").down_revision == "0101"
 
 
 def test_the_table_comes_and_goes_with_the_migration(settings: Settings) -> None:
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(database), "0100")
+    command.upgrade(alembic_config(database), "0101")
     assert "reading_conflict" not in tables(database)
     assert "0102" in migrate(settings).applied
     assert "reading_conflict" in tables(database)
-    command.downgrade(alembic_config(database), "0100")
+    command.downgrade(alembic_config(database), "0101")
     assert "reading_conflict" not in tables(database)
 
 

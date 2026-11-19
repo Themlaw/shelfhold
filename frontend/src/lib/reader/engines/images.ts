@@ -243,6 +243,14 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
     void fill();
   }
 
+  /** A page the browser refuses to draw (a policy that does not admit `blob:`, bytes that are not
+   * an image) is said, never left as an empty screen. */
+  function watch(image: HTMLImageElement, place: () => number): void {
+    image.addEventListener('error', () => {
+      if (image.hasAttribute('src')) fail({ kind: 'undisplayable', index: place() });
+    });
+  }
+
   function mountPaged(root: HTMLElement, direction: ReadingDirection): void {
     const frame = document.createElement('div');
     frame.dataset.readerPage = '';
@@ -252,6 +260,7 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
     pageImage.style.maxWidth = '100%';
     pageImage.style.maxHeight = '100%';
     pageImage.decoding = 'async';
+    watch(pageImage, () => current);
     frame.append(pageImage);
     root.append(frame);
   }
@@ -263,18 +272,19 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
     column.style.flexDirection = 'column';
     column.style.alignItems = 'center';
     column.style.gap = '0px'; // pages follow one another with no space (EF-LEC-002)
-    for (const page of pages) {
+    pages.forEach((_page, position) => {
       const image = document.createElement('img');
-      image.alt = alt(page.index);
+      image.alt = alt(position);
       image.style.display = 'block';
       image.style.minHeight = '60vh'; // a page not yet loaded still has a place in the column
       image.style.width = '100%';
       image.style.maxWidth = '60rem';
       image.decoding = 'async';
-      image.dataset.page = String(page.index);
+      image.dataset.page = String(position); // the place in the book, whatever the manifest numbers
+      watch(image, () => position);
       images.push(image);
       column.append(image);
-    }
+    });
     root.append(column);
     if (typeof IntersectionObserver === 'undefined') return;
     const near = new IntersectionObserver(
@@ -304,11 +314,27 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
     observers = [near, middle];
   }
 
+  /** Everything a reading holds: requests, observers, pages and their object URLs. */
+  function release(): void {
+    destroyed = true;
+    aborter.abort();
+    for (const observer of observers) observer.disconnect();
+    observers = [];
+    for (const entry of held.values()) freeUrl(entry.url);
+    held = new Map();
+    missing.clear();
+    asking.clear();
+    renewing = null;
+    images.length = 0;
+    pageImage = null;
+  }
+
   const api = {
     mediaTypes: MEDIA_TYPES,
     guards: { noIframe: true, rasterOnly: true },
 
     async open(publication: PublicationView, root: HTMLElement): Promise<void> {
+      release(); // a reading opened again frees what the one before it held
       if (publication.kind !== 'pages' || publication.pages.length === 0) {
         throw new Error('the image engine reads a publication of pages');
       }
@@ -319,9 +345,6 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
       ended = false;
       destroyed = false;
       aborter = new AbortController();
-      held = new Map();
-      missing.clear();
-      images.length = 0;
       root.replaceChildren();
       if (publication.readingDirection === 'webtoon') mountColumn(root, publication.pages);
       else mountPaged(root, publication.readingDirection);
@@ -368,15 +391,7 @@ export function createImageEngine(options: ImageEngineOptions = {}): ReaderEngin
     },
 
     destroy(): void {
-      destroyed = true;
-      aborter.abort();
-      for (const observer of observers) observer.disconnect();
-      observers = [];
-      for (const entry of held.values()) freeUrl(entry.url);
-      held = new Map();
-      asking.clear();
-      images.length = 0;
-      pageImage = null;
+      release();
       host?.replaceChildren();
       host = null;
       pub = null;

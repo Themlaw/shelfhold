@@ -22,21 +22,21 @@ USER = "01HZZZZZZZZZZZZZZZZZZZZZZB"
 SERIES = "01HZZZZZZZZZZZZZZZZZZZZZZC"
 
 
-def test_the_revision_is_0103_the_head_on_0102() -> None:
+def test_the_revision_is_0103_the_head_on_0104() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0103"]  # the head is pinned here, by the newest
-    # chained on 0102 (L07), the head of this branch's base; re-chained at the merge
-    assert script.get_revision("0103").down_revision == "0102"
+    # chained on 0104 (L20a), the head of main
+    assert script.get_revision("0103").down_revision == "0104"
 
 
 def test_the_table_comes_and_goes_with_the_migration(settings: Settings) -> None:
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(database), "0102")
+    command.upgrade(alembic_config(database), "0104")
     assert "reader_settings" not in tables(database)
     assert "0103" in migrate(settings).applied
     assert "reader_settings" in tables(database)
-    command.downgrade(alembic_config(database), "0102")
+    command.downgrade(alembic_config(database), "0104")
     assert "reader_settings" not in tables(database)
 
 

@@ -57,6 +57,7 @@ EXCLUDED: dict[str, str] = {
     "instance": "the instance row (`maintenance_by`): a state of the host",
     "unit": "`deleted_by` and the like: who acted on a Unit, not data of the person",
     "read_state_push_note": "a note of the push to Kavita, rebuilt by the next pass; no content",
+    "oidc_identity": "who of the provider may sign in as her (M5 L03): a credential, linked again",
 }
 
 SECRET_NAMES = (

@@ -59,7 +59,7 @@ async function serveBook(page: Page, book: Book): Promise<Bench> {
         number: '1',
         package: null,
         pages: Array.from({ length: book.count }, (_, i) => ({
-          index: i,
+          index: i + 1, // the server counts the entries of a manifest from 1
           href: `/content/TICKET/p${i + 1}.png`,
           media_type: 'image/png'
         })),
@@ -86,11 +86,63 @@ async function serveBook(page: Page, book: Book): Promise<Bench> {
 
 const status = (page: Page) => page.getByRole('status');
 
+/** The page the browser really decoded under the policy the server sent: not a box, a pixel size. */
+const decoded = (page: Page, selector: string) =>
+  page.locator(selector).evaluateAll((images) =>
+    images.map((image) => ({
+      width: (image as HTMLImageElement).naturalWidth,
+      complete: (image as HTMLImageElement).complete
+    }))
+  );
+
+function watchPolicy(page: Page): string[] {
+  const refused: string[] = [];
+  page.on('console', (message) => {
+    if (/content security policy/i.test(message.text())) refused.push(message.text());
+  });
+  // the events of the page itself, caught from the first script on
+  void page.addInitScript(() => {
+    const seen: string[] = [];
+    (window as unknown as { __csp: string[] }).__csp = seen;
+    document.addEventListener('securitypolicyviolation', (event) =>
+      seen.push(`${event.violatedDirective} ${event.blockedURI}`)
+    );
+  });
+  return refused;
+}
+
+const violations = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __csp?: string[] }).__csp ?? ['no listener']);
+
+/** Opens the reader and proves that the page is the server's own: its document is not made by a
+ * test route, it carries the policy of the real server, and that policy lets the pages load. */
+async function openReader(page: Page): Promise<void> {
+  const response = await page.goto('/lire/unit/U1');
+  expect(response, 'the document of the page').not.toBeNull();
+  expect(response?.url()).toMatch(/\/lire\/unit\/U1$/);
+  const policy = response?.headers()['content-security-policy'] ?? '';
+  expect(policy).toContain("img-src 'self' blob:");
+}
+
+/** At least one page really decoded, and the browser reported no refusal. */
+async function expectPagesDrawn(page: Page, selector: string, refused: string[]): Promise<void> {
+  await expect
+    .poll(async () => (await decoded(page, selector)).some((image) => image.width > 0), {
+      timeout: 10_000
+    })
+    .toBe(true);
+  expect(await violations(page)).toEqual([]);
+  expect(refused).toEqual([]);
+}
+
 // req: EF-LEC-001
 test('test_manga_paged_ltr_rtl', async ({ page }) => {
+  const refused = watchPolicy(page);
   const ltr = await serveBook(page, { direction: 'ltr', count: 4, width: 300, height: 450 });
-  await page.goto('/lire/unit/U1');
+  await openReader(page);
   await expect(page.getByAltText('Page 1 sur 4')).toBeVisible();
+  // a real image under the policy the real server sends: decoded, and no violation
+  await expectPagesDrawn(page, '[data-reader-page] img', refused);
   await page.keyboard.press('ArrowRight');
   await expect(status(page)).toHaveText('Page 2 sur 4');
   await page.keyboard.press('ArrowLeft');
@@ -102,7 +154,7 @@ test('test_manga_paged_ltr_rtl', async ({ page }) => {
   // the same book, read right to left: the arrows are turned around, the numbers are not
   await page.unrouteAll();
   const rtl = await serveBook(page, { direction: 'rtl', count: 4, width: 300, height: 450 });
-  await page.goto('/lire/unit/U1');
+  await openReader(page);
   await expect(page.getByAltText('Page 1 sur 4')).toBeVisible();
   await expect(page.locator('[dir="rtl"]')).not.toHaveCount(0);
   await page.keyboard.press('ArrowRight'); // "back" in this book, and we are on the first page
@@ -118,11 +170,13 @@ test('test_manga_paged_ltr_rtl', async ({ page }) => {
 
 // req: EF-LEC-002
 test('test_webtoon_continuous', async ({ page }) => {
+  const refused = watchPolicy(page);
   const bench = await serveBook(page, { direction: 'webtoon', count: 6, width: 400, height: 700 });
-  await page.goto('/lire/unit/U1');
+  await openReader(page);
   const column = page.locator('[data-reader-column]');
   await expect(column.locator('img')).toHaveCount(6);
   await expect(column.locator('img').first()).toBeVisible();
+  await expectPagesDrawn(page, '[data-reader-column] img', refused);
   // no space between two pages: the top of one is the bottom of the one before
   const boxes = await column.locator('img').evaluateAll((images) =>
     images.map((image) => {

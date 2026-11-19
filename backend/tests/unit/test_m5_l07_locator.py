@@ -11,13 +11,14 @@ from typing import Any
 
 import pytest
 
+from shelfhold.infrastructure.content_trust import CONTENT_FILTER
 from shelfhold.reading.domain.locator import InvalidLocatorV1Error, parse_locator_v1
 from shelfhold.reading.domain.merge import Reported, conflicting, winner
 
 NOW = datetime(2026, 11, 18, 12, 0, tzinfo=UTC)
 EPUB: dict[str, Any] = {
     "v": 1, "type": "cfi", "cfi": "epubcfi(/6/4!/4/2/1:0)", "totalProgression": 0.37,
-    "filter": "xhtml-neutralizer@v1",
+    "filter": CONTENT_FILTER,
 }  # fmt: skip
 PAGE: dict[str, Any] = {"v": 1, "type": "page", "index": 11, "count": 180}
 
@@ -54,7 +55,7 @@ def test_locator_v1_progression_and_the_stored_form() -> None:
     """`totalProgression` is read as it is for an EPUB and `(index + 1) / count` for pages; what
     is stored is rebuilt from the checked fields only (the page as an integer for the view)."""
     epub = parse_locator_v1(EPUB)
-    assert (epub.kind, epub.progression, epub.filter) == ("cfi", 0.37, "xhtml-neutralizer@v1")
+    assert (epub.kind, epub.progression, epub.filter) == ("cfi", 0.37, CONTENT_FILTER)
     assert epub.stored() == EPUB
     page = parse_locator_v1(PAGE)
     assert page.kind == "page" and page.progression == pytest.approx(12 / 180)

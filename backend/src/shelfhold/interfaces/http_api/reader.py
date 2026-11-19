@@ -69,7 +69,6 @@ class EntryOut(BaseModel):
 class PublicationOut(BaseModel):
     carrier_type: Literal["content", "export_item"]
     carrier_id: str
-    series_id: str  # the Œuvre: the anchor of a setting pinned to this series (L13)
     scope: Literal["full", "excerpt"]
     kind: Literal["pages", "epub"]
     title: str
@@ -86,7 +85,6 @@ def _out(found: Publication) -> PublicationOut:
     return PublicationOut(
         carrier_type=found.carrier_type,  # type: ignore[arg-type]
         carrier_id=found.carrier_id,
-        series_id=found.series_id,
         scope=found.scope,
         kind=found.kind,
         title=found.title,
@@ -118,6 +116,10 @@ class PositionIn(BaseModel):
 
 class StoredOut(BaseModel):
     id: str
+    carrier_type: (
+        str  # the file it was written on: an EPUB read on a device is on its exported file
+    )
+    carrier_id: str
     locator: dict[str, Any]
     client_ts: datetime
     server_ts: datetime
@@ -173,7 +175,8 @@ class SettingIn(BaseModel):
 
 def _stored(found: StoredPosition) -> StoredOut:
     return StoredOut(
-        id=found.id, locator=found.locator, client_ts=found.client_ts,
+        id=found.id, carrier_type=found.carrier_type, carrier_id=found.carrier_id,
+        locator=found.locator, client_ts=found.client_ts,
         server_ts=found.server_ts, device_id=found.device_id, approximate=found.approximate,
     )  # fmt: skip
 
@@ -241,11 +244,11 @@ def build_reader_router(
         except UnknownCarrierError:
             raise ProblemError("not_found", headers=_ABSENT) from None
         except FullReadNotAllowedError:
-            raise ProblemError("full_read_not_allowed") from None
+            raise ProblemError("full_read_not_allowed", headers=_ABSENT) from None
         except ExcerptUnavailableError:  # before its parent: a typed refusal of its own
-            raise ProblemError("excerpt_unavailable") from None
+            raise ProblemError("excerpt_unavailable", headers=_ABSENT) from None
         except NoReadableCopyError:
-            raise ProblemError("no_readable_copy") from None
+            raise ProblemError("no_readable_copy", headers=_ABSENT) from None
         response.headers["Cache-Control"] = "no-store"  # it holds tickets: kept nowhere
         return _out(found)
 

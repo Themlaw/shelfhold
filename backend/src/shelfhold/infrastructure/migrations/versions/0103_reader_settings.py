@@ -4,17 +4,16 @@ A direction that may be pinned to a series (or the profile's own default) and th
 device (or of every one of them); the priority per type lives in the application. One row per
 profile and place, and it goes with its profile. Nothing existing is touched; reversible.
 
-Number: 0103 is the number the plan reserved for L13. `down_revision` is 0102, the head of this
-branch's base; it is re-chained at the merge if another migration lands first, and the test that
-pins the head follows. The file stays frozen in `tools/published-migrations.toml`; its
-fingerprint is recomputed in the same commit as the re-chaining.
+Number: 0103 is the number the plan reserved for L13. `down_revision` is 0104, the head of main
+(L20a); the test that pins the head follows. The file stays frozen in `tools/published-migrations.toml`;
+its fingerprint is recomputed in the same commit as the re-chaining.
 """
 # ruff: noqa: E501  (the DDL is the one SQLAlchemy writes, kept as it is)
 
 from alembic import op
 
 revision = "0103"
-down_revision = "0102"
+down_revision = "0104"
 branch_labels = None
 depends_on = None
 

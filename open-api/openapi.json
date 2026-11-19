@@ -5802,6 +5802,98 @@
         "title": "OfficialLinkOut",
         "type": "object"
       },
+      "OidcConfirmation": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "OidcConfirmation",
+        "type": "object"
+      },
+      "OidcIdentityItem": {
+        "description": "A link of the caller's account: the provider and since when, never the identifier.",
+        "properties": {
+          "issuer": {
+            "title": "Issuer",
+            "type": "string"
+          },
+          "linked_at": {
+            "format": "date-time",
+            "title": "Linked At",
+            "type": "string"
+          },
+          "linked_by_other": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked By Other"
+          }
+        },
+        "required": [
+          "issuer",
+          "linked_at",
+          "linked_by_other"
+        ],
+        "title": "OidcIdentityItem",
+        "type": "object"
+      },
+      "OidcIdentityList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OidcIdentityItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "OidcIdentityList",
+        "type": "object"
+      },
+      "OidcLinkStart": {
+        "description": "Where to send the browser: the provider's page, with the flow already begun.",
+        "properties": {
+          "authorization_url": {
+            "title": "Authorization Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url"
+        ],
+        "title": "OidcLinkStart",
+        "type": "object"
+      },
+      "OidcSubject": {
+        "additionalProperties": false,
+        "properties": {
+          "sub": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Sub",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sub"
+        ],
+        "title": "OidcSubject",
+        "type": "object"
+      },
       "OverrideIn": {
         "additionalProperties": false,
         "properties": {
@@ -7125,10 +7217,6 @@
             "title": "Scope",
             "type": "string"
           },
-          "series_id": {
-            "title": "Series Id",
-            "type": "string"
-          },
           "spine": {
             "items": {
               "$ref": "#/components/schemas/EntryOut"
@@ -7144,7 +7232,6 @@
         "required": [
           "carrier_type",
           "carrier_id",
-          "series_id",
           "scope",
           "kind",
           "title",
@@ -7368,40 +7455,6 @@
           "withdrawals"
         ],
         "title": "RatedOut",
-        "type": "object"
-      },
-      "ReaderSettingsOut": {
-        "description": "What the reader reads with. `direction` is `None` when the profile chose nothing: the\npublication's own direction wins (the Œuvre's, ADR-0055).",
-        "properties": {
-          "comfort": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Comfort",
-            "type": "object"
-          },
-          "direction": {
-            "anyOf": [
-              {
-                "enum": [
-                  "ltr",
-                  "rtl",
-                  "webtoon"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Direction"
-          }
-        },
-        "required": [
-          "direction",
-          "comfort"
-        ],
-        "title": "ReaderSettingsOut",
         "type": "object"
       },
       "ReadyzResponse": {
@@ -9174,61 +9227,6 @@
           "aside"
         ],
         "title": "SetAsideOut",
-        "type": "object"
-      },
-      "SettingIn": {
-        "additionalProperties": false,
-        "description": "One choice, with the portée the reader was asked for: `device` names the device the choice\nbelongs to (« pour cet appareil »), `everywhere` names none (« partout »). The profile is the\nsession's: no field names one.",
-        "properties": {
-          "device_id": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Device Id"
-          },
-          "key": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Key",
-            "type": "string"
-          },
-          "kind": {
-            "enum": [
-              "direction",
-              "comfort"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "scope": {
-            "enum": [
-              "device",
-              "everywhere"
-            ],
-            "title": "Scope",
-            "type": "string"
-          },
-          "value": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Value",
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind",
-          "key",
-          "value",
-          "scope"
-        ],
-        "title": "SettingIn",
         "type": "object"
       },
       "SettingsOut": {
@@ -13145,6 +13143,14 @@
             "title": "Approximate",
             "type": "boolean"
           },
+          "carrier_id": {
+            "title": "Carrier Id",
+            "type": "string"
+          },
+          "carrier_type": {
+            "title": "Carrier Type",
+            "type": "string"
+          },
           "client_ts": {
             "format": "date-time",
             "title": "Client Ts",
@@ -13178,6 +13184,8 @@
         },
         "required": [
           "id",
+          "carrier_type",
+          "carrier_id",
           "locator",
           "client_ts",
           "server_ts",
@@ -13687,154 +13695,6 @@
           }
         },
         "summary": "Put Position",
-        "tags": [
-          "reader"
-        ]
-      }
-    },
-    "/api/reader/settings": {
-      "get": {
-        "description": "The settings of the profile that asks, for one series and one device: the direction\npinned to that series (her own default when the series has none) and the comfort of that\ndevice (the default of every device when it has none).",
-        "operationId": "reader_settings",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "series_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 26,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Series Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "device_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 64,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Device Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReaderSettingsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Détail du problème (RFC 9457)."
-          }
-        },
-        "summary": "Settings",
-        "tags": [
-          "reader"
-        ]
-      },
-      "put": {
-        "description": "Write one choice with its portée — « pour cet appareil » (`device`, which names the\ndevice) or « partout » (`everywhere`, which names none) — and answer what is effective\nnow. Only the reader's own settings exist here; a row never widens what parental control\nhides, and a series the profile cannot see answers like one that is not there. Beyond\nthe bound of rows a profile may hold, the write of a new place is a typed refusal.",
-        "operationId": "reader_put_settings",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SettingIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReaderSettingsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "Détail du problème (RFC 9457)."
-          }
-        },
-        "summary": "Put Settings",
         "tags": [
           "reader"
         ]
@@ -15304,6 +15164,162 @@
           }
         },
         "summary": "Logout"
+      }
+    },
+    "/api/v1/auth/oidc/identities": {
+      "get": {
+        "operationId": "oidc_identities",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OidcIdentityList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Oidc Identities",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/oidc/link": {
+      "post": {
+        "operationId": "oidc_link",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OidcLinkStart"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Oidc Link",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/oidc/link/confirm": {
+      "post": {
+        "operationId": "oidc_confirm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OidcConfirmation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Oidc Confirm",
+        "tags": [
+          "auth"
+        ]
       }
     },
     "/api/v1/auth/passkeys": {
@@ -23657,6 +23673,72 @@
         },
         "summary": "Set Kavita Account",
         "tags": [
+          "profiles"
+        ]
+      }
+    },
+    "/api/v1/profiles/{profile_id}/oidc": {
+      "put": {
+        "operationId": "link_account",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OidcSubject"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Link Account",
+        "tags": [
+          "auth",
           "profiles"
         ]
       }
@@ -32234,6 +32316,10 @@
       "code": "conflict_stale",
       "status": 409
     },
+    "/api/v1/problems/content-changed": {
+      "code": "content_changed",
+      "status": 409
+    },
     "/api/v1/problems/content.untrusted-entry": {
       "code": "content.untrusted_entry",
       "status": 422
@@ -32736,6 +32822,26 @@
       "code": "notify.failed",
       "status": 502
     },
+    "/api/v1/problems/oidc-admin-target": {
+      "code": "oidc_admin_target",
+      "status": 403
+    },
+    "/api/v1/problems/oidc-child-profile": {
+      "code": "oidc_child_profile",
+      "status": 403
+    },
+    "/api/v1/problems/oidc-conflict": {
+      "code": "oidc_conflict",
+      "status": 409
+    },
+    "/api/v1/problems/oidc-link-expired": {
+      "code": "oidc_link_expired",
+      "status": 409
+    },
+    "/api/v1/problems/oidc-unavailable": {
+      "code": "oidc_unavailable",
+      "status": 503
+    },
     "/api/v1/problems/ops.audit-running": {
       "code": "ops.audit_running",
       "status": 409
@@ -32948,6 +33054,14 @@
       "code": "rename.refused",
       "status": 409
     },
+    "/api/v1/problems/rendition.format-unsupported": {
+      "code": "rendition.format_unsupported",
+      "status": 422
+    },
+    "/api/v1/problems/rendition.remote-refused-watermarked": {
+      "code": "rendition.remote_refused_watermarked",
+      "status": 403
+    },
     "/api/v1/problems/repatriate.blocked": {
       "code": "repatriate.blocked",
       "status": 409
@@ -33079,10 +33193,6 @@
     "/api/v1/problems/session-not-found": {
       "code": "session_not_found",
       "status": 404
-    },
-    "/api/v1/problems/settings-limit-reached": {
-      "code": "settings_limit_reached",
-      "status": 422
     },
     "/api/v1/problems/setup-closed": {
       "code": "setup_closed",

@@ -17,6 +17,7 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.config import Settings
+from shelfhold.infrastructure.content_trust import CONTENT_FILTER
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, reading, storage
@@ -27,7 +28,7 @@ from tests.integration.test_l05a_content_route import World, _world
 from tests.integration.test_m5_l06_publication import ServerCutArchives, book, pages_of, unit_of
 
 HASH = "sha256:" + "c" * 64
-FILTER = "xhtml-neutralizer@v1"
+FILTER = CONTENT_FILTER
 
 
 @pytest.fixture
@@ -271,7 +272,7 @@ def test_locator_restored_across_filter_versions(world: World) -> None:
     """ADR-0055 (N2, I30): a position written under another version of the filter is restored as it
     was written (never moved in silence) and marked `approximate`; under the current one, exact."""
     content, _unit = kept(world, fmt="epub")
-    old = "xhtml-neutralizer@v0"
+    old = "content-filter@0"
     assert put(world, world.admin, content, cfi(0.42, old), minutes=-5).is_success
     got = current(world.admin, content).json()["position"]
     assert got["locator"] == cfi(0.42, old) and got["approximate"] is True

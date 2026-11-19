@@ -23,11 +23,13 @@ A manifest writes nothing: no position, no history, no state; an excerpt never c
 from __future__ import annotations
 
 import posixpath
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Final, Literal
 
 import sqlalchemy as sa
+import structlog
 
 from shelfhold.catalog.public import visible_edition_ids
 from shelfhold.identity.public import reader_scope
@@ -50,12 +52,15 @@ from shelfhold.reading.domain.publication import (
     resolve_in_package,
 )
 
+log = structlog.get_logger(__name__)
+
 __all__ = [
     "CARRIER_TYPES",
     "Entry",
     "Listing",
     "Publication",
     "PublicationService",
+    "epub_spine_of",
     "list_archive",
 ]
 
@@ -63,6 +68,7 @@ CARRIER_TYPES: Final = ("content", "export_item", "unit")
 _CONTAINER: Final = "META-INF/container.xml"
 _READ_FORMATS: Final = frozenset({"cbz", "epub"})
 _MAX_SPINE: Final = 20_000
+_EXPORTED: Final = "export_item"
 
 
 @dataclass(frozen=True)
@@ -88,7 +94,7 @@ class Entry:
 class Publication:
     carrier_type: str
     carrier_id: str
-    series_id: str  # the Œuvre: where a setting pinned to this series is anchored (L13)
+    series_id: str  # the Œuvre: the anchor of a setting pinned to this series (L13)
     scope: Scope
     kind: Literal["pages", "epub"]
     title: str
@@ -168,6 +174,33 @@ def list_archive(archive: ContentArchive, fmt: str) -> Listing:
     raise NoReadableCopyError  # a format that is not read here (the PDF engine is not in M5)
 
 
+def epub_spine_of(access: Callable[[], ContentAccess]) -> Callable[[str], int | None]:
+    """How many documents the spine of an exported EPUB has, for kosync (M5 L09): `None` when the
+    file
+    cannot be opened or has no reading order. Asked only for a position that may be the end of a
+    book; the file is the one `/content` would serve (the neutralized derivative), opened and closed
+    here, and nothing of it is kept."""
+
+    def spine_of(item_id: str) -> int | None:
+        try:
+            archive = access().archives.open(_EXPORTED, item_id, "full")
+        except Exception as error:  # a PUT of a device is never a 500: nothing is read
+            log.info("kosync.spine_unavailable", reason=type(error).__name__)
+            return None
+        try:
+            return len(_epub_listing(archive).spine)
+        except Exception as error:
+            log.info("kosync.spine_unavailable", reason=type(error).__name__)
+            return None
+        finally:
+            try:
+                archive.close()
+            except Exception:  # a device's PUT is never a 500
+                log.info("kosync.spine_unavailable", reason="close")
+
+    return spine_of
+
+
 class PublicationService:
     def __init__(self, engine: sa.Engine, access: ContentAccess) -> None:
         self._engine, self._access = engine, access
@@ -201,6 +234,7 @@ class PublicationService:
                 str(i)
                 for i in connection.execute(
                     sa.select(export.export_item.c.id)
+                    .join(storage.content, storage.content.c.id == export.export_item.c.content_id)
                     .join(
                         export.unit_coverage,
                         sa.and_(
@@ -210,7 +244,7 @@ class PublicationService:
                     )
                     .where(
                         export.unit_coverage.c.unit_id == carrier_id,
-                        export.export_item.c.content_id.is_not(None),
+                        storage.content.c.unit_id == carrier_id,  # a file of this Unit, no other
                     )
                     .order_by(export.export_item.c.id)
                 ).scalars()
@@ -275,13 +309,11 @@ class PublicationService:
         def entry_of(index: int, name: str) -> Entry:
             return Entry(index, self._access.url(issued.token, name), media_type_of(name))
 
-        title, number, kind_direction, work_direction, series_id = self._describe(
-            resolved.content_id
-        )
+        title, number, kind_direction, work_direction, series = self._describe(resolved.content_id)
         return Publication(
             carrier_type=carrier_type,
             carrier_id=carrier_id,
-            series_id=series_id,
+            series_id=series,
             scope=chosen,
             kind=listing.kind,
             title=title,
@@ -296,7 +328,7 @@ class PublicationService:
 
     def _describe(self, content_id: str) -> tuple[str, str | None, str | None, str | None, str]:
         """The title and number of what is read, the two places a direction may be set, and the
-        Œuvre it belongs to (the anchor of a series' own settings, L13)."""
+        Œuvre it belongs to (the anchor of the settings of L13)."""
         with self._engine.connect() as connection:
             row = connection.execute(
                 sa.select(
@@ -318,10 +350,6 @@ class PublicationService:
             ).first()
         if row is None:
             raise UnknownCarrierError
-        return (
-            str(row.title),
-            row.number_raw,
-            row.default_direction,
-            row.reading_direction,
-            str(row.id),
+        return str(row.title), row.number_raw, row.default_direction, row.reading_direction, str(
+            row.id
         )

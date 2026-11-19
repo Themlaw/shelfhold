@@ -991,6 +991,15 @@
   "lists.state.to_buy": "À acheter",
   "lists.state.borrow_elsewhere": "À emprunter ailleurs",
   "approve.import_list": "Importer une liste",
+  "oidc.title": "Identités du fournisseur",
+  "oidc.none": "Aucune identité liée. Le mot de passe et les clés d'accès restent vos moyens de connexion.",
+  "oidc.linked_since": "Liée le {date}",
+  "oidc.by_admin": "Liée par un administrateur",
+  "oidc.link": "Lier mon identité",
+  "oidc.error": "La liaison n'a pas pu être lancée. Le fournisseur d'identité n'est peut-être pas configuré.",
+  "oidc.refused": "La liaison a été refusée.",
+  "oidc.linked": "Identité liée.",
+  "oidc.list_error": "La liste des identités n'a pas pu être chargée.",
   "reader.page_alt": "Page {n} sur {count}",
   "reader.status": "Page {n} sur {count}",
   "reader.next": "Page suivante",
@@ -1025,5 +1034,7 @@
   "reader.help_bounds": "Début : première page ; Fin : dernière page.",
   "reader.help_help": "? : ouvrir ou fermer cette aide.",
   "reader.help_escape": "Échap : revenir aux commandes.",
-  "reader.close_help": "Fermer l’aide"
+  "reader.close_help": "Fermer l’aide",
+  "reader.keys": "Flèches, Page suivante ou Espace pour tourner la page ; Échap pour revenir aux commandes.",
+  "reader.page_undisplayable": "Cette page n’a pas pu s’afficher."
 }
