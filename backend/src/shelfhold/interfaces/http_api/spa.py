@@ -6,7 +6,14 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from starlette.requests import Request
 
-from shelfhold.infrastructure.http_headers import IMMUTABLE_CACHE, NO_CACHE, reader_csp, spa_csp
+from shelfhold.infrastructure.http_headers import (
+    IMMUTABLE_CACHE,
+    MANIFEST_TYPE,
+    NO_CACHE,
+    WORKER_CSP,
+    reader_csp,
+    spa_csp,
+)
 from shelfhold.interfaces.http_api.catalog import error_code
 from shelfhold.interfaces.http_api.problems import build_problem_response
 
@@ -14,11 +21,7 @@ API_SEGMENTS = frozenset({"api", "healthz", "readyz", "openapi.json"})
 IMMUTABLE_PREFIXES = ("_app/immutable/", "reader-entry/assets/")
 READER_SEGMENT = "lire"  # the reader is its own page, under its own policy (ADR-0055)
 READER_DIR = "reader-entry"
-MANIFEST_TYPE = "application/manifest+json"  # the PWA manifest (L16a): not a guess of the platform
 WORKER_FILE = "service-worker.js"
-# The policy a worker script is served under is the one its global scope runs under: it may read its
-# own origin (the shell it keeps) and nothing else, whatever the code of the build says.
-WORKER_CSP = "default-src 'none'; connect-src 'self'"
 
 
 def mount_spa(app: FastAPI, build_dir: Path) -> bool:

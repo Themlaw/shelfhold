@@ -21,6 +21,10 @@ FRAME_OPTIONS = "DENY"
 FRAME_ANCESTORS = "frame-ancestors 'none'"
 DATA_CSP = "default-src 'none'"
 CSP_SANDBOX = "sandbox"
+MANIFEST_TYPE = "application/manifest+json"  # the PWA manifest (L16a): not a guess of the platform
+# The policy a worker script is served under is the one its global scope runs under: it may read its
+# own origin (the shell it keeps) and nothing else, whatever the code of the build says.
+WORKER_CSP = "default-src 'none'; connect-src 'self'"
 ROBOTS_TXT = "User-agent: *\nDisallow: /\n"
 BEARER_CHALLENGE = 'Bearer realm="api"'
 BASIC_CHALLENGE = 'Basic realm="Shelfhold", charset="UTF-8"'  # the e-reader's OPDS (L46)
