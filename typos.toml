@@ -8,6 +8,8 @@ extend-exclude = ["*.md", "frontend/vendor/", "e2e/tests/references/key-screens.
 cours = "cours"
 sur = "sur"
 opf = "opf"
+# `ALPH` is the four-letter name of a WebP chunk (the alpha channel): the renditions read it.
+alph = "alph"
 
 # Exact identifiers: a pydantic setting and the in-toto provenance file name.
 [default.extend-identifiers]
