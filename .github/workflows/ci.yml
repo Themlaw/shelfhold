@@ -44,7 +44,7 @@ jobs:
     env:
       # The only place where the number of shards is defined (see CONTRIBUTING.md).
       BACKEND_SHARDS: "4"
-      BACKEND_INTEGRATION_SHARDS: "8"
+      BACKEND_INTEGRATION_SHARDS: "10"
       E2E_SHARDS: "2"
     steps:
       - id: shards
@@ -631,11 +631,24 @@ jobs:
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # WebKit runs in the official image of Playwright (the version of the package, by digest): its
+    # system libraries are 180 packages from a mirror that stalls, and a step killed in the middle
+    # of apt leaves the dpkg lock held. The browsers of the image are the ones of the package.
+    container: ${{ matrix.image }}
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox, webkit]
+        include:
+          - browser: chromium
+            image: ''
+          - browser: firefox
+            image: ''
+          - browser: webkit
+            image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
     steps:
+      - name: git (the image of Playwright has none; the submodule needs it)
+        if: matrix.image != ''
+        run: command -v git >/dev/null || (apt-get update && apt-get install -y --no-install-recommends git ca-certificates)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -660,15 +673,15 @@ jobs:
       - run: npm ci
         working-directory: e2e
       - name: Playwright browser
+        if: matrix.image == ''
         working-directory: e2e
+        timeout-minutes: 8
         env:
           BROWSER: ${{ matrix.browser }}
-        run: |
-          # apt waits ~10 min per unreachable mirror: bound it, then install the browser alone
-          # (the runner image ships most system libraries; a missing one fails the run, loudly).
-          timeout 480 npx playwright install --with-deps "$BROWSER" && exit 0
-          echo "::warning::playwright --with-deps failed; installing the browser alone"
-          npx playwright install "$BROWSER"
+        # The libraries are installed to the end, never cut by `timeout`: a killed `npx` leaves its
+        # `apt-get` holding the dpkg lock and every later attempt fails on the lock. The step is
+        # bounded by `timeout-minutes` instead (which stops the whole process group).
+        run: npx playwright install --with-deps "$BROWSER"
       - name: Playwright (reader, one engine)
         working-directory: e2e
         env:

@@ -438,6 +438,9 @@ const NS_XMLNS = 'http://www.w3.org/2000/xmlns/';
 const NS_EPUB = 'http://www.idpf.org/2007/ops';
 const LOCAL_NAME = /^[a-z_][\w.-]*$/i;
 
+/** What may be copied to an `href`: a fragment of word characters, or a `blob:` address of the loader. */
+const SAFE_TARGET = /^(?:#[\w.:-]*|blob:https?:\/\/[\w.:-]+\/[0-9A-Za-z-]{1,64})$/;
+
 function cleanAttributes(el: Element, options: FilterOptions): void {
   const name = el.localName.toLowerCase();
   const ns = el.namespaceURI;
@@ -502,7 +505,13 @@ function cleanAttributes(el: Element, options: FilterOptions): void {
   if (ns === NS_SVG && name === 'a') {
     const old = el.getAttributeNodeNS(NS_XLINK, 'href');
     if (old) {
-      if (!el.hasAttribute('href')) el.setAttribute('href', old.value);
+      // judged again right here, by the rule of the other addresses (a loader `blob:` of this origin or
+      // a bare fragment), in the one shape a person and an analyzer can both read: the whole value
+      // matches a closed pattern or nothing is copied
+      const target = old.value.trim();
+      if (SAFE_TARGET.test(target) && (target.startsWith('#') || isLoaderUrl(target, options.origin))) {
+        if (!el.hasAttribute('href')) el.setAttribute('href', target);
+      }
       el.removeAttributeNode(old);
     }
   }

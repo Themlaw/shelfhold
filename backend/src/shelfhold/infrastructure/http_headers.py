@@ -19,6 +19,9 @@ REFERRER_POLICY = "no-referrer"
 ROBOTS_TAG = "noindex, nofollow"
 FRAME_OPTIONS = "DENY"
 FRAME_ANCESTORS = "frame-ancestors 'none'"
+# The reader alone: a `blob:` document inherits the policy of its page, `frame-ancestors` included,
+# and WebKit checks it for the reading frame (its parent is the page, which `'none'` refuses).
+READER_FRAME_ANCESTORS = "frame-ancestors 'self'"
 DATA_CSP = "default-src 'none'"
 CSP_SANDBOX = "sandbox"
 MANIFEST_TYPE = "application/manifest+json"  # the PWA manifest (L16a): not a guess of the platform
@@ -41,8 +44,12 @@ _DEFAULTS = {
 
 
 def with_frame_ancestors(csp: str) -> str:
-    """A `<meta>` CSP cannot carry `frame-ancestors`; the HTTP header must."""
-    if _FRAME_ANCESTORS_DIRECTIVE.search(csp):
+    """A `<meta>` CSP cannot carry `frame-ancestors`; the HTTP header must. Whatever a route wrote
+    there becomes `'none'`, except the one exact value of the reader's own policy."""
+    found = _FRAME_ANCESTORS_DIRECTIVE.search(csp)
+    if found and " ".join(found.group(0).split()).lower() == READER_FRAME_ANCESTORS:
+        return csp
+    if found:
         return _FRAME_ANCESTORS_DIRECTIVE.sub(FRAME_ANCESTORS, csp)
     return f"{csp}; {FRAME_ANCESTORS}" if csp else FRAME_ANCESTORS
 
@@ -202,6 +209,7 @@ _READER_TABLE = (
     ("object-src", ("'none'",)),
     ("base-uri", ("'none'",)),
     ("form-action", ("'none'",)),
+    ("frame-ancestors", ("'self'",)),
 )
 
 
@@ -242,8 +250,8 @@ def reader_csp(html: str) -> str:
     table of the ADR and from the very page the build produced: its one inline script is hashed,
     `'strict-dynamic'` trusts what it imports and nothing a book holds. The page is the reader's
     own entry, outside the router, with no `<meta>` policy; one that is not the audited page is
-    refused at start-up (as `spa_csp` does for the SPA). `frame-ancestors` is added by the
-    middleware."""
+    refused at start-up (as `spa_csp` does for the SPA). `frame-ancestors 'self'` is the one the
+    middleware lets through (see `READER_FRAME_ANCESTORS`)."""
     audit = _ReaderAudit(html)
     if audit.problems:
         raise RuntimeError(f"the reader page is not the audited one: {audit.problems[0]}")

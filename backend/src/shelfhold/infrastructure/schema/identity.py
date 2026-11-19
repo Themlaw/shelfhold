@@ -195,6 +195,26 @@ device = sa.Table(
     sa.Index("ix_device_subject", "subject_user_id"),
 )
 
+# An identity at an OpenID Connect provider (M5 L03, EF-USR-004): the person `sub` of `issuer` is
+# this account. It is linked to an account that already exists and never creates one. The pair is
+# unique (one person, one account); an account holds one identity per provider; an empty `sub`
+# is no identity. It goes with its account.
+oidc_identity = sa.Table(
+    "oidc_identity",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("issuer", sa.String(), nullable=False),
+    sa.Column("sub", sa.String(), nullable=False),
+    now_column("linked_at"),
+    ulid_check("id"),
+    sa.CheckConstraint('length("sub") > 0 AND length("issuer") > 0', name="nonempty"),
+    sa.UniqueConstraint("issuer", "sub", name="uq_oidc_identity_issuer_sub"),
+    sa.UniqueConstraint("user_id", "issuer", name="uq_oidc_identity_user_issuer"),
+)
+
 # A device token (M4 L46, ADR-0053 §4, ADR-0049): the credential of an e-reader (OPDS, kosync).
 # It is issued FOR a reader profile (`subject_user_id`, no default, the rights and the filters are
 # the subject's) and the issuer is kept for the audit and nothing else. `public_id` is the short

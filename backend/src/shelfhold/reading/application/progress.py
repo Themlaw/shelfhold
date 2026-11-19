@@ -306,6 +306,10 @@ def _mark_traversed(
     cover = _coverage(connection, row.carrier_type, row.carrier_id)
     if not cover:
         return []
+    if row.locator.get("xpointer") is not None and (
+        row.locator.get("end") is not True or not isinstance(row.locator.get("who"), str)
+    ):
+        return []  # a place in a reflowable text: read only at the end of its last document (L09)
     paged = all(isinstance(c.start_page, int) and isinstance(c.end_page, int) for c in cover)
     scale: float | None = None
     if paged and isinstance(row.locator.get("page"), int):
@@ -315,7 +319,10 @@ def _mark_traversed(
         mode = SHARE
         spans = [Span(cover[0].unit_id, 0.0, 1.0)]
         count = _page_count(connection, row.carrier_type, row.carrier_id)
-        scale = None if count is None else float(count)
+        # a place in a reflowable text is not paged: the page count of an EPUB is its number of
+        # sections, never a speed to judge a share by (a leap to the end would pass for a read)
+        is_text = row.locator.get("xpointer") is not None
+        scale = None if count is None or is_text else float(count)
     else:
         return []
     history = list(
@@ -327,8 +334,7 @@ def _mark_traversed(
                 table.c.carrier_id == row.carrier_id,
                 table.c.content_hash == row.content_hash,
                 table.c.source == "device",
-                # a place in a reflowable text measures nothing (L51): never an anchor
-                sa.func.json_extract(table.c.locator, "$.xpointer").is_(None),
+                *_same_writer(table, row.locator),
                 # nor is a position carried over from another Edition (EF-BIB-026): a guess
                 sa.func.json_extract(table.c.locator, "$.transposed").is_(None),
             )
@@ -361,6 +367,22 @@ def _mark_traversed(
         )
         log.info("reading.read_marked", position=position_id, units=len(marked))
     return marked
+
+
+def _same_writer(table: sa.Table, locator: dict[str, Any]) -> list[sa.ColumnElement[bool]]:
+    """Which positions are the steps of a walk. For a position that is not an xpointer: the ones
+    that are not either (a place in a reflowable text measures nothing there). For an xpointer: the
+    xpointers of **that device** (`who`) whose document was read (`spine`): the positions of another
+    device, or of another writer of the same file (the reader of the web), are never a step of its
+    chain, and neither is its own place when it was not one of a document (M4 MIN-6, M5 L09)."""
+    xpointer = sa.func.json_extract(table.c.locator, "$.xpointer")
+    if locator.get("xpointer") is None:
+        return [xpointer.is_(None)]
+    return [
+        xpointer.is_not(None),
+        sa.func.json_extract(table.c.locator, "$.spine").is_not(None),
+        sa.func.json_extract(table.c.locator, "$.who") == locator["who"],
+    ]
 
 
 def insert_position(
@@ -432,7 +454,8 @@ def record_position(
     """Record where `subject_id` is in a file, as that same reader; returns the position id.
 
     `traverse=False` stores the position and looks for no traversal: a locator the server cannot
-    measure (an EPUB xpointer, until L51) is a place, never a proof of reading.
+    measure (an EPUB xpointer that is not the end of its book, M5 L09) is a place, never a proof of
+    reading.
 
     This is a reader's own report (KOReader, the integrated reader, a device token): it never
     makes a Unit read by itself, only a plausible pass over it does (`reading.domain.traversal`).
