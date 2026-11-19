@@ -69,6 +69,10 @@ class Paths:
     def complete(self, edition_id: str, part: int = 1) -> str:
         return self._with(f"/editions/{edition_id}/complete", part=part if part > 1 else None)
 
+    def pse(self, item_id: str) -> str:
+        """The template of a `pse:stream` link: the client puts the page number (from 0) in it."""
+        return f"{self.base}/pse/{item_id}/{{pageNumber}}"
+
     def bundle(self, version_id: str) -> str:
         return self._with(f"/bundles/{version_id}")
 
