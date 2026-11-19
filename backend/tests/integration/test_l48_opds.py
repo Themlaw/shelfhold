@@ -537,6 +537,7 @@ ROUTES = (
     "/opds/recent", "/opds/search?q=Tale", f"/opds/works/{ABSENT_ULID}",
     f"/opds/shelves/{ABSENT_ULID}", f"/opds/series/{ABSENT_ULID}",
     f"/opds/covers/{ABSENT_DIGEST}/160", f"/opds/editions/{ABSENT_ULID}/complete",
+    "/opds/selections", f"/opds/selections/{ABSENT_ULID}",  # M5 L21
 )  # fmt: skip
 
 

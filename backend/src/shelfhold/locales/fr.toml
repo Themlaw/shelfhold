@@ -2212,6 +2212,21 @@ title = "Cette liste est pleine."
 action = "Une liste tient au plus 5 000 éléments : retirez-en ou faites-en une autre."
 cause = "Le nombre maximal d'éléments d'une collection ou d'une liste de lecture est atteint."
 
+[errors."selection.query_refused"]
+title = "Cette sélection ne peut pas être enregistrée."
+action = "Choisissez parmi les critères proposés (état de lecture, type, étagère, langue, ajout récent), avec 20 valeurs au plus chacun, puis réessayez."
+cause = "Une sélection tient une courte liste de critères et rien d'autre : pas d'expression, pas de texte libre, pas d'imbrication, 2 Ko au plus."
+
+[errors."selection.full"]
+title = "Vous avez enregistré autant de sélections que permis."
+action = "Un profil garde 50 sélections au plus : supprimez-en une que vous n'utilisez plus, ou modifiez-en une."
+cause = "Le nombre maximal de sélections enregistrées d'un profil est atteint."
+
+[errors."selection.too_slow"]
+title = "Cette sélection a pris trop de temps à calculer."
+action = "Réessayez dans un instant, ou resserrez-la avec un autre critère (une étagère, un type)."
+cause = "La sélection est calculée à chaque lecture, et elle a été arrêtée au bout de quelques secondes pour que la bibliothèque reste réactive."
+
 [errors."collection.not_private"]
 title = "Cette collection est celle du foyer : il n'y a rien à approuver."
 action = "Seule la liste d'un profil a besoin de votre accord pour être montrée dans Kavita ; les collections du foyer le sont déjà."
@@ -2957,6 +2972,7 @@ shelves = "Étagères"
 series = "Séries"
 works = "Toutes les œuvres"
 recent = "Nouveautés"
+selections = "Sélections enregistrées"
 results = "Résultats de la recherche"
 search_description = "Chercher dans la bibliothèque"
 complete = "{title} — Série complète"
