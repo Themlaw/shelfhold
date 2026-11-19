@@ -19875,6 +19875,346 @@ export type OpdsShelfResponses = {
     200: unknown;
 };
 
+export type Opds2RootData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/opds/v2';
+};
+
+export type Opds2RootErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type Opds2RootError = Opds2RootErrors[keyof Opds2RootErrors];
+
+export type Opds2RootResponses = {
+    /**
+     * feed
+     */
+    200: unknown;
+};
+
+export type Opds2RecentData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/v2/recent';
+};
+
+export type Opds2RecentErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type Opds2RecentError = Opds2RecentErrors[keyof Opds2RecentErrors];
+
+export type Opds2RecentResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type Opds2SearchData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Q
+         */
+        q?: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/v2/search';
+};
+
+export type Opds2SearchErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type Opds2SearchError = Opds2SearchErrors[keyof Opds2SearchErrors];
+
+export type Opds2SearchResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type Opds2SelectionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/opds/v2/selections';
+};
+
+export type Opds2SelectionsErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type Opds2SelectionsError = Opds2SelectionsErrors[keyof Opds2SelectionsErrors];
+
+export type Opds2SelectionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type Opds2SelectionData = {
+    body?: never;
+    path: {
+        /**
+         * Selection Id
+         */
+        selection_id: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/v2/selections/{selection_id}';
+};
+
+export type Opds2SelectionErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type Opds2SelectionError = Opds2SelectionErrors[keyof Opds2SelectionErrors];
+
+export type Opds2SelectionResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type Opds2SeriesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/v2/series';
+};
+
+export type Opds2SeriesListErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type Opds2SeriesListError = Opds2SeriesListErrors[keyof Opds2SeriesListErrors];
+
+export type Opds2SeriesListResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type Opds2SeriesData = {
+    body?: never;
+    path: {
+        /**
+         * Series Id
+         */
+        series_id: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/v2/series/{series_id}';
+};
+
+export type Opds2SeriesErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type Opds2SeriesError = Opds2SeriesErrors[keyof Opds2SeriesErrors];
+
+export type Opds2SeriesResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type Opds2ShelvesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/opds/v2/shelves';
+};
+
+export type Opds2ShelvesErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type Opds2ShelvesError = Opds2ShelvesErrors[keyof Opds2ShelvesErrors];
+
+export type Opds2ShelvesResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type Opds2ShelfData = {
+    body?: never;
+    path: {
+        /**
+         * Shelf Id
+         */
+        shelf_id: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/v2/shelves/{shelf_id}';
+};
+
+export type Opds2ShelfErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type Opds2ShelfError = Opds2ShelfErrors[keyof Opds2ShelfErrors];
+
+export type Opds2ShelfResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type Opds2WorksData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/v2/works';
+};
+
+export type Opds2WorksErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type Opds2WorksError = Opds2WorksErrors[keyof Opds2WorksErrors];
+
+export type Opds2WorksResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type Opds2WorkData = {
+    body?: never;
+    path: {
+        /**
+         * Work Id
+         */
+        work_id: string;
+    };
+    query?: never;
+    url: '/opds/v2/works/{work_id}';
+};
+
+export type Opds2WorkErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type Opds2WorkError = Opds2WorkErrors[keyof Opds2WorkErrors];
+
+export type Opds2WorkResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type OpdsWorksData = {
     body?: never;
     path?: never;

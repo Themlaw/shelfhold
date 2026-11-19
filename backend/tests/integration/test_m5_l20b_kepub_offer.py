@@ -493,3 +493,56 @@ def test_opds_kepub_a_disk_that_cannot_be_written_is_an_error_not_an_absent_book
     renditions._kepub = full
     with pytest.raises(OSError, match="no space"):
         kobo.get(kobo.world.mum, item)
+
+
+# -- OPDS 2.0 (L19): the same offer, in the same entries ---------------------------------------
+
+
+def v2_kepubs(feed: Any) -> list[dict[str, Any]]:
+    from tests.integration.test_m5_l19_opds2 import publications
+
+    return [
+        x
+        for p in publications(feed)
+        for x in p["links"]
+        if x["rel"] == ACQUISITION and x["type"] == KEPUB
+    ]
+
+
+def test_opds2_kepub_is_offered_like_in_opds1_and_judged_the_same(kobo: Kobo) -> None:
+    from tests.integration.test_m5_l19_opds2 import V2, doc
+
+    world = kobo.world
+    seen = kobo.volume("ok")
+    elsewhere = kobo.volume("ok_second", read_elsewhere=("mum",))  # another Edition of the Work
+    hidden = kobo.volume("above")
+    kobo.volume("twelve", live=False)
+    for who in (world.kid, world.mum):
+        for key in ("ok", "above", "twelve"):
+            work = world.seed.works[key]
+            first, second = who.get(f"/opds/works/{work}"), who.get(f"{V2}/works/{work}")
+            assert first.status_code == second.status_code, (who.name, key)
+            if first.status_code == 200:
+                assert sorted(x["href"] for x in kepub_links(parse(first))) == sorted(
+                    x["href"] for x in v2_kepubs(doc(second))
+                ), (who.name, key)  # none missing, none added
+    ok = world.seed.works["ok"]
+    kid_hrefs = sorted(x["href"] for x in v2_kepubs(doc(world.kid.get(f"{V2}/works/{ok}"))))
+    mum_hrefs = [x["href"] for x in v2_kepubs(doc(world.mum.get(f"{V2}/works/{ok}")))]
+    assert kid_hrefs == sorted([f"/opds/kepub/{seen}", f"/opds/kepub/{elsewhere}"])
+    assert mum_hrefs == [f"/opds/kepub/{seen}"]  # she reads the other one elsewhere
+    assert kobo.get(world.kid, seen).status_code == 200
+    gone = world.kid.get(f"{V2}/works/{world.seed.works['above']}")
+    assert gone.status_code == 404 and hidden not in gone.text
+
+
+def test_opds2_kepub_the_two_graphs_stay_equivalent(kobo: Kobo) -> None:
+    """The meta-test of L19, with KEPUB offers in the feeds: for a child and an adult the 1.2 and
+    the 2.0 graphs hold the same entries, titles and links."""
+    from tests.integration.test_m5_l19_opds2 import _same_feeds
+
+    kobo.volume("ok")
+    kobo.volume("above")
+    kobo.volume("ok_second", read_elsewhere=("mum",))
+    _same_feeds(kobo.world.kid, "child")
+    _same_feeds(kobo.world.mum, "adult")
