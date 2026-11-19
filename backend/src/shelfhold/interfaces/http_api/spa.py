@@ -33,10 +33,10 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
     reader_policy = reader_csp(reader.read_text(encoding="utf-8")) if reader.is_file() else None
 
     def respond(file: Path, cache: str) -> Response:
-        response = FileResponse(
-            file, media_type=MANIFEST_TYPE if file.suffix == ".webmanifest" else None
-        )
+        response = FileResponse(file)
         response.headers["Cache-Control"] = cache
+        if file.suffix == ".webmanifest":
+            response.headers["Content-Type"] = MANIFEST_TYPE
         if file == index:
             response.headers["Content-Security-Policy"] = csp
         elif file == reader and reader_policy is not None:
