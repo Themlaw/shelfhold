@@ -136,6 +136,21 @@ Les applis qui parlent OPDS-PSE (Panels, Chunky, Kybook, KOReader et d'autres) l
 - **Seuls les tomes réellement exportés sont proposés**, et seulement si leur fichier conservé est un CBZ lisible. Si vous lisez déjà le tome là où il a été envoyé (vous y avez un compte vérifié), PSE ne montre qu'un extrait, comme le lecteur du web : un cinquième des pages au plus.
 - Seuls les tomes dont le fichier conservé est un CBZ lisible sont proposés. Un fichier abîmé ou absent n'a pas d'entrée.
 
+## Le flux OPDS 2.0 (JSON)
+
+Les clients qui lisent l'OPDS 2.0 (Readium, Thorium, certaines applis de liseuse) utilisent
+`/opds/v2` au lieu de `/opds`. Même jeton d'appareil, même identification Basic, même HTTPS.
+
+- **C'est le même flux.** Chaque page de la 2.0 pose les mêmes questions au catalogue que celle de la
+  1.2 (le même code, écrit une fois en Atom, une fois en JSON) : un enfant n'y voit que ce que son
+  plafond laisse passer, les totaux ne comptent que le visible, et une Œuvre, une étagère ou une
+  série cachée répond comme une absente (404, même corps que dans la 1.2).
+- **Les fichiers, couvertures et pages PSE** gardent leurs adresses de la 1.2 (`/opds/editions/…`,
+  `/opds/covers/…`, `/opds/pse/…`) : une seule route pour chacun.
+- **Recherche** : le lien `search` de la racine est un gabarit (`/opds/v2/search{?q}`).
+- Aucune entrée n'existe en 2.0 sans son équivalent en 1.2, et réciproquement ; un test le vérifie
+  page par page pour un adulte, un enfant et une clé d'API (refusée).
+
 ## Pour l'intégrateur : le fournisseur du bloc
 
 Le téléchargement passe par `shelfhold.interfaces.http_api.opds.bundle` (`SeriesBundleProvider` :
