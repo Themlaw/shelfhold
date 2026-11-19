@@ -39,8 +39,22 @@ interface Bench {
   violations: string[];
 }
 
+// What the browser said, printed when a test fails: a failure on an engine this machine does not run
+// (WebKit) is then readable from the log of the CI.
+const said: string[] = [];
+test.beforeEach(() => void (said.length = 0));
+test.afterEach(async ({ page }, info) => {
+  if (info.status === info.expectedStatus) return;
+  const body = await page.locator('body').innerText().catch(() => '(no body)');
+  const where = page.frames().map((f) => f.url().slice(0, 80));
+  console.log(`[reader-diagnostic] ${info.title}\n  frames: ${JSON.stringify(where)}\n  body: ${JSON.stringify(body.slice(0, 300))}\n  console: ${JSON.stringify(said.slice(-20))}`);
+});
+
 async function serve(page: Page, book: Book): Promise<Bench> {
   const bench: Bench = { api: [], content: [], violations: [] };
+  page.on('console', (m) => said.push(`${m.type()}: ${m.text().slice(0, 300)}`));
+  page.on('pageerror', (e) => said.push(`pageerror: ${String(e).slice(0, 300)}`));
+  page.on('requestfailed', (r) => said.push(`requestfailed: ${r.url().slice(0, 120)} ${r.failure()?.errorText ?? ''}`));
   const names = Object.keys(book.files).filter((n) => n.endsWith('.xhtml') && n !== 'OEBPS/nav.xhtml');
   await page.route('**/api/v1/me', (route) => route.fulfill({ json: ME }));
   await page.route('**/api/reader/unit/U1/publication*', (route) =>
