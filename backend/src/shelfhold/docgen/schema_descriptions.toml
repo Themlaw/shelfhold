@@ -389,6 +389,15 @@ created_at = "When it was paired (UTC)."
 last_seen_at = "When one of its tokens was last accepted (UTC); empty: never seen."
 revoked_at = "When it was removed (UTC); its tokens end with it."
 
+[tables.oidc_identity]
+description = "OpenID Connect identities: the person `sub` of a provider (`issuer`) is this account. Linked to an account that already exists, never created by a sign-in; one account per person, one identity per provider."
+[tables.oidc_identity.columns]
+id = "Identity identifier (ULID)."
+user_id = "The account the person signs in as."
+issuer = "The provider's issuer address, as configured."
+sub = "The provider's stable identifier of the person (the `sub` claim); never a name or an address."
+linked_at = "When the account was linked (UTC)."
+
 [tables.device_token]
 description = "Device tokens: the credential of an e-reader (OPDS, kosync), issued for a reader profile. Only the SHA-256 of the md5 of the secret is stored; the secret is shown once."
 [tables.device_token.columns]
