@@ -61,8 +61,8 @@ reason = "porte P0 et règles d'arrêt documentées (portes.md), relevé de dép
 
 [[partial]]
 requirement = "EF-BIB-029"
-milestone = "M5"
-reason = "détection d'une migration Suwayomi et API livrées (test_m3_l21_suwayomi_migration.py), migration complète de source avec table de correspondance et son écran (M4 L27) ; l'écran « Même œuvre ? » (proposition, plan de fusion ou de réaffectation) n'a eu aucune carte en M4 : redaté M5 par écrit le 2026-11-17 (M4 L43, dette de L58 contradicteur M2)"
+milestone = "M6"
+reason = "détection d'une migration Suwayomi et API livrées (test_m3_l21_suwayomi_migration.py), migration complète de source avec table de correspondance et son écran (M4 L27) ; l'écran « Même œuvre ? » (proposition, plan de fusion ou de réaffectation) n'a eu aucune carte en M4 : redaté M5 par écrit le 2026-11-17 (M4 L43, dette de L58 contradicteur M2), puis M6 le 2026-11-19 (M5 L22b) : aucune des 30 cartes de M5 ne porte cet écran, qui reste donc un volet non livré et non coupé en silence (docs/decisions/M5.md, section de L22b)"
 
 [[partial]]
 requirement = "EF-EXP-026"
@@ -152,4 +152,4 @@ reason = "preuves de la relecture adverse de #365 (M5 L05b), livrées telles que
 [[deferred]]
 requirement = "ENF-GOV-004"
 aspect = "première publication vérifiée sur le second registre (digest signé) et premier push du miroir : D-P1 (secret CODEBERG_TOKEN, compte et dépôt miroir du porteur)"
-reason = "M4 (D-P1), accord écrit du porteur du 2026-11-14 : le code est livré par L41 (vérificateur silencieux et désactivé par défaut, URL d'index, workflow `publish-mirror`, compose, procédure de continuité) ; il reste la partie en direct, qui dépend du compte Codeberg et du secret CODEBERG_TOKEN du porteur : poussée du miroir et première publication vérifiée sur le second registre. Sans jeton avant la V13, redater en M5 avec l'accord écrit du porteur ; avec le jeton, retirer cette entrée"
+reason = "M4 (D-P1), accord écrit du porteur du 2026-11-14 : le code est livré par L41 (vérificateur silencieux et désactivé par défaut, URL d'index, workflow `publish-mirror`, compose, procédure de continuité) ; il reste la partie en direct, qui dépend du compte Codeberg et du secret CODEBERG_TOKEN du porteur : poussée du miroir et première publication vérifiée sur le second registre. Sans jeton avant la V13, redater en M5 avec l'accord écrit du porteur ; avec le jeton, retirer cette entrée. 2026-11-19 (M5 L22b) pour D-P4 : `v1.1.0` est partie sans le secret `CODEBERG_TOKEN` (GHCR seul) ; l'entrée est redatée et reste ouverte, `v1.2.0` sera signée sur GHCR seul si le secret manque toujours. Option recommandée par le plan, à confirmer par le porteur (accord écrit attendu : docs/decisions/M5.md, section de L22b)"

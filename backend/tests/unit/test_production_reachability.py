@@ -40,18 +40,20 @@ def test_no_production_symbol_only_called_from_tests() -> None:
 
 
 def test_no_allowlist_entry_until_past_milestone() -> None:
-    """L31 (M2), L56 (M3) and L43 (M4): a milestone that is over has no entry waiting for it. What
-    was not wired is wired, deleted with its code, or written down for the milestone of its
-    culprit, with a date and a reason (docs/decisions/M3.md and M4.md, sections of the debts)."""
+    """L31 (M2), L56 (M3), L43 (M4) and L22b (M5): a milestone that is over has no entry
+    waiting for it. What was not wired is wired, deleted with its code, or written down for the
+    milestone of its culprit, with a date and a reason (docs/decisions/M3.md, M4.md and M5.md)."""
     entries = [*reach.load_allowlist(REPO), *reach.load_route_tests(REPO)]
     waiting = [
-        f"{e['category']} (until {e['until']})" for e in entries if e["until"] in ("M2", "M3", "M4")
+        f"{e['category']} (until {e['until']})"
+        for e in entries
+        if e["until"] in ("M2", "M3", "M4", "M5")
     ]
     assert not waiting, f"entries still waiting for a milestone that is over: {waiting}"
     late = [
         e["category"]
         for e in entries
-        if e["until"] not in ("permanent", "M4", "M5", "M6") and not e["until"].startswith("M1b")
+        if e["until"] not in ("permanent", "M6") and not e["until"].startswith("M1b")
     ]
     assert not late, f"entries for a milestone nobody planned: {late}"
     undated = [
@@ -72,6 +74,35 @@ def test_no_allowlist_entry_until_past_milestone() -> None:
         if e["category"].startswith("m4-l43") and "2026-11-17" not in e["reason"]
     ]
     assert not redated, f"a deferral of M4 L43 is written down with its date: {redated}"
+    # M5 L22b (2026-11-19): each entry that waited for M5 is redated M6 in writing, with the reason.
+    after_m5 = [
+        e["category"]
+        for e in entries
+        if e["category"]
+        in {
+            "unwired-m4-komga",
+            "unwired-m4-cwa",
+            "m4-l43-normalizer-migration",
+            "m4-l43-reading-service",
+            "deferred-l24-deprecation-window",
+            "unwired-m5-renditions",
+        }
+        and not (e["until"] == "M6" and "2026-11-19 (M5 L22b)" in e["reason"])
+    ]
+    assert not after_m5, f"an entry that waited for M5 is redated M6 by M5 L22b: {after_m5}"
+
+
+def test_open_traceability_exceptions_are_redated_by_m5_l22b() -> None:
+    """M5 L22b: the `[[partial]]` that named M5 and the deferred ENF-GOV-004 are written down again
+    (docs/decisions/M5.md, section of L22b), with their date, and name no milestone that is over."""
+    trace = load_tool("traceability")
+    partial = {p["requirement"]: p for p in trace.load_partial(REPO)}
+    assert partial["EF-BIB-029"]["milestone"] == "M6"
+    assert "2026-11-19 (M5 L22b)" in partial["EF-BIB-029"]["reason"]
+    assert all(p["milestone"] not in ("M4", "M5") for p in partial.values())
+    deferred = {d["requirement"]: d for d in trace.load_deferred(REPO)}
+    assert "2026-11-19 (M5 L22b)" in deferred["ENF-GOV-004"]["reason"]
+    assert "à confirmer par le porteur" in deferred["ENF-GOV-004"]["reason"]
 
 
 def test_req_tests_declare_no_routes() -> None:
