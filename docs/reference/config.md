@@ -19,6 +19,7 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_LOG_FORMAT` | `log_format` | 'json' \| 'console' | `json` |  | `SHELFHOLD_LOG_FORMAT_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_UMASK` | `umask` | int | `0022` | >= 0, <= 511 | `SHELFHOLD_UMASK_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_PUBLIC_URL` | `public_url` | str (optionnel) | aucun |  | `SHELFHOLD_PUBLIC_URL_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_CONTENT_ORIGIN` | `content_origin` | str (optionnel) | aucun |  | `SHELFHOLD_CONTENT_ORIGIN_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_API_TOKEN` | `api_token` | secret (optionnel) | aucun |  | secret, masqué partout; `SHELFHOLD_API_TOKEN_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_SECRET_KEY_FILE` | `secret_key_file` | Path (optionnel) | aucun |  | variable seule, jamais dans `config.toml` |
 | `SHELFHOLD_FRONTEND_DIR` | `frontend_dir` | Path (optionnel) | aucun |  | `SHELFHOLD_FRONTEND_DIR_FILE` en lit la valeur dans un fichier |

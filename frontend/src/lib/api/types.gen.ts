@@ -18020,6 +18020,44 @@ export type WorksAttachSeriesResponses = {
 
 export type WorksAttachSeriesResponse = WorksAttachSeriesResponses[keyof WorksAttachSeriesResponses];
 
+export type ContentData = {
+    body?: never;
+    path: {
+        /**
+         * Ticket
+         */
+        ticket: string;
+        /**
+         * Path
+         */
+        path: string;
+    };
+    query?: never;
+    url: '/content/{ticket}/{path}';
+};
+
+export type ContentErrors = {
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ContentError = ContentErrors[keyof ContentErrors];
+
+export type ContentResponses = {
+    /**
+     * entry
+     */
+    200: Blob | File;
+};
+
+export type ContentResponse = ContentResponses[keyof ContentResponses];
+
 export type HealthzData = {
     body?: never;
     path?: never;
