@@ -7,5 +7,5 @@
     "checkJs": false
   },
   "include": ["src", "scripts", "*.ts", "*.js"],
-  "exclude": ["src/service-worker"]
+  "exclude": ["src/service-worker.ts"]
 }
