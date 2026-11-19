@@ -1467,6 +1467,16 @@ title = "Ce bloc n'est plus disponible."
 action = "Rouvrez la page de la série dans votre liseuse : une version à jour y est proposée."
 cause = "Un fichier a changé depuis la création de cette version, la version a été purgée, ou votre accès a pris fin."
 
+[errors."not_acceptable"]
+title = "Cette page n'existe dans aucun format que votre appli accepte."
+action = "Autorisez JPEG ou PNG dans l'en-tête Accept de votre appli de lecture (image/jpeg, image/png ou image/*)."
+cause = "La page est dans un format que votre appli ne lit pas, et Shelfhold ne sait pas le convertir vers un format qu'elle accepte."
+
+[errors."rendition_busy"]
+title = "Trop de pages sont converties en même temps."
+action = "Réessayez dans quelques secondes : votre appli de lecture peut redemander la page."
+cause = "La conversion d'une page est lourde : Shelfhold n'en fait que quelques-unes à la fois."
+
 [errors."kosync_registration_disabled"]
 title = "La liseuse ne crée pas de compte."
 action = "Demandez à l'administrateur de Shelfhold un jeton d'appareil, puis saisissez-le dans les réglages de synchronisation de la liseuse."
@@ -2982,6 +2992,7 @@ results = "Résultats de la recherche"
 search_description = "Chercher dans la bibliothèque"
 complete = "{title} — Série complète"
 complete_in = "{title} — Série complète ({lang})"
+stream = "{title} — lecture page à page"
 excluded = "{count, plural, one {# chapitre exclu} other {# chapitres exclus}} : format non lisible sur liseuse ou fichier indisponible."
 
 [lite]
