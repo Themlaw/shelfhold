@@ -19316,6 +19316,46 @@ export type OpdsOpensearchResponses = {
     200: unknown;
 };
 
+export type OpdsPsePageData = {
+    body?: never;
+    path: {
+        /**
+         * Item Id
+         */
+        item_id: string;
+        /**
+         * Page
+         */
+        page: string;
+    };
+    query?: never;
+    url: '/opds/pse/{item_id}/{page}';
+};
+
+export type OpdsPsePageErrors = {
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * not-acceptable
+     */
+    406: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsPsePageError = OpdsPsePageErrors[keyof OpdsPsePageErrors];
+
+export type OpdsPsePageResponses = {
+    /**
+     * page
+     */
+    200: unknown;
+};
+
 export type OpdsRecentData = {
     body?: never;
     path?: never;
