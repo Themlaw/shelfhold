@@ -21,10 +21,10 @@ SOURCE = "sha256:" + "a" * 64
 OUT = "sha256:" + "b" * 64
 
 
-def test_the_revision_is_0108_the_head_on_0105() -> None:
+def test_the_revision_is_0108_the_head_on_0103() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0108"]  # the head is pinned here, by the newest
-    assert script.get_revision("0108").down_revision == "0105"
+    assert script.get_revision("0108").down_revision == "0103"
 
 
 def _insert(conn: sqlite3.Connection, **over: object) -> None:

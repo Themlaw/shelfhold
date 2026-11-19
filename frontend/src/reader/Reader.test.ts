@@ -61,6 +61,7 @@ const publication = (over: Pub = {}): Pub => ({
   pages: [1, 2, 3].map((n) => ({ index: n, href: `/content/TICKET/p${n}.jpg`, media_type: 'image/jpeg' })), // the server counts from 1
   reading_direction: 'ltr',
   scope: 'full',
+  series_id: '01HZZZZZZZZZZZZZZZZZZZZZZW',
   spine: [],
   title: 'Une série',
   ...over
@@ -68,6 +69,11 @@ const publication = (over: Pub = {}): Pub => ({
 
 let puts: Record<string, unknown>[] = [];
 let asked: string[] = [];
+let settingsPuts: Record<string, unknown>[] = [];
+let settingsAnswer: { direction: string | null; comfort: Record<string, string> } = {
+  direction: null,
+  comfort: {}
+};
 let publicationQuery: string | null = null;
 
 const serve = (pub: Pub) => [
@@ -78,6 +84,19 @@ const serve = (pub: Pub) => [
   http.put(`${BASE}/api/reader/positions`, async ({ request }) => {
     puts.push((await request.json()) as Record<string, unknown>);
     return HttpResponse.json({ conflict: null, position: null });
+  }),
+  http.get(`${BASE}/api/reader/settings`, () => HttpResponse.json(settingsAnswer)),
+  http.put(`${BASE}/api/reader/settings`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    settingsPuts.push(body);
+    // the server answers what is effective now, once the choice is written
+    const answer: { direction: string | null; comfort: Record<string, string> } = {
+      direction: settingsAnswer.direction,
+      comfort: { ...settingsAnswer.comfort }
+    };
+    if (body.kind === 'direction') answer.direction = String(body.value);
+    else answer.comfort[String(body.key)] = String(body.value);
+    return HttpResponse.json(answer);
   }),
   http.get(`${BASE}/content/TICKET/:name`, ({ params }) => {
     asked.push(String(params.name));
@@ -99,6 +118,8 @@ beforeEach(() => {
   document.cookie = 'csrf=tok123';
   puts = [];
   asked = [];
+  settingsPuts = [];
+  settingsAnswer = { direction: null, comfort: {} };
   publicationQuery = null;
   props = { carrierType: 'unit', carrierId: 'U1', scope: null, guard: async () => 'ok' };
   engineSpy.opened = [];
@@ -345,5 +366,85 @@ describe('the reader of images', () => {
     render(Page, { props });
     await waitFor(() => expect(screen.getByAltText('Page 1 sur 3')).toHaveAttribute('src'));
     expect(queries).toEqual(['', '?scope=full']);
+  });
+
+  // req: EF-LEC-006
+  it('asks the portée when a comfort setting changes, and writes the answer', async () => {
+    server.use(...serve(publication()));
+    const user = userEvent.setup();
+    render(Page, { props });
+    await screen.findByAltText('Page 1 sur 3');
+    await user.click(screen.getByRole('button', { name: 'Réglages de lecture' }));
+    await user.click(screen.getByRole('radio', { name: 'Pleine largeur' }));
+    expect(screen.getByText('Pour cet appareil ou partout ?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Partout' }));
+    await waitFor(() => expect(settingsPuts).toHaveLength(1));
+    expect(settingsPuts[0]).toMatchObject({
+      kind: 'comfort',
+      key: 'fit',
+      value: 'width',
+      scope: 'everywhere'
+    });
+    expect('device_id' in (settingsPuts[0] ?? {})).toBe(false);
+    // the other answer names the device
+    await user.click(screen.getByRole('radio', { name: 'Toute la page à l’écran' }));
+    await user.click(screen.getByRole('button', { name: 'Pour cet appareil' }));
+    await waitFor(() => expect(settingsPuts).toHaveLength(2));
+    expect(settingsPuts[1]).toMatchObject({
+      kind: 'comfort',
+      key: 'fit',
+      value: 'contain',
+      scope: 'device'
+    });
+    expect(typeof settingsPuts[1]?.device_id).toBe('string');
+  });
+
+  // req: EF-LEC-006
+  it('writes the direction for the series being read, and the book turns around', async () => {
+    server.use(...serve(publication()));
+    const user = userEvent.setup();
+    render(Page, { props });
+    await screen.findByAltText('Page 1 sur 3');
+    await user.click(screen.getByRole('button', { name: 'Réglages de lecture' }));
+    await user.click(screen.getByRole('radio', { name: 'De droite à gauche' }));
+    await waitFor(() => expect(settingsPuts).toHaveLength(1));
+    expect(settingsPuts[0]).toMatchObject({
+      kind: 'direction',
+      key: '01HZZZZZZZZZZZZZZZZZZZZZZW',
+      value: 'rtl',
+      scope: 'everywhere'
+    });
+    await user.keyboard('{Escape}'); // the panel closes, the focus goes back to the controls
+    await user.keyboard('{ArrowLeft}');
+    expect(await screen.findByAltText('Page 2 sur 3')).toBeInTheDocument();
+  });
+
+  // req: EF-LEC-011
+  it('reaches the first and the last page with Home and End', async () => {
+    server.use(...serve(publication()));
+    const user = userEvent.setup();
+    render(Page, { props });
+    await screen.findByAltText('Page 1 sur 3');
+    await user.keyboard('{ArrowRight}{ArrowRight}');
+    expect(await screen.findByAltText('Page 3 sur 3')).toBeInTheDocument();
+    await user.keyboard('{Home}');
+    expect(await screen.findByAltText('Page 1 sur 3')).toBeInTheDocument();
+    await user.keyboard('{End}');
+    expect(await screen.findByAltText('Page 3 sur 3')).toBeInTheDocument();
+  });
+
+  // req: EF-LEC-011
+  it('opens the help with ?, and Escape gives the focus back to the controls', async () => {
+    server.use(...serve(publication()));
+    const user = userEvent.setup();
+    render(Page, { props });
+    await screen.findByAltText('Page 1 sur 3');
+    await user.keyboard('?');
+    expect(await screen.findByRole('heading', { name: 'Aide du lecteur' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('heading', { name: 'Aide du lecteur' })).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Quitter la lecture' })).toHaveFocus()
+    );
   });
 });

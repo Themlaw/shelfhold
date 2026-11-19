@@ -58,6 +58,7 @@ EXEMPT_TABLES: Final[dict[str, str]] = {
     "provider_secret": _SEALED,
     "webhook_subscription": _SEALED, "webhook_outbox": _LOCK,
     "reading_position": _CATALOG, "reading_conflict": _CATALOG,
+    "reader_settings": _SETTING,  # M5 L13: closed values and identifiers, never a reference
     "remote_library": _SETTING, "resource_lock": _LOCK,
     "schedule": _LOCK, "secret_key": _SEALED, "series": _CATALOG, "series_member": _CATALOG,
     "session": _SEALED, "shelf": _SETTING, "shelf_destination": _SETTING,

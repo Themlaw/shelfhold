@@ -111,7 +111,9 @@ importés n'en ont pas, et un administrateur en pose un avec `shelfhold admin re
   `plugin_attestation`, `idempotency_key`).
 - **Aucune destination** : les cibles, leurs identifiants et les chemins de l'hôte restent chez lui.
 - **Ni file d'attente, ni journal, ni cache, ni index** : ce que l'instance reconstruit seule (le
-  inventaire des copies, l'index de recherche, les séries exportées d'une destination).
+  inventaire des copies, l'index de recherche, les séries exportées d'une destination). Les réglages
+  de lecture (`reader_settings`) restent dehors : l'export d'un membre les porte, celui de l'instance
+  non.
 - Les originaux des EPUB non fiables (`untrusted/`) et les copies de destination.
 
 Le test d'architecture `test_every_table_is_either_exported_or_left_out_with_a_reason` refuse une

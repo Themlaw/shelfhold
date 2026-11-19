@@ -141,6 +141,7 @@ from shelfhold.reading.application.lease import ProgressLease
 from shelfhold.reading.application.page_stream import PageStream
 from shelfhold.reading.application.positions import ReaderPositions
 from shelfhold.reading.application.publication import PublicationService, epub_spine_of
+from shelfhold.reading.application.settings import ReaderSettings
 from shelfhold.reading.bundle import SeriesBundles
 from shelfhold.reading.public import Kosync
 from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
@@ -501,9 +502,10 @@ def create_app(
             content_access,
             allowed_origin=_origin_of(resolved.public_url) if resolved.content_origin else None,
         ),
-        build_reader_router(  # M5 L06: what the reader opens; L07: where it is
+        build_reader_router(  # M5 L06: what the reader opens; L07: where it is; L13: how it reads
             lambda: PublicationService(engine, content_access()),
             lambda: ReaderPositions(engine, content_access(), clock.now, progress_lease()),
+            lambda: ReaderSettings(engine),
             lambda: ContinueReading(engine, content_access()),  # M5 L14: « Reprendre la lecture »
             lambda: kavita_open_url_of(engine),
         ),

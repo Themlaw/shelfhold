@@ -1104,6 +1104,19 @@ class PurgeService:
                 )
             )
         )
+        # the choices pinned to this Work (M5 L13): a setting is a row of the Work like a position
+        # is, named by its identifier — the Works of the plan's Units, read before the Units go
+        works = (
+            sa.select(catalog.edition.c.work_id)
+            .join(catalog.unit, catalog.unit.c.edition_id == catalog.edition.c.id)
+            .where(catalog.unit.c.id.in_(plan.unit_ids))
+        )
+        connection.execute(
+            sa.delete(reading.reader_setting).where(
+                reading.reader_setting.c.kind == "direction",
+                reading.reader_setting.c.key.in_(works),
+            )
+        )
         PurgeService._scrub_positions(connection, plan)
         connection.execute(
             sa.delete(export.export_item).where(export.export_item.c.id.in_(plan.items))

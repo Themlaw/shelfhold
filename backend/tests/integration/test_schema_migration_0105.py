@@ -26,7 +26,7 @@ HEAD_BEFORE = "0107"
 
 def test_the_revision_is_0105_the_head_on_0107() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert len(script.get_heads()) == 1  # the head is pinned by the newest migration test (0108)
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     assert script.get_revision("0105").down_revision == HEAD_BEFORE
 
 

@@ -189,6 +189,10 @@ OPEN = {
     "GET /api/reader/{carrier_type}/{carrier_id}/positions": "reader",
     "PUT /api/reader/positions": "reader",
     "POST /api/reader/conflicts/{conflict_id}/resolve": "reader",
+    # M5 L13: her reader settings; a series she may not see answers like an absent one, and no
+    # setting widens what parental control hides (`test_m5_l13_settings.py`)
+    "GET /api/reader/settings": "reader",
+    "PUT /api/reader/settings": "reader",
     # M4 L23: the official links of an Edition she may see; a hidden one is an absent one
     "GET /api/v1/editions/{edition_id}/support-author": "support_author",
     # M4 L18a: the collections and reading lists, made of the Works she may see and a list of her

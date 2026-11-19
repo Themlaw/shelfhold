@@ -475,6 +475,18 @@ covered_units = "The Units the file covered when the position was written (order
 read_units = "The Units a page-by-page traversal marked read at this position (a journal)."
 undone_units = "Marks a member undid, by Unit, with the time (UTC)."
 
+[tables.reader_settings]
+description = "The choices of one profile in the reader (M5 L13): a reading direction that may be pinned to a series, and the comfort of one device or of every one of them. One row per profile and place."
+[tables.reader_settings.columns]
+id = "Row identifier (ULID)."
+user_id = "The profile it belongs to (`user.id`); it goes with her."
+scope = "Where it applies: `device` (the device named in `device_id`) or `everywhere`."
+device_id = "The device a `device` choice is for; empty for `everywhere`, set if and only if the scope is `device`."
+kind = "The type of the choice, which picks its priority rule: `direction` or `comfort`."
+key = "What it is about: a series, or `default`, or the name of a comfort (1 to 64 characters)."
+value = "The chosen value, from a closed list (1 to 64 characters); never a title or a reference."
+updated_at = "When the choice last changed (UTC)."
+
 [tables.reading_conflict]
 description = "Two devices that diverged on one file: the reader is asked once which place to resume (M5 L07)."
 [tables.reading_conflict.columns]
