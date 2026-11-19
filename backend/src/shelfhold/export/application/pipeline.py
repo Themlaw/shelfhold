@@ -759,7 +759,11 @@ class ExportPipeline:
     def heal_mirror(self, destination_id: str) -> None:
         """The mirror of a destination projected again if a file is lost or out of date. A job of
         the maintenance window, since looking for a lost file reads the disk (ENF-OPS-014): a run
-        with nothing to write does not, a run with something to write heals it on its way."""
+        with nothing to write does not, a run with something to write heals it on its way.
+
+        A door like the others: the mirror is written on the disks, so a restored instance
+        refuses it here, before the best-effort healing below can swallow the refusal."""
+        self._require_writable()
         with self._engine.connect() as connection:
             ctx = load_context(connection, destination_id)
         self._heal_mirror(ctx)
