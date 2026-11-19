@@ -2,6 +2,7 @@
 
 from shelfhold.identity.adapters.destination_accounts import DestinationAccountStore
 from shelfhold.identity.adapters.factory import local_auth
+from shelfhold.identity.adapters.live_sessions import live_session_ids
 from shelfhold.identity.adapters.liveness import credential_is_live
 from shelfhold.identity.adapters.reader_scope import (
     FamilyProfile,
@@ -287,6 +288,7 @@ __all__ = [
     "family_search_mode",
     "family_source_keys",
     "holds_rate_right",
+    "live_session_ids",
     "local_auth",
     "normalise_secret",
     "reader_scope",
