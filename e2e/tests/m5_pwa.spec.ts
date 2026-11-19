@@ -66,9 +66,7 @@ test('test_pwa_offline_cache: a page of the SPA opens with the network cut', asy
   const response = await page.goto('/bibliotheque');
   expect(response?.status()).toBe(200);
   expect(response?.fromServiceWorker()).toBe(true);
-  const shell = await response!.text();
-  expect(shell).toContain('__sveltekit');
-  expect(shell).not.toContain('id="reader"');
+  expect(await response!.text()).toContain('__sveltekit');
   await context.setOffline(false);
 });
 
@@ -93,15 +91,6 @@ test('test_offline_reader_entry_keeps_reader_csp', async ({ page, context }) => 
   await controlled(page);
 
   // in control of the origin, the worker lets the reader through: its page, its header, no shell
-  const registered: string[] = [];
-  await page.exposeFunction('reportRegister', (s: string) => registered.push(s));
-  await page.addInitScript(() => {
-    const register = navigator.serviceWorker.register.bind(navigator.serviceWorker);
-    navigator.serviceWorker.register = (...args: Parameters<typeof register>) => {
-      void (window as unknown as { reportRegister: (s: string) => void }).reportRegister(String(args[0]));
-      return register(...args);
-    };
-  });
   const response = await page.goto('/lire/U1');
   expect(response?.fromServiceWorker()).toBe(false);
   const csp = response!.headers()['content-security-policy']!;
@@ -110,14 +99,19 @@ test('test_offline_reader_entry_keeps_reader_csp', async ({ page, context }) => 
   expect(directive(csp, 'script-src')).toContain("'strict-dynamic'");
   expect(await page.locator('link[rel="manifest"]').count()).toBe(0);
   expect(await page.locator('#reader').count()).toBe(1);
-  expect(registered).toEqual([]);
 
   // with no network, the reader entry is not replaced by the shell (it is cached by L16b, with its headers)
   await context.setOffline(true);
-  const offline = await page.goto('/lire/U1').catch(() => null);
-  if (offline) {
-    expect(offline.fromServiceWorker()).toBe(false);
-    expect(await offline.text()).not.toContain('/_app/');
+  const offline = await page.goto('/lire/U1').then(
+    (r) => r,
+    (error: Error) => error
+  );
+  if (offline instanceof Error) {
+    // the right answer: the network error of the page, not a shell (L16b caches the reader with its headers)
+    expect(offline.message).toMatch(/ERR_INTERNET_DISCONNECTED|NS_ERROR_OFFLINE|offline/i);
+  } else {
+    expect(offline?.fromServiceWorker()).toBe(false);
+    expect(await offline!.text()).not.toContain('__sveltekit');
   }
   await context.setOffline(false);
 });

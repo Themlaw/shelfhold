@@ -170,6 +170,10 @@ def test_manifest_and_service_worker_are_served_with_their_own_types(
     }
     assert worker.headers["cache-control"] == "no-cache"
     assert "service-worker-allowed" not in worker.headers  # the scope stays the origin root
+    # its global scope may read its own origin and nothing else, whatever the build holds
+    assert worker.headers["content-security-policy"].startswith(
+        "default-src 'none'; connect-src 'self'"
+    )
 
 
 @pytest.mark.req("EF-LEC-012")

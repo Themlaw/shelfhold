@@ -74,12 +74,16 @@ export function installPwa(scope: PwaScope, manifest: PrecacheEntry[], version: 
     .map((url) => url.href);
 
   async function precache(): Promise<void> {
+    if (!kept.includes(shell)) throw new Error('the manifest holds no shell: the worker is not installed');
     const cache = await scope.caches.open(name);
     try {
       await Promise.all(
         kept.map(async (href) => {
           const response = await scope.fetch(new Request(href, { cache: 'reload' }));
-          if (!response.ok) throw new Error(`the shell cannot be kept: ${href} answered ${response.status}`);
+          // a redirect (a proxy that asks to sign in, say) is not the page: it would be kept as the shell
+          if (response.status !== 200 || response.redirected) {
+            throw new Error(`the shell cannot be kept: ${href} answered ${response.status}${response.redirected ? ' after a redirect' : ''}`);
+          }
           await cache.put(href, response);
         })
       );

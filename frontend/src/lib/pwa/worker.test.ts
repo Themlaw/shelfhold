@@ -123,6 +123,23 @@ describe('the shell is kept at install', () => {
   });
 
   // req: EF-LEC-012
+  it('fails the install when the manifest holds no shell: a worker with no page is not installed', async () => {
+    const b = bench({ manifest: MANIFEST.filter((e) => e.url !== 'index.html') });
+    await expect(b.fire('install')).rejects.toThrow(/shell/);
+    expect(await b.caches.keys()).toEqual([]);
+  });
+
+  // req: EF-LEC-012, ENF-SEC-004
+  it('refuses a file the network answered by a redirect or a status other than 200', async () => {
+    for (const odd of [{ redirected: true, status: 200 }, { redirected: false, status: 206 }]) {
+      const b = bench();
+      b.scope.fetch.mockImplementation(async () => Object.assign(new Response('x', { status: odd.status === 206 ? 206 : 200 }), odd.redirected ? { redirected: true } : {}));
+      await expect(b.fire('install')).rejects.toBeInstanceOf(Error);
+      expect(await b.caches.keys()).toEqual([]); // no half shell
+    }
+  });
+
+  // req: EF-LEC-012
   it('drops the shell of an older version at activation and nothing else', async () => {
     const b = bench();
     await b.caches.open(`${SHELL_CACHE_PREFIX}v0`);
@@ -164,7 +181,7 @@ describe('what the worker answers', () => {
   });
 
   // req: EF-LEC-012, ENF-SEC-004
-  it.each(['/lire', '/lire/', '/lire/U1', '/lire/U1/page/3?x=1', '/%6cire/U1', '/%4Cire', '/lire%2FU1', '/a/../lire/U1', '/./lire'])(
+  it.each(['/lire', '/lire/', '/lire/U1', '/lire/U1/page/3?x=1', '/%6cire/U1', '/%4Cire', '/lire%2FU1', '/a/../lire/U1', '/./lire', '//lire', '//lire/U1'])(
     'test_offline_reader_entry_keeps_reader_csp: %s never gets the shell of the SPA, online or not',
     async (path) => {
       const b = bench();
@@ -225,6 +242,12 @@ describe('isReserved', () => {
   it('is decided on the decoded path, and a path that does not decode is reserved', () => {
     expect(isReserved('/lire/x')).toBe(true);
     expect(isReserved('/%6cire')).toBe(true);
+    // dot segments that survive until the path is decoded (the URL parser has already removed the others)
+    expect(isReserved('/x%2f..%2flire')).toBe(true);
+    expect(isReserved('/_app/..%2flire/U1')).toBe(true);
+    expect(isReserved('/a%2F%2e%2E%2Freader-entry/reader.html')).toBe(true);
+    expect(isReserved('//lire')).toBe(true);
+    expect(isReserved('/%256cire')).toBe(false); // decoded once, as the server does: `%6cire` is a screen of the SPA
     expect(isReserved('/%E0%A4%A')).toBe(true);
     expect(isReserved('/bibliotheque')).toBe(false);
     expect(isReserved('/lirex')).toBe(false); // a screen of the SPA that merely starts with the same letters

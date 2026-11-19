@@ -15,6 +15,10 @@ IMMUTABLE_PREFIXES = ("_app/immutable/", "reader-entry/assets/")
 READER_SEGMENT = "lire"  # the reader is its own page, under its own policy (ADR-0055)
 READER_DIR = "reader-entry"
 MANIFEST_TYPE = "application/manifest+json"  # the PWA manifest (L16a): not a guess of the platform
+WORKER_FILE = "service-worker.js"
+# The policy a worker script is served under is the one its global scope runs under: it may read its
+# own origin (the shell it keeps) and nothing else, whatever the code of the build says.
+WORKER_CSP = "default-src 'none'; connect-src 'self'"
 
 
 def mount_spa(app: FastAPI, build_dir: Path) -> bool:
@@ -24,6 +28,7 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
     if not index.is_file():
         return False
     csp = spa_csp(index.read_text(encoding="utf-8"))
+    worker = (root / WORKER_FILE).resolve()
     reader = (root / READER_DIR / "reader.html").resolve()  # compared with resolved paths below
     reader_policy = reader_csp(reader.read_text(encoding="utf-8")) if reader.is_file() else None
 
@@ -36,6 +41,8 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
             response.headers["Content-Security-Policy"] = csp
         elif file == reader and reader_policy is not None:
             response.headers["Content-Security-Policy"] = reader_policy
+        elif file == worker:
+            response.headers["Content-Security-Policy"] = WORKER_CSP
         return response
 
     @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
