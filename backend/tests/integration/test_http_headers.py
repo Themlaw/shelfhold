@@ -223,21 +223,14 @@ def test_offline_schema_export_still_works(tmp_path: Path) -> None:
     ("media_type", "filename"),
     [("image/svg+xml", "cover.svg"), ("text/html", "page.html")],
 )
-def test_svg_served_as_attachment_with_csp_sandbox(
-    tmp_path: Path, media_type: str, filename: str
-) -> None:
-    app = _app(tmp_path, with_spa=False)
-
-    @app.get("/untrusted", include_in_schema=False)
-    def untrusted() -> object:
-        return content_response(b"<svg onload='x()'/>", media_type=media_type, filename=filename)
-
-    with _client(app) as client:
-        response = client.get("/untrusted")
+def test_content_response_attachment_with_csp_sandbox(media_type: str, filename: str) -> None:
+    """The headers of `content_response` itself; the same proof on the real route, where a ticket
+    reads an SVG and an HTML page, is `test_svg_served_as_attachment_with_csp_sandbox` in
+    `test_l05a_content_route.py` (M5 L05a: the route exists, the entry `[[route_test]]` is gone)."""
+    response = content_response(b"<svg onload='x()'/>", media_type=media_type, filename=filename)
     assert response.headers["content-security-policy"].startswith("sandbox")
-    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
     assert response.headers["content-disposition"].startswith(f'attachment; filename="{filename}"')
-    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["cache-control"].startswith("private")
 
 
 @pytest.mark.req("ENF-SEC-004")
