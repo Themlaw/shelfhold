@@ -48,9 +48,6 @@ def _service(env: SyncEnv, monkeypatch: pytest.MonkeyPatch) -> Kosync:
     return Kosync(env.engine, lambda: None, env.clock.now)  # type: ignore[arg-type, return-value]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#378 second review: a percentage no float holds answers a 500"
-)
 @pytest.mark.req("EF-LEC-009", "EF-LEC-014")
 def test_a_percentage_no_float_can_hold_is_a_422_not_a_500(lab: World) -> None:
     """The route's own contract: « What is wrong with a field is a 422 that names no value, for
@@ -75,9 +72,6 @@ def test_a_percentage_no_float_can_hold_is_a_422_not_a_500(lab: World) -> None:
     assert positions(lab) == []
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#378 second review: the pass sends the server's kosync: name"
-)
 @pytest.mark.req("EF-LEC-009", "EF-USR-012")
 def test_the_pass_to_kavita_never_sends_the_servers_name_of_a_writer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

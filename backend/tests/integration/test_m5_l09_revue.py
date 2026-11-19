@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 
@@ -103,3 +104,23 @@ def test_epub_kosync_position_never_takes_the_device_id_of_the_web_reader() -> N
     assert _writer("a-token").startswith("kosync:")
     assert _writer("a-token") == _writer("A-TOKEN")  # a token has no case
     assert _writer("a-token") != _writer("another")
+
+
+def test_epub_pass_to_kavita_sends_the_device_word_or_a_neutral_name(tmp_path: Path) -> None:
+    """What leaves as `device_id` is `client_id` (the device's own word) or a neutral name, and a
+    name of the server (the column, or a `client_id` that imitates it) never."""
+    from tests.integration.test_m5_l09_kavita_epub import device_xpointer, epub_chapter
+    from tests.sync_env import sync_env
+
+    sent: list[object] = []
+    for extra in ({"client_id": "KOBO-1"}, {}, {"client_id": "kosync:abcdef0123456789"}):
+        with sync_env(tmp_path / str(len(sent))) as env:
+            reader = env.member("reader")
+            chapter = epub_chapter(env)
+            device_xpointer(
+                env, reader, chapter, 0.5, device="kosync:0123456789abcdef", extra=extra
+            )
+            assert env.sync(reader).pushed == 1
+            (write,) = env.fake.kosync_writes
+            sent.append(write["body"].get("device_id"))
+    assert sent == ["KOBO-1", "shelfhold", "shelfhold"]

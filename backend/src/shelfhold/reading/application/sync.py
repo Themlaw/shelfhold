@@ -824,6 +824,7 @@ def _chapter(
 
 _SHARE_UNIT: Final = 10_000  # a share is kept in the note as a whole number of ten-thousandths
 _SHARE_EPSILON: Final = 0.5 / _SHARE_UNIT
+_NEUTRAL: Final = "shelfhold"  # the `device_id` of a device that said none
 
 
 @dataclass(frozen=True)
@@ -831,7 +832,7 @@ class _EpubPlace:
     share: float
     xpointer: str
     device: str
-    device_id: str | None
+    device_id: str
 
 
 def _epub_chapter(
@@ -929,7 +930,6 @@ def _pending_epub(
                 position.c.content_hash,
                 position.c.locator,
                 position.c.percent,
-                position.c.device_id,
             )
             .where(
                 position.c.user_id == user_id,
@@ -952,8 +952,17 @@ def _pending_epub(
     return _EpubPlace(
         round(float(row.percent), 4), text,
         device if isinstance(device, str) and device else "Shelfhold",
-        row.device_id if isinstance(row.device_id, str) else None,
+        _said_device_id(row.locator),
     )  # fmt: skip
+
+
+def _said_device_id(locator: dict[str, Any]) -> str:
+    """What leaves for Kavita as the device's `device_id`: the device's own word (`client_id`), or a
+    neutral name when it said none. Never the `device_id` column of a kosync write, which is the
+    server's name of the writer (`kosync:` and a digest of the token): that name is never shown,
+    and Kavita gives it to every reader that syncs against the member's account."""
+    said = locator.get("client_id")
+    return said if isinstance(said, str) and said and not said.startswith("kosync:") else _NEUTRAL
 
 
 def _record_pull(
