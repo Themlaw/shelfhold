@@ -118,38 +118,54 @@ def _record(row: Any) -> SelectionRecord:
     return SelectionRecord(row.id, row.name, query, row.created_at, row.updated_at)
 
 
-def _reading_state(user_id: str, states: tuple[str, ...]) -> sa.ColumnElement[bool]:
-    """The state of a Work for this profile, from her own Units (`reading_progress`):
+def _reading_state(
+    scope: ReaderScope, user_id: str, states: tuple[str, ...]
+) -> sa.ColumnElement[bool]:
+    """The state of a Work for this profile, from her own Units (`reading_progress`), and only
+    through the Editions she may see (`visible_editions_clause`, as for a shelf or a language):
     `unread` (no Unit opened), `in_progress` (one opened, no Edition fully read), `read` (every
-    Unit of one Edition read). A Work with no Unit has not been opened."""
-    work = catalog.work.c
+    readable Unit of one Edition read). A Work with no Unit has not been opened. A Unit nobody can
+    read any more (`removed` or `stubbed` at the source, `source_removed`, left out by the follow)
+    does not keep an Edition from being read; one still to come (`known`, `wanted`, `queued`)
+    does."""
+    work, edition = catalog.work.c, catalog.edition.c
     mine = (
         sa.select(_PROGRESS.c.unit_id, _PROGRESS.c.state)
         .where(_PROGRESS.c.user_id == user_id)
         .cte("selection_progress")
     )
-    unit_a, edition_a = catalog.unit.alias("sel_unit_a"), catalog.edition.alias("sel_edition_a")
+    unit_a = catalog.unit.alias("sel_unit_a")
     started = (
         sa.select(sa.literal(1))
-        .select_from(unit_a.join(edition_a, edition_a.c.id == unit_a.c.edition_id))
+        .select_from(catalog.edition.join(unit_a, unit_a.c.edition_id == edition.id))
         .where(
-            edition_a.c.work_id == work.id,
+            edition.work_id == work.id,
+            visible_editions_clause(scope),
             sa.exists().where(
                 mine.c.unit_id == unit_a.c.id, mine.c.state.in_(("read", "in_progress"))
             ),
         )
         .exists()
     )
-    edition_b = catalog.edition.alias("sel_edition_b")
     unit_b, unit_c = catalog.unit.alias("sel_unit_b"), catalog.unit.alias("sel_unit_c")
+
+    def readable(unit: Any) -> sa.ColumnElement[bool]:
+        return sa.and_(
+            unit.c.availability.not_in(("removed", "stubbed")),
+            unit.c.state != "source_removed",
+            sa.not_(unit.c.follow_suppressed),
+        )
+
     fully_read = (
         sa.select(sa.literal(1))
-        .select_from(edition_b)
+        .select_from(catalog.edition)
         .where(
-            edition_b.c.work_id == work.id,
-            sa.exists().where(unit_b.c.edition_id == edition_b.c.id),
+            edition.work_id == work.id,
+            visible_editions_clause(scope),
+            sa.exists().where(unit_b.c.edition_id == edition.id, readable(unit_b)),
             ~sa.exists().where(
-                unit_c.c.edition_id == edition_b.c.id,
+                unit_c.c.edition_id == edition.id,
+                readable(unit_c),
                 ~sa.exists().where(mine.c.unit_id == unit_c.c.id, mine.c.state == "read"),
             ),
         )
@@ -173,7 +189,7 @@ def conditions(
     work, edition = catalog.work.c, catalog.edition.c
     found: list[sa.ColumnElement[bool]] = []
     if query.reading_state:
-        found.append(_reading_state(user_id, query.reading_state))
+        found.append(_reading_state(scope, user_id, query.reading_state))
     if query.kind:
         found.append(work.kind.in_(query.kind))
     if query.shelf:

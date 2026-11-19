@@ -53,11 +53,6 @@ def _read(c: sa.Connection, user_id: str, units: list[str]) -> None:
     )  # fmt: skip
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#383 C1 : "
-    "l'état de lecture d'un enfant se décide aussi par une Édition qu'elle ne voit pas",
-)
 def test_reading_state_of_a_child_is_decided_by_the_editions_she_sees(world: World) -> None:
     """`ok` est visible de l'enfant par ses Éditions `ok` et `ok_second` ; `ok_reserved` (étagère
     réservée à un autre profil) lui est cachée. Elle a lu toutes les Unités de `ok_reserved` (lu
@@ -82,10 +77,6 @@ def test_reading_state_of_a_child_is_decided_by_the_editions_she_sees(world: Wor
     assert ok in kid_sees(["unread"])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#383 C2 : saved_selection n'est ni exportée ni exclue de l'export complet",
-)
 def test_the_full_export_decides_about_saved_selections() -> None:
     """La table est une donnée du membre, comme `collection` (exportée) : l'export complet doit
     la porter, ou dire pourquoi il la laisse. Aujourd'hui elle n'est dans aucune des deux listes,
@@ -95,10 +86,6 @@ def test_the_full_export_decides_about_saved_selections() -> None:
     assert "saved_selection" in set(EXPORTED_TABLES) | set(EXCLUDED_TABLES)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#383 C3 : une Unité retirée à la source empêche à jamais l'état « lu »",
-)
 def test_a_unit_removed_upstream_never_keeps_a_work_from_being_read(world: World) -> None:
     """L'adulte a lu les deux Unités lisibles de l'Édition `adult_shelf` ; la troisième a été
     retirée à la source (`availability = removed`, `state = source_removed`) : personne ne pourra
