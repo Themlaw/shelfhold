@@ -134,9 +134,8 @@ symbols = [
 
 [[allow]]
 category = "unwired-m5-renditions"
-reason = "2026-11-18 (M5 L20a): the conversion of an image for a client that lacks its format (`RenditionService`, bounded by header, decoded only in the network-less worker, cached by hash, erased by `purge --now`) and the pure rules around it are written and tested, and the purge already reaches the rows and files. No route serves a page yet: the callers are the page-by-page stream of L18 (`pse:stream`, format chosen by `Accept`) and the KEPUB link of L20b, which share this table and this cache."
-until = "M5"  # settled by L18 (page stream: the image conversion); L20b serves the KEPUB through the service
+reason = "2026-11-19 (M5 L18): the page-by-page stream (`pse:stream`) now makes and reads renditions (`render`, `read`). One method of `RenditionService` has no production caller: the method form of `collect_orphans` (the sweep is called by the window job through the module function)."
+until = "M5"  # L20b wires the sweep method
 symbols = [
-  "shelfhold.library.application.renditions:RenditionService.cached",
   "shelfhold.library.application.renditions:RenditionService.collect_orphans",
 ]

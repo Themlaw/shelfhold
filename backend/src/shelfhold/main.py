@@ -137,6 +137,7 @@ from shelfhold.reading.application.content_access import (
 )
 from shelfhold.reading.application.kepub_delivery import KepubDelivery
 from shelfhold.reading.application.lease import ProgressLease
+from shelfhold.reading.application.page_stream import PageStream
 from shelfhold.reading.application.positions import ReaderPositions
 from shelfhold.reading.application.publication import PublicationService, epub_spine_of
 from shelfhold.reading.bundle import SeriesBundles
@@ -363,7 +364,11 @@ def create_app(
         )  # fmt: skip
 
     @cache
-    def renditions() -> RenditionService:  # M5 L20b: one, its thread bound is the instance's
+    def page_stream() -> PageStream:  # M5 L18: the pages of an exported volume, by device token
+        return PageStream(engine, content_access())
+
+    @cache
+    def renditions() -> RenditionService:  # M5 L18: an image for a client that lacks its format
         return RenditionService(
             engine, resolved.data_dir, clock, tombstones=LazyTombstones(composition)
         )
@@ -500,7 +505,13 @@ def create_app(
             lambda: ReaderPositions(engine, content_access(), clock.now, progress_lease()),
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
-            lambda: engine, thumbnails, bundles, clock.now, kepubs
+            lambda: engine,
+            thumbnails,
+            bundles,
+            clock.now,
+            page_stream,  # M5 L18: OPDS-PSE, a page at a time
+            renditions,
+            kepubs,
         ),
         build_lite_router(  # M5 L17a: pages with no script, behind a cookie a token's secret opened
             lambda: engine, thumbnails, bundles, kepubs

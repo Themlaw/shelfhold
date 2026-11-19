@@ -10,6 +10,7 @@ from typing import Literal
 ATOM = "http://www.w3.org/2005/Atom"
 OPDS = "http://opds-spec.org/2010/catalog"
 OPENSEARCH = "http://a9.com/-/spec/opensearch/1.1/"
+PSE = "http://vaemendis.net/opds-pse/ns"
 FEED_TYPE = "application/atom+xml"
 ENTRY_TYPE = "application/atom+xml;type=entry;profile=opds-catalog"
 
@@ -39,6 +40,7 @@ class Link:
     type: str | None = None
     title: str | None = None
     length: int | None = None
+    pse_count: int | None = None  # OPDS-PSE: the number of pages of a `pse:stream` link
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,8 @@ def _link(link: Link) -> str:
         attrs["title"] = link.title
     if link.length is not None:
         attrs["length"] = str(link.length)
+    if link.pse_count is not None:
+        attrs["pse:count"] = str(link.pse_count)
     return "<link" + "".join(f' {k}="{_esc(v)}"' for k, v in attrs.items()) + "/>"
 
 
@@ -89,7 +93,8 @@ def build_feed(
     row is a leak: the caller gives the visible count or nothing)."""
     del kind  # the kind lives in the `Content-Type` and in the `type` of the links that point here
     parts = [
-        f'<feed xmlns="{ATOM}" xmlns:opds="{OPDS}" xmlns:opensearch="{OPENSEARCH}">',
+        f'<feed xmlns="{ATOM}" xmlns:opds="{OPDS}" xmlns:opensearch="{OPENSEARCH}"'
+        f' xmlns:pse="{PSE}">',
         _node("id", feed_id),
         _node("title", title),
         _node("updated", updated),

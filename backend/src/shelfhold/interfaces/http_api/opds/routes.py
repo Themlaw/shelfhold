@@ -65,10 +65,17 @@ from shelfhold.interfaces.http_api.opds.feed import (
     opensearch_description,
 )
 from shelfhold.interfaces.http_api.opds.links import Paths, mount_prefix, safe_filename
+from shelfhold.interfaces.http_api.opds.pse import STREAM_REL, STREAM_TYPE, add_pse_routes
 from shelfhold.interfaces.http_api.problems import ProblemError, language_from_headers
 from shelfhold.interfaces.http_api.thumbnails import thumbnail_response
-from shelfhold.library.public import RenditionBusyError, ThumbnailService, cover_hash
+from shelfhold.library.public import (
+    RenditionBusyError,
+    RenditionService,
+    ThumbnailService,
+    cover_hash,
+)
 from shelfhold.reading.application.kepub_delivery import KepubDelivery, KepubNotFoundError
+from shelfhold.reading.application.page_stream import PageStream, StreamBudget
 
 __all__ = ["build_opds_router"]
 
@@ -139,9 +146,12 @@ def build_opds_router(
     get_thumbnails: Callable[[], ThumbnailService],
     get_bundles: Callable[[], SeriesBundleProvider | None],
     now: Callable[[], datetime],
+    get_streams: Callable[[], PageStream],
+    get_renditions: Callable[[], RenditionService],
     get_kepubs: Callable[[], KepubDelivery] | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/opds", tags=["opds"])
+    add_pse_routes(router, get_streams=get_streams, get_renditions=get_renditions)
 
     def _stamp() -> str:
         return now().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -551,6 +561,28 @@ def build_opds_router(
                             ),
                         ],
                         summary=notice,
+                    )
+                )
+        budget = StreamBudget()  # one bound for the whole feed, not one per Edition
+        for edition in editions:  # a stream is offered for what the profile sees now, nothing else
+            for stream in get_streams().offers(principal.user_id, edition.edition_id, budget):
+                entries.append(
+                    Entry(
+                        f"urn:shelfhold:stream:{stream.item_id}",
+                        t_lang(
+                            "opds.stream",
+                            language=lang,
+                            title=chr(32).join(filter(None, (title, stream.number))),
+                        ),
+                        _stamp(),
+                        [
+                            Link(
+                                STREAM_REL,
+                                paths.pse(stream.item_id),
+                                STREAM_TYPE,
+                                pse_count=stream.count,
+                            )
+                        ],
                     )
                 )
         offered = (  # M5 L20b: a KEPUB for a Kobo, of the volumes this profile may be given

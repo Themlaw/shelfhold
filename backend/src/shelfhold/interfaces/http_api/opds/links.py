@@ -72,6 +72,10 @@ class Paths:
     def kepub(self, item_id: str) -> str:
         return self._with(f"/kepub/{item_id}")
 
+    def pse(self, item_id: str) -> str:
+        """The template of a `pse:stream` link: the client puts the page number (from 0) in it."""
+        return f"{self.base}/pse/{item_id}/{{pageNumber}}"
+
     def bundle(self, version_id: str) -> str:
         return self._with(f"/bundles/{version_id}")
 

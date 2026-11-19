@@ -1,6 +1,7 @@
 """What the interfaces and the composition root may use from the library context."""
 
 from shelfhold.infrastructure.content_trust import UntrustedEntryError
+from shelfhold.infrastructure.imaging import ImageRejected
 from shelfhold.library.adapters.epub_derivative import (
     EpubIngested,
     Regenerated,
@@ -239,6 +240,14 @@ from shelfhold.library.domain.irreplaceable import (
     ConfirmationRequiredError,
     confirmation_phrase,
 )
+from shelfhold.library.domain.rendition import (
+    DECODABLE_SOURCES,
+    KIND_MEDIA,
+    RemoteProcessorRefusedError,
+    RenditionParams,
+    UnsupportedSourceError,
+    source_format,
+)
 from shelfhold.library.domain.safeguard_rules import (
     NO_KAVITA_COPY,
     NOT_DOWNLOADED,
@@ -354,6 +363,7 @@ __all__ = [
     "CANDIDATE_AFTER",
     "CONFIRMATION_CODE",
     "CONTENT_HASH_BY",
+    "DECODABLE_SOURCES",
     "DEFAULT_BATCH_BYTES",
     "DEFAULT_BATCH_UNITS",
     "DEFAULT_MAX_RECEIVED_BYTES",
@@ -367,6 +377,7 @@ __all__ = [
     "GIB",
     "INDEX_NAME",
     "KEPT_PREFIX",
+    "KIND_MEDIA",
     "NOT_DOWNLOADED",
     "NO_KAVITA_COPY",
     "OPTION_OFF",
@@ -414,6 +425,7 @@ __all__ = [
     "ExportVerdict",
     "FileImpact",
     "Hash",
+    "ImageRejected",
     "ImportFolder",
     "ImportFolderOverlapError",
     "ImportItem",
@@ -457,7 +469,9 @@ __all__ = [
     "Regenerated",
     "RegenerationBlockedError",
     "ReleaseOutcome",
+    "RemoteProcessorRefusedError",
     "RenditionBusyError",
+    "RenditionParams",
     "RenditionService",
     "ReneutralizePlan",
     "ReneutralizeReport",
@@ -498,6 +512,7 @@ __all__ = [
     "UnitJson",
     "UnitJsonCorruptError",
     "UnknownSourceError",
+    "UnsupportedSourceError",
     "UntrustedEntryError",
     "UntrustedEpubStore",
     "UpstreamPurge",
@@ -619,6 +634,7 @@ __all__ = [
     "safe_to_clean",
     "servable_epub",
     "sniff_kind",
+    "source_format",
     "space_by_shelf",
     "spans_of",
     "store_unit_ids",

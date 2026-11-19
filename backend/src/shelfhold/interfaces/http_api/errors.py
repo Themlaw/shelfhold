@@ -20,8 +20,9 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("client_ts_in_future", 422, "user"),  # M5 L07: a clock set ahead of the server's
     ErrorCode("client_ts_out_of_range", 422, "user"),  # M5 L07: a date that cannot be a reading
     ErrorCode("conflict_stale", 409, "user"),  # M5 L07: a later position overtook the proposal
+    ErrorCode("not_acceptable", 406, "user"),  # M5 L18: no image format the client takes
+    ErrorCode("rendition_busy", 429, "user"),  # M5 L18: too many pages converted at a time
     ErrorCode("bundle_busy", 429, "user"),  # M4 L49a: too many blocks at a time
-    ErrorCode("rendition_busy", 429, "user"),  # M5 L20b: no thread free to make a KEPUB
     ErrorCode("progress_busy", 503, "user"),  # M5 L22a: a job is rewriting the Work: retry
     ErrorCode("kosync_registration_disabled", 402, "user"),  # M4 L47: accounts are Shelfhold's
     ErrorCode("precondition_failed", 412, "user"),
