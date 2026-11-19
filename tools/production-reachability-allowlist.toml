@@ -39,13 +39,10 @@ symbols = [
 
 [[allow]]
 category = "unwired-m5"
-reason = "2026-11-14 (M3 L56, D9): `content_response` serves untrusted content under a sandbox (B1). M3 serves no content: reading goes through Kavita, and the reader of Shelfhold is M5's. Redated M5 in writing (docs/decisions/M3.md). The diagnostic bundle is wired by its CLI (M2 L30) and by its download over HTTP (M3 L46); `attachment_disposition` left this entry with M3 L40. The `?since=` tokens left this entry with M3 L11."
-until = "M5"  # settled by M5 (reader content route)
-# 2026-11-18 (M5 L05b): `CONTENT_FILTER` (`content-filter@2`, the `filter` field of a stored locator)
-# is written by the neutralizer; its first reader is the locator of L07 (reading positions).
+reason = "2026-11-18 (M5 L05b): `CONTENT_FILTER` (`content-filter@2`, the `filter` field of a stored locator) is written by the neutralizer; its first reader is the locator of L07 (reading positions). `content_response` left this entry with M5 L05a (the reader content route)."
+until = "M5"  # settled by M5 L07 (reading positions)
 symbols = [
   "shelfhold.infrastructure.content_trust.xhtml_neutralizer:CONTENT_FILTER",
-  "shelfhold.interfaces.http_api.content:content_response",
 ]
 
 [[allow]]
@@ -86,14 +83,6 @@ tests = [
   "backend/tests/integration/test_review_pr41.py::test_idempotency_actor_is_one_credential",
   "backend/tests/unit/test_logging.py::test_unhandled_http_exception_and_library_logs_are_json_with_request_id",
   "backend/tests/integration/test_child_surfaces.py::test_meta_test_counts_mounts_and_websockets",
-]
-
-[[route_test]]
-category = "unwired-m5"
-reason = "2026-11-14 (M3 L56, D9): content_response (B1) has no route before the reader of M5: the sandbox/attachment headers are proved on a route declared by the test."
-until = "M5"  # settled by M5 (reader content route)
-tests = [
-  "backend/tests/integration/test_http_headers.py::test_svg_served_as_attachment_with_csp_sandbox",
 ]
 
 [[allow]]
@@ -149,4 +138,14 @@ reason = "2026-11-17 (M4 L24): `Deprecation` builds the window during which an e
 until = "M5"  # settled by M5 (first event shape change)
 symbols = [
   "shelfhold.integrations.webhooks.catalogue:Deprecation",
+]
+
+[[allow]]
+category = "m5-l20b-kepub-core"
+reason = "2026-11-18 (M5 L20b, part 1): the pure-Python KEPUB transform is delivered before its callers; the OPDS acquisition link, /lite and the rendition cache that call it come with L20a and L17a (docs/decisions/M5.md, L20b)."
+until = "M5"  # settled by L20b part 2, once L20a and L17a are merged
+symbols = [
+  "shelfhold.library.application.kepub:KepubError",
+  "shelfhold.library.application.kepub:_Serializer",
+  "shelfhold.library.application.kepub:kepubify",
 ]

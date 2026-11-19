@@ -25,6 +25,8 @@ Si vous avez besoin d'atteindre l'API à distance (clé d'API, outil tiers) :
    la version, ce qui révèle cette version. Pour une instance non modifiée, vous pouvez faire
    pointer `SHELFHOLD_SOURCE_URL` vers le dépôt sans tag.
 
+Pour servir le contenu des livres depuis un sous-domaine, voir [l'origine du contenu](origine-du-contenu.md).
+
 ## Forward-auth (désactivé par défaut)
 
 Si un proxy d'authentification (Authelia, Authentik…) identifie déjà vos lecteurs, Shelfhold peut
