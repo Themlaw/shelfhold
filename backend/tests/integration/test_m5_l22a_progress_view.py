@@ -102,7 +102,8 @@ def test_the_fraction_of_a_partial_cover_is_bounded_by_the_unit_not_by_the_cover
     """Borders of the fraction (#386, C3): the divisor is the larger of the span of a file that
     covers the Unit whole and the cover's own span. Smaller cover (5 pages of 10): the end of it is
     4/9 of the Unit, behind page 6 of the whole file. Larger cover (30 pages against 10):
-    page 25 of it is 24/29 of the span it is divided by (never above 1.0), behind page 9 of the whole file."""
+    page 25 of it is 24/29 of the span it is divided by (never above 1.0), behind page 9 of the
+    whole file."""
     whole_hash = "sha256:" + "d6" * 32
     for cover_pages, whole_page, partial_page, expected in (
         (5, 6, 5, "whole"),
