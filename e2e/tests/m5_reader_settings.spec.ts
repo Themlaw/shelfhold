@@ -145,7 +145,7 @@ test('test_keyboard_shortcuts_reader', async ({ page }) => {
   await page.keyboard.press('ArrowLeft');
   await expect(status(page)).toHaveText('Page 2 sur 4');
   await page.keyboard.press('ArrowRight');
-  await expect(status(page)).toHaveText('Page 2 sur 4');
+  await expect(status(page)).toHaveText('Page 1 sur 4');
 });
 
 // req: EF-LEC-006
