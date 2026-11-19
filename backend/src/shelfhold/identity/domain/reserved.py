@@ -115,12 +115,26 @@ NO_REAUTH_EFFECTS = frozenset(
     }  # not ACCEPTS_ADMIN_RISK: it takes a third party's admin password (L38 review)
 )
 
-# M5 L04 (#362 review MAJ-1): what adds a way in that outlives the session (a passkey, a key or a
-# token, a link to the provider). Whoever knows the account's credentials at the provider can open
-# a session through it and sign in there again to make it fresh, so for these a freshness proved
-# by the provider alone is refused when the account has a local factor to prove itself with.
+# M5 L04 (#362 review MAJ-1 and the second review): what adds a way in that outlives the session.
+# Whoever knows the account's credentials at the provider can open a session through it and sign in
+# there again to make it fresh, so for these a freshness proved by the provider alone is refused
+# when the account has a local factor to prove itself with. The rule hangs on the EFFECTS of the
+# catalogue, not on a list of actions to keep up to date:
+#   ENROLS_PASSKEY, LINKS_IDENTITY   a passkey, a link to the provider
+#   MANAGES_CREDENTIALS              keys, sessions of others, the recovery kit
+#   TOUCHES_SECRETS                  a secret shown once or pasted: device tokens (issue, rotate),
+#                                    a Kavita key, a notification destination
+#   MANAGES_PROFILES                 a new account, a role (an admin is a way in for good)
+# A new action that carries one of them is covered with no change here; a new effect that creates
+# an access has to be added, which `test_every_durable_action_refuses_a_provider_proof` pins.
 DURABLE_ACCESS_EFFECTS = frozenset(
-    {Effect.ENROLS_PASSKEY, Effect.MANAGES_CREDENTIALS, Effect.LINKS_IDENTITY}
+    {
+        Effect.ENROLS_PASSKEY,
+        Effect.MANAGES_CREDENTIALS,
+        Effect.LINKS_IDENTITY,
+        Effect.TOUCHES_SECRETS,
+        Effect.MANAGES_PROFILES,
+    }
 )
 
 DEFAULT_RESERVED_ROLES = frozenset({"admin"})

@@ -73,9 +73,6 @@ def proved_at_the_provider(world: World, browser: TestClient) -> None:
 # --- a device token, the durable way the rule does not know (device_token.issue) ----------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="L04 : un jeton d'appareil se crée sur la seule preuve du fournisseur"
-)
 def test_oidc_a_provider_proof_pairs_no_e_reader_of_an_account_with_a_password(
     world: World,
 ) -> None:
@@ -91,9 +88,6 @@ def test_oidc_a_provider_proof_pairs_no_e_reader_of_an_account_with_a_password(
     assert "oidc" not in pairing.json()["reauth_methods"]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="L04 : la rotation d'un jeton d'appareil aussi se fait chez le fournisseur"
-)
 def test_oidc_a_provider_proof_rotates_no_e_reader_secret_of_its_account(world: World) -> None:
     """The holder paired her e-reader from her own password session. Whoever holds her account
     at the provider signs in here, makes that same session fresh, and rotates the token: the new
@@ -111,9 +105,6 @@ def test_oidc_a_provider_proof_rotates_no_e_reader_secret_of_its_account(world: 
 # --- a new account or an admin role, durable too (profile.create, profile.update) --------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="L04 : un compte d'administrateur s'écrit sur la preuve du fournisseur"
-)
 def test_oidc_a_provider_proof_creates_no_admin_profile(world: World) -> None:
     """Whoever holds an administrator's account at the provider — the account here having a
     password, which is what `session.proof` is about — signs in, proves it fresh there, and
@@ -132,9 +123,6 @@ def test_oidc_a_provider_proof_creates_no_admin_profile(world: World) -> None:
     assert "oidc" not in created.json()["reauth_methods"]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="L04 : le rôle d'administrateur se donne sur la seule preuve du fournisseur"
-)
 def test_oidc_a_provider_proof_promotes_no_one_to_admin(world: World) -> None:
     """Same session, same proof: promoting a member hands their existing password the
     administration of the instance, for good. `MANAGES_PROFILES` is fresh in every profile

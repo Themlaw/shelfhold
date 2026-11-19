@@ -130,10 +130,9 @@ conforme, `prompt=login` le force toujours.
 ouverte chez le fournisseur, pas d'un compte du fournisseur compromis : qui connaît les identifiants
 de la personne chez lui ouvre une session et la rend fraîche. Shelfhold garde donc la preuve qui a
 rendu la session fraîche (`session.proof`, `local` ou `provider`). Ce qui ajoute un accès qui
-survit à la session (enregistrer une clé d'accès, créer une clé d'API ou un jeton, lier une
-identité, gérer les identifiants) **refuse** une fraîcheur prouvée par le fournisseur seul quand le
+survit à la session (enregistrer une clé d'accès, créer une clé d'API ou un jeton, **appairer ou changer le secret d'une liseuse**, lier une identité, gérer les identifiants, **créer un profil ou changer un rôle**, coller un secret comme une clé Kavita) **refuse** une fraîcheur prouvée par le fournisseur seul quand le
 compte a un **mot de passe ou une clé d'accès** : la personne les redonne ici (le 401 ne propose plus
-`oidc`). Délier, en revanche, n'ajoute aucun accès et se contente de la preuve du fournisseur.
+`oidc`). La règle suit les effets des actions (secrets, comptes, identifiants), pas une liste de noms : une action nouvelle du même genre la suit. Délier, en revanche, n'ajoute aucun accès et se contente de la preuve du fournisseur.
 
 **Compte sans mot de passe ni clé d'accès.** Le fournisseur est sa seule autorité : sa preuve est
 acceptée pour ces actions (sinon le compte ne pourrait jamais ajouter de clé d'accès). Qui compromet
