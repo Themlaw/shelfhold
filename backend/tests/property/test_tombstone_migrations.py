@@ -78,7 +78,7 @@ def test_tombstone_survives_every_identity_migration(tmp_path: Path, migration: 
         assert migrated.check(again, root_id=env.library.root_id).blocked
     elif migration == "content_hash_v2":
         reuploaded = VariantRef(
-            "suwayomi", "4422", "/chapter/new-upload-id",
+            "suwayomi", "src-series-qz", "/chapter/new-upload-id",
             (ContentHash("content-hash@2", "sha256:" + "11" * 32),),
         )  # fmt: skip
 

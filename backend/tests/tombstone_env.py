@@ -32,7 +32,7 @@ TITLE = "The Secret Garden of Velvet Thorns"
 SLUG = "the-secret-garden-of-velvet-thorns"
 HASH = "sha256:" + "4f" * 32
 VARIANT = VariantRef(
-    "suwayomi", "4422", f"/chapter/{SLUG}-ch-7", (ContentHash("content-hash@1", HASH),)
+    "suwayomi", "src-series-qz", f"/chapter/{SLUG}-ch-7", (ContentHash("content-hash@1", HASH),)
 )
 PLACE = PlaceRef.of(
     {
@@ -46,7 +46,7 @@ PLACE = PlaceRef.of(
     number_raw="7",
     part="",
 )
-SERIES = SeriesBindingRef("suwayomi", "4422", f"/manga/{SLUG}")
+SERIES = SeriesBindingRef("suwayomi", "src-series-qz", f"/manga/{SLUG}")
 JOURNAL = ".shelfhold/tombstones"
 WORK = "01J0000000000000000000WORK"
 # The reserved waiver of the lost keyring, from the local CLI as an admin.

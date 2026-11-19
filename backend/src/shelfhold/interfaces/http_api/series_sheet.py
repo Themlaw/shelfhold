@@ -113,6 +113,7 @@ class SheetOut(BaseModel):
     merges: list[SheetMergeOut]
     attach: SheetAttachOut | None
     relations: list[SheetRelationOut]  # M4 L19: related Works, read from this Work's side
+    first_unit_id: str | None  # M5 L10: the Unit the "Lire" button opens, if one has a file
     can: SheetCanOut
 
 

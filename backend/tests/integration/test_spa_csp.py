@@ -229,3 +229,34 @@ def test_mount_spa_reports_no_build_without_raising(tmp_path: Path) -> None:
     from fastapi import FastAPI
 
     assert mount_spa(FastAPI(), tmp_path / "missing") is False
+
+
+def _with_images(sources: str) -> str:
+    return _csp(script=sha(BOOT)) + f"; img-src {sources}"
+
+
+@pytest.mark.req("ENF-SEC-004")
+def test_the_policy_served_lets_the_reader_draw_blob_images_and_nothing_else(
+    settings: Settings, tmp_path: Path
+) -> None:
+    build = _build(tmp_path, _page(_with_images("'self' blob:")))
+    with _client(settings, build) as client:
+        response = client.get("/lire/unit/01HZZZZZZZZZZZZZZZZZZZZZZA")
+    csp = response.headers["content-security-policy"]
+    assert _directive(csp, "img-src") == ["'self'", "blob:"]
+    assert "data:" not in csp and "*" not in csp.replace("*/", "")
+    assert _directive(csp, "script-src").count("blob:") == 0  # no script from a blob: either
+    assert _directive(csp, "default-src") == ["'self'"]
+
+
+@pytest.mark.req("ENF-SEC-004")
+@pytest.mark.parametrize(
+    "wider", ["'self' blob: data:", "*", "'self' https:", "'self' http://x", "'unsafe-inline'"]
+)
+def test_a_build_that_widens_the_image_sources_is_refused(
+    settings: Settings, tmp_path: Path, wider: str
+) -> None:
+    build = _build(tmp_path, _page(_with_images(wider)))
+    migrate(settings)
+    with pytest.raises(RuntimeError, match="img-src"):
+        create_app(settings.model_copy(update={"frontend_dir": build}))
