@@ -88,3 +88,32 @@ describe('keeping a copy', () => {
     expect(entry).not.toHaveBeenCalled();
   });
 });
+
+describe('an EPUB keeps what its package and its style sheets name (review)', () => {
+  const opf = `<package xmlns="http://www.idpf.org/2007/opf"><manifest>
+    <item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="css" href="css/style.css" media-type="text/css"/>
+    <item id="far" href="https://elsewhere.example/x.png" media-type="image/png"/>
+    <item id="up" href="../../../secret.png" media-type="image/png"/>
+  </manifest></package>`;
+  const epub = out({
+    kind: 'epub', pages: [], package: '/content/TICKET/OEBPS/content.opf',
+    spine: [{ index: 1, href: '/content/TICKET/OEBPS/c1.xhtml', media_type: 'application/xhtml+xml' }]
+  });
+
+  // req: EF-LEC-012, ENF-SEC-010
+  it('follows the manifest and the url() of a style sheet, never out of the book or off the content route', async () => {
+    const asked: string[] = [];
+    const { store, api } = bench(epub, async (url) => {
+      asked.push(url);
+      const body = url.endsWith('.opf') ? opf : url.endsWith('style.css') ? '@font-face{src:url("../fonts/a.woff2")} .x{background:url(data:image/png;base64,AA)}' : 'x';
+      return new Response(body, { headers: { 'content-type': 'text/plain' } });
+    });
+    await store.activate(ALICE);
+    await keepCopy({ store, profileId: ALICE, api, carrierType: 'content', carrierId: CARRIER });
+    expect(asked.sort()).toEqual(
+      ['/content/TICKET/OEBPS/c1.xhtml', '/content/TICKET/OEBPS/content.opf', '/content/TICKET/OEBPS/css/style.css', '/content/TICKET/OEBPS/fonts/a.woff2'].sort()
+    );
+  });
+});
+

@@ -67,7 +67,7 @@ const meta = (carrier: string, work: string) => ({
 
 describe('#396 contradicteur', () => {
   // req: EF-LEC-007, EF-USR-006
-  it.fails('C2: a queue is not sent once another profile is active on the browser (no reading lands in the child progress)', async () => {
+  it('C2: a queue is not sent once another profile is active on the browser (no reading lands in the child progress)', async () => {
     const env = memoryEnv();
     const store = createOfflineStore(env);
     await store.activate(ADULT);
@@ -92,7 +92,7 @@ describe('#396 contradicteur', () => {
   });
 
   // req: EF-LEC-007
-  it.fails('C3: two positions queued at once keep the later reading', async () => {
+  it('C3: two positions queued at once keep the later reading', async () => {
     const env = memoryEnv();
     const store = createOfflineStore(env);
     await store.activate(ADULT);
@@ -104,7 +104,7 @@ describe('#396 contradicteur', () => {
   });
 
   // req: EF-LEC-012, EF-INT-001
-  it.fails('C4: an eviction named by ?since= is not missed when another tab keeps a copy at the same moment', async () => {
+  it('C4: an eviction named by ?since= is not missed when another tab keeps a copy at the same moment', async () => {
     const memory = memoryEnv();
     const fake = fakeIndexedDb();
     const env = idbEnv({ indexedDB: fake.factory, caches: memory.caches });
@@ -122,7 +122,7 @@ describe('#396 contradicteur', () => {
   });
 
   // req: EF-LEC-012, EF-INT-001
-  it.fails('C5: a sync that could not ask ?since= comes back later, even with no position waiting', async () => {
+  it('C5: a sync that could not ask ?since= comes back later, even with no position waiting', async () => {
     const env = memoryEnv();
     const store = createOfflineStore(env);
     await store.activate(ADULT);
@@ -153,7 +153,7 @@ describe('#396 contradicteur', () => {
   });
 
   // req: EF-LEC-012
-  it.fails('C6: an EPUB copy holds the resources its manifest names, not only its spine', async () => {
+  it('C6: an EPUB copy holds the resources its manifest names, not only its spine', async () => {
     const env = memoryEnv();
     const store = createOfflineStore(env);
     await store.activate(ADULT);

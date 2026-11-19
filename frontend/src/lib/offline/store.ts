@@ -42,6 +42,10 @@ export interface OfflineStore {
   evictCarrier(profileId: string, carrierType: string, carrierId: string): Promise<void>;
   wipe(profileId: string): Promise<void>;
   wipeAll(): Promise<void>;
+  /** Ties the profile on this browser to the session that is signed in (a hash of its anti-forgery token). */
+  bindSession(token: string): Promise<void>;
+  /** Whether this session is the one the profile was bound to; null when none was recorded. */
+  sessionMatches(token: string): Promise<boolean | null>;
   queuePosition(profileId: string, body: PositionIn): Promise<void>;
   queued(profileId: string): Promise<QueuedPosition[]>;
   dropPosition(profileId: string, key: string): Promise<void>;
@@ -55,7 +59,21 @@ const carrierKey = (type: string, id: string) => `${type}:${id}`;
 const prefixOf = (type: string, id: string) => `/content/offline.${type}.${id}/`;
 const stamp = (value: string) => (Number.isFinite(Date.parse(value)) ? Date.parse(value) : 0);
 
+async function digest(token: string): Promise<string> {
+  const bytes = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(`shelfhold/offline-session/v1/${token}`));
+  return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export function createOfflineStore(env: OfflineEnv): OfflineStore {
+  // Every change goes one at a time: in this page by a chain, across tabs by a Web Lock. A read then
+  // write of the queue, a copy kept while another profile signs in, a wipe in the middle of a sync:
+  // none interleaves. (A leaf is `exclusive`; what it calls is not, or it would wait for itself.)
+  let chain: Promise<unknown> = Promise.resolve();
+  function exclusive<T>(work: () => Promise<T>): Promise<T> {
+    const run = chain.then(() => (env.lock ? env.lock('shelfhold-offline', work) : work()));
+    chain = run.catch(() => undefined);
+    return run;
+  }
   const active = env.openKv(ACTIVE_KV);
   const own = (profileId: string) => env.openKv(profileKvName(profileId));
 
@@ -88,87 +106,99 @@ export function createOfflineStore(env: OfflineEnv): OfflineStore {
     if ((await cache.keys()).length === 0) await env.caches.delete(copyCacheName(profileId)); // no empty cache left
   }
 
-  async function wipe(profileId: string): Promise<void> {
+  async function wipeNow(profileId: string): Promise<void> {
     await env.caches.delete(copyCacheName(profileId));
     await env.deleteKv(profileKvName(profileId));
     await active.set('known', (await known()).filter((id) => id !== profileId));
-    if ((await activeProfile()) === profileId) await active.delete('profile');
+    if ((await activeProfile()) === profileId) {
+      await active.delete('profile');
+      await active.delete('session');
+    }
+  }
+
+  async function activateNow(profileId: string): Promise<void> {
+    // one profile at a time on a browser: the others' copies go, they are not hidden
+    const others = new Set((await known()).filter((id) => id !== profileId));
+    for (const name of await env.caches.keys()) {
+      if (name.startsWith(COPY_CACHE_PREFIX) && name !== copyCacheName(profileId)) others.add(name.slice(COPY_CACHE_PREFIX.length));
+    }
+    for (const id of others) await wipeNow(id);
+    await active.set('profile', profileId);
+    await remember(profileId);
+  }
+
+  async function keepNow(profileId: string, meta: Omit<CopyMeta, 'keptAt'>, entries: Iterable<CopyEntry> | AsyncIterable<CopyEntry>): Promise<void> {
+    await requireActive(profileId);
+    const cache = await env.caches.open(copyCacheName(profileId));
+    try {
+      for await (const entry of entries) await cache.put(entry.url, entry.response);
+    } catch (error) {
+      await dropBytes(profileId, meta.carrierType, meta.carrierId);
+      throw error;
+    }
+    // the profile may have changed hands while the files came in: nothing is written for one that is gone
+    if ((await activeProfile()) !== profileId) {
+      await dropBytes(profileId, meta.carrierType, meta.carrierId);
+      throw new Error('not the active profile');
+    }
+    await own(profileId).set(COPY + carrierKey(meta.carrierType, meta.carrierId), { ...meta, keptAt: new Date(env.now()).toISOString() });
+  }
+
+  async function copiesOf(profileId: string): Promise<CopyMeta[]> {
+    const rows = await own(profileId).entries();
+    return rows.filter(([key]) => key.startsWith(COPY)).map(([, value]) => value as CopyMeta);
+  }
+
+  async function evictCarrierNow(profileId: string, type: string, id: string): Promise<void> {
+    await dropBytes(profileId, type, id);
+    await own(profileId).delete(COPY + carrierKey(type, id));
+    // the positions read offline stay queued: removing a copy is not a reason to lose a reading
+  }
+
+  async function evictWorksNow(profileId: string, workIds: readonly string[]): Promise<string[]> {
+    const wanted = new Set(workIds);
+    const gone: string[] = [];
+    for (const copy of await copiesOf(profileId)) {
+      if (!wanted.has(copy.workId)) continue;
+      await evictCarrierNow(profileId, copy.carrierType, copy.carrierId);
+      if (!gone.includes(copy.workId)) gone.push(copy.workId);
+    }
+    return gone;
+  }
+
+  async function wipeAllNow(): Promise<void> {
+    await active.delete('profile'); // first: if the rest fails, nothing is served any more
+    const ids = new Set(await known());
+    for (const name of await env.caches.keys()) {
+      if (name.startsWith(COPY_CACHE_PREFIX)) ids.add(name.slice(COPY_CACHE_PREFIX.length));
+    }
+    for (const id of ids) await wipeNow(id);
+    await env.deleteKv(ACTIVE_KV);
+  }
+
+  async function queueNow(profileId: string, body: PositionIn): Promise<void> {
+    await requireActive(profileId);
+    const key = POSITION + carrierKey(body.carrier_type, body.carrier_id);
+    const waiting = (await own(profileId).get(key)) as QueuedPosition | undefined;
+    if (waiting && stamp(waiting.body.client_ts) > stamp(body.client_ts)) return; // the later reading wins
+    await own(profileId).set(key, { key, body } satisfies QueuedPosition);
   }
 
   return {
     activeProfile,
-
-    async activate(profileId) {
-      // one profile at a time on a browser: the others' copies go, they are not hidden
-      const others = new Set((await known()).filter((id) => id !== profileId));
-      for (const name of await env.caches.keys()) {
-        if (name.startsWith(COPY_CACHE_PREFIX) && name !== copyCacheName(profileId)) others.add(name.slice(COPY_CACHE_PREFIX.length));
-      }
-      for (const id of others) await wipe(id);
-      await active.set('profile', profileId);
-      await remember(profileId);
-    },
-
-    async keep(profileId, meta, entries) {
-      await requireActive(profileId);
-      const cache = await env.caches.open(copyCacheName(profileId));
-      try {
-        for await (const entry of entries) await cache.put(entry.url, entry.response);
-      } catch (error) {
-        await dropBytes(profileId, meta.carrierType, meta.carrierId);
-        throw error;
-      }
-      await own(profileId).set(COPY + carrierKey(meta.carrierType, meta.carrierId), { ...meta, keptAt: new Date(env.now()).toISOString() });
-    },
-
-    async copies(profileId) {
-      const rows = await own(profileId).entries();
-      return rows.filter(([key]) => key.startsWith(COPY)).map(([, value]) => value as CopyMeta);
-    },
-
+    activate: (profileId) => exclusive(() => activateNow(profileId)),
+    keep: (profileId, meta, entries) => exclusive(() => keepNow(profileId, meta, entries)),
+    copies: copiesOf,
     async find(profileId, carrierType, carrierId) {
       const direct = (await own(profileId).get(COPY + carrierKey(carrierType, carrierId))) as CopyMeta | undefined;
       if (direct || carrierType !== 'unit') return direct;
-      return (await this.copies(profileId)).find((copy) => copy.via === carrierId);
+      return (await copiesOf(profileId)).find((copy) => copy.via === carrierId);
     },
-
-    async evictCarrier(profileId, type, id) {
-      await dropBytes(profileId, type, id);
-      await own(profileId).delete(COPY + carrierKey(type, id));
-      // the positions read offline stay queued: removing a copy is not a reason to lose a reading
-    },
-
-    async evictWorks(profileId, workIds) {
-      const wanted = new Set(workIds);
-      const gone: string[] = [];
-      for (const copy of await this.copies(profileId)) {
-        if (!wanted.has(copy.workId)) continue;
-        await this.evictCarrier(profileId, copy.carrierType, copy.carrierId);
-        if (!gone.includes(copy.workId)) gone.push(copy.workId);
-      }
-      return gone;
-    },
-
-    wipe,
-
-    async wipeAll() {
-      await active.delete('profile'); // first: if the rest fails, nothing is served any more
-      const ids = new Set(await known());
-      for (const name of await env.caches.keys()) {
-        if (name.startsWith(COPY_CACHE_PREFIX)) ids.add(name.slice(COPY_CACHE_PREFIX.length));
-      }
-      for (const id of ids) await wipe(id);
-      await env.deleteKv(ACTIVE_KV);
-    },
-
-    async queuePosition(profileId, body) {
-      await requireActive(profileId);
-      const key = POSITION + carrierKey(body.carrier_type, body.carrier_id);
-      const waiting = (await own(profileId).get(key)) as QueuedPosition | undefined;
-      if (waiting && stamp(waiting.body.client_ts) > stamp(body.client_ts)) return; // the later reading wins
-      await own(profileId).set(key, { key, body } satisfies QueuedPosition);
-    },
-
+    evictCarrier: (profileId, type, id) => exclusive(() => evictCarrierNow(profileId, type, id)),
+    evictWorks: (profileId, workIds) => exclusive(() => evictWorksNow(profileId, workIds)),
+    wipe: (profileId) => exclusive(() => wipeNow(profileId)),
+    wipeAll: () => exclusive(wipeAllNow),
+    queuePosition: (profileId, body) => exclusive(() => queueNow(profileId, body)),
     async queued(profileId) {
       const rows = await own(profileId).entries();
       return rows
@@ -176,18 +206,20 @@ export function createOfflineStore(env: OfflineEnv): OfflineStore {
         .map(([, value]) => value as QueuedPosition)
         .sort((a, b) => stamp(a.body.client_ts) - stamp(b.body.client_ts));
     },
-
-    async dropPosition(profileId, key) {
-      await own(profileId).delete(key);
-    },
-
+    dropPosition: (profileId, key) => exclusive(async () => ((await activeProfile()) === profileId ? own(profileId).delete(key) : undefined)),
     async since(profileId) {
       const value = await own(profileId).get('since');
       return typeof value === 'string' ? value : null;
     },
-
-    async setSince(profileId, token) {
-      await own(profileId).set('since', token);
+    // nothing is written for a profile that is no longer the one on this browser (it would bring its store back)
+    setSince: (profileId, token) => exclusive(async () => ((await activeProfile()) === profileId ? own(profileId).set('since', token) : undefined)),
+    async bindSession(token) {
+      const hash = await digest(token);
+      await exclusive(() => active.set('session', hash));
+    },
+    async sessionMatches(token) {
+      const bound = await active.get('session');
+      return typeof bound === 'string' ? bound === (await digest(token)) : null;
     }
   };
 }

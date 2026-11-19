@@ -8,7 +8,7 @@ import { memoryEnv, type MemoryEnv } from './testing.ts';
 const held = vi.hoisted(() => ({ env: null as unknown as MemoryEnv }));
 vi.mock('./idb.ts', () => ({ idbEnv: () => held.env }));
 
-const { offlineStore, startOfflineSync, wipeOfflineCopies } = await import('./runtime.ts');
+const { guardOfflineSession, offlineStore, startOfflineSync, wipeOfflineCopies } = await import('./runtime.ts');
 const ALICE = '01JALICE00000000000000000A';
 
 const api = (over: Partial<KeepApi> = {}): KeepApi => ({
@@ -68,10 +68,45 @@ describe('wipeOfflineCopies', () => {
     ]);
     await wipeOfflineCopies();
     expect(await held.env.caches.keys()).toEqual([]);
+    const original = held.env.deleteKv;
     held.env.deleteKv = async () => {
       throw new Error('no storage');
     };
     await store.activate(ALICE);
     await expect(wipeOfflineCopies()).resolves.toBeUndefined();
+    held.env.deleteKv = original;
   });
 });
+
+describe('guardOfflineSession (another profile signs in while /me fails)', () => {
+  const cookie = (token: string) => void (document.cookie = `csrf=${token}`);
+
+  // req: EF-LEC-012, ENF-SEC-010
+  it('wipes the previous profile copies when the session is another one and nobody was named', async () => {
+    const store = offlineStore();
+    await store.activate(ALICE);
+    cookie('tok-a');
+    await store.bindSession('tok-a');
+    await guardOfflineSession(null);
+    expect(await store.activeProfile()).toBe(ALICE); // same session: kept
+    cookie('tok-b'); // another profile signed in, and /me answered 503
+    await guardOfflineSession(null);
+    expect(await store.activeProfile()).toBeNull();
+  });
+
+  // req: EF-LEC-012
+  it('the same profile in a new session is bound again, and a browser that cannot tell is left alone', async () => {
+    const store = offlineStore();
+    await store.activate(ALICE);
+    cookie('tok-a');
+    await store.bindSession('tok-a');
+    cookie('tok-c');
+    await guardOfflineSession(ALICE);
+    expect(await store.sessionMatches('tok-c')).toBe(true);
+    await store.wipeAll();
+    await store.activate(ALICE); // nothing recorded
+    await guardOfflineSession(null);
+    expect(await store.activeProfile()).toBe(ALICE);
+  });
+});
+

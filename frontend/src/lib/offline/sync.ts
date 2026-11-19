@@ -46,6 +46,9 @@ interface Options {
 
 async function flush({ store, profileId, api }: Options, result: SyncResult): Promise<void> {
   for (const waiting of await store.queued(profileId)) {
+    // the browser may have changed hands in another tab since the last one left: the next position would
+    // go with the session of whoever is there now. Nothing leaves for a profile that is not the active one.
+    if ((await store.activeProfile()) !== profileId) return;
     let answer: { status: number; retryAfter?: number; code?: string };
     try {
       answer = await api.putPosition(waiting.body);
@@ -116,7 +119,14 @@ export async function syncOffline(options: Options): Promise<SyncResult> {
   // a stale tab, or someone else's session, never sends nor evicts for the profile on the browser
   if ((await options.store.activeProfile()) !== options.profileId) return result;
   await flush(options, result);
-  if (!result.wiped) await syncSince(options, result);
+  if (!result.wiped && (await options.store.activeProfile()) === options.profileId) {
+    const renewed = await syncSince(options, result);
+    // `?since=` could not be read (unreachable while the browser says it is online, busy): no `online`
+    // event will come, so the sync comes back by itself while a copy could still be one to evict
+    if (!renewed && !result.wiped && result.retryAfterMs === null && (await options.store.copies(options.profileId)).length > 0) {
+      result.retryAfterMs = DEFAULT_RETRY_MS;
+    }
+  }
   return result;
 }
 

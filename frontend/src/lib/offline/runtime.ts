@@ -50,6 +50,31 @@ export async function wipeOfflineCopies(): Promise<void> {
   }
 }
 
+/** The profile on this browser is tied to the session that is signed in (a hash of its anti-forgery token). */
+async function bindToSession(): Promise<void> {
+  const token = csrfToken();
+  if (token) await offlineStore().bindSession(token);
+}
+
+/** The session in this browser is not the one the copies were kept under, and the server did not say
+ * who signed in (`/me` failed: busy, throttled): another profile may have signed in, so nothing of the
+ * previous one stays. A same profile with a new session is bound again. Never fails; a browser that
+ * cannot tell (no cookie, no record) is left as it is. */
+export async function guardOfflineSession(profileId: string | null): Promise<void> {
+  try {
+    const token = csrfToken();
+    const store = offlineStore();
+    const active = await store.activeProfile();
+    if (!token || !active) return;
+    const same = await store.sessionMatches(token);
+    if (same === true) return;
+    if (profileId === active) await store.bindSession(token);
+    else if (same === false) await wipeOfflineCopies();
+  } catch {
+    /* no storage: there is nothing kept */
+  }
+}
+
 /** The profile on this browser is this one: another one's copies are gone, then a first sync, and
  * again whenever the network comes back or a busy server said to. Returns the way to stop. */
 export function startOfflineSync(profileId: string, options: { api?: KeepApi; target?: Pick<Window, 'addEventListener' | 'removeEventListener'> } = {}): () => void {
@@ -68,7 +93,10 @@ export function startOfflineSync(profileId: string, options: { api?: KeepApi; ta
       /* the next reconnection tries again */
     }
   };
-  void offlineStore().activate(profileId).then(run, () => undefined);
+  void offlineStore()
+    .activate(profileId)
+    .then(() => bindToSession())
+    .then(run, () => undefined);
   const onOnline = () => void run();
   target.addEventListener('online', onOnline);
   return () => {

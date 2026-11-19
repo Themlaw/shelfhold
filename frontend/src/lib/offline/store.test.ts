@@ -143,3 +143,45 @@ describe('what leaves the view is evicted', () => {
     expect(gone.status).toBe(404);
   });
 });
+
+describe('one change at a time, and the session the copies were kept under (review)', () => {
+  // req: EF-LEC-012, ENF-SEC-010
+  it('a copy that finishes downloading after the profile changed hands is not written', async () => {
+    const env = memoryEnv();
+    const store = createOfflineStore(env);
+    const otherTab = createOfflineStore(env);
+    await store.activate(ALICE);
+    async function* slow() {
+      yield { url: copyUrl('content', CARRIER, 'p1.png'), response: new Response('x') };
+      await otherTab.wipeAll(); // another tab signs out meanwhile
+      yield { url: copyUrl('content', CARRIER, 'p2.png'), response: new Response('y') };
+    }
+    const kept = store.keep(ALICE, { carrierType: 'content', carrierId: CARRIER, workId: WORK, title: 't', publication: publication() }, slow());
+    await expect(kept).rejects.toThrow(/not the active profile/);
+    expect(await store.copies(ALICE)).toEqual([]);
+  });
+
+  // req: EF-LEC-012, ENF-SEC-010
+  it('binds the profile to a session: another session does not match, none recorded is null', async () => {
+    const store = createOfflineStore(memoryEnv());
+    await store.activate(ALICE);
+    expect(await store.sessionMatches('tok-1')).toBeNull();
+    await store.bindSession('tok-1');
+    expect(await store.sessionMatches('tok-1')).toBe(true);
+    expect(await store.sessionMatches('tok-2')).toBe(false);
+    await store.wipeAll();
+    expect(await store.sessionMatches('tok-1')).toBeNull();
+  });
+
+  // req: EF-LEC-012
+  it('takes the cross-tab lock for every change when the browser offers one', async () => {
+    const env = memoryEnv();
+    const taken: string[] = [];
+    env.lock = async (name, work) => (taken.push(name), work());
+    const store = createOfflineStore(env);
+    await store.activate(ALICE);
+    await store.setSince(ALICE, 't');
+    expect(taken).toEqual(['shelfhold-offline', 'shelfhold-offline']);
+  });
+});
+

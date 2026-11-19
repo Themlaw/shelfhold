@@ -19,6 +19,38 @@ export type KeepApi = OfflineApi & { entry(url: string): Promise<Response> };
 
 const TEN_YEARS_MS = 10 * 365 * 24 * 3600 * 1000;
 const CONTENT_LINK = /^\/content\/[^/]+\/(.+)$/;
+const MAX_ENTRIES = 2000;
+
+/** The `href` of every item of the manifest of a package document (a name relative to it). */
+function manifestHrefs(opf: string): string[] {
+  const doc = new DOMParser().parseFromString(opf, 'application/xml');
+  return [...doc.getElementsByTagName('item')].map((item) => item.getAttribute('href') ?? '').filter((href) => href !== '');
+}
+
+/** The relative `url(...)` and `@import` names of a style sheet (fonts, images). */
+function styleUrls(css: string): string[] {
+  const found: string[] = [];
+  for (const match of css.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)|@import\s+(?:"([^"]*)"|'([^']*)')/gi)) {
+    const href = match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5] ?? '';
+    if (href !== '' && !href.startsWith('data:')) found.push(href);
+  }
+  return found;
+}
+
+/** A name relative to a link of the content route, as a link of the same ticket; null when it climbs
+ * out of it, names another origin or is not a path (the same rule as `entryName`). */
+function resolveLink(from: string, href: string): string | null {
+  const base = /^(\/content\/[^/]+\/)/.exec(from)?.[1];
+  if (!base || /^[a-z][a-z0-9+.-]*:|^[/\\]|^\/\//i.test(href)) return null;
+  const path = new URL(href.split(/[?#]/)[0] ?? '', `https://content.invalid${from}`).pathname;
+  if (!path.startsWith(base) || path === base) return null;
+  try {
+    entryName(path);
+  } catch {
+    return null;
+  }
+  return path;
+}
 
 function entryName(href: string): string {
   const match = CONTENT_LINK.exec(href.split(/[?#]/)[0] ?? '');
@@ -61,13 +93,25 @@ export async function keepCopy(options: {
     spine: publication.spine.map((e) => ({ ...e, href: rewrite(e.href) })),
     package: publication.package ? rewrite(publication.package) : null
   };
-  const names = links.map(rewrite); // throws before anything is fetched on a link that is not the content route
+  links.map(rewrite); // throws before anything is fetched on a link that is not the content route
 
   async function* download(): AsyncGenerator<CopyEntry> {
-    for (const [i, link] of links.entries()) {
+    // the links of the publication, then what the package of an EPUB names (images, styles, fonts,
+    // the navigation document) and what its style sheets name, never past a bound
+    const queue = [...links];
+    const seen = new Set(queue);
+    const add = (link: string | null) => {
+      if (link !== null && !seen.has(link) && seen.size < MAX_ENTRIES) {
+        seen.add(link);
+        queue.push(link);
+      }
+    };
+    for (let link = queue.shift(); link !== undefined; link = queue.shift()) {
       const response = await api.entry(link);
       if (response.status !== 200 || response.redirected) throw new OfflineKeepError('download_failed');
-      yield { url: names[i]!, response };
+      if (link === publication.package) for (const href of manifestHrefs(await response.clone().text())) add(resolveLink(link, href));
+      else if (/\.css(?:[?#]|$)/i.test(link)) for (const href of styleUrls(await response.clone().text())) add(resolveLink(link, href));
+      yield { url: rewrite(link), response };
     }
   }
 

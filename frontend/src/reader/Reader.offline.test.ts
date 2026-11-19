@@ -77,6 +77,16 @@ describe('the reader with no network', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('n’a pas de copie hors ligne');
   });
 
+  // req: EF-LEC-012, ENF-SEC-010
+  it('a session other than the one the copy was kept under opens nothing', async () => {
+    await keepIt();
+    await holder.store.bindSession('tok-of-the-first-session');
+    document.cookie = 'csrf=tok-of-another-profile';
+    render(Page, { props });
+    expect(await screen.findByRole('alert')).toHaveTextContent('n’a pas de copie hors ligne');
+    expect(screen.queryByAltText('Page 1 sur 3')).toBeNull();
+  });
+
   // req: EF-LEC-012
   it('an extract is never read from a copy', async () => {
     await keepIt();

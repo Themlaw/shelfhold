@@ -27,11 +27,12 @@ async function run<T>(factory: IDBFactory, name: string, mode: IDBTransactionMod
   }
 }
 
-export function idbEnv(scope: { indexedDB: IDBFactory; caches: CacheStorage }): OfflineEnv {
+export function idbEnv(scope: { indexedDB: IDBFactory; caches: CacheStorage; navigator?: { locks?: LockManager } }): OfflineEnv {
   const factory = scope.indexedDB;
   return {
     caches: scope.caches,
     now: () => Date.now(),
+    lock: (name, work) => (scope.navigator?.locks ? scope.navigator.locks.request(name, work) : work()),
     deleteKv: (name) =>
       new Promise((resolve, reject) => {
         const request = factory.deleteDatabase(name);
@@ -44,10 +45,17 @@ export function idbEnv(scope: { indexedDB: IDBFactory; caches: CacheStorage }): 
         get: (key) => run(factory, name, 'readonly', (s) => s.get(key)),
         set: async (key, value) => void (await run(factory, name, 'readwrite', (s) => s.put(value, key))),
         delete: async (key) => void (await run(factory, name, 'readwrite', (s) => s.delete(key))),
+        // one transaction, and each value read by its own key: a write by another tab between the reads
+        // can never pair a key with the value of another
         entries: async () => {
-          const keys = (await run(factory, name, 'readonly', (s) => s.getAllKeys())) as string[];
-          const values = (await run(factory, name, 'readonly', (s) => s.getAll())) as unknown[];
-          return keys.map((key, i) => [key, values[i]] as [string, unknown]);
+          const db = await open(factory, name);
+          try {
+            const store = db.transaction('kv', 'readonly').objectStore('kv');
+            const keys = (await wait(store.getAllKeys())) as string[];
+            return await Promise.all(keys.map(async (key) => [key, await wait(store.get(key))] as [string, unknown]));
+          } finally {
+            db.close();
+          }
         }
       };
     }

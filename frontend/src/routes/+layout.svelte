@@ -2,7 +2,7 @@
   import Footer from '#lib/components/Footer.svelte';
   import Nav from '#lib/components/Nav.svelte';
   import { onMount } from 'svelte';
-  import { startOfflineSync, wipeOfflineCopies } from '#lib/offline/runtime.ts';
+  import { guardOfflineSession, startOfflineSync, wipeOfflineCopies } from '#lib/offline/runtime.ts';
   import { registerServiceWorker } from '#lib/pwa/register.ts';
   import { applyAppearance } from '#lib/themes/index.ts';
   import { detectLanguage, setUiLanguage } from '#lib/i18n/index.ts';
@@ -24,7 +24,9 @@
     // the server refused the session (revoked, expired, account off): nothing of it stays on the device
     if (data.sessionLost) void wipeOfflineCopies();
     const profile = data.profileId;
-    if (!profile || !import.meta.env.PROD) return;
+    if (!import.meta.env.PROD) return;
+    void guardOfflineSession(profile ?? null); // another session than the one the copies were kept under
+    if (!profile) return;
     return startOfflineSync(profile);
   });
 

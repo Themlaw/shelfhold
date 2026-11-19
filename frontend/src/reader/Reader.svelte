@@ -74,6 +74,9 @@
     try {
       const store = offlineStore();
       const profile = await store.activeProfile();
+      const token = csrfToken();
+      // another session than the one the copies were kept under (another profile signed in): none is opened
+      if (token && (await store.sessionMatches(token)) === false) return null;
       const copy = profile ? await store.find(profile, carrierType, carrierId) : undefined;
       return profile && copy ? { publication: copy.publication, profile } : null;
     } catch {

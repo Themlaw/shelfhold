@@ -15,6 +15,8 @@ export interface OfflineEnv {
   openKv(name: string): Kv;
   deleteKv(name: string): Promise<void>;
   now(): number;
+  /** Runs `work` while no other tab does the same (Web Locks); absent: only this page's own order. */
+  lock?<T>(name: string, work: () => Promise<T>): Promise<T>;
 }
 
 export const COPY_CACHE_PREFIX = 'shelfhold-copy-';
