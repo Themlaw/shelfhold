@@ -131,6 +131,10 @@ WHEN_CLOSED_AUDITED = {
     # identifier of the token, when one is made or ended; the empty body below is a 422 and an
     # unknown identifier a 404: no line
     "device_token.issue", "device_token.manage", "device_token.rotate", "device.remove",
+    # M5 L03: linking an OIDC identity: the service writes `oidc.linked` when a link is made; the
+    # door of the own account only starts the flow (the line comes with the callback) and the
+    # empty body below is a 422 for the admin's
+    "oidc.link_own", "oidc.link_account",
     # M4 L35: the switch to the preferred team: the service writes one line per step (previewed,
     # queued) with the identifier of the switch; the door writes none (a refused call leaves none)
     "team.switch",
@@ -150,6 +154,7 @@ WHEN_CLOSED_AUDITED = {
 EVERY_ROLE_OWN_ACCOUNT = {
     "session.revoke_others", "destination_account.bind", "destination_account.revoke",
     "device_token.issue", "device_token.manage", "device_token.rotate", "device.remove",
+    "oidc.link_own",  # M5 L03: an adult's own account (a child is refused by the route)
     "notify.profile_destination",  # M4 L39: an adult's own (tests/integration/test_m4_l39_*)
 }  # fmt: skip
 

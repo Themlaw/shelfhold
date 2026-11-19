@@ -37,6 +37,8 @@ from shelfhold.identity.application.ports import (
     NewApiKey,
     NewDeviceToken,
     NewSession,
+    OidcIdentityView,
+    OidcLink,
     PasskeyGoneError,
     PasskeyRecord,
     PasswordHasherPort,
@@ -358,6 +360,7 @@ class LocalAuth:
         if passkeys is not None and passkeys.available:  # the method exists in a secure context
             methods.append(PasskeyReauth(passkeys, store.restore_notice_active))
         self._reauth = {method.name: method for method in methods}
+        self.oidc: Any = None  # the OpenID Connect sign-in, set by the factory when configured
         self._profiles = ProfileService(
             store,
             hasher,
@@ -607,6 +610,8 @@ class LocalAuth:
         passkey_id: str | None = None,
         user_agent: str | None = None,
         password_hash: str | None = None,
+        auth_time: datetime | None = None,
+        oidc: tuple[str, str] | None = None,
     ) -> IssuedSession:
         now = self.now()
         policy = self._policy(user.role)
@@ -625,6 +630,8 @@ class LocalAuth:
                 passkey_id=passkey_id,
                 password_hash=password_hash,
                 device=device_label(user_agent),
+                auth_time=auth_time,
+                oidc=oidc,
             )
         )
         principal = Principal(
@@ -633,7 +640,7 @@ class LocalAuth:
             role=user.role,
             credential=Credential.SESSION,
             session_id=session_id,
-            auth_time=now,
+            auth_time=auth_time or now,
             can_rate=user.can_rate,
             locale=user.locale,
         )
@@ -1025,6 +1032,83 @@ class LocalAuth:
             raise self._fail(ip=ip) from None
         self._audit("auth.passkey_login", issued.principal, target=passkey.id)
         return issued
+
+    # --- OpenID Connect (M5 L03, EF-USR-004) ----------------------------------------------------
+
+    @property
+    def oidc_available(self) -> bool:
+        return self.oidc is not None
+
+    def reserve_options(self, *, ip: str) -> None:
+        """A cheap anonymous step (`ThrottledError` beyond a few a minute per address)."""
+        wait = self._options_throttle.reserve(ip=ip, account=ip, now=self.now())
+        if wait is not None:
+            raise ThrottledError(max(1, math.ceil(wait)))
+
+    def reserve_attempt(self, *, ip: str, account: str) -> datetime:
+        return self._reserve_attempt(ip=ip, account=account)
+
+    def release_attempt(self, *, ip: str, account: str, at: datetime) -> None:
+        self._throttle.release(ip=ip, account=account, at=at)
+
+    def open_federated_session(
+        self,
+        user: UserRecord,
+        *,
+        ip: str,
+        user_agent: str | None,
+        presented_token: str | None,
+        auth_time: datetime,
+        oidc: tuple[str, str] | None = None,
+    ) -> IssuedSession:
+        """A session for a person an identity provider vouched for: new token whatever the browser
+        held (no fixation), `auth_time` is what the provider said about when they signed in there
+        (never `now`: no local secret was typed), the policy of the role for `remember`."""
+        if presented_token:  # whatever the browser held is closed, never adopted
+            self._store.revoke_session_by_token_hash(token_digest(presented_token), now=self.now())
+        remember = self._policy(user.role).remember_default
+        try:
+            issued = self._issue(
+                user, remember=remember, ip=ip, user_agent=user_agent, auth_time=auth_time,
+                oidc=oidc,
+            )  # fmt: skip
+        except ProofWithdrawnError:  # unlinked, or turned into a child profile, meanwhile
+            raise InvalidCredentialsError from None
+        self._audit("auth.oidc_login", issued.principal)
+        return issued
+
+    def link_oidc_identity(
+        self,
+        *,
+        user_id: str,
+        issuer: str,
+        sub: str,
+        session_id: str | None = None,
+        by: Principal | None = None,
+    ) -> OidcLink:
+        """The outcome of one transaction that also writes the audit line (the issuer and the
+        account, never the `sub`). `by`: the admin who linked another's account."""
+        entry = AuditEntry(
+            actor_id=audit_actor(by) or user_id,
+            action="oidc.linked",
+            at=self.now(),
+            target=user_id,
+            session_id=by.session_id if by is not None else session_id,
+            auth_time=by.auth_time if by is not None else None,
+        )
+        return self._store.link_oidc_identity(
+            user_id=user_id,
+            issuer=issuer,
+            sub=sub,
+            now=self.now(),
+            audit=entry,
+            admin_actor=by.user_id if by is not None else None,
+        )
+
+    def oidc_identities_of(self, principal: Principal) -> Sequence[OidcIdentityView]:
+        """The links of the caller's own account (never another's): the provider and the date, and
+        whether an admin made the link. The identifier itself is not given back."""
+        return self._store.oidc_identities_of(principal.user_id)
 
     # --- API keys ----------------------------------------------------------------------------
 

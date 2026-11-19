@@ -3,6 +3,7 @@
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from typing import Any, Literal, Protocol
 
 from shelfhold.i18n import DEFAULT_LANGUAGE
@@ -77,6 +78,10 @@ class NewSession:
     passkey_id: str | None = None  # the passkey that opened it: revoking that passkey closes it
     password_hash: str | None = None  # the hash the sign-in checked: re-read under the lock
     device: str | None = None  # the coarse label of the device (`device_label`), never the header
+    auth_time: datetime | None = None  # None: `now` (a password or a passkey was just checked)
+    # (issuer, sub) of an OpenID Connect sign-in: the link and the role are read again under the
+    # write lock, as a password hash or a passkey is (a link removed or a child since: refused)
+    oidc: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -203,6 +208,40 @@ class NewPasskey:
     rp_id: str | None = None
 
 
+@dataclass(frozen=True)
+class OidcIdentityRecord:
+    """The person `sub` of `issuer` is this account (M5 L03). Nothing else of the person is kept:
+    no name, no address, no claim."""
+
+    id: str
+    user_id: str
+    issuer: str
+    sub: str
+    linked_at: datetime
+
+
+class OidcLink(StrEnum):
+    """The outcomes of linking: one wrote, one found it done, the others refused."""
+
+    LINKED = "linked"
+    UNCHANGED = "unchanged"  # this very pair is already this account's
+    NO_ACCOUNT = "no_account"  # the account is gone
+    CHILD = "child"  # a child profile is never linked
+    SUBJECT_TAKEN = "subject_taken"  # the person is another account's
+    ACCOUNT_HAS_ANOTHER = "account_has_another"  # the account holds another person of the provider
+    ADMIN_TARGET = "admin_target"  # an admin links her own account or an adult member's, no other
+
+
+@dataclass(frozen=True)
+class OidcIdentityView:
+    """What the holder of an account is shown of a link: the provider and since when, never the
+    `sub`. `linked_by_other`: an admin made it (None: the audit line is no longer there)."""
+
+    issuer: str
+    linked_at: datetime
+    linked_by_other: bool | None
+
+
 class ProofWithdrawnError(Exception):
     """The proof a session was being opened on (a password, a passkey) was withdrawn meanwhile:
     nothing was written."""
@@ -219,6 +258,20 @@ class KeyConflictError(Exception):
 class IdentityStore(Protocol):
     def user_by_name(self, username: str) -> UserRecord | None: ...
     def user_by_id(self, user_id: str) -> UserRecord | None: ...
+    def oidc_user(self, issuer: str, sub: str) -> UserRecord | None: ...
+    def oidc_identity_of(self, user_id: str, issuer: str) -> OidcIdentityRecord | None: ...
+    def oidc_identities_of(self, user_id: str) -> Sequence[OidcIdentityView]: ...
+    def link_oidc_identity(
+        self,
+        *,
+        user_id: str,
+        issuer: str,
+        sub: str,
+        now: datetime,
+        audit: AuditEntry,
+        admin_actor: str | None = None,
+    ) -> OidcLink: ...
+    def session_is_live(self, session_id: str, *, now: datetime) -> bool: ...
     def admins(self) -> Sequence[UserRecord]: ...
     def has_role(self, role: str) -> bool: ...
     def restore_notice_active(self) -> bool: ...

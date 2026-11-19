@@ -68,6 +68,13 @@ PUBLIC = (
     "POST /api/v1/setup/admin",  # ...and makes it, behind the secret of the compose
     "POST /api/v1/auth/passkeys/login",
     "POST /api/v1/auth/passkeys/login/options",
+    # M5 L03: the OpenID Connect sign-in is anonymous by nature (a browser sent to the provider and
+    # back); absent (404) unless configured, never a catalogue datum
+    "GET /api/v1/auth/oidc/login",
+    "GET /api/v1/auth/oidc/callback",
+    # ...and its confirmation page is the same-site page the callback sends the browser to, whose
+    # `Strict` session cookie did not come along: bound to the flow cookie, it writes nothing
+    "GET /api/v1/auth/oidc/link/confirm",
     "GET /healthz",
     "GET /readyz",
 )
@@ -76,6 +83,7 @@ OWN = (
     "GET /api/v1/about",
     "POST /api/v1/auth/logout",
     "GET /api/v1/auth/passkeys",
+    "GET /api/v1/auth/oidc/identities",  # M5 L03: the links of her own account, never a `sub`
     "POST /api/v1/auth/passkeys",
     "POST /api/v1/auth/passkeys/options",
     "POST /api/v1/auth/passkeys/reauth/options",
@@ -225,6 +233,11 @@ CLOSED = (
     "POST /api/v1/device-tokens",
     "GET /api/v1/device-tokens/setup",
     "DELETE /api/v1/device-tokens/{public_id}",
+    # M5 L03: linking an identity provider to an account is an adult's reserved action (the
+    # admin's for another account): a child is refused by session and by key
+    "POST /api/v1/auth/oidc/link",
+    "POST /api/v1/auth/oidc/link/confirm",
+    "PUT /api/v1/profiles/{profile_id}/oidc",
     # M5 L02: the registry of devices, its rotation and its removal: the same rule
     "GET /api/v1/devices",
     "POST /api/v1/devices/{device_id}/rotate",

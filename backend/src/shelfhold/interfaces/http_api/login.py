@@ -31,6 +31,7 @@ from shelfhold.infrastructure.http_headers import allow_own_scripts, hash_csp
 from shelfhold.interfaces.http_api.auth import (
     LOGIN_PAGE,
     LOGIN_PATH,
+    OIDC_LOGIN_PATH,
     PASSKEY_LOGIN_OPTIONS_PATH,
     PASSKEY_LOGIN_PATH,
     PASSKEY_SCRIPT_PATH,
@@ -66,6 +67,7 @@ def _fragment(name: str) -> Template:
 
 
 _BUTTON = _fragment("passkey_button.html")
+_OIDC_BUTTON = _fragment("oidc_button.html")
 _SCRIPT_TAG = _fragment("passkey_script.html")
 LOGIN_CSP = hash_csp(_TEMPLATE.template)
 # With passkeys the page loads one more script, from its own origin: `'self'` joins the hashes in
@@ -73,11 +75,20 @@ LOGIN_CSP = hash_csp(_TEMPLATE.template)
 PASSKEY_LOGIN_CSP = allow_own_scripts(LOGIN_CSP)
 
 
-def login_page_html(source_url: str, *, passkeys: bool = False, language: str = "fr") -> str:
+def login_page_html(
+    source_url: str,
+    *,
+    passkeys: bool = False,
+    language: str = "fr",
+    oidc: bool = False,
+    oidc_failed: bool = False,
+) -> str:
     """Only `$` placeholders outside the script and the style: their hashes never change.
     `passkeys`: the button and the same-origin script are there only in a secure context.
     `language`: the language of the request (ENF-I18N-001); the page is anonymous, so the
-    `Accept-Language` of the browser picks it."""
+    `Accept-Language` of the browser picks it.
+    `oidc`: the sign-in link of the identity provider (M5 L03), there only when it is configured;
+    `oidc_failed`: a sign-in that came back refused, said in one neutral line."""
     button = script = ""
     if passkeys:
         button = _BUTTON.substitute(
@@ -100,7 +111,23 @@ def login_page_html(source_url: str, *, passkeys: bool = False, language: str = 
         "max_password": str(MAX_PASSWORD_LENGTH),
     }
     escaped = {name: escape(value) for name, value in values.items()}
-    return _TEMPLATE.substitute({**escaped, "passkey_button": button, "passkey_script": script})
+    oidc_button = (
+        _OIDC_BUTTON.substitute(
+            href=OIDC_LOGIN_PATH, label=escape(t_lang("login.oidc", language=language))
+        )
+        if oidc
+        else ""
+    )
+    notice = escape(t_lang("login.oidc_error", language=language)) if oidc_failed else ""
+    return _TEMPLATE.substitute(
+        {
+            **escaped,
+            "passkey_button": button,
+            "passkey_script": script,
+            "oidc_button": oidc_button,
+            "notice": notice,
+        }
+    )
 
 
 class LoginRequest(BaseModel):
@@ -163,7 +190,9 @@ def _throttled(error: ThrottledError) -> ProblemError:
 def build_login_router(source_url: str) -> APIRouter:
     router = APIRouter()
     page = cache(
-        lambda passkeys, language: login_page_html(source_url, passkeys=passkeys, language=language)
+        lambda passkeys, language, oidc, failed: login_page_html(
+            source_url, passkeys=passkeys, language=language, oidc=oidc, oidc_failed=failed
+        )
     )
 
     @router.get(LOGIN_PAGE, include_in_schema=False)
@@ -171,8 +200,10 @@ def build_login_router(source_url: str) -> APIRouter:
         gate = getattr(request.app.state, "auth_gate", None)
         passkeys = gate is not None and gate.auth.passkeys_available
         language = negotiate(request.headers.get("accept-language"))
+        oidc = gate is not None and gate.auth.oidc_available
+        failed = oidc and request.query_params.get("oidc_error") == "1"
         return HTMLResponse(
-            page(passkeys, language),
+            page(passkeys, language, oidc, failed),
             headers={
                 "Content-Security-Policy": PASSKEY_LOGIN_CSP if passkeys else LOGIN_CSP,
                 "Cache-Control": "no-store",
