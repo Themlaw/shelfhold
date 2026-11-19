@@ -1846,6 +1846,7 @@
   "shelfhold.interfaces.http_api.opds.links",
   "shelfhold.interfaces.http_api.opds.pse",
   "shelfhold.interfaces.http_api.opds.routes",
+  "shelfhold.interfaces.http_api.opds.v2",
   "shelfhold.interfaces.http_api.ops",
   "shelfhold.interfaces.http_api.ops_dashboard",
   "shelfhold.interfaces.http_api.pagination",

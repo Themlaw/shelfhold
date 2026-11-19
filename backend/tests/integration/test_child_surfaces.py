@@ -1414,7 +1414,9 @@ def _opds2(world: World, client: Any, headers: dict[str, str]) -> None:
         absent = client.get(f"/opds/v2/works/{ULID}", headers=headers)
         hidden = client.get(f"/opds/v2/works/{world.seed.works[key]}", headers=headers)
         assert _shape(hidden) == _shape(absent), key
-        found_hit = client.get("/opds/v2/search", params={"q": world.seed.title_of(key)}, headers=headers)
+        found_hit = client.get(
+            "/opds/v2/search", params={"q": world.seed.title_of(key)}, headers=headers
+        )
         assert json.loads(found_hit.content).get("publications", []) == []
 
 
