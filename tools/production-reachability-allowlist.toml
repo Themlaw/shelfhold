@@ -38,14 +38,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "unwired-m5"
-reason = "2026-11-18 (M5 L05b): `CONTENT_FILTER` (`content-filter@2`, the `filter` field of a stored locator) is written by the neutralizer; its first reader is the locator of L07 (reading positions), which still reads `current_content_filter()` until it is rebranched (TODO of L07)."
-until = "M5"  # settled by M5 (L07 reads the filter version)
-symbols = [
-  "shelfhold.infrastructure.content_trust.xhtml_neutralizer:CONTENT_FILTER",
-]
-
-[[allow]]
 category = "unwired-m4-komga"
 reason = "2026-11-16 (M4 L08a): the Komga destination is described, tested against a fake and declared to the core (`KomgaDestination.capabilities`, read by `FirstPartyDestinations`). 2026-11-17 (M4 L46): the target is now created (`target add komga`, `POST /api/v1/targets/komga`: the key is sealed by `store_komga_key` and shown to the server once by `KomgaClient.probe`), which settles the key, the routes and the scan calls. What is left is the scan relay of the export pass (`open_client`, `KomgaNoLibrary`, the inventory) and the audit of the accounts (`admit` before a binding, `audit` daily), written down in docs/decisions/M4.md."
 until = "M5"  # redated by M4 L43 (2026-11-17, docs/decisions/M4.md): the scan relay and the audit of the pass
@@ -138,6 +130,22 @@ reason = "2026-11-17 (M4 L24): `Deprecation` builds the window during which an e
 until = "M5"  # settled by M5 (first event shape change)
 symbols = [
   "shelfhold.integrations.webhooks.catalogue:Deprecation",
+]
+
+[[allow]]
+category = "unwired-m5-renditions"
+reason = "2026-11-18 (M5 L20a): the conversion of an image for a client that lacks its format (`RenditionService`, bounded by header, decoded only in the network-less worker, cached by hash, erased by `purge --now`) and the pure rules around it are written and tested, and the purge already reaches the rows and files. No route serves a page yet: the callers are the page-by-page stream of L18 (`pse:stream`, format chosen by `Accept`) and the KEPUB link of L20b, which share this table and this cache."
+until = "M5"  # settled by L18 (page stream) and L20b part 2, which call the service
+symbols = [
+  "shelfhold.library.application.renditions:Rendition",
+  "shelfhold.library.application.renditions:RenditionService",
+  "shelfhold.library.application.renditions:UnknownSourceError",
+  "shelfhold.library.domain.rendition:LOCAL_PROCESSOR",
+  "shelfhold.library.domain.rendition:RemoteProcessorRefusedError",
+  "shelfhold.library.domain.rendition:UnsupportedSourceError",
+  "shelfhold.library.domain.rendition:avif_announced_size",
+  "shelfhold.library.domain.rendition:ensure_processor_allowed",
+  "shelfhold.library.domain.rendition:webp_announced_size",
 ]
 
 [[allow]]

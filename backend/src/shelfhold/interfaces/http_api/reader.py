@@ -14,8 +14,8 @@ what to do. Nothing is written: no position, no history, no state.
 
 from collections.abc import Callable
 from datetime import datetime
-from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit, urlunsplit
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
@@ -161,6 +161,10 @@ class PositionIn(BaseModel):
 
 class StoredOut(BaseModel):
     id: str
+    carrier_type: (
+        str  # the file it was written on: an EPUB read on a device is on its exported file
+    )
+    carrier_id: str
     locator: dict[str, Any]
     client_ts: datetime
     server_ts: datetime
@@ -194,7 +198,8 @@ class ResolveIn(BaseModel):
 
 def _stored(found: StoredPosition) -> StoredOut:
     return StoredOut(
-        id=found.id, locator=found.locator, client_ts=found.client_ts,
+        id=found.id, carrier_type=found.carrier_type, carrier_id=found.carrier_id,
+        locator=found.locator, client_ts=found.client_ts,
         server_ts=found.server_ts, device_id=found.device_id, approximate=found.approximate,
     )  # fmt: skip
 
@@ -243,6 +248,7 @@ def build_reader_router(
             kavita_url=web_address(kavita_url()),
         )
 
+
     @router.get(
         "/{carrier_type}/{carrier_id}/publication",
         operation_id="reader_publication",
@@ -271,11 +277,11 @@ def build_reader_router(
         except UnknownCarrierError:
             raise ProblemError("not_found", headers=_ABSENT) from None
         except FullReadNotAllowedError:
-            raise ProblemError("full_read_not_allowed") from None
+            raise ProblemError("full_read_not_allowed", headers=_ABSENT) from None
         except ExcerptUnavailableError:  # before its parent: a typed refusal of its own
-            raise ProblemError("excerpt_unavailable") from None
+            raise ProblemError("excerpt_unavailable", headers=_ABSENT) from None
         except NoReadableCopyError:
-            raise ProblemError("no_readable_copy") from None
+            raise ProblemError("no_readable_copy", headers=_ABSENT) from None
         response.headers["Cache-Control"] = "no-store"  # it holds tickets: kept nowhere
         return _out(found)
 

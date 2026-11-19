@@ -15,6 +15,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Final, Literal
 
+from shelfhold.infrastructure.content_trust import CONTENT_FILTER
+
 __all__ = [
     "InvalidLocatorV1Error",
     "LocatorV1",
@@ -37,9 +39,8 @@ class InvalidLocatorV1Error(ValueError):
 def current_content_filter() -> str:
     """The version of the filter and neutralizer that make the DOM the reader shows now.
 
-    The one place it is read. TODO(2026-11-18): rewire on `CONTENT_FILTER` once the neutralizer v2
-    (L05b, `feat/m5-l05b-neutralizer-v2`) is merged; until then the neutralizer is v1."""
-    return "xhtml-neutralizer@v1"
+    The one place it is read: `CONTENT_FILTER`, the version the neutralizer writes."""
+    return CONTENT_FILTER
 
 
 @dataclass(frozen=True)

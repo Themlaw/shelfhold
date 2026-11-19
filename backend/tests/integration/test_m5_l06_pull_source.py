@@ -204,3 +204,34 @@ def test_pull_destination_never_serves_a_format_the_block_does_not_take() -> Non
 
 def _limits() -> BundleLimits:
     return BundleLimits()
+
+
+@pytest.mark.req("EF-EXP-058", "EF-LEC-005", "EF-INT-007")
+def test_content_without_a_hash_is_read_only_from_the_file_the_registry_recorded() -> None:
+    """R2, R3: with no `content_hash` to compare, a copy is the content's only if the registry
+    recorded its size and time and the file still has them; neither the `pull` side nor `/content`
+    take « the first copy of the Unit »."""
+    from shelfhold.library.public import ReadableCopies
+    from shelfhold.reading.application.content_access import NoReadableCopyError
+
+    with export_env(transport="pull") as env:
+        edition, unit = exported(env)
+        with env.engine.begin() as connection:
+            connection.execute(
+                sa.text("UPDATE content SET content_hash = NULL WHERE unit_id = :u"), {"u": unit}
+            )
+            content_id = connection.execute(
+                sa.text("SELECT id FROM content WHERE unit_id = :u"), {"u": unit}
+            ).scalar_one()
+        copies = ReadableCopies(env.engine, lambda: env.lib.fsops)
+        assert candidate_of(env, edition).size is not None
+        copies.open("content", content_id).close()  # recorded, unchanged: read
+        with env.engine.begin() as connection:  # the registry never recorded a size and a time
+            connection.execute(
+                sa.text("UPDATE replica SET size = NULL, mtime_ns = NULL WHERE unit_id = :u"),
+                {"u": unit},
+            )
+        with env.engine.connect() as connection:
+            assert load_candidates(connection, edition) == []
+        with pytest.raises(NoReadableCopyError):
+            copies.open("content", content_id)

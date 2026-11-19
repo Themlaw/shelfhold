@@ -164,6 +164,9 @@ _DECLARED = (
     # credential actions (a fresh session in the hardened profile only), never a key or a token
     _action("device_token.rotate", Effect.TOUCHES_SECRETS),
     _action("device.remove", Effect.MANAGES_CREDENTIALS),
+    # M5 L03 (EF-USR-004): an OIDC identity linked to an account, by its owner or by an admin
+    _action("oidc.link_own", Effect.LINKS_IDENTITY),
+    _action("oidc.link_account", Effect.LINKS_IDENTITY),
     # A passkey is a persistent way in: adding one needs a fresh proof in every profile (porteur,
     # 2026-11-11); retiring one keeps the rule of the other credential actions (hardened only)
     _action("passkey.register", Effect.ENROLS_PASSKEY),
