@@ -176,7 +176,7 @@ def test_lite_page_says_what_does_not_exist_yet() -> None:
     """A surface that is not delivered is written as such, never invented."""
     text = _text(ADMIN / "lite.md")
     assert "pas encore disponible" in text
-    # the offline copy of a book is L16b: made in the web app, never in `/lite`, and the page says so
+    # the offline copy of a book is L16b: made in the web app, never in `/lite`; the page says so
     assert "copies-hors-ligne.md" in text
 
 
