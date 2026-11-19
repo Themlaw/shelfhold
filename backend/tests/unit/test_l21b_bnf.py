@@ -92,7 +92,12 @@ def test_every_proposal_carries_the_source_the_date_and_the_licence() -> None:
 def test_dewey_notices_and_dewey_subjects_are_never_proposed() -> None:
     time = FakeTime()
     result = identify(fake_bnf(clock=time.now), time)
-    flat = repr(result.model_dump(mode="json")).lower()
+    answer = result.model_dump(mode="json")
+    for item in (*answer["proposals"], *answer["relations"]):
+        # the instant of the retrieval is the host's wall clock (the test above checks it): its
+        # digits are not the provider's content, and "843" may show up in them by chance
+        item["provenance"]["fetched_at"] = "the retrieval instant"
+    flat = repr(answer).lower()
     assert "classification notice" not in flat and "classification table" not in flat
     assert "843" not in flat and "dewey" not in flat
     assert ARK in flat and "cb00000002b" not in flat  # the notice that was skipped is not linked

@@ -1366,6 +1366,76 @@ export type DeviceConnectOut = {
 };
 
 /**
+ * DeviceList
+ */
+export type DeviceList = {
+    /**
+     * Items
+     */
+    items: Array<DeviceOut>;
+};
+
+/**
+ * DeviceOut
+ *
+ * What the registry shows of a device: never the secret, never what verifies it.
+ */
+export type DeviceOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Expires At
+     */
+    expires_at: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'koreader' | 'kobo' | 'opds' | 'browser' | 'other';
+    /**
+     * Label
+     */
+    label: string | null;
+    /**
+     * Last Seen At
+     */
+    last_seen_at: string | null;
+    /**
+     * Public Id
+     */
+    public_id: string | null;
+    /**
+     * Revoked At
+     */
+    revoked_at: string | null;
+    /**
+     * Subject User Id
+     */
+    subject_user_id: string;
+    /**
+     * Subject Username
+     */
+    subject_username: string;
+};
+
+/**
+ * DeviceRotateIn
+ *
+ * Only a token past its expiry needs `expires_days`: a new secret would be refused as it is.
+ */
+export type DeviceRotateIn = {
+    /**
+     * Expires Days
+     */
+    expires_days?: number | null;
+};
+
+/**
  * DeviceSkippedOut
  *
  * A Kavita target left out, and why (`address_unusable`): the screen says so.
@@ -1469,6 +1539,10 @@ export type DeviceTokenPairIn = {
      */
     expires_days?: number | null;
     /**
+     * Kind
+     */
+    kind?: 'koreader' | 'kobo' | 'opds' | 'browser' | 'other' | null;
+    /**
      * Name
      */
     name?: string | null;
@@ -1484,6 +1558,10 @@ export type DeviceTokenPairIn = {
  * What is shown once. `secret` is typed as it is: no separator, case kept.
  */
 export type DeviceTokenPaired = {
+    /**
+     * Device Id
+     */
+    device_id: string;
     /**
      * Expires At
      */
@@ -3345,6 +3423,68 @@ export type OfficialLinkOut = {
      * Url
      */
     url: string;
+};
+
+/**
+ * OidcConfirmation
+ */
+export type OidcConfirmation = {
+    /**
+     * Confirm
+     */
+    confirm: boolean;
+};
+
+/**
+ * OidcIdentityItem
+ *
+ * A link of the caller's account: the provider and since when, never the identifier.
+ */
+export type OidcIdentityItem = {
+    /**
+     * Issuer
+     */
+    issuer: string;
+    /**
+     * Linked At
+     */
+    linked_at: string;
+    /**
+     * Linked By Other
+     */
+    linked_by_other: boolean | null;
+};
+
+/**
+ * OidcIdentityList
+ */
+export type OidcIdentityList = {
+    /**
+     * Items
+     */
+    items: Array<OidcIdentityItem>;
+};
+
+/**
+ * OidcLinkStart
+ *
+ * Where to send the browser: the provider's page, with the flow already begun.
+ */
+export type OidcLinkStart = {
+    /**
+     * Authorization Url
+     */
+    authorization_url: string;
+};
+
+/**
+ * OidcSubject
+ */
+export type OidcSubject = {
+    /**
+     * Sub
+     */
+    sub: string;
 };
 
 /**
@@ -9042,6 +9182,105 @@ export type LogoutResponses = {
 
 export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
 
+export type OidcIdentitiesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/oidc/identities';
+};
+
+export type OidcIdentitiesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OidcIdentitiesError = OidcIdentitiesErrors[keyof OidcIdentitiesErrors];
+
+export type OidcIdentitiesResponses = {
+    /**
+     * Successful Response
+     */
+    200: OidcIdentityList;
+};
+
+export type OidcIdentitiesResponse = OidcIdentitiesResponses[keyof OidcIdentitiesResponses];
+
+export type OidcLinkData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/oidc/link';
+};
+
+export type OidcLinkErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OidcLinkError = OidcLinkErrors[keyof OidcLinkErrors];
+
+export type OidcLinkResponses = {
+    /**
+     * Successful Response
+     */
+    200: OidcLinkStart;
+};
+
+export type OidcLinkResponse = OidcLinkResponses[keyof OidcLinkResponses];
+
+export type OidcConfirmData = {
+    body: OidcConfirmation;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/oidc/link/confirm';
+};
+
+export type OidcConfirmErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OidcConfirmError = OidcConfirmErrors[keyof OidcConfirmErrors];
+
+export type OidcConfirmResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type OidcConfirmResponse = OidcConfirmResponses[keyof OidcConfirmResponses];
+
 export type PasskeysListData = {
     body?: never;
     path?: never;
@@ -10430,6 +10669,44 @@ export type DeviceTokenRevokeResponses = {
 
 export type DeviceTokenRevokeResponse = DeviceTokenRevokeResponses[keyof DeviceTokenRevokeResponses];
 
+export type DeviceListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Subject User Id
+         */
+        subject_user_id?: string | null;
+    };
+    url: '/api/v1/devices';
+};
+
+export type DeviceListErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceListError = DeviceListErrors[keyof DeviceListErrors];
+
+export type DeviceListResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeviceList;
+};
+
+export type DeviceListResponse = DeviceListResponses[keyof DeviceListResponses];
+
 export type DeviceConnectData = {
     body?: never;
     path?: never;
@@ -10462,6 +10739,85 @@ export type DeviceConnectResponses = {
 };
 
 export type DeviceConnectResponse = DeviceConnectResponses[keyof DeviceConnectResponses];
+
+export type DeviceRemoveData = {
+    body?: never;
+    path: {
+        /**
+         * Device Id
+         */
+        device_id: string;
+    };
+    query?: never;
+    url: '/api/v1/devices/{device_id}';
+};
+
+export type DeviceRemoveErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceRemoveError = DeviceRemoveErrors[keyof DeviceRemoveErrors];
+
+export type DeviceRemoveResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeviceRemoveResponse = DeviceRemoveResponses[keyof DeviceRemoveResponses];
+
+export type DeviceRotateData = {
+    /**
+     * Body
+     */
+    body?: DeviceRotateIn | null;
+    path: {
+        /**
+         * Device Id
+         */
+        device_id: string;
+    };
+    query?: never;
+    url: '/api/v1/devices/{device_id}/rotate';
+};
+
+export type DeviceRotateErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeviceRotateError = DeviceRotateErrors[keyof DeviceRotateErrors];
+
+export type DeviceRotateResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeviceTokenPaired;
+};
+
+export type DeviceRotateResponse = DeviceRotateResponses[keyof DeviceRotateResponses];
 
 export type DiagnosticBundleDownloadData = {
     body?: never;
@@ -13802,6 +14158,44 @@ export type SetKavitaAccountResponses = {
 
 export type SetKavitaAccountResponse = SetKavitaAccountResponses[keyof SetKavitaAccountResponses];
 
+export type LinkAccountData = {
+    body: OidcSubject;
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{profile_id}/oidc';
+};
+
+export type LinkAccountErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type LinkAccountError = LinkAccountErrors[keyof LinkAccountErrors];
+
+export type LinkAccountResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type LinkAccountResponse = LinkAccountResponses[keyof LinkAccountResponses];
+
 export type SourcePoliciesData = {
     body?: never;
     path: {
@@ -14000,7 +14394,7 @@ export type RevokeAccountResponses = {
 
 export type RevokeAccountResponse = RevokeAccountResponses[keyof RevokeAccountResponses];
 
-export type LinkAccountData = {
+export type LinkAccount2Data = {
     body: LinkIn;
     path: {
         /**
@@ -14016,7 +14410,7 @@ export type LinkAccountData = {
     url: '/api/v1/profiles/{user_id}/destination-accounts/{shelf_destination_id}';
 };
 
-export type LinkAccountErrors = {
+export type LinkAccount2Errors = {
     /**
      * Connexion requise, ou mot de passe à confirmer (reauth-required).
      */
@@ -14031,16 +14425,16 @@ export type LinkAccountErrors = {
     default: Problem;
 };
 
-export type LinkAccountError = LinkAccountErrors[keyof LinkAccountErrors];
+export type LinkAccount2Error = LinkAccount2Errors[keyof LinkAccount2Errors];
 
-export type LinkAccountResponses = {
+export type LinkAccount2Responses = {
     /**
      * Successful Response
      */
     200: LinkedOut;
 };
 
-export type LinkAccountResponse = LinkAccountResponses[keyof LinkAccountResponses];
+export type LinkAccount2Response = LinkAccount2Responses[keyof LinkAccount2Responses];
 
 export type ListChoicesData = {
     body?: never;

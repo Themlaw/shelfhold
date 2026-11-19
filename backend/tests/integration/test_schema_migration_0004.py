@@ -38,6 +38,10 @@ EXPORT_TABLES = {
     "export_assembly",  # migration 0089 (M4 L10, EF-EXP-019)
     "tree", "tree_indexer",  # migration 0064 (M4 L02, ADR-0052)
 }  # fmt: skip
+M5_TABLES = {
+    "device",  # migration 0100 (M5 L02, EF-USR-008)
+    "oidc_identity",  # migration 0101 (M5 L03, EF-USR-004)
+}
 READING_TABLES = {
     "reading_position", "progress_sync_cursor", "progress_sync_note", "read_state_push_note",
     "reading_conflict",
@@ -127,6 +131,7 @@ def test_metadata_covers_exactly_the_migrated_tables(tmp_path: Path) -> None:
         | M2_TABLES
         | M3_TABLES
         | M4_TABLES
+        | M5_TABLES
     )
     assert tables(database) == {t.name for t in metadata.sorted_tables} == expected
     # `replica` moved to its own module (M3 L00) without changing the migrated DDL

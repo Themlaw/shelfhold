@@ -97,6 +97,13 @@ class Settings(BaseModel):
     # a fresh password on every reserved action; never required. The invisible protections
     # (argon2id, CSRF, cookies, CSP, attempt limiting) have no setting at all.
     auth_hardened: bool = False
+    # EF-USR-004 (M5 L03): sign-in through an OpenID Connect provider, off until the issuer and the
+    # client are both given. The redirect address is `public_url` + `/api/v1/auth/oidc/callback`
+    # (so `public_url` is needed too). A secret is optional (a public client uses PKCE alone).
+    # A sign-in never creates an account: it finds the one linked to the person's `sub`.
+    oidc_issuer: str | None = None
+    oidc_client_id: str | None = None
+    oidc_client_secret: SecretStr | None = None
     # ENF-OBS-002: `/metrics` (Prometheus text) answers only when the host turns it on; a key of
     # scope `metrics` is then the only credential that reads it. Off: the route says 404.
     metrics_enabled: bool = False
@@ -159,10 +166,6 @@ class Settings(BaseModel):
     disk_pause_gib: float = Field(default=10.0, ge=0)
     disk_resume_percent: float = Field(default=8.0, ge=0, le=60)
     disk_resume_gib: float = Field(default=15.0, ge=0)
-    # M4 L14a (ADR-0053 as amended): the fastest pass over a Unit that still counts as having
-    # read it, in pages per minute, measured on the server's clock. Wide for a manga or a
-    # webtoon; a look at 200 pages in 30 seconds is far above it.
-    reading_max_pages_per_minute: float = Field(default=20.0, gt=0, le=10_000)
     # M4 L50: « read » is told to Kavita for the chapters a move crossed only if the move started
     # from a contact of the same device at most this many hours earlier (KOReader makes no contact
     # by itself unless its auto-sync is on: the previous PUT is that contact). The local mark is
@@ -249,6 +252,43 @@ class Settings(BaseModel):
     @classmethod
     def _forge_urls_are_plain(cls, value: str | None) -> str | None:
         return None if value is None else require_plain_web_url(value)
+
+    @field_validator("oidc_issuer", "oidc_client_id", "oidc_client_secret", mode="before")
+    @classmethod
+    def _empty_oidc_variable_is_unset(cls, value: Any) -> Any:
+        text = value.get_secret_value() if isinstance(value, SecretStr) else value
+        return None if isinstance(text, str) and not text.strip() else value
+
+    @field_validator("oidc_issuer")
+    @classmethod
+    def _oidc_issuer_is_https(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        require_plain_web_url(value)
+        if not value.startswith("https://"):
+            raise ValueError("oidc_issuer must be an https URL")
+        return value.rstrip("/")
+
+    @field_validator("oidc_client_id")
+    @classmethod
+    def _oidc_client_id_is_plain(cls, value: str | None) -> str | None:
+        if value is not None and (
+            len(value) > 256 or not value.isascii() or not value.isprintable() or " " in value
+        ):
+            raise ValueError("oidc_client_id is not shaped like a client identifier")
+        return value
+
+    @model_validator(mode="after")
+    def _oidc_is_whole(self) -> Self:
+        if (self.oidc_issuer is None) != (self.oidc_client_id is None):
+            raise ValueError("oidc_issuer and oidc_client_id are given together or not at all")
+        if self.oidc_issuer is not None and not (self.public_url or "").startswith("https://"):
+            raise ValueError("OIDC needs public_url (https): the provider sends the browser back")
+        return self
+
+    @property
+    def oidc_enabled(self) -> bool:
+        return self.oidc_issuer is not None and self.oidc_client_id is not None
 
     @field_validator("metadata_contact")
     @classmethod

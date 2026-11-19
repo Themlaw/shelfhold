@@ -29,8 +29,11 @@ def zip_of(entries: Mapping[str, bytes]) -> bytes:
 
 
 class FakeArchive:
-    def __init__(self, entries: Mapping[str, bytes], asked: list[str]) -> None:
-        self._entries, self._asked = dict(entries), asked
+    def __init__(self, entries: Mapping[str, bytes], asked: list[str], pin: str = "fake") -> None:
+        self._entries, self._asked, self._pin = dict(entries), asked, pin
+
+    def fingerprint(self) -> str:
+        return self._pin
 
     def names(self) -> frozenset[str]:
         return frozenset(self._entries)
@@ -51,6 +54,7 @@ class FakeArchives:
         self.by_content: dict[str, Mapping[str, bytes]] = {}
         self.item_content: dict[str, str] = {}
         self.excerpts: dict[str, frozenset[str]] = {}  # content id -> the excerpt the server cuts
+        self.pins: dict[str, str] = {}  # content id -> what the file is now (a replaced file)
         self.asked: list[str] = []
 
     def open(self, carrier_type: str, carrier_id: str, scope: str = "full") -> FakeArchive:
@@ -71,7 +75,7 @@ class FakeArchives:
             if content_id not in self.excerpts:
                 raise ExcerptUnavailableError
             entries = {n: b for n, b in entries.items() if n in self.excerpts[content_id]}
-        return FakeArchive(entries, self.asked)
+        return FakeArchive(entries, self.asked, self.pins.get(content_id, "fake"))
 
 
 def add_carrier(engine: sa.Engine, edition_id: str, *, format: str = "cbz") -> str:

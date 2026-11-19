@@ -6,18 +6,15 @@ carrier (a partial unique index): once settled, or overtaken by a later position
 divergence may be proposed again. Nothing
 existing is touched; reversible.
 
-Number: 0102 is the number the plan reserved for L07. TODO(2026-11-18): `down_revision` is 0098, the
-head of this branch's base, because the migration of L03 (0101, OIDC) is not merged yet; it is
-re-chained on 0101 at the merge, and the test that pins the head follows. The file stays frozen in
-`tools/published-migrations.toml`; its fingerprint is recomputed in the same commit as the
-re-chaining.
+Number: 0102 is the number the plan reserved for L07. It follows 0101 (L03, OIDC identity), the head
+of main; the file is frozen in `tools/published-migrations.toml`.
 """
 # ruff: noqa: E501  (the DDL is the one SQLAlchemy writes, kept as it is)
 
 from alembic import op
 
 revision = "0102"
-down_revision = "0098"
+down_revision = "0101"
 branch_labels = None
 depends_on = None
 

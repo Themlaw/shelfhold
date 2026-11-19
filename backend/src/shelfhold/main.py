@@ -81,6 +81,7 @@ from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.kosync import build_kosync_router
 from shelfhold.interfaces.http_api.library import build_library_router
+from shelfhold.interfaces.http_api.lite import build_lite_router
 from shelfhold.interfaces.http_api.maintenance import build_maintenance_router
 from shelfhold.interfaces.http_api.me import build_me_router
 from shelfhold.interfaces.http_api.metrics import build_metrics_router
@@ -202,6 +203,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "naming_segment_policy_confirmed": "naming_segment_policy_confirmed",
     "wake_url": "wake_url", "wake_suwayomi": "wake_suwayomi", "wake_kavita": "wake_dest",
     "wake_timeout_s": "wake_timeout_s", "wake_session_s": "wake_duration_s",
+    "oidc_issuer": "oidc_issuer", "oidc_client_id": "oidc_client_id",
     "fetcher_cache": "fetcher_cache", "fetcher_cache_off_sources": "fetcher_cache_off_sources",
     "cli_allow_host": "cli_allow_host", "allow_network_data_dir": "allow_network_data_dir",
     "disk_pause_percent": "disk_pause_percent", "disk_pause_gib": "disk_pause_gib",
@@ -210,7 +212,6 @@ LOGGED_SETTINGS: dict[str, str] = {
     "metrics_enabled": "metrics_enabled",  # a switch
     "fresh_auth_s": "recent_login_window_s",  # a duration
     "revision_min_page_ratio": "revision_min_page_ratio",
-    "reading_max_pages_per_minute": "reading_max_pages_per_minute",  # a speed limit
     "reading_relay_max_session_hours": "reading_relay_max_hours",  # a duration
     "follow_fallback_return": "follow_fallback_return",
     "page_target_format": "page_target_format",
@@ -240,6 +241,7 @@ SECRET_SETTINGS = frozenset(
         "backup_passphrase_file",
         "metadata_contact",
         "comicvine_api_key",
+        "oidc_client_secret",
         "auth_forward_secret",
         "setup_token",
     }
@@ -290,7 +292,13 @@ def create_app(
                 {"user_id": record.user_id, "passkey_id": record.id},
             )
 
-    auth = local_auth(engine, resolved, clock, on_passkey_registered=passkey_registered)
+    auth = local_auth(
+        engine,
+        resolved,
+        clock,
+        on_passkey_registered=passkey_registered,
+        network=composition.network,
+    )
     ready = Readiness()
     gate = AuthGate(auth, public_url=resolved.public_url, ready=ready.is_set)
 
@@ -470,6 +478,9 @@ def create_app(
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
             lambda: engine, thumbnails, bundles, clock.now
+        ),
+        build_lite_router(  # M5 L17a: pages with no script, behind a cookie a token's secret opened
+            lambda: engine, thumbnails, bundles
         ),
         build_kosync_router(  # M4 L47: where the e-reader is, behind the same device token
             kosync, clock.now

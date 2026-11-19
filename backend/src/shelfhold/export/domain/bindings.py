@@ -92,6 +92,14 @@ class TargetKindTransportError(BindingError):
     code = "target.transport_not_supported"
 
 
+class KomgaPrimaryUnsupportedError(BindingError):
+    """A Komga binding that would own a tree: the executor plans no write for one, so the shelf
+    would never receive its files. Until M5, Komga is bound as a secondary indexer of a tree
+    another binding writes (ADR-0052)."""
+
+    code = "binding.komga_primary_unsupported"
+
+
 class FolderOutsideRootError(BindingError):
     """The folder of a drop box is the folder its target declares, or one below it: never one that
     climbs out of it (`..`), is given as an absolute path, or goes through a link."""

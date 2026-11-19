@@ -213,7 +213,11 @@ def _kept_copies(connection: Connection, edition_id: str, held: set[str]) -> lis
                 for c in library_copies(connection, r.unit_id)
                 if not c.damaged
                 and c.rel_path.lower().endswith(".cbz")
-                and (k.content_hash is None or c.content_hash == k.content_hash)
+                and (
+                    c.content_hash == k.content_hash
+                    if k.content_hash is not None
+                    else c.size is not None and c.mtime_ns is not None  # proved by `_open_one`
+                )
             ),
             None,
         )

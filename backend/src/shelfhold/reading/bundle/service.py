@@ -24,7 +24,7 @@ import structlog
 from sqlalchemy import Engine
 
 from shelfhold.catalog.public import visible_edition_ids
-from shelfhold.identity.public import reader_scope
+from shelfhold.identity.public import device_token_is_live, reader_scope
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import catalog, identity
 from shelfhold.infrastructure.secrets.keyring import Keyring
@@ -475,16 +475,22 @@ class SeriesBundles:
     def _token_alive(self, token_id: str | None) -> Callable[[], bool]:
         if token_id is None:
             return lambda: True
-        table = identity.device_token
+        table, registry = identity.device_token, identity.device
 
         def alive() -> bool:
             with self._engine.connect() as connection:
                 row = connection.execute(
-                    sa.select(table.c.revoked_at, table.c.expires_at).where(table.c.id == token_id)
+                    sa.select(
+                        table.c.revoked_at,
+                        table.c.expires_at,
+                        registry.c.revoked_at.label("retired"),
+                    )
+                    .select_from(table.outerjoin(registry, registry.c.id == table.c.device_id))
+                    .where(table.c.id == token_id)
                 ).first()
-            if row is None or row.revoked_at is not None:
-                return False
-            return row.expires_at is None or self._now() < row.expires_at
+            return row is not None and device_token_is_live(
+                row.revoked_at, row.retired, row.expires_at, self._now()
+            )
 
         return alive
 
