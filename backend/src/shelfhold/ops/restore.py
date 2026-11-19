@@ -85,8 +85,8 @@ class RestoreCredentialsExit:
         since = data.backup_created_at or "the backup"
         reason = (
             f"{data.sessions} session(s) and {data.api_keys} API key(s) were revoked by a "
-            f"restore; passkeys sign-in is suspended. Check the passkeys created or revoked "
-            f"since {since}"
+            f"restore; passkey and identity-provider sign-in is suspended. Check the passkeys "
+            f"and the identity-provider links created or removed since {since}"
         )
         if data.passwords_carried:
             reason += " (revocations and password hashes of the live database carried over)"
