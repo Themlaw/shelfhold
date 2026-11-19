@@ -661,18 +661,13 @@ jobs:
         working-directory: e2e
       - name: Playwright browser
         working-directory: e2e
+        timeout-minutes: 8
         env:
           BROWSER: ${{ matrix.browser }}
-        run: |
-          # apt waits ~10 min per unreachable mirror: bound it, then install the browser alone
-          # (the runner image ships most system libraries; a missing one fails the run, loudly).
-          # a mirror that stalls is retried: the packages already fetched are kept for the next try
-          for attempt in 1 2 3; do
-            timeout 150 npx playwright install --with-deps "$BROWSER" && exit 0
-            echo "::warning::playwright --with-deps attempt ${attempt} failed"
-          done
-          echo "::warning::playwright --with-deps failed; installing the browser alone"
-          npx playwright install "$BROWSER"
+        # The libraries are installed to the end, never cut by `timeout`: a killed `npx` leaves its
+        # `apt-get` holding the dpkg lock and every later attempt fails on the lock. The step is
+        # bounded by `timeout-minutes` instead (which stops the whole process group).
+        run: npx playwright install --with-deps "$BROWSER"
       - name: Playwright (reader, one engine)
         working-directory: e2e
         env:
