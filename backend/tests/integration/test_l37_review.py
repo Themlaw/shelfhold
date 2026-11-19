@@ -187,9 +187,33 @@ def test_a_task_reaching_a_worker_after_sigterm_runs_at_the_next_boot(
 # -- 5. no descriptor grows with the application's life cycle -----------------------------------
 
 
-def open_fds() -> int:
+def open_fds(settings: Settings | None = None) -> int:
+    """Count the file descriptors the application itself holds open: only those whose target
+    lies under the test's data or store directory. Descriptors opened by other tests sharing
+    the worker (their own temporary trees, sockets, pipes) are ignored, so a background
+    count that fluctuates between runs can no longer fail this test."""
     gc.collect()
-    return len(os.listdir("/proc/self/fd"))
+    roots: list[Path] = []
+    if settings is not None:
+        roots = [settings.data_dir, settings.store_dir]
+    roots = [Path(root).resolve() for root in roots]
+    count = 0
+    for name in os.listdir("/proc/self/fd"):
+        try:
+            target = os.readlink(f"/proc/self/fd/{name}")
+        except OSError:
+            continue
+        if target.endswith(" (deleted)"):
+            target = target[: -len(" (deleted)")]
+        if not roots:
+            count += 1
+            continue
+        for root in roots:
+            root_s = str(root)
+            if target == root_s or target.startswith(root_s + os.sep):
+                count += 1
+                break
+    return count
 
 
 @pytest.mark.req("ENF-OPS-007")
@@ -206,10 +230,16 @@ def test_successive_apps_and_lifespans_do_not_grow_the_descriptors(settings: Set
             assert client.get("/healthz").status_code == 200
 
     life()  # warm-up: imports, caches
-    before = open_fds()
+    path_before = open_fds(settings)
     for _ in range(5):
         life()
-    assert open_fds() - before <= 2, "a lifespan leaves descriptors behind (Huey storage?)"
+    total_t1 = open_fds()
+    for _ in range(10):
+        life()
+    path_after = open_fds(settings)
+    total_t2 = open_fds()
+    assert path_after - path_before <= 2, "a lifespan leaves descriptors behind (Huey storage?)"
+    assert total_t2 - total_t1 < 10, "grows with each lifespan"
 
 
 @pytest.mark.req("ENF-OPS-007")

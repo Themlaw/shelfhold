@@ -48,6 +48,9 @@ export function kitCsp(html: string): Record<string, string[]> {
     // the reader (`/lire`) is its own entry with its own policy (L12): nothing of the SPA draws a
     // `blob:` image, no `data:`, no host.
     'img-src': ["'self'"],
+    // the PWA (L16a): its worker and its manifest are files of the origin (the reader has neither)
+    'worker-src': ["'self'"],
+    'manifest-src': ["'self'"],
     'base-uri': ["'none'"],
     'form-action': ["'self'"],
     'object-src': ["'none'"],
