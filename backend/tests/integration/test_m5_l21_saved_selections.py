@@ -106,7 +106,7 @@ def test_saved_selections(world: World) -> None:
     assert detail.status_code == 200
     body = detail.json()
     assert _titles(detail) == _titles_of(world, {"mixed", "ok"})  # two Works have one in French
-    assert (body["total"], body["capped"], body["valid"]) == (1, False, True)
+    assert (body["total"], body["capped"], body["valid"]) == (2, False, True)
     # changed, then removed
     renamed = _put(
         world, admin, f"{SELECTIONS}/{made}", {"name": "Fr+En", "query": {"lang": ["fr", "en"]}}

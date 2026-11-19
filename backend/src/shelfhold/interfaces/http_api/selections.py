@@ -71,7 +71,7 @@ class SelectionChange(BaseModel):
     @model_validator(mode="after")
     def _something(self) -> "SelectionChange":
         if self.name is None and self.query is None:
-            raise ValueError("nothing to change")
+            raise ValueError(type(self).__name__)  # nothing to change
         return self
 
 
