@@ -44,8 +44,8 @@ catalogue **seulement** : jamais l'identifiant ni le secret.
 Chaque appairage fait **un appareil** : un libellé, un type (`koreader`, `kobo`, `opds`, `browser`,
 `other`), le profil qu'il lit, et « vu pour la dernière fois » (la dernière requête acceptée). L'écran
 « Connecter une liseuse » les liste (`GET /api/v1/devices`) : un membre voit ceux de son profil, un
-administrateur ceux de tous, un enfant aucun. Un appareil d'un autre profil répond comme un appareil
-inconnu.
+administrateur ceux de tous, un enfant aucun. Un appareil d'un autre profil répond comme un
+appareil inconnu.
 
 - **Nouveau secret** (`POST /api/v1/devices/{id}/rotate`, action réservée `device_token.rotate`, session
   récente) : un nouveau secret sur le **même** appareil. **L'ancien est refusé dès la requête suivante**
@@ -57,6 +57,14 @@ inconnu.
   rôle et une restauration retirent aussi les appareils.
 - Rien de tout cela n'est ouvert à une clé d'API ni à un jeton d'appareil. Ni le secret, ni son md5, ni
   l'en-tête `x-auth-key` n'entrent dans un journal.
+
+### Les refus du registre
+
+| Code | Ce qui s'est passé | Ce qu'il faut faire |
+|---|---|---|
+| `device_token_not_found` | le jeton est inconnu, déjà révoqué, ou n'est pas le vôtre | actualisez la liste de vos appareils |
+| `device_rotation_conflict` | une autre rotation du même appareil a été écrite la première | actualisez la liste, puis recommencez si le secret affiché ailleurs n'est pas celui que vous voulez |
+| `device_tls_required` | la requête est arrivée en HTTP simple | servez Shelfhold derrière TLS, ou, sur un réseau local de confiance seulement, mettez `SHELFHOLD_DEVICE_ALLOW_PLAIN_HTTP` à vrai |
 
 ## L'émettre, le lister, le révoquer en ligne de commande
 
