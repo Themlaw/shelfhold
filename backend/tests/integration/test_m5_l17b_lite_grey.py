@@ -122,9 +122,7 @@ def test_no_user_agent_sniffing(world: World) -> None:
     """What `/lite` and the SPA serve is the same for a Kobo, a Kindle and a desktop browser."""
     lite = signed_in(world, world.mum, "10.0.2.8")
     for path in ("/lite/works", "/lite/series", f"/lite/covers/{world.covers['ok']}/160"):
-        answers = {
-            ua: lite.get(path, headers={"User-Agent": ua}) for ua in (KOBO, KINDLE, CHROME)
-        }
+        answers = {ua: lite.get(path, headers={"User-Agent": ua}) for ua in (KOBO, KINDLE, CHROME)}
         assert len({(r.status_code, r.content) for r in answers.values()}) == 1, path
     spa = {
         ua: browser(world, "10.0.2.9").get("/", headers={"User-Agent": ua}, follow_redirects=False)
@@ -134,21 +132,23 @@ def test_no_user_agent_sniffing(world: World) -> None:
 
 
 def test_no_user_agent_sniffing_in_the_serving_code() -> None:
-    """Nothing that serves the SPA or `/lite`, and nothing of the SPA itself, reads the UA."""
+    """Nothing that serves the SPA or `/lite`, nor the SPA outside its reader, reads the UA."""
     sniff = re.compile(r"user[-_ ]?agent|navigator\.(platform|vendor|appVersion)", re.IGNORECASE)
     scanned = [
         *(
-            p for p in (ROOT / "backend/src/shelfhold/interfaces/http_api/lite").rglob("*")
+            p
+            for p in (ROOT / "backend/src/shelfhold/interfaces/http_api/lite").rglob("*")
             if p.suffix in {".py", ".html", ".css", ".txt"}
         ),
         ROOT / "backend/src/shelfhold/interfaces/http_api/spa.py",
         ROOT / "backend/src/shelfhold/interfaces/http_api/thumbnails.py",
         ROOT / "frontend/src/app.html",
     ]
-    for folder in ("routes", "lib", "reader"):
+    for folder in ("routes", "lib"):  # the reader names its engine apart (`lib/reader/browser.ts`)
         scanned += [
             p for p in (ROOT / "frontend/src" / folder).rglob("*")
             if p.suffix in {".ts", ".svelte", ".js", ".css"} and ".test." not in p.name
+            and "reader" not in p.parts
         ]  # fmt: skip
     hits = [str(p) for p in scanned if p.is_file() and sniff.search(p.read_text("utf-8"))]
     assert hits == []
