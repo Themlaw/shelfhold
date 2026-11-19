@@ -85,7 +85,7 @@ class PublicationOut(BaseModel):
     language: str | None
     reading_direction: Literal["ltr", "rtl", "webtoon"]
     series_id: str  # the Œuvre: the anchor of a setting pinned to this series (L13)
-    work_id: str  # the same Œuvre, under the name `?since=` gives it: the key of an offline copy (L16b)
+    work_id: str  # the same Œuvre, as `?since=` names it: the key of an offline copy (L16b)
     expires_at: datetime
     pages: list[EntryOut]
     spine: list[EntryOut]
