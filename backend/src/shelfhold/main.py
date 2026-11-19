@@ -128,12 +128,14 @@ from shelfhold.ops.wiring import open_ops
 from shelfhold.plugin_host.attestation import AttestationStore
 from shelfhold.plugin_host.public import PluginRegistry, installed_versions, start_plugins
 from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse_settings_schema
+from shelfhold.progress_lease import build_progress_lease
 from shelfhold.reading.application.content_access import (
     ContentAccess,
     ContentKey,
     NoReadableCopyError,
 )
 from shelfhold.reading.application.continue_reading import ContinueReading
+from shelfhold.reading.application.lease import ProgressLease
 from shelfhold.reading.application.positions import ReaderPositions
 from shelfhold.reading.application.publication import PublicationService, epub_spine_of
 from shelfhold.reading.bundle import SeriesBundles
@@ -394,10 +396,14 @@ def create_app(
         return series_bundles(engine, composition.keyring, clock.now)
 
     @cache
+    def progress_lease() -> ProgressLease:  # M5 L22a: the lock of the Work a job is rewriting
+        return build_progress_lease(engine, clock)
+
+    @cache
     def kosync() -> Kosync:  # one: it counts the unknown fingerprints of each token
         return Kosync(
             engine, composition.keyring, clock.now,
-            spine_of=epub_spine_of(content_access),
+            spine_of=epub_spine_of(content_access), hold_work=progress_lease(),
         )  # fmt: skip
 
     def relations_after_audience_change() -> None:
@@ -478,7 +484,7 @@ def create_app(
         ),
         build_reader_router(  # M5 L06: what the reader opens; L07: where it is
             lambda: PublicationService(engine, content_access()),
-            lambda: ReaderPositions(engine, content_access(), clock.now),
+            lambda: ReaderPositions(engine, content_access(), clock.now, progress_lease()),
             lambda: ContinueReading(engine, content_access()),  # M5 L14: « Reprendre la lecture »
             lambda: kavita_open_url_of(engine),
         ),

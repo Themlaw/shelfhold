@@ -148,3 +148,86 @@ def test_openapi_describes_healthz_response(settings: Settings) -> None:
         schema = client.app.openapi()  # type: ignore[attr-defined]
     ok = schema["paths"]["/healthz"]["get"]["responses"]["200"]["content"]["application/json"]
     assert "$ref" in ok["schema"]
+
+
+@pytest.mark.req("EF-LEC-012")
+def test_manifest_and_service_worker_are_served_with_their_own_types(
+    settings: Settings, build_dir: Path
+) -> None:
+    """The manifest has its own media type and the worker is revalidated at each start: a worker
+    kept by the HTTP cache would hold a stale shell for ever."""
+    (build_dir / "manifest.webmanifest").write_text('{"name": "Shelfhold"}', encoding="utf-8")
+    (build_dir / "service-worker.js").write_text(
+        "self.addEventListener('fetch', () => {});", "utf-8"
+    )
+    with _client(settings, build_dir) as client:
+        manifest = client.get("/manifest.webmanifest")
+        worker = client.get("/service-worker.js")
+    assert manifest.headers["content-type"].startswith("application/manifest+json")
+    assert worker.headers["content-type"].split(";")[0] in {
+        "text/javascript",
+        "application/javascript",
+    }
+    assert worker.headers["cache-control"] == "no-cache"
+    assert "service-worker-allowed" not in worker.headers  # the scope stays the origin root
+    # its global scope may read its own origin and nothing else, whatever the build holds
+    assert worker.headers["content-security-policy"].startswith(
+        "default-src 'none'; connect-src 'self'"
+    )
+
+
+@pytest.mark.req("EF-LEC-012")
+def test_a_missing_service_worker_is_not_the_shell(settings: Settings, build_dir: Path) -> None:
+    """A browser that asks for the worker of a build that has none is not handed an HTML page."""
+    with _client(settings, build_dir) as client:
+        response = client.get("/service-worker.js")
+    assert response.status_code == 404
+
+
+ODD_PATHS = [
+    "/lire%2F..",
+    "/lire%2f..%2fx",
+    "/lire%2F%2e%2e",
+    "/lire/%2e%2e/x",
+    "/lire/%2E%2E",
+    "/bibliotheque%2Fx",
+    "//lire",
+    "//lire/U1",
+    "/a//b",
+    "/content%2F..%2Fx",
+    "/content/%2e%2e/api",
+    "/api%2F..",
+    "/api//v1/me",
+    "/_app%2Fimmutable%2Fchunk.js",
+]
+
+
+@pytest.mark.req("EF-LEC-012", "ENF-SEC-004")
+@pytest.mark.parametrize("path", ODD_PATHS)
+def test_odd_request_line_is_never_served_as_a_page(
+    settings: Settings, build_dir: Path, path: str
+) -> None:
+    """One rule with the worker (`isReserved`): a request line whose decoded form holds a dot
+    segment, an encoded slash or a double slash is no page, for any prefix: a neutral 404, neither
+    the reader nor the shell nor a file."""
+    (build_dir / "reader-entry").mkdir()
+    (build_dir / "reader-entry" / "reader.html").write_text(
+        "<!doctype html><script>boot()</script><div id=reader></div>", encoding="utf-8"
+    )
+    with _client(settings, build_dir) as client:
+        # absolute, or the client reads a leading `//` as the host of a URL
+        response = client.get(f"http://testserver{path}")
+    assert response.status_code in {404, 405}
+    assert "<title>Shelfhold</title>" not in response.text
+    assert "id=reader" not in response.text
+
+
+@pytest.mark.req("EF-LEC-012")
+@pytest.mark.parametrize("path", ["/", "/bibliotheque", "/bibliotheque/", "/serie/abc", "/lire/U1"])
+def test_plain_request_line_is_still_served(settings: Settings, build_dir: Path, path: str) -> None:
+    (build_dir / "reader-entry").mkdir()
+    (build_dir / "reader-entry" / "reader.html").write_text(
+        "<!doctype html><script>boot()</script>", encoding="utf-8"
+    )
+    with _client(settings, build_dir) as client:
+        assert client.get(path).status_code == 200
