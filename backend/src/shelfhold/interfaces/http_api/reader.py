@@ -16,6 +16,7 @@ what to do. Nothing is written: no position, no history, no state.
 from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
@@ -28,6 +29,12 @@ from shelfhold.reading.application.content_access import (
     ExcerptUnavailableError,
     FullReadNotAllowedError,
     NoReadableCopyError,
+)
+from shelfhold.reading.application.continue_reading import (
+    DEFAULT_ENTRIES,
+    MAX_ENTRIES,
+    ContinueEntry,
+    ContinueReading,
 )
 from shelfhold.reading.application.lease import ProgressBusyError
 from shelfhold.reading.application.positions import (
@@ -100,6 +107,53 @@ def _out(found: Publication) -> PublicationOut:
         spine=[EntryOut(index=e.index, href=e.href, media_type=e.media_type) for e in found.spine],
         package=found.package,
     )
+
+
+class ContinueItemOut(BaseModel):
+    work_id: str
+    title: str
+    unit_id: str
+    number: str
+    unit_title: str | None
+    state: Literal["in_progress", "next"]  # the Unit being read, or the one after the last read
+    target: Literal["kept_copy", "kavita"]  # the kept copy here, or the file read where it was sent
+    approximate: bool
+    # `target = kept_copy`: the pair the reader route takes, `/lire/<carrier_type>/<carrier_id>`
+    carrier_type: Literal["content"] | None
+    carrier_id: str | None
+
+
+class ContinueOut(BaseModel):
+    items: list[ContinueItemOut]
+    kavita_url: str | None  # the address "Ouvrir dans Kavita" opens, read on the server
+
+
+def _item(found: ContinueEntry) -> ContinueItemOut:
+    return ContinueItemOut(
+        work_id=found.work_id, title=found.title, unit_id=found.unit_id, number=found.number,
+        unit_title=found.unit_title, state=found.state, target=found.target,
+        approximate=found.approximate, carrier_type=found.carrier_type,
+        carrier_id=found.carrier_id,
+    )  # fmt: skip
+
+
+def web_address(value: str | None) -> str | None:
+    """An address the browser may be sent to: http or https, with no `user:pass@` part (a secret
+    is never given back to the browser), else None."""
+    if not value:
+        return None
+    try:
+        parts = urlsplit(value)
+        host = parts.hostname
+        port = parts.port  # raises for a port that is not a number from 0 to 65535
+    except ValueError:
+        return None  # an address nobody can open is no link: the home is never an error
+    if parts.scheme not in ("http", "https") or not host or port == 0:
+        return None
+    netloc = f"[{host}]" if ":" in host else host
+    if port is not None:
+        netloc += f":{port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
 class PositionIn(BaseModel):
@@ -217,8 +271,25 @@ def build_reader_router(
     get_service: Callable[[], PublicationService],
     get_positions: Callable[[], ReaderPositions],
     get_settings: Callable[[], ReaderSettings],
+    get_continue: Callable[[], ContinueReading],
+    kavita_url: Callable[[], str | None] = lambda: None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/reader", tags=["reader"])
+
+    @router.get("/continue", operation_id="reader_continue", response_model=ContinueOut)
+    def continue_reading(
+        response: Response,
+        principal: Session,
+        limit: Annotated[int, Query(ge=1, le=MAX_ENTRIES)] = DEFAULT_ENTRIES,
+    ) -> ContinueOut:
+        """« Reprendre la lecture »: the next Unit of every series under way, for the profile of
+        the session only (the progress is hers, the filter is the one of every surface)."""
+        _own_session(principal)
+        response.headers["Cache-Control"] = "no-store"
+        return ContinueOut(
+            items=[_item(e) for e in get_continue().entries(principal.user_id, limit)],
+            kavita_url=web_address(kavita_url()),
+        )
 
     @router.get(
         "/{carrier_type}/{carrier_id}/publication",
