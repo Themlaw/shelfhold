@@ -93,11 +93,11 @@ from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
 from shelfhold.interfaces.http_api.reader import build_reader_router
 from shelfhold.interfaces.http_api.relations import build_relations_router
-from shelfhold.interfaces.http_api.selections import build_selections_router
 from shelfhold.interfaces.http_api.request_lists import build_request_lists_router
 from shelfhold.interfaces.http_api.requests import build_requests_router
 from shelfhold.interfaces.http_api.revisions import build_revisions_router
 from shelfhold.interfaces.http_api.search import build_search_router
+from shelfhold.interfaces.http_api.selections import build_selections_router
 from shelfhold.interfaces.http_api.series_sheet import build_series_sheet_router
 from shelfhold.interfaces.http_api.setup import build_setup_router
 from shelfhold.interfaces.http_api.shelves import (
