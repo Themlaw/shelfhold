@@ -855,6 +855,50 @@
     ],
     "type": "object"
    },
+   "KoreaderBookDto": {
+    "additionalProperties": false,
+    "properties": {
+     "device": {
+      "nullable": true,
+      "type": "string"
+     },
+     "device_id": {
+      "nullable": true,
+      "type": "string"
+     },
+     "document": {
+      "nullable": true,
+      "type": "string"
+     },
+     "percentage": {
+      "format": "float",
+      "type": "number"
+     },
+     "progress": {
+      "nullable": true,
+      "type": "string"
+     },
+     "timestamp": {
+      "format": "int64",
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
+   "KoreaderProgressUpdateDto": {
+    "additionalProperties": false,
+    "properties": {
+     "document": {
+      "nullable": true,
+      "type": "string"
+     },
+     "timestamp": {
+      "format": "date-time",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
    "LibraryDto": {
     "additionalProperties": false,
     "properties": {
@@ -3882,6 +3926,100 @@
     "summary": "For a given tag, update the summary if summary has changed and remove a set of series from the tag.",
     "tags": [
      "Collection"
+    ]
+   }
+  },
+  "/api/Koreader/{apiKey}/syncs/progress": {
+   "put": {
+    "parameters": [
+     {
+      "description": "",
+      "in": "path",
+      "name": "apiKey",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/*+json": {
+       "schema": {
+        "$ref": "#/components/schemas/KoreaderBookDto"
+       }
+      },
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/KoreaderBookDto"
+       }
+      },
+      "text/json": {
+       "schema": {
+        "$ref": "#/components/schemas/KoreaderBookDto"
+       }
+      }
+     },
+     "description": ""
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KoreaderProgressUpdateDto"
+        }
+       },
+       "text/json": {
+        "schema": {
+         "$ref": "#/components/schemas/KoreaderProgressUpdateDto"
+        }
+       },
+       "text/plain": {
+        "schema": {
+         "$ref": "#/components/schemas/KoreaderProgressUpdateDto"
+        }
+       }
+      },
+      "description": "OK"
+     }
+    },
+    "summary": "Syncs book progress with Kavita. Will attempt to save the underlying reader position if possible.",
+    "tags": [
+     "Koreader"
+    ]
+   }
+  },
+  "/api/Koreader/{apiKey}/syncs/progress/{ebookHash}": {
+   "get": {
+    "parameters": [
+     {
+      "description": "",
+      "in": "path",
+      "name": "apiKey",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "description": "",
+      "in": "path",
+      "name": "ebookHash",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK"
+     }
+    },
+    "summary": "Gets book progress from Kavita, if not found will return a 400",
+    "tags": [
+     "Koreader"
     ]
    }
   },

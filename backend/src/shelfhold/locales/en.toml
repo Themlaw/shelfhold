@@ -1975,6 +1975,16 @@
     action = "Type the chapter ID to confirm. No copies will be deleted without this."
     cause = "This chapter no longer exists anywhere else: deleting it would lose it forever, so Shelfhold requires explicit confirmation."
 
+  [errors."rendition.format_unsupported"]
+    title = "This image cannot be converted."
+    action = "Use a file the client can read as it is, or an AVIF or WebP image."
+    cause = "Only AVIF and WebP images can be converted for a client that lacks the format; JPEG XL has no decoder in this version."
+
+  [errors."rendition.remote_refused_watermarked"]
+    title = "A marked file is never sent to an outside service."
+    action = "Keep the conversion local, or leave this file out of the outside service."
+    cause = "This file carries its buyer's mark: a processor that sends bytes out of the host never receives it."
+
   [errors."unit.safeguard_failed"]
     title = "Safeguarding a chapter failed."
     action = "Consult the Activity and restart the chapter's sheltering."

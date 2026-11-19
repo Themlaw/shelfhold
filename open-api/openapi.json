@@ -13131,6 +13131,14 @@
             "title": "Approximate",
             "type": "boolean"
           },
+          "carrier_id": {
+            "title": "Carrier Id",
+            "type": "string"
+          },
+          "carrier_type": {
+            "title": "Carrier Type",
+            "type": "string"
+          },
           "client_ts": {
             "format": "date-time",
             "title": "Client Ts",
@@ -13164,6 +13172,8 @@
         },
         "required": [
           "id",
+          "carrier_type",
+          "carrier_id",
           "locator",
           "client_ts",
           "server_ts",
@@ -33031,6 +33041,14 @@
     "/api/v1/problems/rename.refused": {
       "code": "rename.refused",
       "status": 409
+    },
+    "/api/v1/problems/rendition.format-unsupported": {
+      "code": "rendition.format_unsupported",
+      "status": 422
+    },
+    "/api/v1/problems/rendition.remote-refused-watermarked": {
+      "code": "rendition.remote_refused_watermarked",
+      "status": 403
     },
     "/api/v1/problems/repatriate.blocked": {
       "code": "repatriate.blocked",

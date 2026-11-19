@@ -252,6 +252,20 @@ class GuardedFetcher:
             "POST", url, dict(headers or {}), None, body, max_bytes, None, None
         )
 
+    async def put(
+        self,
+        url: str,
+        *,
+        json: Any = None,
+        headers: Mapping[str, str] | None = None,
+        max_bytes: int | None = None,
+    ) -> Response:
+        """A JSON `PUT`: the same checks, address and redirections as `post`."""
+        body: dict[str, Any] = {}
+        if json is not None:
+            body["json"] = json
+        return await self._fetch("PUT", url, dict(headers or {}), None, body, max_bytes, None, None)
+
     async def delete(
         self,
         url: str,
