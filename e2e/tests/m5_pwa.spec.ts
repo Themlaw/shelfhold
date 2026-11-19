@@ -56,13 +56,19 @@ test('service worker passes the hash CSP', async ({ page, request }) => {
 });
 
 // req: EF-LEC-012
-test('test_pwa_offline_cache: a page of the SPA opens with the network cut', async ({ page, context }) => {
+test('test_pwa_offline_cache: a page of the SPA opens with the network cut', async ({ page, context, browserName }) => {
+  // Firefox and WebKit refuse the navigation (NS_ERROR_OFFLINE) before the worker sees it when
+  // Playwright cuts the network, so only Chromium can play this; the worker's own answer offline is
+  // proved on all engines by `worker.test.ts`, and the shell kept by each engine by the next test.
+  test.skip(browserName !== 'chromium', 'Playwright cannot cut the network under a service worker on this engine');
   await controlled(page);
   await context.setOffline(true);
   const response = await page.goto('/bibliotheque');
   expect(response?.status()).toBe(200);
   expect(response?.fromServiceWorker()).toBe(true);
-  expect(await response!.text()).toContain('<title>');
+  const shell = await response!.text();
+  expect(shell).toContain('__sveltekit');
+  expect(shell).not.toContain('id="reader"');
   await context.setOffline(false);
 });
 
@@ -76,7 +82,9 @@ test('keeps no answer of the API and no byte of a book', async ({ page }) => {
     for (const name of await caches.keys()) for (const r of await (await caches.open(name)).keys()) urls.push(new URL(r.url).pathname);
     return urls;
   });
-  expect(kept.length).toBeGreaterThan(0);
+  // the shell and a hashed asset are kept, in every engine
+  expect(kept).toContain('/');
+  expect(kept.some((p) => p.startsWith('/_app/immutable/'))).toBe(true);
   expect(kept.filter((p) => /^\/(api|content|lire|reader-entry|healthz)/.test(p))).toEqual([]);
 });
 

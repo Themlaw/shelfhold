@@ -131,7 +131,7 @@ def meta_csp(html: str) -> str | None:
 
 
 _LOOSE_SOURCES = ("'unsafe-inline'", "'unsafe-eval'", "*", "https:", "http:", "data:", "blob:")
-_GUARDED = ("default-src", "script-src", "style-src")
+_GUARDED = ("default-src", "script-src", "style-src", "worker-src", "manifest-src")  # L16a: the PWA
 _IMAGE_SOURCES = (
     "'self'",
 )  # the reader (own entry, own policy: `reader_csp`) draws the `blob:` ones

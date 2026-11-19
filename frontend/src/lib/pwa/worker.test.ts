@@ -78,7 +78,7 @@ function bench(opts: { offline?: boolean; manifest?: PrecacheEntry[]; version?: 
     return event;
   };
   const ask = (url: string, init: { method?: string; mode?: RequestMode } = {}) =>
-    fire('fetch', { request: Object.assign(new Request(url, { method: init.method ?? 'GET' }), { mode: init.mode ?? 'navigate' }) });
+    fire('fetch', { request: { url: new URL(url).href, method: init.method ?? 'GET', mode: init.mode ?? 'navigate' } });
   return { scope, caches, network, fire, ask };
 }
 

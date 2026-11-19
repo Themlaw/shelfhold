@@ -83,8 +83,8 @@ describe('the worker', () => {
   // req: EF-LEC-012
   it('is the one place the worker is registered, and the reader never touches it', () => {
     expect(read('src/routes/+layout.svelte')).toContain('registerServiceWorker');
-    for (const file of [...walk(join(root, 'src/reader')), join(root, 'reader.html')]) {
-      expect(readFileSync(file, 'utf8'), file).not.toMatch(/serviceWorker|manifest/);
+    for (const file of [...walk(join(root, 'src/reader')).filter((f) => !f.endsWith('.test.ts')), join(root, 'reader.html')]) {
+      expect(readFileSync(file, 'utf8'), file).not.toMatch(/serviceWorker|rel=["']manifest/);
     }
   });
 

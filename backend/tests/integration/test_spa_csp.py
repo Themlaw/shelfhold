@@ -274,7 +274,9 @@ def test_a_build_that_widens_the_image_sources_is_refused(
 
 @pytest.mark.req("EF-LEC-012", "ENF-SEC-004")
 @pytest.mark.parametrize("name", ["worker-src", "manifest-src"])
-@pytest.mark.parametrize("wider", ["'self' blob:", "*", "'self' https:", "'unsafe-inline'", "data:"])
+@pytest.mark.parametrize(
+    "wider", ["'self' blob:", "*", "'self' https:", "'unsafe-inline'", "data:"]
+)
 def test_a_build_that_loosens_the_worker_or_manifest_source_is_refused(
     settings: Settings, tmp_path: Path, name: str, wider: str
 ) -> None:

@@ -14,6 +14,7 @@ API_SEGMENTS = frozenset({"api", "healthz", "readyz", "openapi.json"})
 IMMUTABLE_PREFIXES = ("_app/immutable/", "reader-entry/assets/")
 READER_SEGMENT = "lire"  # the reader is its own page, under its own policy (ADR-0055)
 READER_DIR = "reader-entry"
+MANIFEST_TYPE = "application/manifest+json"  # the PWA manifest (L16a): not a guess of the platform
 
 
 def mount_spa(app: FastAPI, build_dir: Path) -> bool:
@@ -27,7 +28,9 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
     reader_policy = reader_csp(reader.read_text(encoding="utf-8")) if reader.is_file() else None
 
     def respond(file: Path, cache: str) -> Response:
-        response = FileResponse(file)
+        response = FileResponse(
+            file, media_type=MANIFEST_TYPE if file.suffix == ".webmanifest" else None
+        )
         response.headers["Cache-Control"] = cache
         if file == index:
             response.headers["Content-Security-Policy"] = csp
