@@ -292,6 +292,16 @@ describe('the reader of images', () => {
   });
 
   // req: ENF-SEC-004
+  it('answers a key relayed from a book (the window is its target) without failing', async () => {
+    server.use(...serve(publication()));
+    render(Page, { props });
+    await screen.findByAltText('Page 1 sur 3');
+    const key = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
+    expect(() => window.dispatchEvent(key)).not.toThrow();
+    expect(await screen.findByAltText('Page 2 sur 3')).toBeInTheDocument();
+  });
+
+  // req: ENF-SEC-004
   it('the reader screen never writes markup: no `@html`, no `innerHTML`', async () => {
     const { readFileSync, readdirSync } = await import('node:fs');
     const dir = `${process.cwd()}/src/reader/`;

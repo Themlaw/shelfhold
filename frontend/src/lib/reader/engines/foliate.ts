@@ -85,7 +85,8 @@ const isHttp = (href: unknown): href is string => {
   if (!/^https?:\/\//i.test(href)) return false; // no leading space, no tab inside the scheme
   try {
     const url = new URL(href);
-    return url.protocol === 'http:' || url.protocol === 'https:';
+    // no `user:password@host`: the text of a confirmation must not be made to show another host
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.username === '' && url.password === '';
   } catch {
     return false;
   }
@@ -200,7 +201,7 @@ export function createEpubEngine(options: EpubEngineOptions = {}): ReaderEngine 
         event.preventDefault(); // foliate would open it with no `noopener`; this is never a navigation of the frame
         const href = (event as CustomEvent<{ href_?: unknown }>).detail?.href_;
         if (!isHttp(href)) return;
-        const ask = options.confirmExternal ?? (async (address: string) => window.confirm(t('reader.external_confirm', { href: address })));
+        const ask = options.confirmExternal ?? (async (address: string) => window.confirm(t('reader.external_confirm', { href: new URL(address).host })));
         const open = options.openExternal ?? ((address: string) => void window.open(address, '_blank', 'noopener,noreferrer'));
         void ask(href).then((yes) => {
           if (yes && !destroyed) open(href);

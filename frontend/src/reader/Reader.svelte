@@ -132,7 +132,8 @@
 
   function onKey(event: KeyboardEvent): void {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
-    const target = event.target as HTMLElement | null;
+    // a key relayed from a document of the book has the window for target, which is not an element
+    const target = event.target instanceof Element ? event.target : null;
     if (target?.closest('input, textarea, select')) return;
     if (event.key === 'Escape') {
       // the focus is never trapped: Escape gives it back to the controls

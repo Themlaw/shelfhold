@@ -162,8 +162,8 @@ describe('the EPUB engine', () => {
     // the image the OPF called a PNG is an SVG by its name: filtered, typed as an SVG
     const img = doc.querySelector('img')!.getAttribute('src')!;
     expect(img.startsWith('blob:')).toBe(true);
-    expect(blobs.get(img)!.type).toBe('image/svg+xml');
-    expect(await blobs.get(img)!.text()).not.toContain('script');
+    // the OPF called it a PNG, its name says SVG: it is never drawn as a document
+    expect(blobs.get(img)!.type).toBe('application/octet-stream');
     // the script the OPF declared is never loaded
     expect([...blobs.values()].some((b) => /alert\(1\)$/.test(String(b.size)))).toBe(false);
     expect(requested.map((r) => r.url)).not.toContain(`${TICKET}/OEBPS/x.js`);
@@ -213,7 +213,7 @@ describe('the EPUB engine', () => {
     const refused = new CustomEvent('external-link', { detail: { a: document.createElement('a'), href_: 'https://example.org/' }, cancelable: true });
     no.fake.dispatchEvent(refused);
     const yes = await opened({ confirmExternal: async () => true, openExternal });
-    for (const href of ['javascript:alert(1)', 'data:text/html,x', 'blob:https://shelfhold.test/1', ' JaVa\tScript:1', 'file:///etc/passwd', '//evil.example']) {
+    for (const href of ['https://shelfhold.example@evil.example/', 'javascript:alert(1)', 'data:text/html,x', 'blob:https://shelfhold.test/1', ' JaVa\tScript:1', 'file:///etc/passwd', '//evil.example']) {
       const event = new CustomEvent('external-link', { detail: { a: document.createElement('a'), href_: href }, cancelable: true });
       yes.fake.dispatchEvent(event);
       expect(event.defaultPrevented, href).toBe(true);

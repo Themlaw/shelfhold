@@ -212,8 +212,7 @@ describe('the CSS of a book', () => {
     expect(out).not.toMatch(/evil\.example|@import|expression|behavior|binding|b\.css/i);
     expect(out).toContain('color:red');
     expect(out).toContain('margin:0');
-    expect(out).toContain(`url(${LOADER})`);
-    expect(out).toContain(`url("${LOADER}")`);
+    expect(out.match(new RegExp(`url\\("${LOADER}"\\)`, 'g'))).toHaveLength(2); // both rewritten, quoted
   });
 
   // req: ENF-SEC-004
@@ -236,6 +235,30 @@ describe('the CSS of a book', () => {
   // req: ENF-SEC-004
   it('keeps a string that merely contains the word', () => {
     expect(filterCss('q::before{content:"url(a) and @import"}', OPTS)).toContain('content:"url(a) and @import"');
+  });
+});
+
+describe('what the review found', () => {
+  // req: ENF-SEC-004
+  it('rewrites a url() from what it checked: an escaped parenthesis or semicolon never survives', () => {
+    const css = `a{background:u\\rl(#x\\29;background-image:url\\28https\\3a//evil.example/x\\29;x:\\28)} b{background:url(${LOADER}\\29;c:url\\28//evil.example/y)}`;
+    expect(filterCss(css, OPTS)).not.toContain('evil.example');
+    expect(filterCss(`a{b:url(${LOADER})}`, OPTS)).toBe(`a{b:url("${LOADER}")}`);
+  });
+
+  // req: ENF-SEC-004
+  it('judges an attribute by its namespace, not by the prefix a book chose', () => {
+    const out = filterMarkup(
+      page(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:data="http://www.w3.org/1999/xlink" xmlns:aria="http://www.w3.org/1999/xlink"><a data:href="https://evil.example/nav"><text>x</text></a><a data:href="javascript:alert(1)"><text>j</text></a><image data:href="https://evil.example/i.png"/><feImage aria:href="/api/v1/me"/><rect data:title="x" xml:base="https://evil.example/"/></svg>`),
+      XHTML,
+      OPTS
+    );
+    expect(out).not.toMatch(/evil\.example|javascript|\/api|xml:base|data:title/);
+  });
+
+  // req: ENF-SEC-004
+  it('a backslash before a newline is not an escape', () => {
+    expect(filterCss('a{--x:\\\nurl(https://evil.example/w)}', OPTS)).not.toContain('evil.example');
   });
 });
 
@@ -312,7 +335,7 @@ describe('the hooks on the loader', () => {
   // req: ENF-SEC-004
   it('fixes the type of the blob from the name, and filters markup before the blob exists', async () => {
     const { data } = loaderEvents();
-    const doc = await data('OEBPS/c1.xhtml', 'image/png', page('<p>x</p><script>a()</script>'));
+    const doc = await data('OEBPS/c1.xhtml', XHTML, page('<p>x</p><script>a()</script>'));
     expect(await doc.type).toBe(XHTML);
     expect(String(await doc.data)).not.toContain('script');
     const sheet = await data('a/s.css', 'text/css', '@import "x.css";p{color:red}');
@@ -325,13 +348,14 @@ describe('the hooks on the loader', () => {
   });
 
   // req: ENF-SEC-004
-  it('filters an SVG that the OPF called an image (a blob, not a string)', async () => {
+  it('never draws as a document what the OPF declares as something else (an SVG called a PNG)', async () => {
     const { data } = loaderEvents();
-    const hidden = await data('a/p.svg', 'image/png', Promise.resolve(new Blob([svg('<script>alert(1)</script><rect width="1" height="1"/>')])));
-    expect(await hidden.type).toBe(SVG);
-    const out = hidden.data instanceof Blob ? await hidden.data.text() : String(await hidden.data);
-    expect(out).not.toContain('script');
-    expect(out).toContain('rect');
+    const hidden = await data('a/p.svg', 'image/png', Promise.resolve(new Blob([svg('<script>alert(1)</script>')])));
+    await hidden.data;
+    expect(await hidden.type).toBe('application/octet-stream');
+    const chapter = await data('c9.xhtml', 'image/png', page('<p>x</p>'));
+    await chapter.data;
+    expect(await chapter.type).toBe('application/octet-stream');
   });
 
   // req: ENF-SEC-004

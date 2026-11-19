@@ -23,7 +23,7 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
     if not index.is_file():
         return False
     csp = spa_csp(index.read_text(encoding="utf-8"))
-    reader = root / READER_DIR / "reader.html"
+    reader = (root / READER_DIR / "reader.html").resolve()  # compared with resolved paths below
     reader_policy = reader_csp(reader.read_text(encoding="utf-8")) if reader.is_file() else None
 
     def respond(file: Path, cache: str) -> Response:

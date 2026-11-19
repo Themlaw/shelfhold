@@ -104,7 +104,12 @@ export function isLoadable(declared: string, isScript: boolean): boolean {
 // eslint-disable-next-line no-control-regex -- the control characters are what a browser drops before it reads a scheme
 const bare = (value: string): string => value.replace(/[\u0000-\u0020\u007f-\u009f\u200b-\u200f\u2028\u2029\ufeff]/g, '');
 
-const isLoaderUrl = (value: string, origin: string): boolean => bare(value).startsWith(`blob:${origin}/`) && !/[\s"'<>]/.test(value.trim());
+/** A `blob:` the loader made: `blob:<origin>/<id>`, nothing that could close a `url()` or start another declaration. */
+const isLoaderUrl = (value: string, origin: string): boolean => {
+  const v = value.trim();
+  const prefix = `blob:${origin}/`;
+  return v.startsWith(prefix) && /^[0-9A-Za-z-]{1,64}$/.test(v.slice(prefix.length));
+};
 
 /** The only links foliate intercepts: a document of the book or the web, to be confirmed apart. */
 function isLink(value: string, origin: string): boolean {
@@ -174,6 +179,7 @@ function identEnd(css: string, from: number): number {
   while (i < css.length) {
     const c = css[i]!;
     if (c === '\\') {
+      if (/[\n\r\f]/.test(css[i + 1] ?? '')) break; // not an escape: a lone backslash, then a new token
       const hex = /^[0-9a-f]{1,6}[ \t\n\r\f]?/i.exec(css.slice(i + 1, i + 8));
       i += hex ? 1 + hex[0].length : 2;
     } else if (IDENT_CHAR.test(c)) i += 1;
@@ -294,6 +300,11 @@ export function filterCss(css: string, options: FilterOptions): string {
     if (IDENT_START.test(c)) {
       const start = i;
       i = identEnd(css, i);
+      if (i === start) {
+        out.push(c); // a lone backslash: not part of a name
+        i += 1;
+        continue;
+      }
       const raw = css.slice(start, i);
       const name = decodeIdent(raw).toLowerCase();
       // `url/**/(`: a comment between the name and the parenthesis does not end the function
@@ -311,10 +322,9 @@ export function filterCss(css: string, options: FilterOptions): string {
         skipBlock();
         const body = css.slice(open + 1, Math.max(open + 1, i - 1)).trim();
         const unquoted = body.replace(/^(["'])(.*)\1$/s, '$2');
-        const quote = /^(["'])/.exec(body)?.[1] ?? '';
         const target = decodeIdent(unquoted).trim();
-        if (isLoaderUrl(target, options.origin)) out.push(`url(${quote}${target}${quote})`);
-        else if (target.startsWith('#')) out.push(`url(${quote}${target}${quote})`);
+        // rewritten from what was checked, in double quotes: what was decoded never leaves as it was read
+        if (isLoaderUrl(target, options.origin) || /^#[\w.-]*$/.test(target)) out.push(`url("${target}")`);
         else out.push('none');
         continue;
       }
@@ -361,25 +371,50 @@ const MATH_ELEMENTS = new Set(
 );
 const INERT = { [NS_HTML]: 'span', [NS_SVG]: 'g', [NS_MATH]: 'mrow' } as const;
 
-// the allowed shape of a name of attribute (a colon only for the known prefixes)
-const ATTR_NAME = /^(?:[a-z_][\w.-]*|(?:xml|xlink|epub|xmlns|xsi|aria|data)(?::[\w.-]+)?)$/i;
 
 function isUrlAttr(name: string): boolean {
   return URL_ATTRS.has(name.toLowerCase());
 }
 
+const NS_XML = 'http://www.w3.org/XML/1998/namespace';
+const NS_XMLNS = 'http://www.w3.org/2000/xmlns/';
+const NS_EPUB = 'http://www.idpf.org/2007/ops';
+const LOCAL_NAME = /^[a-z_][\w.-]*$/i;
+
 function cleanAttributes(el: Element, options: FilterOptions): void {
   const name = el.localName.toLowerCase();
   const ns = el.namespaceURI;
   for (const attr of Array.from(el.attributes)) {
-    const key = attr.name.toLowerCase();
     const value = attr.value;
     const drop = () => el.removeAttributeNode(attr);
-    if (!ATTR_NAME.test(attr.name) || key.startsWith('on') || ALWAYS_OUT.has(key)) {
+    // judged on (namespace, local name), never on the prefix a book chose: `data:href` bound to
+    // xlink is an `xlink:href`
+    const ans = attr.namespaceURI;
+    const local = attr.localName.toLowerCase();
+    let key: string;
+    if (ans === NS_XMLNS) continue; // a namespace declaration: it binds, it fetches nothing
+    if (ans === NS_XML) {
+      if (local !== 'lang' && local !== 'space') drop(); // `xml:base` and the rest go
+      continue;
+    }
+    if (ans === NS_EPUB) {
+      if (local !== 'type') drop();
+      continue;
+    }
+    if (ans === NS_XLINK) {
+      if (local !== 'href') {
+        drop();
+        continue;
+      }
+      key = 'xlink:href';
+    } else if (ans !== null) {
+      drop();
+      continue;
+    } else key = local;
+    if (!LOCAL_NAME.test(local) || key.startsWith('on') || ALWAYS_OUT.has(key)) {
       drop();
       continue;
     }
-    if (key.startsWith('xmlns')) continue; // a namespace declaration: it binds, it fetches nothing
     if (key === 'style') {
       el.setAttribute(attr.name, filterCss(value, options));
       continue;
@@ -510,7 +545,14 @@ export function installFilter(target: EventTarget, options: FilterOptions): void
     detail.type = final;
     if (final === XHTML || final === SVG || final === CSS) {
       detail.data = (async () => {
-        if ((await declared) === 'text/html') throw new FilterRefusal('the loader read the document as HTML: it was not valid XHTML');
+        const said = String(await declared).trim().toLowerCase();
+        if (said !== final && said !== 'text/html') {
+          // the OPF and the name disagree: whatever it is, it is never drawn as a document (the server
+          // judged this entry on the type of the manifest, so must the reader)
+          detail.type = OCTET;
+          return original;
+        }
+        if (said === 'text/html') throw new FilterRefusal('the loader read the document as HTML: it was not valid XHTML');
         const text = await asText(original);
         if (text === null) throw new FilterRefusal('unreadable document');
         return final === CSS ? filterCss(text, options) : filterMarkup(text, final, options);
