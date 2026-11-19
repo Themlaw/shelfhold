@@ -67,7 +67,7 @@ def public_url(raw: str | None) -> str:
     return urlunsplit((parts.scheme, netloc, parts.path, query, ""))
 
 
-def collect_follows(engine: sa.Engine) -> list[FollowRow]:
+def collect_follows(engine: sa.Engine, user_id: str | None = None) -> list[FollowRow]:
     """One row per followed Edition, by title: its best active binding, its last read Unit."""
     sf, sb, si = acquisition.series_follow, acquisition.source_binding, acquisition.source_item
     work, unit = catalog.work, catalog.unit

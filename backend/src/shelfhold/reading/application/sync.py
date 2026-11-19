@@ -45,6 +45,7 @@ from shelfhold.infrastructure.schema import export, identity, reading
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.reading.application.member_keys import MemberKeyRevokedError, live_member_account
 from shelfhold.reading.application.page_map import relayable, verify_page_maps
+from shelfhold.reading.application.lease import ProgressBusyError, ProgressLease, progress_leased  # noqa: F401
 from shelfhold.reading.application.progress import (
     UnknownCarrierError,
     _current_hash,
@@ -172,6 +173,7 @@ class MemberOutcome:
     hidden: int = 0
     rejected: int = 0
     unverified: int = 0  # chapters whose page of the block was not handed to Kavita (L50)
+    busy: int = 0  # chapters left to the next pass: a job holds the Work (M5 L22a)
 
 
 CODES: Final = (
@@ -227,6 +229,7 @@ def sync_member(
     page_map_keyring: Callable[[], Keyring] | None = None,
     max_session_hours: float = DEFAULT_MAX_SESSION_HOURS,
     mode: str = "sync",
+    hold_work: ProgressLease | None = None,
 ) -> MemberOutcome:
     """One pass for one member. Never raises for what Kavita or the key does: it says why.
 
@@ -274,6 +277,7 @@ def sync_destination(
     should_stop: Callable[[], bool] | None = None,
     page_map_keyring: Callable[[], Keyring] | None = None,
     max_session_hours: float = DEFAULT_MAX_SESSION_HOURS,
+    hold_work: ProgressLease | None = None,
 ) -> dict[str, MemberOutcome]:
     """Every member with a live key on the destination, one after the other. A member whose key
     stops does not stop the others; a Kavita that cannot be asked stops them all, quietly."""
@@ -300,7 +304,7 @@ def sync_destination(
         results[user] = sync_member(
             engine, remote, user_id=user, destination_id=destination_id, clock=clock,
             chapters=chapters, should_stop=should_stop, page_map_keyring=page_map_keyring,
-            max_session_hours=max_session_hours,
+            max_session_hours=max_session_hours, hold_work=hold_work,
         )  # fmt: skip
         down = results[user].code == "unavailable"
     return results

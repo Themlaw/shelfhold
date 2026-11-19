@@ -26,6 +26,7 @@ from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline, roots_signature
 from shelfhold.export.targets.kavita import page_probe
 from shelfhold.headless import HeadlessAdmin, wiring
+from shelfhold.progress_lease import build_progress_lease
 from shelfhold.headless.applied import record_applied_public_url
 from shelfhold.identity.adapters.preferences import SqlNotificationPrefsStore, SqlPreferencesStore
 from shelfhold.identity.adapters.user_state_store import user_state_service
@@ -132,6 +133,7 @@ from shelfhold.reading.application.content_access import (
     ContentKey,
     NoReadableCopyError,
 )
+from shelfhold.reading.application.lease import ProgressLease
 from shelfhold.reading.application.positions import ReaderPositions
 from shelfhold.reading.application.publication import PublicationService, epub_spine_of
 from shelfhold.reading.bundle import SeriesBundles
@@ -384,10 +386,14 @@ def create_app(
         return series_bundles(engine, composition.keyring, clock.now)
 
     @cache
+    def progress_lease() -> ProgressLease:  # M5 L22a: the lock of the Work a job is rewriting
+        return build_progress_lease(engine, clock)
+
+    @cache
     def kosync() -> Kosync:  # one: it counts the unknown fingerprints of each token
         return Kosync(
             engine, composition.keyring, clock.now,
-            spine_of=epub_spine_of(content_access),
+            spine_of=epub_spine_of(content_access), hold_work=progress_lease(),
         )  # fmt: skip
 
     def relations_after_audience_change() -> None:
@@ -468,7 +474,7 @@ def create_app(
         ),
         build_reader_router(  # M5 L06: what the reader opens; L07: where it is
             lambda: PublicationService(engine, content_access()),
-            lambda: ReaderPositions(engine, content_access(), clock.now),
+            lambda: ReaderPositions(engine, content_access(), clock.now, progress_lease()),
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
             lambda: engine, thumbnails, bundles, clock.now

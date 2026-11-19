@@ -54,6 +54,7 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import bundle, export, reading
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.reading.application.positions import propose_for_exported_file
+from shelfhold.reading.application.lease import ProgressBusyError, ProgressLease, progress_leased  # noqa: F401
 from shelfhold.reading.application.progress import (
     HISTORY_LIMIT,
     UnknownCarrierError,
@@ -218,7 +219,9 @@ class Kosync:
         now: Callable[[], datetime],
         unknown: UnknownCounter | None = None,
         spine_of: Callable[[str], int | None] | None = None,
+        hold_work: ProgressLease | None = None,
     ) -> None:
+        self._hold_work = hold_work  # the lease of the Work of a write (M5 L22a)
         self._engine = engine
         self._keyring = keyring
         self._now = now
