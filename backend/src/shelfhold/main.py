@@ -134,7 +134,7 @@ from shelfhold.reading.application.content_access import (
     NoReadableCopyError,
 )
 from shelfhold.reading.application.positions import ReaderPositions
-from shelfhold.reading.application.publication import PublicationService
+from shelfhold.reading.application.publication import PublicationService, epub_spine_of
 from shelfhold.reading.bundle import SeriesBundles
 from shelfhold.reading.public import Kosync
 from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
@@ -394,7 +394,10 @@ def create_app(
 
     @cache
     def kosync() -> Kosync:  # one: it counts the unknown fingerprints of each token
-        return Kosync(engine, composition.keyring, clock.now)
+        return Kosync(
+            engine, composition.keyring, clock.now,
+            spine_of=epub_spine_of(content_access),
+        )  # fmt: skip
 
     def relations_after_audience_change() -> None:
         pools = runtime.pools

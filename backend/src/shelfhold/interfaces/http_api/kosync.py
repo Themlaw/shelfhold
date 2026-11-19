@@ -127,7 +127,10 @@ def _percentage(body: dict[str, Any]) -> float:
     value = body.get("percentage")
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise _invalid()
-    return float(value)
+    try:
+        return float(value)
+    except OverflowError:  # a JSON integer no float holds: the same wrong field, not a 500
+        raise _invalid() from None
 
 
 def build_kosync_router(service: Callable[[], Kosync], now: Callable[[], datetime]) -> APIRouter:
