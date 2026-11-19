@@ -125,7 +125,7 @@ def test_three_sessions_that_stamp_out_of_order_leave_the_sentinel_at_the_highes
         status = env.guard().assess()
         assert not status.behind, status.findings
         assert {f.state for f in status.findings} == {RootState.OK}
-        assert env.fsops.root_frozen(library) is None
+        assert env.fsops.root_state(library) is RootState.OK
         # and the next write on that root is not refused for a "stale" sentinel
         with sessions_of(env, []).open(library):
             pass
