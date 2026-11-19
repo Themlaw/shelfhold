@@ -5850,18 +5850,60 @@
       },
       "OidcIdentityList": {
         "properties": {
+          "configured_issuer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configured Issuer"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/OidcIdentityItem"
             },
             "title": "Items",
             "type": "array"
+          },
+          "last_unlinked": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OidcLastUnlink"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
+          "configured_issuer",
           "items"
         ],
         "title": "OidcIdentityList",
+        "type": "object"
+      },
+      "OidcLastUnlink": {
+        "description": "The last removal of a link of this account: the trace for a person whose notice had no\ndestination to go to (it is never told in the shared channels).",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "by_other": {
+            "title": "By Other",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "at",
+          "by_other"
+        ],
+        "title": "OidcLastUnlink",
         "type": "object"
       },
       "OidcLinkStart": {
@@ -15167,6 +15209,49 @@
       }
     },
     "/api/v1/auth/oidc/identities": {
+      "delete": {
+        "description": "The reserved action `oidc.unlink_own`: a fresh session (for one the provider opened,\nproved again there), and the holder is told.",
+        "operationId": "oidc_unlink",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Oidc Unlink",
+        "tags": [
+          "auth"
+        ]
+      },
       "get": {
         "operationId": "oidc_identities",
         "responses": {
@@ -15317,6 +15402,58 @@
           }
         },
         "summary": "Oidc Confirm",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/oidc/reauth": {
+      "post": {
+        "description": "The session proves itself again at the provider (`prompt=login`, `max_age`). Not a\nreserved action: it is the proof one asks for. For a session of a linked adult only.",
+        "operationId": "oidc_reauth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OidcLinkStart"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Oidc Reauth",
         "tags": [
           "auth"
         ]
@@ -23678,6 +23815,60 @@
       }
     },
     "/api/v1/profiles/{profile_id}/oidc": {
+      "delete": {
+        "operationId": "oidc_unlink_account",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Oidc Unlink Account",
+        "tags": [
+          "auth",
+          "profiles"
+        ]
+      },
       "put": {
         "operationId": "link_account",
         "parameters": [
@@ -32897,6 +33088,10 @@
     "/api/v1/problems/oidc-link-expired": {
       "code": "oidc_link_expired",
       "status": 409
+    },
+    "/api/v1/problems/oidc-not-linked": {
+      "code": "oidc_not_linked",
+      "status": 404
     },
     "/api/v1/problems/oidc-unavailable": {
       "code": "oidc_unavailable",

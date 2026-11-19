@@ -435,6 +435,7 @@
   help_restore_acknowledge = "Confirms that passkeys and passwords changed since backup have been rechecked (action reserved); remove the status warning."
   restore_acknowledged = "Noted: the restore warning is lifted, the passkey connection is reestablished."
   restore_passkey_change = "Passkey changed since the backup: {change}"
+  restore_oidc_link = "Identity-provider link to check (a link removed since the backup comes back): {link}"
   help_store_reinit = "Stamp /store; the chapters whose copy was kept there go to “store_missing” (reserved action)."
   root_done = "{command}: root {root} ({path}), left state: {previous}. No files have been deleted."
   root_predecessors = "{count, plural, one {# previous identity retained} other {# previous identities retained}} (the tombstones remain legible)."
@@ -1421,6 +1422,11 @@
     title = "This link is no longer waiting for a confirmation."
     action = "Start the link again from your account."
     cause = "The link was already confirmed or declined, it expired, or the confirmation does not come from the session that asked for it."
+
+  [errors.oidc_not_linked]
+    title = "This account is not linked to an identity provider."
+    action = "Link it from the settings of your account first."
+    cause = "There is no link to remove or to prove again: it was never made, or it was removed."
 
   [errors.device_token_not_found]
     title = "This device token does not exist for you."

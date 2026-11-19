@@ -339,3 +339,8 @@ since = "1.2"
 file = "0106_progress_partial_extent.py"
 sha256 = "9fd8e2f488747c27495542c56fccc024e7bf7ed18ac1fc8b2c920f0955c4d1be"
 since = "1.2"
+
+[[migration]]
+file = "0107_session_proof.py"
+sha256 = "df6ebe1bba5633b15e5d6b318b7b0eb6c59759f33bfd0d2af61e20ede7e2515d"
+since = "1.2"

@@ -38,7 +38,9 @@ from shelfhold.identity.application.ports import (
     NewDeviceToken,
     NewSession,
     OidcIdentityView,
+    OidcLastUnlink,
     OidcLink,
+    OidcUnlink,
     PasskeyGoneError,
     PasskeyRecord,
     PasswordHasherPort,
@@ -357,6 +359,11 @@ class LocalAuth:
         self._options_throttle = LoginThrottle(
             per_address=OPTIONS_PER_MINUTE, per_account=OPTIONS_PER_MINUTE
         )
+        # the provider's start has a budget of its own (M5 L04, #362 review): one script spending
+        # the passkey options must not close the provider's sign-in, nor the reverse
+        self._oidc_start_throttle = LoginThrottle(
+            per_address=OPTIONS_PER_MINUTE, per_account=OPTIONS_PER_MINUTE
+        )
         if passkeys is not None and passkeys.available:  # the method exists in a secure context
             methods.append(PasskeyReauth(passkeys, store.restore_notice_active))
         self._reauth = {method.name: method for method in methods}
@@ -612,6 +619,7 @@ class LocalAuth:
         password_hash: str | None = None,
         auth_time: datetime | None = None,
         oidc: tuple[str, str] | None = None,
+        proof: str = "local",
     ) -> IssuedSession:
         now = self.now()
         policy = self._policy(user.role)
@@ -632,6 +640,7 @@ class LocalAuth:
                 device=device_label(user_agent),
                 auth_time=auth_time,
                 oidc=oidc,
+                proof=proof,
             )
         )
         principal = Principal(
@@ -643,6 +652,7 @@ class LocalAuth:
             auth_time=auth_time or now,
             can_rate=user.can_rate,
             locale=user.locale,
+            provider_proof=proof == "provider",
         )
         return IssuedSession(
             token=token,
@@ -751,6 +761,7 @@ class LocalAuth:
             auth_time=record.auth_time,
             can_rate=record.user.can_rate,
             locale=record.user.locale,
+            provider_proof=record.proof == "provider",
         )
         max_age = _seconds(min(policy.idle, expiry - now)) if record.remember else None
         return SessionAuth(
@@ -869,9 +880,13 @@ class LocalAuth:
         now = self.now()
         token, csrf = new_token(), new_token()
         self._store.rotate_session(
-            principal.session_id, token_hash=token_digest(token), csrf_secret=csrf, now=now
+            principal.session_id,
+            token_hash=token_digest(token),
+            csrf_secret=csrf,
+            now=now,
+            proof="local",
         )
-        renewed = replace(principal, auth_time=now)
+        renewed = replace(principal, auth_time=now, provider_proof=False)
         self._audit("auth.reauth", renewed, target=method)
         record = self._store.session_by_token_hash(token_digest(token))
         remember = record.remember if record else True
@@ -1045,6 +1060,13 @@ class LocalAuth:
         if wait is not None:
             raise ThrottledError(max(1, math.ceil(wait)))
 
+    def reserve_oidc_start(self, *, ip: str) -> None:
+        """The start of a sign-in at the provider: the same ceiling as passkey options, counted
+        apart from them (`ThrottledError`)."""
+        wait = self._oidc_start_throttle.reserve(ip=ip, account=ip, now=self.now())
+        if wait is not None:
+            raise ThrottledError(max(1, math.ceil(wait)))
+
     def reserve_attempt(self, *, ip: str, account: str) -> datetime:
         return self._reserve_attempt(ip=ip, account=account)
 
@@ -1070,7 +1092,7 @@ class LocalAuth:
         try:
             issued = self._issue(
                 user, remember=remember, ip=ip, user_agent=user_agent, auth_time=auth_time,
-                oidc=oidc,
+                oidc=oidc, proof="provider",
             )  # fmt: skip
         except ProofWithdrawnError:  # unlinked, or turned into a child profile, meanwhile
             raise InvalidCredentialsError from None
@@ -1103,6 +1125,103 @@ class LocalAuth:
             now=self.now(),
             audit=entry,
             admin_actor=by.user_id if by is not None else None,
+        )
+
+    def unlink_oidc_identities(self, *, user_id: str, by: Principal) -> OidcUnlink:
+        """Removes the links of an account, each in one transaction (which also decides, under the
+        write lock, whether this caller may: an admin unlinks her own account or a non-admin's)
+        with its audit line, the end of the sessions the provider opened for the account and the
+        notice to the holder (also when the holder did it themselves: a stolen fresh session
+        could). The caller has passed the reserved action (`oidc.unlink_own`,
+        `oidc.unlink_account`)."""
+        issuers = [view.issuer for view in self._store.oidc_identities_of(user_id)] or [""]
+        outcome = OidcUnlink.NOT_LINKED
+        for issuer in issuers:  # none: the store still says whether the account may be asked about
+            entry = AuditEntry(
+                actor_id=audit_actor(by),
+                action="oidc.unlinked",
+                at=self.now(),
+                target=user_id,
+                session_id=by.session_id,
+                auth_time=by.auth_time,
+            )
+            result = self._store.unlink_oidc_identity(
+                user_id=user_id,
+                issuer=issuer,
+                now=self.now(),
+                audit=entry,
+                by_user_id=by.user_id,
+            )
+            if result is OidcUnlink.UNLINKED or outcome is OidcUnlink.NOT_LINKED:
+                outcome = result
+        return outcome
+
+    def oidc_last_unlink(self, principal: Principal) -> OidcLastUnlink | None:
+        return self._store.oidc_last_unlink(principal.user_id)
+
+    def reauth_methods_for(self, principal: Principal, *, local_only: bool = False) -> list[str]:
+        """The ways this session can be proved again: the local ones, and the provider's when the
+        account is linked to it. First for a session the provider opened (it carries no local
+        proof), last for any other. `local_only`: the action refuses the provider's proof, so it is
+        not offered."""
+        methods = list(self._reauth)
+        if (
+            self.oidc is not None
+            and principal.credential is Credential.SESSION
+            and not principal.via_forward  # the route refuses it
+            and principal.role != "child"
+            and self._store.oidc_identity_of(principal.user_id, self.oidc.issuer) is not None
+        ):
+            if local_only:
+                pass
+            elif principal.provider_proof:
+                methods.insert(0, "oidc")
+            else:
+                methods.append("oidc")
+        return methods
+
+    def renew_session_from_provider(
+        self, *, user_id: str, session_id: str, auth_time: datetime
+    ) -> IssuedSession | None:
+        """The provider signed the person in again (verified by the caller, who gives the moment
+        it said): the same session row gets a new token, a new CSRF secret and that `auth_time`.
+        None when the session or the account is gone, or the account is a child's."""
+        user = self._store.user_by_id(user_id)
+        if user is None or user.role == "child":
+            return None
+        now = self.now()
+        token, csrf = new_token(), new_token()
+        if not self._store.rotate_session(
+            session_id,
+            token_hash=token_digest(token),
+            csrf_secret=csrf,
+            now=now,
+            auth_time=auth_time,
+            proof="provider",
+        ):
+            return None
+        record = self._store.session_by_token_hash(token_digest(token))
+        if record is None or record.revoked_at is not None or record.user.id != user_id:
+            return None
+        principal = Principal(
+            user_id=user.id,
+            username=user.username,
+            role=user.role,
+            credential=Credential.SESSION,
+            session_id=session_id,
+            auth_time=auth_time,
+            can_rate=user.can_rate,
+            locale=user.locale,
+            provider_proof=True,
+        )
+        self._audit("auth.reauth", principal, target="oidc")
+        policy = self._policy(user.role)
+        return IssuedSession(
+            token=token,
+            csrf_secret=csrf,
+            principal=principal,
+            remember=record.remember,
+            cookie_max_age_s=_seconds(policy.idle) if record.remember else None,
         )
 
     def oidc_identities_of(self, principal: Principal) -> Sequence[OidcIdentityView]:
@@ -1644,6 +1763,7 @@ class LocalAuth:
             restricted_profile_exists=restricted_profile_exists,
             hardened=self.hardened,
             allowed_roles=allowed_roles,
+            has_local_factor=not principal.provider_proof or self._has_local_factor(principal),
         )
         if isinstance(verdict, Allowed):  # EF-USR-022 (3): session and auth_time in the audit
             if audit:
@@ -1658,6 +1778,14 @@ class LocalAuth:
                 actor_id=audit_actor(principal),
             )
         return verdict
+
+    def _has_local_factor(self, principal: Principal) -> bool:
+        """A password or a live passkey: what the account can prove itself with here. Without
+        either the provider is its only authority and its proof stands (docs/admin/oidc.md)."""
+        user = self._store.user_by_id(principal.user_id)
+        if user is not None and user.password_hash is not None:
+            return True
+        return any(p.revoked_at is None for p in self._store.passkeys_of(principal.user_id))
 
     def recent_audit_targets(self, action: str, *, days: int = 30) -> list[str]:
         return self._store.audit_targets(action, since=self.now() - timedelta(days=days))
