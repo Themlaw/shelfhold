@@ -133,8 +133,8 @@ from shelfhold.reading.application.content_access import (
     ContentKey,
     NoReadableCopyError,
 )
-from shelfhold.reading.application.positions import ReaderPositions
 from shelfhold.reading.application.page_stream import PageStream
+from shelfhold.reading.application.positions import ReaderPositions
 from shelfhold.reading.application.publication import PublicationService, epub_spine_of
 from shelfhold.reading.bundle import SeriesBundles
 from shelfhold.reading.public import Kosync
