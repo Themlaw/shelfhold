@@ -27,6 +27,7 @@ chapter it falls in marks nothing in the chapters it skipped (ADR-0053).
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Final
 
 from shelfhold.reading.domain.projection import STATE_RANK, Projected
 
@@ -65,3 +66,59 @@ def latest(observations: Sequence[Observation]) -> Observation:
     if not observations:
         raise ValueError("no position to merge")
     return max(observations, key=lambda o: (bounded_ts(o.client_ts, o.server_ts), o.position_id))
+
+
+# D8 (ADR-0055, Q47): a conflict is proposed only if the position that lost is further than the one
+# that won by more than 2 % of progression, and, for a support of pages, by at least 3 pages (in
+# reflow the number of pages depends on the window: `totalProgression` alone decides).
+CONFLICT_PROGRESSION: Final = 0.02
+CONFLICT_MIN_PAGES: Final = 3
+_EPSILON: Final = 1e-9  # 0.32 - 0.30 is 0.02 and a bit, in floating point: that is not above
+
+
+@dataclass(frozen=True)
+class Reported:
+    """One position of the integrated reader, as the merge sees it."""
+
+    position_id: str
+    device_id: str | None
+    progression: float
+    client_ts: datetime
+    server_ts: datetime
+    content_hash: str
+    index: int | None = None  # the page, for a support of pages
+    count: int | None = None
+
+
+def winner(reports: Sequence[Reported]) -> Reported:
+    """Where the reader is: the latest position, `client_ts` bounded by `server_ts` (EF-LEC-007).
+    It may be behind the furthest one; going back is allowed, and the history keeps the rest."""
+    if not reports:
+        raise ValueError("no position to merge")
+    return max(reports, key=lambda r: (bounded_ts(r.client_ts, r.server_ts), r.position_id))
+
+
+def conflicting(won: Reported, others: Sequence[Reported]) -> Reported | None:
+    """The position, among `others`, that the reader should be asked about, or None.
+
+    Only what another device said counts (going back on one's own device is not a divergence), on
+    the same content (the progress of two files is not the same quantity), and only if it got
+    further than `won` by more than D8's threshold. Of several, the furthest."""
+    best: Reported | None = None
+    for other in others:
+        if other.device_id == won.device_id or other.content_hash != won.content_hash:
+            continue
+        if other.progression - won.progression - CONFLICT_PROGRESSION <= _EPSILON:
+            continue
+        if (
+            other.index is not None
+            and won.index is not None
+            and other.index - won.index < (CONFLICT_MIN_PAGES)
+        ):
+            continue
+        if best is None or (other.progression, other.position_id) > (
+            best.progression,
+            best.position_id,
+        ):
+            best = other
+    return best

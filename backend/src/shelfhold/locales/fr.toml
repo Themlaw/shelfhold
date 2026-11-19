@@ -1490,6 +1490,31 @@ title = "Ce livre ne se lit pas en entier ici."
 action = "Demandez un extrait, ou lisez le livre complet dans l'application où il a été envoyé."
 cause = "Un livre exporté vers une destination que vous pouvez lire se lit là-bas ; Shelfhold n'en montre qu'un extrait."
 
+[errors."excerpt_writes_no_position"]
+title = "Un extrait n'enregistre pas votre position."
+action = "Lisez le livre entier là où il est conservé, ou continuez l'extrait : rien n'est enregistré."
+cause = "Un extrait, et un livre qui n'est montré que sous cette forme, ne laissent ni position, ni historique, ni rien pour vos autres applications."
+
+[errors."invalid_locator"]
+title = "Cette position de lecture n'est pas valide."
+action = "Rechargez le lecteur et continuez ; si cela persiste, mettez l'application à jour."
+cause = "La position ne suit pas le format que le lecteur enregistre (un EPUB demande son emplacement, sa progression et la version de son filtre ; une page demande son numéro et le nombre de pages)."
+
+[errors."client_ts_in_future"]
+title = "L'horloge de cet appareil avance sur celle du serveur."
+action = "Réglez la date et l'heure de l'appareil, puis continuez la lecture."
+cause = "Une position datée bien après l'horloge du serveur ne se distingue pas d'une horloge fausse : elle n'est pas enregistrée."
+
+[errors."client_ts_out_of_range"]
+title = "Cette position porte une date qui ne peut pas être juste."
+action = "Réglez la date et l'heure de l'appareil, puis continuez la lecture."
+cause = "Une date de lecture antérieure à l'an 2000, ou trop éloignée pour être conservée, n'est pas enregistrée."
+
+[errors."conflict_stale"]
+title = "Vous avez lu plus loin depuis que cette question a été posée."
+action = "Continuez : le lecteur montre où vous en êtes maintenant."
+cause = "Une position plus récente a remplacé celle dont parlait la question : il n'y a plus rien à choisir."
+
 [errors."bundle_busy"]
 title = "Trop de blocs sont servis en ce moment."
 action = "Patientez quelques instants, puis relancez le téléchargement."

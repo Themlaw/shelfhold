@@ -698,6 +698,7 @@ class SqlIdentityStore:
             policy, state = identity.profile_source_policy, identity.user_state
             request, digest = identity.request, identity.notification_digest
             audit, positions = identity.audit, reading.reading_position
+            conflict = reading.reading_conflict
             follow, download = acquisition.follow_request, acquisition.download_request
             token, account = identity.device_token, identity.destination_account
             notify, listing = identity.notify_destination, identity.request_list_import
@@ -742,6 +743,11 @@ class SqlIdentityStore:
                     conn, "reading_positions", positions, positions.c.user_id == user_id,
                     "id", "carrier_type", "carrier_id", "content_hash", "locator", "percent",
                     "client_ts", "server_ts", "device_id", "source", "read_units", "undone_units",
+                ),
+                "reading_conflicts": rows(
+                    conn, "reading_conflicts", conflict, conflict.c.user_id == user_id,
+                    "id", "carrier_type", "carrier_id", "winner_position_id",
+                    "loser_position_id", "choice", "created_at", "resolved_at",
                 ),
                 "sessions": rows(
                     conn, "sessions", _session, _session.c.user_id == user_id,

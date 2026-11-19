@@ -73,6 +73,44 @@ reading_position = sa.Table(
     sa.Index("ix_reading_position_content_hash", "content_hash"),
 )
 
+# The divergence of two devices on one carrier (M5 L07, EF-LEC-007, D8): the reader is asked once,
+# « resume at page 143 or 210? », until she chooses. It holds identifiers and her choice only: the
+# positions themselves are the history (no foreign key on them, like the carrier: a position
+# outlives what it was read on). At most one open proposal per profile and carrier (the partial
+# unique index); once settled, or overtaken by a later position (`stale`), a divergence may be
+# proposed again.
+CONFLICT_CHOICES = ("winner", "loser", "stale")  # `stale`: a later position overtook it
+reading_conflict = sa.Table(
+    "reading_conflict",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("carrier_type", sa.String(), nullable=False),
+    sa.Column("carrier_id", sa.String(26), nullable=False),
+    sa.Column("winner_position_id", sa.String(26), nullable=False),  # the latest: where she is
+    sa.Column("loser_position_id", sa.String(26), nullable=False),  # the further one, elsewhere
+    sa.Column("choice", sa.String(), nullable=True),
+    now_column("created_at"),
+    sa.Column("resolved_at", UtcDateTime(), nullable=True),
+    ulid_check("id"),
+    ulid_check("carrier_id"),
+    ulid_check("winner_position_id"),
+    ulid_check("loser_position_id"),
+    in_check("carrier_type", POSITION_CARRIERS),
+    in_check("choice", CONFLICT_CHOICES),
+    sa.CheckConstraint('("choice" IS NULL) = ("resolved_at" IS NULL)', name="choice_with_its_date"),
+    sa.Index(
+        "ux_reading_conflict_open",
+        "user_id",
+        "carrier_type",
+        "carrier_id",
+        unique=True,
+        sqlite_where=sa.text('"resolved_at" IS NULL'),
+    ),
+)
+
 # What a reader got to in a Unit, merged over every position that reaches it (EF-LEC-014,
 # EF-LEC-007). `reading.domain` states the rule and `test_the_view_is_the_domain_rule` proves the
 # view equal to it. Columns (frozen since 1.1, `docs/reference/reading-progress.md`): `user_id`,

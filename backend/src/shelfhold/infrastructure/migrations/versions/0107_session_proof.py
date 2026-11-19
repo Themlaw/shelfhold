@@ -17,15 +17,15 @@ rare sessions opened by the provider, proved again there and kept alive since, o
 line has been purged: they were not distinguishable before this column. Reversible: the downgrade
 drops the column.
 
-Number: 0107, after 0101 (L03); the reader lots hold 0102 and the following ones, so the chain is
-re-linked on the merge, whichever of them goes first.
+Number: 0107, after 0102 (the reader positions): the numbers between are held by the other reader
+lots, so the chain is re-linked on the merge, whichever of them goes first.
 """
 # ruff: noqa: E501  (the DDL is the one SQLAlchemy writes, kept as it is)
 
 from alembic import op
 
 revision = "0107"
-down_revision = "0101"
+down_revision = "0102"
 branch_labels = None
 depends_on = None
 
