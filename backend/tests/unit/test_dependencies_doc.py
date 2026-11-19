@@ -20,7 +20,12 @@ COLUMNS = [
 
 
 def _rows() -> dict[str, dict[str, str]]:
-    lines = [line for line in DOC.read_text(encoding="utf-8").splitlines() if line.startswith("|")]
+    lines: list[str] = []
+    for line in DOC.read_text(encoding="utf-8").splitlines():
+        if line.startswith("|"):
+            lines.append(line)
+        elif lines:
+            break  # the critical-dependencies table is the first one; later tables are other things
     header = [cell.strip() for cell in lines[0].strip("|").split("|")]
     assert header[0] == "Dépendance"
     assert header[1:] == COLUMNS

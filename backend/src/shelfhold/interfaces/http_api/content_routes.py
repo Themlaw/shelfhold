@@ -19,7 +19,11 @@ from shelfhold.infrastructure.http_headers import PRIVATE_CACHE
 from shelfhold.interfaces.http_api.auth import current_principal
 from shelfhold.interfaces.http_api.content import content_response
 from shelfhold.interfaces.http_api.problems import ProblemError
-from shelfhold.reading.application.content_access import ContentAccess, ContentRefusedError
+from shelfhold.reading.application.content_access import (
+    ContentAccess,
+    ContentChangedError,
+    ContentRefusedError,
+)
 
 __all__ = ["build_content_router"]
 
@@ -79,6 +83,8 @@ def build_content_router(
         )
         try:
             served = get_access().read(ticket, path, session=session)
+        except ContentChangedError:  # said to the holder of a good ticket only: reload the manifest
+            raise ProblemError("content_changed", headers=_ABSENT) from None
         except ContentRefusedError:
             raise ProblemError("not_found", headers=_ABSENT) from None
         if _matches(request.headers.get("if-none-match"), served.etag):

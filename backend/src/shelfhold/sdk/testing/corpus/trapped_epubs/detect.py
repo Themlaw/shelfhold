@@ -78,15 +78,17 @@ def find_active_patterns(data: bytes) -> list[str]:
                 squashed = ""  # a class or a title is not a URL
             if any(squashed.startswith(s) for s in _SCRIPT_SCHEMES):
                 found.append(f"script-url:{attr}")
-            if squashed.startswith("data:") and not (
-                name == "img" and re.match(r"data:image/(png|jpeg|gif|webp|avif)[;,]", squashed)
-            ):
+            raster = name in ("img", "image") and re.match(
+                r"data:image/(png|jpeg|gif|webp|avif)[;,]", squashed
+            )  # small raster images, on an `img` as on an SVG `image` (ADR-0055)
+            if squashed.startswith("data:") and not raster:
                 found.append(f"data-url:{attr}")
             if (
                 attr in _RESOURCE_ATTRS
                 and name != "a"
                 and (_SCHEME.match(squashed) or squashed.startswith(("//", "\\\\", "/\\", "\\/")))
                 and not (name == "use" and squashed.startswith("#"))
+                and not raster
             ):
                 found.append(f"remote:{name}[{attr}]")
             if attr == "href" and name == "a" and squashed.startswith(("//", "\\")):
