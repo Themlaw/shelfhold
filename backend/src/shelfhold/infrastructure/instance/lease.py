@@ -18,6 +18,7 @@ further in the future than the allowed clock drift counts as run out and is logg
 
 import json
 import re
+import threading
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager, suppress
@@ -134,6 +135,9 @@ class WriteSessions:
         pay_owed: Callable[[], None] | None = None,
     ) -> None:
         self._generations = generations
+        self._live = 0  # write sessions open now: the look of `check` happens only while > 0
+        self._live_lock = threading.Lock()
+        self._looked_at: datetime | None = None  # the last whole-instance look that passed
         self._pay_owed = pay_owed  # the tombstone lines owed, written under the lease just taken
         self._on_behind = on_behind  # a root remounted ahead of the database (EF-INT-026)
         self._fsops = fsops
@@ -268,6 +272,8 @@ class WriteSessions:
     def check(self, root_path: str) -> None:
         """Before each write: still ours and valid; renewed when the heartbeat is due."""
         self._follow_freeze(root_path)
+        if self._live:
+            self.require_whole_instance(cached=True)  # a root that came back ahead meanwhile
         current = self.read_lease(root_path)
         if (
             current is None
@@ -292,16 +298,26 @@ class WriteSessions:
         with suppress(FsopsError, OSError):  # a root that went away: the lease simply runs out
             self._fsops.update_lease(root_path, decide)
 
-    def _require_whole_instance(self) -> None:
-        """Before any lease is taken: no root of the instance is ahead of the database. One root
+    def require_whole_instance(self, *, cached: bool = False) -> None:
+        """No root of the instance is ahead of the database. One root
         that is ahead makes every write refuse, the roots that match included (ADR-0044, I39):
         the database was put back, and a job that mounts only the roots whose own sentinel
         matches would write on it before any look said so. Read like `RestoreGuard.assess`
         reads: the sentinels first, then the counters, so a session that overlaps the look can
         never pass for a restore. Asks the guard (`on_behind`), which counts the restore and
-        freezes the instance."""
+        freezes the instance.
+
+        Taken at every `open` and by every job that joins a session already held
+        (`Composition._hold`), and, with `cached=True`, by `check` before a write: the verdict
+        then holds for one heartbeat, so the sentinels are read at most once per heartbeat and
+        only while a write session is open (ENF-OPS-014: nothing is read, no disk woken, when
+        none is)."""
         if self._generations is None:
             return
+        now = self._clock.now()
+        if cached and self._looked_at is not None and now - self._looked_at < HEARTBEAT_INTERVAL:
+            return
+        self._looked_at = now
         read = {}
         for root in self._generations.expected():
             try:
@@ -314,6 +330,7 @@ class WriteSessions:
                 continue
             if self._on_behind is not None:
                 self._on_behind()
+            self._looked_at = None  # the next write looks again, whatever the cache said
             raise RootBlockedError(root.path, RootState.RESTORED_BEHIND)
 
     def _advance_generations(self, roots: list[str]) -> None:
@@ -350,8 +367,10 @@ class WriteSessions:
     ) -> Iterator["WriteSession"]:
         roots = sorted({self._root_of(path) for path in paths})
         taken: list[str] = []
+        with self._live_lock:
+            self._live += 1
         try:
-            self._require_whole_instance()
+            self.require_whole_instance()
             for root in roots:
                 try:
                     self._follow_freeze(root)
@@ -370,6 +389,8 @@ class WriteSessions:
         finally:
             for root in taken:
                 self.release(root)
+            with self._live_lock:
+                self._live -= 1
 
 
 class WriteSession:

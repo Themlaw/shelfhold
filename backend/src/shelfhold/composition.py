@@ -404,6 +404,10 @@ class Composition:
                 beat.start()
                 stack.callback(beat.stop)
                 self._lease = (stack, sessions, mounted)
+            else:
+                # a job that joins the lease already held looks at the whole instance too: a
+                # root may have come back ahead of the database since it was taken (ADR-0044)
+                cast("Any", self._lease)[1].require_whole_instance()
             self._held += 1
             _stack, sessions, mounted = cast("Any", self._lease)
         try:

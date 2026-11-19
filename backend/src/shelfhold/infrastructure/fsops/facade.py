@@ -116,6 +116,17 @@ __all__ = ["BootReport", "Fsops", "IndependentCopy", "RootStatus", "SamePathStat
 
 log = structlog.get_logger(__name__)
 
+# The rewrite of a sentinel reads, compares and replaces: one at a time per root, whichever `Fsops`
+# of the process does it (it never goes back). One lock per root path, shared by the process.
+_STAMP_LOCKS: dict[str, threading.RLock] = {}
+_STAMP_LOCKS_GUARD = threading.Lock()
+
+
+def _stamp_lock_of(path: str) -> threading.RLock:
+    key = clean_absolute(path)
+    with _STAMP_LOCKS_GUARD:
+        return _STAMP_LOCKS.setdefault(key, threading.RLock())
+
 
 # The state of a root frozen alone (`FreezeState.state_of`) as the sentinel verdict it stands for.
 ROOT_FREEZE_STATES: dict[str, RootState] = {
@@ -246,8 +257,6 @@ class Fsops:
         self._now = now
         self._path_map = path_map
         self._expected = {clean_absolute(root.path): root for root in expected}
-        # the stamp of a sentinel reads, compares and replaces: one at a time (it never goes back)
-        self._stamp_lock = threading.RLock()
         self._read_only = {e.local for e in path_map.entries if e.mode is PathMode.ADOPT_RO}
         self._umask = umask
         self._strategy = strategy
@@ -626,7 +635,7 @@ class Fsops:
         key = clean_absolute(root_path)
         if self._owes(key):
             raise TombstonePendingError(key)
-        with self._stamp_lock:
+        with _stamp_lock_of(key):
             with self._root(key) as root:
                 self._stamp(root, generation)
             expected = self._expected[key]  # read under the lock: the highest stamp stays
@@ -635,7 +644,7 @@ class Fsops:
     def _stamp(
         self, root: ConfinedRoot, generation: int, *, restore_epoch: int | None = None
     ) -> None:
-        with self._stamp_lock:  # read, compare, replace by rename: atomic among the stamps
+        with _stamp_lock_of(root.path):  # read, compare, replace by rename: atomic among the stamps
             current = read_sentinel(root)
             if current is None:
                 raise RootBlockedError(root.path, RootState.MISSING)
@@ -966,7 +975,7 @@ class Fsops:
     def record_tombstone_chain(self, root_path: str, chain: dict[str, Any]) -> bool:
         """The chained label of the journal, copied into the root's sentinel (authenticated)."""
         gated = self._gated(self._host_root(root_path), tombstone=True)
-        with gated as root, self._stamp_lock:  # rewrites the whole sentinel: never older
+        with gated as root, _stamp_lock_of(root.path):  # rewrites the whole sentinel: never older
             return set_sentinel_chain(root, chain)
 
     def tombstone_chain(self, root_path: str) -> dict[str, Any] | None:
@@ -990,7 +999,7 @@ class Fsops:
     def record_tombstone_kid(self, root_path: str, kid: str, tags: dict[str, str]) -> None:
         """Add `kid` and its tags to the registry of the root's sentinel, before any line."""
         gated = self._gated(self._host_root(root_path), tombstone=True)
-        with gated as root, self._stamp_lock:  # rewrites the whole sentinel: never older
+        with gated as root, _stamp_lock_of(root.path):  # rewrites the whole sentinel: never older
             add_sentinel_kid(root, kid, tags)
 
     def read_tombstone_journal(self, root_path: str, *, max_bytes: int) -> bytes | None:

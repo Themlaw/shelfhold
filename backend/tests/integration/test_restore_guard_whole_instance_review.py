@@ -63,11 +63,6 @@ def test_control_a_job_that_opens_its_own_session_refuses_once_a_root_is_ahead(
         assert not kept.exists()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#387 contradicteur: a job that joins the session `Composition._hold` already holds "
-    "never runs the whole-instance look; it writes on the matching root while another says behind",
-)
 def test_a_job_that_joins_a_held_session_writes_nothing_once_a_root_is_ahead(
     settings: Settings, tmp_path: Path
 ) -> None:
