@@ -3,6 +3,7 @@
 // SPA's `<meta>` policy next to it). It is built after the SPA, into `build/reader-entry/`, and the
 // server writes its header from the very page this produces (`reader_csp`).
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vite';
@@ -10,6 +11,7 @@ import { auditReaderPage } from './scripts/csp.ts';
 
 const BASE = '/reader-entry/';
 const root = fileURLToPath(new URL('.', import.meta.url));
+const TEMPLATE = fileURLToPath(new URL('./reader.html', import.meta.url));
 
 // The formats of foliate that M5 does not read. `view.js` imports them dynamically and Vite would
 // make a chunk of each: they are resolved to a module that throws instead, so that no PDF, MOBI,
@@ -44,19 +46,18 @@ function foliateNotRead(): Plugin {
 function readerPage(): Plugin {
   return {
     name: 'shelfhold-reader-page',
-    enforce: 'post',
     generateBundle(_, bundle) {
-      const page = bundle['reader.html'];
-      if (!page || page.type !== 'asset') throw new Error('the reader page was not produced');
       const entry = Object.values(bundle).find((chunk) => chunk.type === 'chunk' && chunk.isEntry);
       if (!entry) throw new Error('the reader entry was not produced');
-      let html = String(page.source);
-      html = html.replace(/<script\b[^>]*\bsrc=[^>]*><\/script>\s*/gi, '');
-      html = html.replace(/<link\b[^>]*\brel="?modulepreload"?[^>]*>\s*/gi, '');
+      // the page is `reader.html` with, added here and nowhere else, its style sheets and its boot
+      // script: the template holds no script, so there is nothing to strip
+      const sheets = Object.keys(bundle)
+        .filter((name) => name.endsWith('.css'))
+        .map((name) => `<link rel="stylesheet" href="${BASE}${name}">`);
       const boot = `document.head.append(Object.assign(document.createElement("script"),{type:"module",src:${JSON.stringify(BASE + entry.fileName)}}));`;
-      html = html.replace('</head>', `<script>${boot}</script></head>`);
+      const html = readFileSync(TEMPLATE, 'utf8').replace('</head>', `${sheets.join('')}<script>${boot}</script></head>`);
       auditReaderPage(html);
-      page.source = html;
+      this.emitFile({ type: 'asset', fileName: 'reader.html', source: html });
     }
   };
 }
@@ -72,6 +73,6 @@ export default defineConfig({
     modulePreload: false,
     cssCodeSplit: false,
     assetsInlineLimit: 0, // no `data:` URL: the policy admits none
-    rollupOptions: { input: { reader: fileURLToPath(new URL('./reader.html', import.meta.url)) } }
+    rollupOptions: { input: { reader: fileURLToPath(new URL('./src/reader/main.ts', import.meta.url)) } }
   }
 });
