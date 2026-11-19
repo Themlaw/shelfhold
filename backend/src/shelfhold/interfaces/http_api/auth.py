@@ -78,6 +78,9 @@ SETUP_ADMIN_PATH = "/api/v1/setup/admin"
 ANONYMOUS_JSON_PATHS = frozenset(
     {LOGIN_PATH, PASSKEY_LOGIN_OPTIONS_PATH, PASSKEY_LOGIN_PATH, SETUP_ADMIN_PATH}
 )
+LITE_PREFIX = (
+    "/lite"  # M5 L17a: pages with a cookie of their own (see `lite/`), no other credential
+)
 CSRF_HEADER = "X-CSRF-Token"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -279,6 +282,17 @@ def metrics_key_may_reach(method: str, path: str) -> bool:
 
 
 PROBE_PATHS = frozenset({"/healthz", "/readyz"})
+
+
+def _in_lite(scope: Scope) -> bool:
+    """Whether the path, taken from the mount point, is `/lite` or under it."""
+    path = str(scope.get("path", ""))
+    root = str(scope.get("root_path", "")).rstrip("/")
+    if root and (path == root or path.startswith(root + "/")):
+        path = path[len(root) :] or "/"
+    return path == LITE_PREFIX or path.startswith(LITE_PREFIX + "/")
+
+
 # The probes resolve their session on threads of their own: the server's pool (40) may be full of
 # decodes and long reads, and a liveness probe that waits for it is not one (ENF-OPS-003).
 _PROBE_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="probe-auth")
@@ -308,8 +322,20 @@ class AuthMiddleware:
             _bearer(headers) is not None
             or _cookie_value(headers, names.session) is not None
             or str(scope.get("path", "")).startswith("/api/v1/auth/")  # no sign-in either
+            or _in_lite(scope)
         ):
             await self._problem(scope, receive, send, "instance.starting")
+            return
+        if _in_lite(scope):
+            # `/lite` has one credential, its own cookie (a token's secret opened it), read by the
+            # pages themselves at each request; a session, a key or a proxy identity opens
+            # nothing there, and the CSRF of a session (a header a form cannot send) is not its
+            # check: its forms carry a token of their own. Nobody is signed in here. A key
+            # presented here is refused, never ignored: a scoped key reaches nothing but its route.
+            if _bearer(headers) is not None:
+                await self._problem(scope, receive, send, "credential_not_allowed")
+                return
+            await self.app(scope, receive, send)
             return
         refused = self._key_attempts_refused(scope, headers)
         if refused is not None:
