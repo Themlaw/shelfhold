@@ -423,4 +423,20 @@ describe('the closed list of attributes (#381 C5)', () => {
     expect(out?.hasAttribute('href')).toBe(false);
     expect(out?.getAttributeNS('http://www.w3.org/1999/xlink', 'href')).toBeNull();
   });
+
+  // req: ENF-SEC-004
+  it('copies to href only an address the filter would keep: a fragment, a loader blob', () => {
+    const doc = run(
+      page(
+        svg(
+          `<a id="f" xlink:href="#note"><text>t</text></a><a id="j" xlink:href="javascript:alert(1)"><text>t</text></a><a id="d" xlink:href="data:text/html,x"><text>t</text></a><a id="q" xlink:href="#a&quot;&gt;&lt;b"><text>t</text></a>`
+        )
+      )
+    );
+    expect(doc.getElementById('f')?.getAttribute('href')).toBe('#note');
+    for (const id of ['j', 'd', 'q']) {
+      expect(doc.getElementById(id)?.hasAttribute('href'), id).toBe(false);
+      expect(doc.getElementById(id)?.getAttributeNS('http://www.w3.org/1999/xlink', 'href'), id).toBeNull();
+    }
+  });
 });

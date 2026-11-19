@@ -502,7 +502,11 @@ function cleanAttributes(el: Element, options: FilterOptions): void {
   if (ns === NS_SVG && name === 'a') {
     const old = el.getAttributeNodeNS(NS_XLINK, 'href');
     if (old) {
-      if (!el.hasAttribute('href')) el.setAttribute('href', old.value);
+      // judged again right here, by the rule of the other addresses: a loader `blob:` or a bare
+      // fragment is copied, anything else is not
+      const target = old.value.trim();
+      const sound = isLoaderUrl(target, options.origin) || /^#[^\s"'<>`\\]*$/.test(target);
+      if (sound && !el.hasAttribute('href')) el.setAttribute('href', target);
       el.removeAttributeNode(old);
     }
   }
