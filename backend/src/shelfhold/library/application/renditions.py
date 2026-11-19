@@ -383,21 +383,23 @@ class RenditionService:
         slot came free in time) and `KepubError` (not an EPUB it can convert, or too large)."""
         origin = self._origin(content_id)
         self._refuse_purged(origin)
-        key = self._key(KEPUB_PARAMS, data)
-        hit = self._cached(origin.source, KEPUB_PARAMS, key)
-        if hit is not None:
-            return hit
         if len(data) > self._max_kepub_bytes:
             raise KepubError("too_large", "the EPUB is larger than a KEPUB is made from")
+        # the slot is taken before the cache is looked in and held for a hit too: with every slot
+        # taken a book another profile made is refused like one nobody made (no oracle on it)
         if not self._converting.acquire(timeout=self._wait_s):
             raise RenditionBusyError
         try:
+            key = self._key(KEPUB_PARAMS, data)
+            hit = self._cached(origin.source, KEPUB_PARAMS, key)
+            if hit is not None:
+                return hit
             made = self._kepub(data)
+            if not made or len(made) > MAX_RENDITION_BYTES:
+                raise KepubError("bad_result", "the conversion gave nothing usable")
+            return self._store(origin, KEPUB_PARAMS, key, made)
         finally:
             self._converting.release()
-        if not made or len(made) > MAX_RENDITION_BYTES:
-            raise KepubError("bad_result", "the conversion gave nothing usable")
-        return self._store(origin, KEPUB_PARAMS, key, made)
 
     def kepub_bytes(self, content_id: str, data: bytes) -> bytes:
         """`render_kepub`, then the bytes, checked against their hash as they are read."""

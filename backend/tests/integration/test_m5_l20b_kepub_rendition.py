@@ -300,3 +300,34 @@ def test_the_whole_file_a_kepub_is_made_from_is_the_neutralized_derivative() -> 
         assert whole != TRAPPED and b"<script" not in whole and b"alert(1)" not in whole
         assert zipfile.is_zipfile(io.BytesIO(whole))
         assert zipfile.ZipFile(io.BytesIO(whole)).namelist()[0] == "mimetype"
+
+
+@pytest.mark.req("EF-BIB-015")
+def test_a_cache_hit_waits_for_the_same_slots_as_a_miss() -> None:
+    """Review of #395: with every conversion slot taken, a book another profile already made is
+    refused like a book nobody made, so the answer tells nothing of what was read."""
+    import threading
+
+    with export_env() as env:
+        unit = env.add_chapter(env.new_series(TITLE), "1")
+        content = _content(env, unit)
+        made_before = epub(book())
+        _service(env).render_kepub(content, made_before)  # in the cache
+        started, release = threading.Event(), threading.Event()
+
+        def slow(data: bytes) -> bytes:
+            started.set()
+            release.wait(5)
+            return kepubify(data)
+
+        service = _service(env, slow, max_converting=1, wait_s=0.05)
+        other = epub(book(**{"OEBPS/style.css": b"fresh"}))
+        busy = threading.Thread(target=lambda: service.render_kepub(content, other), daemon=True)
+        busy.start()
+        assert started.wait(5)
+        with pytest.raises(RenditionBusyError):
+            service.render_kepub(content, made_before)  # a hit
+        with pytest.raises(RenditionBusyError):
+            service.render_kepub(content, epub(book(**{"OEBPS/style.css": b"never"})))  # a miss
+        release.set()
+        busy.join(5)

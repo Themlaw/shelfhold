@@ -460,3 +460,36 @@ def test_the_work_entry_of_a_feed_holds_a_kepub_acquisition_with_its_title(kobo:
     assert len(found) == 1
     text = ET.tostring(found[0], encoding="unicode")
     assert re.search(r"<(\w+:)?title>[^<]+</", text)
+
+
+def test_opds_kepub_the_profile_is_judged_again_when_the_book_is_made(kobo: Kobo) -> None:
+    """Review of #395: an account that appears on the destination while the conversion runs makes
+    the volume one she reads elsewhere: the answer is the 404 of an absent one, not the book."""
+    item = kobo.volume("ok")
+    renditions = kobo.world.env.app.state.renditions  # type: ignore[attr-defined]
+    real = renditions._kepub
+
+    def meanwhile(data: bytes) -> bytes:
+        kobo._export(item, ("mum",))  # she links her own account to a destination that holds it
+        return real(data)  # type: ignore[no-any-return]
+
+    renditions._kepub = meanwhile
+    got = kobo.get(kobo.world.mum, item)
+    assert shape(got) == shape(kobo.get(kobo.world.mum, ABSENT_ULID))
+    assert "content-disposition" not in got.headers
+
+
+def test_opds_kepub_a_disk_that_cannot_be_written_is_an_error_not_an_absent_book(
+    kobo: Kobo,
+) -> None:
+    """Review of #395: only what the profile may not see, or cannot be read, is a 404; a failure of
+    the cache itself is the server's."""
+    item = kobo.volume("ok")
+    renditions = kobo.world.env.app.state.renditions  # type: ignore[attr-defined]
+
+    def full(data: bytes) -> bytes:
+        raise OSError("no space left")
+
+    renditions._kepub = full
+    with pytest.raises(OSError, match="no space"):
+        kobo.get(kobo.world.mum, item)

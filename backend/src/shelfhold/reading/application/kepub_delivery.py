@@ -164,14 +164,12 @@ class KepubDelivery:
                     raw = archive.whole(MAX_EPUB_BYTES)
                 finally:
                     archive.close()
-                data = self._renditions.kepub_bytes(content_id, raw)
-            except (
-                NoReadableCopyError,
-                KepubError,
-                UnknownSourceError,
-                TombstonedContentError,
-                ValueError,
-                OSError,
-            ):
+            except (NoReadableCopyError, ValueError, OSError):  # the copy, not the cache
                 raise KepubNotFoundError from None
+            try:
+                data = self._renditions.kepub_bytes(content_id, raw)
+            except (KepubError, UnknownSourceError, TombstonedContentError):
+                raise KepubNotFoundError from None
+            with self._engine.connect() as connection:  # the conversion took time: judged again
+                self._judge(connection, user_id, item_id)
         return KepubFile(data, str(title or ""))
