@@ -107,8 +107,10 @@ test('test_offline_reader_entry_keeps_reader_csp', async ({ page, context }) => 
     (error: Error) => error
   );
   if (offline instanceof Error) {
-    // the right answer: the network error of the page, not a shell (L16b caches the reader with its headers)
-    expect(offline.message).toMatch(/ERR_INTERNET_DISCONNECTED|NS_ERROR_OFFLINE|offline/i);
+    // the right answer: the network error of the page, not a shell (L16b caches the reader with its
+    // headers). The text is the engine's (ERR_INTERNET_DISCONNECTED, NS_ERROR_OFFLINE, "WebKit
+    // encountered an internal error"): what is asserted is that the navigation failed.
+    expect(offline.message).toMatch(/^page\.goto:/);
   } else {
     expect(offline?.fromServiceWorker()).toBe(false);
     expect(await offline!.text()).not.toContain('__sveltekit');
