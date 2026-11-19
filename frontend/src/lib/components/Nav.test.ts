@@ -10,6 +10,11 @@ import Layout from '../../routes/+layout.svelte';
 import Nav from './Nav.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+const wiped = vi.hoisted(() => ({ calls: [] as string[] }));
+vi.mock('#lib/offline/runtime.ts', () => ({
+  wipeOfflineCopies: async () => void wiped.calls.push('wipe'),
+  startOfflineSync: () => () => undefined
+}));
 
 const BASE = 'http://shelfhold.test';
 const server = setupServer();
@@ -114,5 +119,27 @@ describe('Nav logout (EF-USR-021)', () => {
     await user.click(screen.getByRole('button', { name: 'Se déconnecter' }));
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(goto).not.toHaveBeenCalled();
+  });
+});
+
+describe('Nav logout wipes the offline copies (M5 L16b)', () => {
+  beforeEach(() => {
+    wiped.calls = [];
+    document.cookie = 'csrf=tok123';
+  });
+
+  // req: EF-LEC-012, ENF-SEC-010
+  it('logout wipes the profile offline copies, before the request and even if it fails', async () => {
+    server.use(
+      http.post(`${BASE}/api/v1/auth/logout`, () => {
+        wiped.calls.push('request');
+        return HttpResponse.error();
+      })
+    );
+    const user = userEvent.setup();
+    render(Nav, { ids: ['home'] });
+    await user.click(screen.getByRole('button', { name: 'Se déconnecter' }));
+    await screen.findByRole('alert');
+    expect(wiped.calls).toEqual(['wipe', 'request']);
   });
 });

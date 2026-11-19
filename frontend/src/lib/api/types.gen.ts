@@ -4334,6 +4334,10 @@ export type PublicationOut = {
      * Title
      */
     title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
 };
 
 /**

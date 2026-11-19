@@ -68,6 +68,7 @@ class PublicationOut(BaseModel):
     number: str | None
     language: str | None
     reading_direction: Literal["ltr", "rtl", "webtoon"]
+    work_id: str  # the key of an offline copy: `?since=` names the Works that left the view
     expires_at: datetime
     pages: list[EntryOut]
     spine: list[EntryOut]
@@ -84,6 +85,7 @@ def _out(found: Publication) -> PublicationOut:
         number=found.number,
         language=found.language,
         reading_direction=found.reading_direction,
+        work_id=found.work_id,
         expires_at=found.expires_at,
         pages=[EntryOut(index=e.index, href=e.href, media_type=e.media_type) for e in found.pages],
         spine=[EntryOut(index=e.index, href=e.href, media_type=e.media_type) for e in found.spine],

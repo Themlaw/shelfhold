@@ -2,6 +2,7 @@
   import Footer from '#lib/components/Footer.svelte';
   import Nav from '#lib/components/Nav.svelte';
   import { onMount } from 'svelte';
+  import { startOfflineSync } from '#lib/offline/runtime.ts';
   import { registerServiceWorker } from '#lib/pwa/register.ts';
   import { applyAppearance } from '#lib/themes/index.ts';
   import { detectLanguage, setUiLanguage } from '#lib/i18n/index.ts';
@@ -15,6 +16,14 @@
   // (the worker is a product of `vite build`).
   onMount(() => {
     if (import.meta.env.PROD) void registerServiceWorker(navigator, location.pathname);
+  });
+
+  // The offline copies belong to the profile signed in: another one's are wiped, what was read offline
+  // is sent, what left the view is evicted (L16b). Nobody known (offline, signed out): nothing changes here.
+  $effect(() => {
+    const profile = data.profileId;
+    if (!profile || !import.meta.env.PROD) return;
+    return startOfflineSync(profile);
   });
 
   // The boot script of app.html already set the attributes from the last visit; the answer of the

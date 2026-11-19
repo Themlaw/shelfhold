@@ -1,0 +1,78 @@
+// The offline copies in the browser (M5 L16b): the store on IndexedDB and Cache Storage, the calls
+// of the API behind the seam of `sync.ts`, and the moments the sync runs (at start, when the
+// network comes back, and after the delay a busy server asked for).
+import { listWorks, readerPublication, readerPutPosition } from '#lib/api/index.ts';
+import { csrfToken } from '#lib/passkeys.ts';
+import { idbEnv } from './idb.ts';
+import type { KeepApi } from './keep.ts';
+import { createOfflineStore, type OfflineStore } from './store.ts';
+import { syncOffline } from './sync.ts';
+
+let store: OfflineStore | null = null;
+
+export function offlineStore(): OfflineStore {
+  store ??= createOfflineStore(idbEnv(window));
+  return store;
+}
+
+/** The client returns a failed fetch as an `error` with no `response`: for the sync that is the network being down. */
+function answered<T extends { response?: Response; error?: unknown }>(result: T): T & { response: Response } {
+  if (result.response === undefined) throw result.error instanceof Error ? result.error : new TypeError('network');
+  return result as T & { response: Response };
+}
+
+export function offlineApi(): KeepApi {
+  return {
+    async works(since) {
+      const { data, response } = answered(await listWorks({ query: { limit: 1, ...(since ? { since } : {}) } }));
+      return { status: response.status, since: data?.since, removed: data?.removed };
+    },
+    async publication(carrierType, carrierId) {
+      const { data, response } = answered(await readerPublication({ path: { carrier_type: carrierType, carrier_id: carrierId } }));
+      return { status: response.status, ...(data ? { publication: data } : {}) };
+    },
+    async putPosition(body) {
+      const { response } = answered(await readerPutPosition({ body, headers: { 'X-CSRF-Token': csrfToken() }, keepalive: true }));
+      const retry = Number(response.headers.get('Retry-After'));
+      return { status: response.status, ...(Number.isFinite(retry) && retry > 0 ? { retryAfter: retry } : {}) };
+    },
+    entry: (url) => fetch(url, { credentials: 'same-origin' })
+  };
+}
+
+/** Sign-out and a lost session: nothing of the profile stays on the browser. Never fails. */
+export async function wipeOfflineCopies(): Promise<void> {
+  try {
+    await offlineStore().wipeAll();
+  } catch {
+    /* no storage: there is nothing kept */
+  }
+}
+
+/** The profile on this browser is this one: another one's copies are gone, then a first sync, and
+ * again whenever the network comes back or a busy server said to. Returns the way to stop. */
+export function startOfflineSync(profileId: string, options: { api?: KeepApi; target?: Pick<Window, 'addEventListener' | 'removeEventListener'> } = {}): () => void {
+  const api = options.api ?? offlineApi();
+  const target = options.target ?? window;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let stopped = false;
+  const run = async () => {
+    if (stopped) return;
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    try {
+      const result = await syncOffline({ store: offlineStore(), profileId, api });
+      if (result.retryAfterMs !== null && !stopped) timer = setTimeout(() => void run(), result.retryAfterMs);
+    } catch {
+      /* the next reconnection tries again */
+    }
+  };
+  void offlineStore().activate(profileId).then(run, () => undefined);
+  const onOnline = () => void run();
+  target.addEventListener('online', onOnline);
+  return () => {
+    stopped = true;
+    if (timer !== null) clearTimeout(timer);
+    target.removeEventListener('online', onOnline);
+  };
+}

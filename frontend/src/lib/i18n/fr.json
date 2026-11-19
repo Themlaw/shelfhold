@@ -1052,5 +1052,20 @@
   "selections.lang": "Langues (par exemple fr en)",
   "selections.days": "Ajoutées depuis (jours)",
   "selections.create": "Enregistrer la sélection",
-  "library.selections": "Sélections enregistrées"
+  "library.selections": "Sélections enregistrées",
+  "offline.keep": "Lire hors ligne",
+  "offline.keeping": "Copie en cours…",
+  "offline.kept": "Copie gardée sur cet appareil",
+  "offline.remove": "Retirer la copie",
+  "offline.failed": "La copie n’a pas pu être gardée : réessaie avec le réseau.",
+  "offline.excerpt_only": "Seul un extrait est lisible ici : il ne se garde pas hors ligne.",
+  "offline.not_readable": "Ce livre n’est pas lisible par ce profil.",
+  "offline.no_profile": "Reconnecte-toi pour garder une copie.",
+  "offline.library": "Copies hors ligne",
+  "offline.empty": "Aucune copie gardée sur cet appareil.",
+  "offline.read": "Lire",
+  "offline.kept_at": "Gardée le {date}",
+  "offline.lead": "Ces copies sont celles du profil connecté, sur cet appareil seulement. Elles disparaissent à la déconnexion, quand le profil change ou quand il ne peut plus lire l’œuvre.",
+  "reader.offline_badge": "Copie hors ligne",
+  "reader.offline_missing": "Pas de réseau, et ce livre n’a pas de copie hors ligne sur cet appareil."
 }

@@ -1052,5 +1052,20 @@
   "selections.lang": "Languages (for example fr en)",
   "selections.days": "Added in the last (days)",
   "selections.create": "Save the selection",
-  "library.selections": "Saved selections"
+  "library.selections": "Saved selections",
+  "offline.keep": "Read offline",
+  "offline.keeping": "Saving a copy…",
+  "offline.kept": "Copy kept on this device",
+  "offline.remove": "Remove the copy",
+  "offline.failed": "The copy could not be kept: try again with a network.",
+  "offline.excerpt_only": "Only an excerpt can be read here: it is not kept offline.",
+  "offline.not_readable": "This book cannot be read by this profile.",
+  "offline.no_profile": "Sign in again to keep a copy.",
+  "offline.library": "Offline copies",
+  "offline.empty": "No copy kept on this device.",
+  "offline.read": "Read",
+  "offline.kept_at": "Kept on {date}",
+  "offline.lead": "These copies belong to the signed-in profile, on this device only. They disappear at sign-out, when the profile changes, or when it can no longer read the work.",
+  "reader.offline_badge": "Offline copy",
+  "reader.offline_missing": "No network, and this book has no offline copy on this device."
 }

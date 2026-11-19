@@ -7269,6 +7269,10 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
           }
         },
         "required": [
@@ -7280,6 +7284,7 @@
           "number",
           "language",
           "reading_direction",
+          "work_id",
           "expires_at",
           "pages",
           "spine",

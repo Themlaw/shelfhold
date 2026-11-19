@@ -6,8 +6,7 @@
   import { readerPublication } from '#lib/api/index.ts';
   import { t } from '#lib/i18n/index.ts';
 
-  let { unitId }: { unitId: string | null } = $props();
-  let scope = $state<'full' | 'excerpt' | null>(null);
+  let { unitId, scope = $bindable(null) }: { unitId: string | null; scope?: 'full' | 'excerpt' | null } = $props();
 
   // The sheet is kept when one series gives way to another: the answer follows the Unit.
   $effect(() => {

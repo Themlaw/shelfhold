@@ -61,5 +61,6 @@ export async function load({
   }
   // The tabs the server offers to the signed-in role (EF-UX-005); nobody signed in: none.
   const nav = Array.isArray(me?.nav) ? me.nav.filter((id): id is string => typeof id === 'string') : [];
-  return { sourceUrl, appearance, nav, language: language(preferences) };
+  const profileId = typeof me?.id === 'string' ? me.id : null; // the owner of the offline copies on this browser (L16b)
+  return { sourceUrl, appearance, nav, language: language(preferences), profileId };
 }
