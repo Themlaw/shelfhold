@@ -143,7 +143,7 @@ symbols = [
 [[allow]]
 category = "unwired-m5-renditions"
 reason = "2026-11-18 (M5 L20a): the conversion of an image for a client that lacks its format (`RenditionService`, bounded by header, decoded only in the network-less worker, cached by hash, erased by `purge --now`) and the pure rules around it are written and tested, and the purge already reaches the rows and files. No route serves a page yet: the callers are the page-by-page stream of L18 (`pse:stream`, format chosen by `Accept`) and the KEPUB link of L20b, which share this table and this cache."
-until = "M5"
+until = "M5"  # settled by L18 (page stream) and L20b part 2, which call the service
 symbols = [
   "shelfhold.library.application.renditions:Rendition",
   "shelfhold.library.application.renditions:RenditionService",
