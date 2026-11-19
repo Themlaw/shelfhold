@@ -43,7 +43,7 @@ afterEach(() => vi.useRealTimers());
 
 describe('second contradicteur (#396)', () => {
   // req: EF-LEC-007, ENF-SEC-010
-  it.fails('S1: a queue is not sent once the session of the browser is another one, before any tab activates it', async () => {
+  it('S1: a queue is not sent once the session of the browser is another one, before any tab activates it', async () => {
     const store = offlineStore();
     const target = new EventTarget();
     const put = vi.fn(async () => ({ status: 503 })); // first pass: busy, the position waits
@@ -61,7 +61,7 @@ describe('second contradicteur (#396)', () => {
   });
 
   // req: EF-LEC-012
-  it.fails('S2: the first load after another profile signed in leaves that profile active', async () => {
+  it('S2: the first load after another profile signed in leaves that profile active', async () => {
     const store = offlineStore();
     await store.activate(ADULT);
     cookie('tok-adult');
@@ -75,7 +75,7 @@ describe('second contradicteur (#396)', () => {
   });
 
   // req: EF-LEC-012, ENF-SEC-010
-  it.fails('S3: sign-out does not wait for a copy that is still downloading', async () => {
+  it('S3: sign-out does not wait for a copy that is still downloading', async () => {
     const store = offlineStore();
     await store.activate(ADULT);
     const never: AsyncIterable<{ url: string; response: Response }> = {

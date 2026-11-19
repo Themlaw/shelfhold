@@ -17,7 +17,7 @@ beforeEach(() => void (held.store = createOfflineStore(memoryEnv())));
 
 describe('second contradicteur (#396): the offline copies page', () => {
   // req: EF-LEC-012, ENF-SEC-010
-  it.fails('S4: lists nothing under another session than the one the copies were kept under', async () => {
+  it('S4: lists nothing under another session than the one the copies were kept under', async () => {
     await held.store.activate(ADULT);
     await held.store.bindSession('tok-adult');
     await held.store.keep(ADULT, { carrierType: 'content', carrierId: 'C1', workId: 'W1', title: 'Secret', publication: {} as never }, []);

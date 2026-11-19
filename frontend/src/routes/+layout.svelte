@@ -25,8 +25,12 @@
     if (data.sessionLost) void wipeOfflineCopies();
     const profile = data.profileId;
     if (!import.meta.env.PROD) return;
-    void guardOfflineSession(profile ?? null); // another session than the one the copies were kept under
-    if (!profile) return;
+    // `/me` did not name anyone: another session than the one the copies were kept under is a wipe. When
+    // it does, `startOfflineSync` activates that profile (wiping the others') and binds the session.
+    if (!profile) {
+      void guardOfflineSession(null);
+      return;
+    }
     return startOfflineSync(profile);
   });
 

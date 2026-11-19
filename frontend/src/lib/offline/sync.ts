@@ -42,13 +42,17 @@ interface Options {
   store: OfflineStore;
   profileId: string;
   api: OfflineApi;
+  /** Whether the session the requests go with is the one the profile was bound to (the cookie of the
+   * browser changes as soon as another profile signs in, before any tab has activated it). */
+  sessionOk?: () => Promise<boolean>;
 }
 
-async function flush({ store, profileId, api }: Options, result: SyncResult): Promise<void> {
+async function flush({ store, profileId, api, sessionOk }: Options, result: SyncResult): Promise<void> {
   for (const waiting of await store.queued(profileId)) {
     // the browser may have changed hands in another tab since the last one left: the next position would
     // go with the session of whoever is there now. Nothing leaves for a profile that is not the active one.
     if ((await store.activeProfile()) !== profileId) return;
+    if (sessionOk && !(await sessionOk())) return; // another session: nothing leaves with its cookie
     let answer: { status: number; retryAfter?: number; code?: string };
     try {
       answer = await api.putPosition(waiting.body);
@@ -119,7 +123,7 @@ export async function syncOffline(options: Options): Promise<SyncResult> {
   // a stale tab, or someone else's session, never sends nor evicts for the profile on the browser
   if ((await options.store.activeProfile()) !== options.profileId) return result;
   await flush(options, result);
-  if (!result.wiped && (await options.store.activeProfile()) === options.profileId) {
+  if (!result.wiped && (await options.store.activeProfile()) === options.profileId && (!options.sessionOk || (await options.sessionOk()))) {
     const renewed = await syncSince(options, result);
     // `?since=` could not be read (unreachable while the browser says it is online, busy): no `online`
     // event will come, so the sync comes back by itself while a copy could still be one to evict
@@ -135,9 +139,12 @@ export function createQueueingPut(options: {
   store: OfflineStore;
   profileId: string;
   put: (body: PositionIn) => Promise<{ status: number; retryAfter?: number; code?: string }>;
+  sessionOk?: () => Promise<boolean>;
 }): (body: PositionIn) => Promise<void> {
   return async (body) => {
     try {
+      // another session than the profile's: the position waits, it never goes with someone else's cookie
+      if (options.sessionOk && !(await options.sessionOk())) throw new Error('another session');
       const answer = await options.put(body);
       if (retryable(answer.status) || answer.status === 403) await options.store.queuePosition(options.profileId, body);
     } catch {

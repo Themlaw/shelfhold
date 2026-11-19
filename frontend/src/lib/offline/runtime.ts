@@ -50,6 +50,13 @@ export async function wipeOfflineCopies(): Promise<void> {
   }
 }
 
+/** Whether the session of the browser is the one the profile on it was bound to. Nobody to compare
+ * (no cookie, nothing recorded): not another session, so true. */
+export async function sessionIsBound(store: OfflineStore = offlineStore()): Promise<boolean> {
+  const token = csrfToken();
+  return !token || (await store.sessionMatches(token)) !== false;
+}
+
 /** The profile on this browser is tied to the session that is signed in (a hash of its anti-forgery token). */
 async function bindToSession(): Promise<void> {
   const token = csrfToken();
@@ -68,8 +75,13 @@ export async function guardOfflineSession(profileId: string | null): Promise<voi
     if (!token || !active) return;
     const same = await store.sessionMatches(token);
     if (same === true) return;
-    if (profileId === active) await store.bindSession(token);
-    else if (same === false) await wipeOfflineCopies();
+    // the server named someone: `activate` (startOfflineSync) wipes any other profile's copies and binds the
+    // session, and a wipe here could land after it. Only an unnamed session is judged here.
+    if (profileId !== null) {
+      if (profileId === active) await store.bindSession(token);
+      return;
+    }
+    if (same === false) await wipeOfflineCopies();
   } catch {
     /* no storage: there is nothing kept */
   }
@@ -87,7 +99,7 @@ export function startOfflineSync(profileId: string, options: { api?: KeepApi; ta
     if (timer !== null) clearTimeout(timer);
     timer = null;
     try {
-      const result = await syncOffline({ store: offlineStore(), profileId, api });
+      const result = await syncOffline({ store: offlineStore(), profileId, api, sessionOk: () => sessionIsBound() });
       if (result.retryAfterMs !== null && !stopped) timer = setTimeout(() => void run(), result.retryAfterMs);
     } catch {
       /* the next reconnection tries again */

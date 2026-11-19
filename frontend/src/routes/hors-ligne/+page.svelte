@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { formatDate, t } from '#lib/i18n/index.ts';
   import { offlineStore } from '#lib/offline/runtime.ts';
+  import { csrfToken } from '#lib/passkeys.ts';
   import type { CopyMeta } from '#lib/offline/store.ts';
 
   let copies = $state<CopyMeta[]>([]);
@@ -15,7 +16,10 @@
     try {
       const store = offlineStore();
       profile = await store.activeProfile();
-      copies = profile ? await store.copies(profile) : [];
+      const token = csrfToken();
+      // another session than the one the copies were kept under (another profile signed in elsewhere): nothing is listed
+      const foreign = token !== '' && (await store.sessionMatches(token)) === false;
+      copies = profile && !foreign ? await store.copies(profile) : [];
     } catch {
       copies = [];
     }

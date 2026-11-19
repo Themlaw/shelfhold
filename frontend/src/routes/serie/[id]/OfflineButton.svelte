@@ -5,6 +5,7 @@
   import { t } from '#lib/i18n/index.ts';
   import { keepCopy, OfflineKeepError } from '#lib/offline/keep.ts';
   import { offlineApi, offlineStore } from '#lib/offline/runtime.ts';
+  import { csrfToken } from '#lib/passkeys.ts';
 
   let { unitId }: { unitId: string | null } = $props();
   let state = $state<'idle' | 'keeping' | 'kept' | 'failed' | 'excerpt' | 'not_readable' | 'no_profile'>('idle');
@@ -14,6 +15,8 @@
     try {
       const store = offlineStore();
       const profile = await store.activeProfile();
+      const token = csrfToken();
+      if (token && (await store.sessionMatches(token)) === false) return null; // another profile's session
       return profile ? { profile, kept: (await store.find(profile, 'unit', unitId)) !== undefined } : null;
     } catch {
       return null; // no storage in this browser: nothing can be kept

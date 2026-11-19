@@ -127,21 +127,27 @@ export function createOfflineStore(env: OfflineEnv): OfflineStore {
     await remember(profileId);
   }
 
-  async function keepNow(profileId: string, meta: Omit<CopyMeta, 'keptAt'>, entries: Iterable<CopyEntry> | AsyncIterable<CopyEntry>): Promise<void> {
+  /** The download runs **outside** the lock (a long or stuck download must not hold up a sign-out or
+   * another change); only the check that the profile is still the one on this browser, and the write
+   * of the manifest, are made under it. A copy whose profile left meanwhile is dropped, never written. */
+  async function keepCopyOf(profileId: string, meta: Omit<CopyMeta, 'keptAt'>, entries: Iterable<CopyEntry> | AsyncIterable<CopyEntry>): Promise<void> {
     await requireActive(profileId);
     const cache = await env.caches.open(copyCacheName(profileId));
+    const drop = () => exclusive(() => dropBytes(profileId, meta.carrierType, meta.carrierId));
     try {
       for await (const entry of entries) await cache.put(entry.url, entry.response);
     } catch (error) {
-      await dropBytes(profileId, meta.carrierType, meta.carrierId);
+      await drop();
       throw error;
     }
-    // the profile may have changed hands while the files came in: nothing is written for one that is gone
-    if ((await activeProfile()) !== profileId) {
-      await dropBytes(profileId, meta.carrierType, meta.carrierId);
-      throw new Error('not the active profile');
-    }
-    await own(profileId).set(COPY + carrierKey(meta.carrierType, meta.carrierId), { ...meta, keptAt: new Date(env.now()).toISOString() });
+    await exclusive(async () => {
+      if ((await activeProfile()) !== profileId) {
+        await dropBytes(profileId, meta.carrierType, meta.carrierId);
+        await env.caches.delete(copyCacheName(profileId)); // the profile is gone: nothing of it stays
+        throw new Error('not the active profile');
+      }
+      await own(profileId).set(COPY + carrierKey(meta.carrierType, meta.carrierId), { ...meta, keptAt: new Date(env.now()).toISOString() });
+    });
   }
 
   async function copiesOf(profileId: string): Promise<CopyMeta[]> {
@@ -187,7 +193,7 @@ export function createOfflineStore(env: OfflineEnv): OfflineStore {
   return {
     activeProfile,
     activate: (profileId) => exclusive(() => activateNow(profileId)),
-    keep: (profileId, meta, entries) => exclusive(() => keepNow(profileId, meta, entries)),
+    keep: keepCopyOf,
     copies: copiesOf,
     async find(profileId, carrierType, carrierId) {
       const direct = (await own(profileId).get(COPY + carrierKey(carrierType, carrierId))) as CopyMeta | undefined;

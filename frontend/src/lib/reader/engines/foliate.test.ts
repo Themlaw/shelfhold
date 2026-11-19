@@ -33,6 +33,7 @@ const view = (over: Partial<PublicationView> = {}): PublicationView => ({
     { index: 1, href: `${TICKET}/OEBPS/c2.xhtml`, mediaType: 'application/xhtml+xml' }
   ],
   package: `${TICKET}/OEBPS/content.opf`,
+  seriesId: '01HZZZZZZZZZZZZZZZZZZZZZZW', // the Œuvre the manifest names since L13
   ...over
 });
 
