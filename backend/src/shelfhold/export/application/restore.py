@@ -476,6 +476,15 @@ class RestoreGuard:
                 default=0,
             )
             with write_transaction(self._engine) as connection:
+                if FreezeState.read(connection).frozen:
+                    # Another entry counted this restore between our look and the lock: once.
+                    counted_epoch = connection.execute(
+                        sa.select(platform.instance.c.restore_epoch)
+                    ).scalar_one()
+                    self._fsops.freeze()
+                    return RestoreStatus(
+                        int(counted_epoch), status.findings, pending=True, revoked=None
+                    )
                 if status.epoch <= seen:
                     epoch = min(max(status.epoch, seen) + 1, MAX_RESTORE_EPOCH)
                 # the freeze is written with the epoch: it survives a restart (until the adoption)

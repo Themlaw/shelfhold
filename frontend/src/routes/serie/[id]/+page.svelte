@@ -31,6 +31,7 @@
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
   import BundleSlices from './BundleSlices.svelte';
+  import ReadButton from './ReadButton.svelte';
   import RelatedWorks from './RelatedWorks.svelte';
   import SupportAuthor from './SupportAuthor.svelte';
   import SwitchReport from './SwitchReport.svelte';
@@ -227,6 +228,7 @@
         />
       {/if}
       <h2>{sheet.title}</h2>
+      <ReadButton unitId={sheet.first_unit_id} />
     </header>
 
     {#if message}<p role="status">{message}</p>{/if}

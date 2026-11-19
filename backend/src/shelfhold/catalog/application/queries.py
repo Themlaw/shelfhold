@@ -23,7 +23,7 @@ Absent and hidden are the same answer: an identifier that is not visible is simp
 """
 
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
@@ -411,19 +411,30 @@ def count_visible_works(
     *,
     shelf_id: str | None = None,
     series_id: str | None = None,
+    extra: Sequence[sa.ColumnElement[bool]] = (),
+    cap: int | None = None,
 ) -> int:
     """How many Works this reader may see: the same condition as the list, filters included, so a
-    total cannot say more than the pages do."""
+    total cannot say more than the pages do. `extra`: more conditions, added to the one filter
+    (a saved selection, M5 L21), never instead of it. `cap`: the count stops there (it never reads
+    more than `cap` rows), for a caller that bounds its work."""
     if series_id is not None and not visible_series_ids(connection, scope, [series_id]):
         return 0
+    conditions = [
+        visible_works_clause(scope),
+        *_filtered(scope, shelf_id=shelf_id, series_id=series_id),
+        *extra,
+    ]
+    if cap is not None:
+        capped = sa.select(sa.literal(1)).select_from(catalog.work).where(*conditions)
+        return int(
+            connection.execute(
+                sa.select(sa.func.count()).select_from(capped.limit(max(cap, 0)).subquery())
+            ).scalar_one()
+        )
     return int(
         connection.execute(
-            sa.select(sa.func.count())
-            .select_from(catalog.work)
-            .where(
-                visible_works_clause(scope),
-                *_filtered(scope, shelf_id=shelf_id, series_id=series_id),
-            )
+            sa.select(sa.func.count()).select_from(catalog.work).where(*conditions)
         ).scalar_one()
     )
 
@@ -485,11 +496,12 @@ def list_visible_works(
     recent: bool = False,
     shelf_id: str | None = None,
     series_id: str | None = None,
+    extra: Sequence[sa.ColumnElement[bool]] = (),
 ) -> list[VisibleWork]:
     """A page of the Works this reader may see, in title order, or newest first (`recent`: the
     order of creation; the same filter, so the pages of a child hold no hidden Work). A negative
     offset or limit is no page; a page is never longer than `MAX_PAGE`. A filter by shelf or by
-    series only adds a condition to the one filter."""
+    series, or an `extra` condition (a saved selection), only adds a condition to the one filter."""
     if limit <= 0 or offset < 0:
         return []
     if series_id is not None and not visible_series_ids(connection, scope, [series_id]):
@@ -499,7 +511,9 @@ def list_visible_works(
     rows = connection.execute(
         sa.select(work.id, work.title, work.kind)
         .where(
-            visible_works_clause(scope), *_filtered(scope, shelf_id=shelf_id, series_id=series_id)
+            visible_works_clause(scope),
+            *_filtered(scope, shelf_id=shelf_id, series_id=series_id),
+            *extra,
         )
         .order_by(*order)
         .limit(min(limit, MAX_PAGE))

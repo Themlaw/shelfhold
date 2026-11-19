@@ -229,3 +229,60 @@ def test_mount_spa_reports_no_build_without_raising(tmp_path: Path) -> None:
     from fastapi import FastAPI
 
     assert mount_spa(FastAPI(), tmp_path / "missing") is False
+
+
+def _with_images(sources: str) -> str:
+    return _csp(script=sha(BOOT)) + f"; img-src {sources}"
+
+
+@pytest.mark.req("ENF-SEC-004")
+def test_the_policy_served_for_the_spa_draws_images_of_its_own_origin_only(
+    settings: Settings, tmp_path: Path
+) -> None:
+    """L12 took the reader out of the SPA (its own entry, its own policy): nothing of the SPA draws
+    a `blob:` image any more, so the widening of L10 is gone."""
+    build = _build(tmp_path, _page(_with_images("'self'")))
+    with _client(settings, build) as client:
+        response = client.get("/bibliotheque")
+    csp = response.headers["content-security-policy"]
+    assert _directive(csp, "img-src") == ["'self'"]
+    assert "data:" not in csp and "*" not in csp.replace("*/", "")
+    assert _directive(csp, "script-src").count("blob:") == 0
+    assert _directive(csp, "default-src") == ["'self'"]
+
+
+@pytest.mark.req("ENF-SEC-004")
+@pytest.mark.parametrize(
+    "wider",
+    [
+        "'self' blob:",
+        "'self' blob: data:",
+        "*",
+        "'self' https:",
+        "'self' http://x",
+        "'unsafe-inline'",
+    ],
+)
+def test_a_build_that_widens_the_image_sources_is_refused(
+    settings: Settings, tmp_path: Path, wider: str
+) -> None:
+    build = _build(tmp_path, _page(_with_images(wider)))
+    migrate(settings)
+    with pytest.raises(RuntimeError, match="img-src"):
+        create_app(settings.model_copy(update={"frontend_dir": build}))
+
+
+@pytest.mark.req("EF-LEC-012", "ENF-SEC-004")
+@pytest.mark.parametrize("name", ["worker-src", "manifest-src"])
+@pytest.mark.parametrize(
+    "wider", ["'self' blob:", "*", "'self' https:", "'unsafe-inline'", "data:"]
+)
+def test_a_build_that_loosens_the_worker_or_manifest_source_is_refused(
+    settings: Settings, tmp_path: Path, name: str, wider: str
+) -> None:
+    """The PWA names its worker and its manifest in the policy of the SPA: a build that widens
+    either is not the page that was audited."""
+    build = _build(tmp_path, _page(f"{_csp(script=sha(BOOT))}; {name} {wider}"))
+    migrate(settings)
+    with pytest.raises(RuntimeError, match=name):
+        create_app(settings.model_copy(update={"frontend_dir": build}))

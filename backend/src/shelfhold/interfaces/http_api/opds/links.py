@@ -56,6 +56,12 @@ class Paths:
     def recent(self, *, offset: int = 0, limit: int | None = None) -> str:
         return self._feed("/recent", **_page(offset, limit))
 
+    def selections(self) -> str:
+        return self._feed("/selections")
+
+    def selection(self, selection_id: str, *, offset: int = 0, limit: int | None = None) -> str:
+        return self._feed(f"/selections/{selection_id}", **_page(offset, limit))
+
     def work(self, work_id: str) -> str:
         return self._feed(f"/works/{work_id}")
 

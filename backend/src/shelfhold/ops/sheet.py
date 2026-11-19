@@ -28,9 +28,10 @@ import sqlalchemy as sa
 from shelfhold.catalog.public import COVER_FIELD, MERGE_WINDOW_DAYS, Catalog, relations_of
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import is_ulid
-from shelfhold.infrastructure.schema import acquisition, catalog
+from shelfhold.infrastructure.schema import acquisition, catalog, storage
 from shelfhold.library.public import cover_hash
 from shelfhold.ops.errors import InvalidChoiceError, UnknownSubjectError
+from shelfhold.progress_lease import build_progress_lease
 from shelfhold.reading.public import prefer_edition
 
 if TYPE_CHECKING:
@@ -39,6 +40,10 @@ if TYPE_CHECKING:
 __all__ = ["UPSTREAM_STATUSES", "SheetOps"]
 
 UPSTREAM_STATUSES: Final = ("ongoing", "finished", "paused", "unknown")
+_READABLE: Final = (
+    "cbz",
+    "epub",
+)  # the formats the reader can open (reading/application/publication)
 _FIELDS: Final = ("title", "description", "series_name")  # what the sheet shows and lets one edit
 
 
@@ -79,6 +84,7 @@ class SheetOps:
             fields = self._fields(connection, edition_id, work_id)
             cover = self._cover(connection, edition_id)
             relations = self._relations(connection, work_id)
+            first_unit = self._first_unit(connection, edition_id)
         paused = follow is not None and follow.check_override == "paused"
         active = [b for b in bindings if b["active"]]
         return {
@@ -89,7 +95,7 @@ class SheetOps:
             "upstream_status_by": edition.upstream_status_by,
             "followed": follow is not None, "bindings": bindings, "gaps": gaps,
             "teams": teams, "fields": fields, "merges": merges, "attach": attach,
-            "relations": relations,
+            "relations": relations, "first_unit_id": first_unit,
             "can": {
                 "check": follow is not None and not paused and bool(active),
                 "reorder": len(active) > 1,
@@ -215,6 +221,30 @@ class SheetOps:
             for r in related
         ]  # fmt: skip
 
+    def _first_unit(self, connection: sa.Connection, edition_id: str) -> str | None:
+        """The Unit the "Lire" button opens (M5 L10): the first, by number, that has a file. Which
+        file is read, and whether in full or as an excerpt, is the publication route's choice."""
+        u = catalog.unit.c
+        row = connection.execute(
+            sa.select(u.id)
+            .where(
+                u.edition_id == edition_id,
+                sa.exists().where(
+                    storage.content.c.unit_id == u.id,
+                    storage.content.c.format.in_(_READABLE),
+                ),
+            )
+            .order_by(
+                u.number_sort.is_(None),
+                u.number_sort,
+                u.number_segment_ordinal,
+                u.source_order,
+                u.id,
+            )
+            .limit(1)
+        ).first()
+        return None if row is None else str(row.id)
+
     def _cover(self, connection: sa.Connection, edition_id: str) -> str | None:
         t = catalog.metadata_field.c
         row = connection.execute(
@@ -305,7 +335,14 @@ class SheetOps:
     def prefer_edition(self, edition_id: str) -> dict[str, Any]:
         """Make the Edition the preferred one of its Work, and carry each profile's reading over
         to it (EF-BIB-026). The answer counts profiles; it never says whose reading."""
-        with write_transaction(self._comp.engine) as connection:
+        with self._comp.engine.connect() as peek:
+            work_id = str(self._edition(peek, edition_id).work_id)
+        # the carry over writes a position and read marks per profile: the lease of the Work, like
+        # every other writer of a position (M5 L22a); held by a job, `ProgressBusyError` (a 503)
+        with (
+            build_progress_lease(self._comp.engine, self._comp.clock)(work_id),
+            write_transaction(self._comp.engine) as connection,
+        ):
             edition = self._edition(connection, edition_id)
             done = prefer_edition(connection, edition_id=edition_id, now=self._comp.clock.now())
         return {

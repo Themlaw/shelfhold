@@ -37,6 +37,15 @@ from tests.integration.test_l48_opds import (  # noqa: F401  (fixtures)
     world,
 )
 from tests.integration.test_m5_l18_pse import Pse, png_pages, pse  # noqa: F401  (fixture)
+from tests.integration.test_m5_l21_selections_opds import (
+    ABSENT as ABSENT_SELECTION,
+)
+from tests.integration.test_m5_l21_selections_opds import (
+    _kind,
+    _make,
+    _mum_session,
+)
+from tests.integration.test_m5_l21_selections_opds import _shape as _problem_shape
 
 pytestmark = pytest.mark.req("EF-INT-007", "EF-USR-006", "ENF-SEC-010")
 
@@ -45,6 +54,7 @@ V2 = "/opds/v2"
 ROUTES = (
     V2, f"{V2}/shelves", f"{V2}/series", f"{V2}/works", f"{V2}/recent", f"{V2}/search?q=Tale",
     f"{V2}/works/{ABSENT_ULID}", f"{V2}/shelves/{ABSENT_ULID}", f"{V2}/series/{ABSENT_ULID}",
+    f"{V2}/selections", f"{V2}/selections/{ABSENT_ULID}",
 )  # fmt: skip
 
 
@@ -405,3 +415,45 @@ def test_opds2_hostile_text_is_data_and_cleaned_as_in_atom(world: World) -> None
     assert '"}],"x":[{"' in found["metadata"]["title"]  # data, kept as it is
     assert not any(x.get("templated") for x in found["links"])
     _same_feeds(world.kid, "hostile")  # the same titles as the Atom feed, byte for byte
+
+
+# -- the saved selections of L21, in the JSON feed too -----------------------------------------
+
+
+def test_opds2_a_selection_is_the_profiles_own_and_is_read_in_her_scope(world: World) -> None:
+    query = {"kind": [_kind(world)]}
+    mine = _make(world, world.kid_session, "Kid tales", query)
+    hers = _make(world, _mum_session(world), "Mum tales", query)
+    kid_list = doc(world.kid.get(f"{V2}/selections"))
+    assert [n["title"] for n in nav(kid_list)] == ["Kid tales"]  # hers is not listed
+    assert hers not in json.dumps(kid_list) and mine in json.dumps(kid_list)
+    kid = doc(world.kid.get(f"{V2}/selections/{mine}"))
+    assert sorted(p["metadata"]["title"] for p in publications(kid)) == work_titles(world, SEEN_KID)
+    assert kid["metadata"]["numberOfItems"] == len(SEEN_KID)  # the total of what she may see
+    world.clean(json.dumps(kid))
+    mum = doc(world.mum.get(f"{V2}/selections/{hers}?limit=50"))
+    assert mum["metadata"]["numberOfItems"] > len(SEEN_KID)  # the control: a member is not narrowed
+
+
+def test_opds2_another_profiles_selection_is_one_that_does_not_exist(world: World) -> None:
+    hers = _make(world, _mum_session(world), "Hers", {"kind": [_kind(world)]})
+    mine = _make(world, world.kid_session, "Mine", {"kind": [_kind(world)]})
+    absent = world.kid.get(f"{V2}/selections/{ABSENT_SELECTION}")
+    assert absent.status_code == 404
+    assert _problem_shape(world.kid.get(f"{V2}/selections/{hers}")) == _problem_shape(absent)
+    assert _problem_shape(world.mum.get(f"{V2}/selections/{mine}")) == _problem_shape(absent)
+    assert _problem_shape(world.kid.get(f"/opds/selections/{hers}")) == _problem_shape(absent)
+    assert world.kid.get(f"{V2}/selections/not-an-id").status_code == 404
+    anonymous = world.env.other_client("10.0.0.99")
+    for path in (f"{V2}/selections", f"{V2}/selections/{mine}"):
+        assert anonymous.get(path).status_code == 401
+        assert world.kid_session.get(path).status_code == 401  # a web session opens nothing
+
+
+def test_opds2_selections_are_the_same_entries_as_in_opds1(world: World) -> None:
+    for query in ({"kind": [_kind(world)]}, {"shelf": [world.seed.shelves["adult"]]}):
+        _make(world, world.kid_session, "q", query)
+        _make(world, _mum_session(world), "m", query)
+    assert any("/selections/" in path for path in crawl2(world.kid))  # the walk reached them
+    _same_feeds(world.kid, "child with selections")
+    _same_feeds(world.mum, "adult with selections")

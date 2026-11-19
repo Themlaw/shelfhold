@@ -45,13 +45,18 @@ def _set_url(api: Live, url: str) -> None:
         connection.execute(sa.update(acquisition.source_item).values(url=url))
 
 
-def _mark_read(api: Live, unit_id: str) -> None:
-    """A reader finished the Unit: `reading_progress` says `read` (a one-Unit carrier)."""
-    user_id, carrier = new_ulid(), new_ulid()
+def _mark_read(api: Live, unit_id: str, user_id: str | None = None) -> str:
+    """A reader finished the Unit: `reading_progress` says `read` (a one-Unit carrier). The reader
+    is created unless one is given; returns her id (the last number read is one profile's)."""
+    carrier = new_ulid()
     with api.env.inst.engine.begin() as connection:
-        connection.execute(
-            sa.insert(identity.user).values(id=user_id, username=f"reader-{user_id}", role="member")
-        )
+        if user_id is None:
+            user_id = new_ulid()
+            connection.execute(
+                sa.insert(identity.user).values(
+                    id=user_id, username=f"reader-{user_id}", role="member"
+                )
+            )
         connection.execute(
             sa.text(
                 "INSERT INTO unit_coverage (carrier_type, carrier_id, unit_id, position, origin) "
@@ -70,6 +75,7 @@ def _mark_read(api: Live, unit_id: str) -> None:
                 "ts": "2026-01-01T00:00:00+00:00",
             },
         )  # fmt: skip
+    return user_id
 
 
 def _opml_outlines(text: str) -> list[dict[str, str]]:
@@ -128,11 +134,12 @@ def test_follows_export_last_number_read(
         units = {n: api.env.add_chapter(api.series, n) for n in ("1", "2", "10", "11")}
         _follow(api)
         engine = api.env.inst.engine
-        assert [r.last_number for r in collect_follows(engine)] == [""]  # nothing read
-        _mark_read(api, units["2"])
-        _mark_read(api, units["10"])
+        assert [r.last_number for r in collect_follows(engine, None)] == [""]  # no profile
+        reader = _mark_read(api, units["2"])
+        assert _mark_read(api, units["10"], reader) == reader
         # numeric order, not text order ("2" > "10" as text); chapter 11 is known, unread
-        assert [r.last_number for r in collect_follows(engine)] == ["10"]
+        assert [r.last_number for r in collect_follows(engine, reader)] == ["10"]
+        assert [r.last_number for r in collect_follows(engine, new_ulid())] == [""]  # not hers
 
 
 @pytest.mark.req("EF-INT-027")
@@ -174,7 +181,7 @@ def test_follows_export_best_binding_and_no_unfollowed_series(
                 .where(acquisition.source_binding.c.id == api.series.binding_id)
                 .values(active=False, disabled_reason="manual")
             )
-        rows = collect_follows(api.env.inst.engine)
+        rows = collect_follows(api.env.inst.engine, None)
         assert [(r.title, r.source) for r in rows] == [("Dr Stone", "")]  # no active binding
 
 
@@ -213,7 +220,7 @@ def test_follows_export_refuses_bad_invocations(
         with pytest.raises(SystemExit):  # argparse refuses an unknown format
             run_cli(monkeypatch, settings, "follow", "export", "--format", "pdf")
     with pytest.raises(ValueError):
-        export_follows(sa.create_engine("sqlite://"), "pdf")
+        export_follows(sa.create_engine("sqlite://"), "pdf", None)
 
 
 @pytest.mark.req("EF-INT-027")

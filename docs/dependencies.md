@@ -14,6 +14,7 @@ ouvre une issue `dependency-risk` et fait basculer vers le repli décrit.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Huey | File de jobs SQLite (`SqliteHuey`, ADR-0005) | 92 % (coleifer) | MIT | 3.5.4 (2026-11-01) | Runner maison minimal sur SQLite, seulement après un nouvel ADR | 12 mois sans commit, changement de licence, dépôt archivé | `shelfhold/jobs/huey_app.py` (contrat `critical-huey`) |
 | foliate-js | Moteur du lecteur intégré EPUB (M5) | 90 % (johnfactotum) | MIT | aucune release, sous-module épinglé sur un commit (dernier commit 2026-05-01) | Moteur EPUB alternatif derrière `ReaderEngine`, ou lecture déléguée à Kavita | 12 mois sans commit, changement de licence, dépôt archivé | Interface front `ReaderEngine` (`frontend/`, M5) |
+| @vite-pwa/sveltekit | Coquille PWA installable : construit `src/service-worker.ts` avec la liste des fichiers du build (M5 L16a, EF-LEC-012, ADR-0013, D14) | 94 % (antfu, 129 contributions sur 137, API `contributors`, relevé du 2026-11-19) | MIT | 2.0.3 (2026-11-17) | Service worker écrit à la main et liste des fichiers du build lue par un script : le worker (`src/lib/pwa/worker.ts`) n'importe rien du paquet | 12 mois sans release, changement de licence, dépôt archivé | `frontend/vite.config.ts` seul (devDependency de build, rien de lui n'est livré au navigateur) |
 | lncrawl | Source de romans via le méta-adaptateur (plugin natif, M2) | 80 % (dipu-bd) | GPL-3.0 | v4.14.0 (2026-08-03) | Sources natives Python écrites au cas par cas | 12 mois sans commit, changement de licence, dépôt archivé | `shelfhold/plugin_host/adapters/meta/lncrawl` |
 | Kavita | Destination de l'export, service tiers et non une bibliothèque Python (M1a) | 71 % (majora2007) | GPL-3.0 | v0.9.1.4 (2026-09-02) | Destination `tree` (arborescence de fichiers) lisible par tout lecteur de bibliothèque | Rupture de l'API sur une route de la liste (`target.route_missing`), changement de licence, archivage | Adaptateur de destination Kavita (`shelfhold/export`, M1a) |
 | kepubify | Conversion EPUB vers KEPUB, binaire externe (plus tard) | 99 % (pgaskin) | MIT | v4.0.4 (2022-03-09) | Étape de conversion désactivée ; export EPUB seul | 12 mois sans commit (déjà atteint : binaire figé, usage optionnel), changement de licence, archivage | Adaptateur de conversion (`shelfhold/export`, plus tard) |
@@ -160,6 +161,29 @@ hors EPUB :
   API DOM », cas « PDF déposé comme EPUB »).
 
 Un chemin nouveau, issu d'une mise à jour, est écarté ou passe par le filtre avant la fusion.
+
+**Mise en œuvre (L12).** `frontend/src/lib/reader/engines/foliate.ts` est le seul importeur (chemin relatif vers `frontend/vendor/foliate-js/epub.js` et `view.js`, jamais un pointeur dans `package.json`) ; il construit l'objet livre et passe cet objet. `frontend/vite.reader.config.ts` remplace par un module qui lève les `import()` de `view.js` vers `pdf`, `mobi`, `fb2`, `comic-book`, `tts`, `search`, `footnotes`, `quote-image`, `opds`, `dict`, `reader`, `ui/` et `vendor/{pdfjs,fflate,zip}` ; `frontend/scripts/reader-build.test.ts` échoue si le build du lecteur contient un morceau ou une marque de l'un d'eux. ESLint refuse tout import de foliate hors de l'adaptateur (statique, `import()`, chemin relatif).
+
+## @vite-pwa/sveltekit (PWA, M5 L16a)
+
+Exception prévue par PLAN-M5 §2 (D14), justifiée ici : plancher `^2.0.3`, **devDependency de build**.
+
+- **Licence** : MIT (le paquet et ses 13 dépendances transitives nouvelles : `@unplugin-pwa/{core,vite,inspector}` 0.0.7,
+  `@vite-pwa/workbox-{build,swkit,window}` 8.0.15, `verkit`, `hookable`, `valibot`, `proper-tags` en MIT ;
+  `idb` en ISC ; `serialize-javascript` en BSD-3-Clause ; `@types/trusted-types` en MIT). Toutes compatibles AGPL-3.0.
+- **Maintenance** : dépôt `vite-pwa/sveltekit` actif (dernier commit 2026-11-18, non archivé) ; la v2.0.0 (2026-11-01)
+  est la refonte pour SvelteKit 3 (`withPwa`), suivie de trois correctifs en seize jours. Facteur bus élevé (un auteur
+  fait 94 % des contributions) : c'est la raison du repli ci-dessus, et du choix de ne lui demander **que** la
+  construction du worker.
+- **Ce qui est livré au navigateur** : rien du paquet. Le worker est `frontend/src/service-worker.ts` et
+  `frontend/src/lib/pwa/worker.ts` (sans Workbox, sans `eval`, sans `import()`, sans adresse distante : un test de
+  source le vérifie) ; le paquet ne fait que remplacer `self.__WB_MANIFEST` par la liste des fichiers du build.
+- **Ce qui est désactivé** : l'enregistrement en ligne (`injectRegister: false`, et `serviceWorker.register: false` côté
+  SvelteKit : l'un et l'autre ajouteraient un script en ligne à une page dont la politique est par hachage ; le SPA
+  s'enregistre depuis un module de l'origine) et la génération du manifeste (`manifest: false` : c'est le fichier
+  `static/manifest.webmanifest`).
+- **Avertissement `globStrict`** : le plugin ajoute `prerendered/**` à la liste des fichiers ; une SPA n'en a pas, donc
+  `globStrict: false` (seul cet avertissement est tu, les autres motifs restent stricts par leur contenu).
 
 ## Autres dépendances notables
 

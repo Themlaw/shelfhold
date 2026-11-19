@@ -191,6 +191,7 @@ from shelfhold.ops.lazy_headless import LazyHeadless
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.notifications import LazyNotificationSweep
 from shelfhold.ops.webhooks import LazyWebhookSweep
+from shelfhold.progress_lease import build_progress_lease
 from shelfhold.reading.application.sync import (
     DEFAULT_MAX_SESSION_HOURS,
     ProgressRemote,
@@ -589,7 +590,7 @@ class ScanRelay:
 def build_pipeline(
     comp: Composition, scans: ScanRelay | None = None
 ) -> tuple[ExportPipeline, Reconciler, Any]:
-    fsops, loaded, _tombstones = comp.read_context()
+    fsops, loaded, _tombstones = comp.lease_context()  # `session_opener` below binds the lease
     reconciler = Reconciler(comp.engine, fsops, clock=comp.clock, bus=comp.bus)
     renderer = cbz_renderer(
         fsops,
@@ -1356,7 +1357,10 @@ def reconcile_handler(comp: Composition, *, in_window: bool) -> Callable[[JobCon
             reconciler.reconcile(destination.id, in_window=in_window)
             if in_window:  # the full pass reads the hashes: only where files may be hashed
                 inventory.scan(destination.id, in_window=True, should_stop=out_of_time)
-                pipeline.heal_mirror(destination.id)
+                try:
+                    pipeline.heal_mirror(destination.id)
+                except RestoredBehindError:
+                    return  # read only until the adoption: nothing more is written this window
 
     return run
 
@@ -1511,6 +1515,7 @@ def progress_sync_handler(
                     should_stop=lambda: bool(context.stop_requested),
                     page_map_keyring=page_map_keyring,
                     max_session_hours=max_session_hours,
+                    hold_work=build_progress_lease(engine, clock),  # M5 L22a: the Work's lease
                 ).values():
                     if outcome.code == "ok":
                         context.add(synchronised=1, pulled=outcome.pulled, pushed=outcome.pushed)
