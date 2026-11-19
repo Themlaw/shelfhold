@@ -20,6 +20,7 @@ and page numbers, an `Accept` that asks for a format nothing can make.
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
@@ -57,8 +58,17 @@ class Pse:
     world: World
     src: FakeArchives
 
-    def stream(self, edition: str, pages: dict[str, bytes]) -> str:
-        """An exported volume of the Edition whose kept file holds `pages`; its `export_item`."""
+    def stream(
+        self,
+        edition: str,
+        pages: dict[str, bytes],
+        *,
+        live: bool = True,
+        read_elsewhere: tuple[str, ...] = (),
+    ) -> str:
+        """An exported volume of the Edition whose kept file holds `pages`; its `export_item`.
+        `live=False`: never written to a destination. `read_elsewhere`: the profiles that have a
+        verified account on the destination that holds it (D-P1: they get an excerpt here)."""
         engine = self.world.seed.engine
         content = add_carrier(engine, self.world.seed.editions[edition], format="cbz")
         item = new_ulid()
@@ -69,9 +79,43 @@ class Pse:
                     content_id=content,
                 )
             )  # fmt: skip
+        if live:
+            self._export(item, read_elsewhere)
         self.src.by_content[content] = dict(pages)
         self.src.item_content[item] = content
         return item
+
+    def _export(self, item: str, readers: tuple[str, ...]) -> None:
+        from shelfhold.infrastructure.schema import identity
+        from tests.integration.test_schema_storage_export import add_destination, add_target
+
+        with write_transaction(self.world.seed.engine) as connection:
+            destination = add_destination(
+                connection, self.world.seed.shelves["adult"], add_target(connection)
+            )
+            connection.execute(
+                sa.text("INSERT OR IGNORE INTO secret_key (kid, state) VALUES ('k1', 'active')")
+            )
+            for name in readers:
+                user = connection.execute(
+                    sa.select(identity.user.c.id).where(identity.user.c.username == name)
+                ).scalar_one()
+                connection.execute(
+                    sa.insert(identity.destination_account).values(
+                        id=new_ulid(), user_id=user, shelf_destination_id=destination,
+                        remote_user=f"remote-{name}", secret_v=1, secret_kid="k1",  # noqa: S106
+                        secret_nonce=os.urandom(12), secret_ct=os.urandom(32),
+                        token_fingerprint="f" * 12, verified_at=sa.func.current_timestamp(),
+                    )
+                )  # fmt: skip
+            connection.execute(
+                sa.insert(export.export_record).values(
+                    shelf_destination_id=destination,
+                    export_item_id=item,
+                    locator_type="none",
+                    state="written",
+                )
+            )
 
     def page(self, who: Any, item: str, page: object, **headers: str) -> Any:
         return who.get(f"/opds/pse/{item}/{page}", headers=headers)
@@ -465,3 +509,41 @@ def test_opds_pse_link_carries_no_last_read_state(pse: Pse) -> None:
     pse.stream("ok", png_pages(2))
     text = pse.world.kid.get(f"/opds/works/{pse.world.seed.works['ok']}").text
     assert "lastRead" not in text and "lastReadDate" not in text
+
+
+# -- D-P1: an item that was never exported is no stream, and what is read elsewhere is a sample ----
+
+
+def test_opds_pse_an_item_never_exported_is_not_offered_nor_served(pse: Pse) -> None:
+    item = pse.stream("ok", png_pages(3), live=False)
+    for who in (pse.world.kid, pse.world.mum):
+        assert stream_links(parse(who.get(f"/opds/works/{pse.world.seed.works['ok']}"))) == []
+        assert shape(pse.page(who, item, 0)) == shape(pse.page(who, ABSENT_ULID, 0))
+
+
+def test_opds_pse_what_the_profile_reads_elsewhere_is_an_excerpt_here(pse: Pse) -> None:
+    """D-P1: the kid has an account on the destination that holds the volume, so she is given the
+    excerpt the server cuts (the bounds of `/content`: a fifth of the pages at most); the member,
+    who has none there, is given the whole volume."""
+    world = pse.world
+    pages = png_pages(30)
+    item = pse.stream("ok", pages, read_elsewhere=("kid",))
+    work = f"/opds/works/{world.seed.works['ok']}"
+    (kid_link,) = stream_links(parse(world.kid.get(work)))
+    (mum_link,) = stream_links(parse(world.mum.get(work)))
+    assert int(mum_link[f"{PSE_NS}count"]) == 30
+    cut = int(kid_link[f"{PSE_NS}count"])
+    assert 0 < cut <= 6  # a fifth of thirty pages
+    for n in range(cut):
+        got = pse.page(world.kid, item, n)
+        assert got.status_code == 200 and got.content == pages[f"p{n + 1}.png"]
+    assert shape(pse.page(world.kid, item, cut)) == shape(pse.page(world.kid, ABSENT_ULID, 0))
+    assert pse.page(world.mum, item, 29).status_code == 200  # the control: the whole volume
+
+
+def test_opds_pse_a_volume_with_nothing_to_cut_is_not_streamed_to_who_reads_it_elsewhere(
+    pse: Pse,
+) -> None:
+    item = pse.stream("ok", png_pages(1), read_elsewhere=("kid",))  # one page: no excerpt
+    assert stream_links(parse(pse.world.kid.get(f"/opds/works/{pse.world.seed.works['ok']}"))) == []
+    assert shape(pse.page(pse.world.kid, item, 0)) == shape(pse.page(pse.world.kid, ABSENT_ULID, 0))

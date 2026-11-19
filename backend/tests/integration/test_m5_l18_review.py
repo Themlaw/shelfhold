@@ -1,7 +1,7 @@
 """M5 L18, relecture adverse (contradicteur): PoC des trous trouvés dans OPDS-PSE.
 
-Each test was red on the reviewed commit; only R3 (the owner's decision, D-P1) stays
-`xfail(strict=True)`, the others pass. The helpers are those of `test_m5_l18_pse.py`.
+Each test was red on the reviewed commit and passes now (R3 was settled by the owner: option (b)).
+The helpers are those of `test_m5_l18_pse.py`.
 """
 
 from __future__ import annotations
@@ -118,15 +118,9 @@ def test_review_page_conversions_are_bounded_like_thumbnails(slow: tuple[Pse, li
 # -- R3: D-P1, the whole volume of any export_item, exported or not -----------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="R3: PSE offre et sert en entier tout export_item CBZ, sans enregistrement d'export "
-    "vivant : ce n'est pas « le fichier que le bloc OPDS remet » (plan.load_candidates exige un "
-    "record LIVE, un arbre et un kind de ITEM_KINDS) ; la justification de D-P1 ne tient pas",
-)
 @pytest.mark.req("EF-INT-007")
 def test_review_an_item_never_exported_is_not_streamed_whole(pse: Pse) -> None:
-    item = pse.stream("ok", png_pages(3))
+    item = pse.stream("ok", png_pages(3), live=False)
     with pse.world.seed.engine.connect() as connection:
         records = connection.execute(
             sa.select(sa.func.count())

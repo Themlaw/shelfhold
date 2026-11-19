@@ -133,6 +133,7 @@ Les applis qui parlent OPDS-PSE (Panels, Chunky, Kybook, KOReader et d'autres) l
 - **Le profil est relu à chaque page.** Un profil enfant ne reçoit jamais une page d'une Œuvre au-dessus de son plafond, et la réponse est la même que pour un tome qui n'existe pas (`404`). Si l'Œuvre est reclassée ou si le jeton est révoqué pendant la lecture, la page suivante s'arrête.
 - **Le format suit l'en-tête `Accept`.** Si l'appli accepte le format de la page, elle le reçoit tel quel. Sinon, une page AVIF ou WebP est convertie en JPEG ou en PNG (un seul calcul, gardé en cache). Si rien ne convient, la réponse est `406` avec la marche à suivre. Sans `Accept`, la page est envoyée telle quelle.
 - **Lecture seule.** Shelfhold n'écrit aucune position en servant une page, et le flux n'annonce pas `pse:lastRead`. La position se synchronise par kosync.
+- **Seuls les tomes réellement exportés sont proposés**, et seulement si leur fichier conservé est un CBZ lisible. Si vous lisez déjà le tome là où il a été envoyé (vous y avez un compte vérifié), PSE ne montre qu'un extrait, comme le lecteur du web : un cinquième des pages au plus.
 - Seuls les tomes dont le fichier conservé est un CBZ lisible sont proposés. Un fichier abîmé ou absent n'a pas d'entrée.
 
 ## Pour l'intégrateur : le fournisseur du bloc
