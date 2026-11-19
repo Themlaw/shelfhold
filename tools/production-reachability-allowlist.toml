@@ -126,7 +126,7 @@ symbols = [
 
 [[allow]]
 category = "deferred-l24-deprecation-window"
-reason = "2026-11-17 (M4 L24): `Deprecation` builds the window during which an event is sent in two versions of its shape (EF-INT-005). Every event of the catalogue is still at its first version, so no entry declares one: the double emission is proved with a catalogue the test builds, and the bounds are checked when any catalogue is built. It comes with the first change of the shape of an event. 2026-11-19 (M5 L22b, D18): redated M6, then to the first change of the shape of an event. No event changes shape in M5 (the catalogue of events and the webhooks are untouched since `v1.1.0`), so there is nothing to declare yet."
+reason = "2026-11-17 (M4 L24): `Deprecation` builds the window during which an event is sent in two versions of its shape (EF-INT-005). Every event of the catalogue is still at its first version, so no entry declares one: the double emission is proved with a catalogue the test builds, and the bounds are checked when any catalogue is built. It comes with the first change of the shape of an event. 2026-11-19 (M5 L22b): redated M6 (D18), then to the first change of the shape of an event. No event changes shape in M5 (the catalogue of events and the webhooks are untouched since `v1.1.0`), so there is nothing to declare yet."
 until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md, D18): the first change of the shape of an event
 symbols = [
   "shelfhold.integrations.webhooks.catalogue:Deprecation",
