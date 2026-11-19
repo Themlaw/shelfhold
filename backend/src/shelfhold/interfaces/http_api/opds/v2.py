@@ -22,6 +22,7 @@ from shelfhold.interfaces.http_api.opds.feed import (
     Link,
 )
 from shelfhold.interfaces.http_api.opds.links import Paths
+from shelfhold.platform.atom_feed import clean_text
 
 __all__ = ["JSON_TYPE", "JsonFeed", "render_json"]
 
@@ -35,7 +36,7 @@ def _link(link: Link) -> dict[str, Any]:
     if link.type:
         out["type"] = link.type
     if link.title:
-        out["title"] = link.title
+        out["title"] = clean_text(link.title)
     if "{" in link.href:  # a URI template: the client fills it (`{pageNumber}`, `{?q}`)
         out["templated"] = True
     if link.length is not None:
@@ -53,7 +54,7 @@ def _navigation(entry: Entry) -> dict[str, Any]:
     """An entry of a navigation feed: a door, that is one link and a title."""
     door = entry.links[0]
     item = _link(door)
-    item["title"] = entry.title
+    item["title"] = clean_text(entry.title)
     item["properties"] = {"identifier": entry.id}
     return item
 
@@ -62,11 +63,11 @@ def _publication(entry: Entry) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "@type": _BOOK,
         "identifier": entry.id,
-        "title": entry.title,
+        "title": clean_text(entry.title),
         "modified": entry.updated,
     }
     if entry.summary:
-        metadata["description"] = entry.summary
+        metadata["description"] = clean_text(entry.summary)
     out: dict[str, Any] = {
         "metadata": metadata,
         "links": [_link(x) for x in entry.links if x.rel not in _IMAGE_RELS],
@@ -80,7 +81,7 @@ def _publication(entry: Entry) -> dict[str, Any]:
 def render_json(doc: FeedDoc) -> str:
     metadata: dict[str, Any] = {
         "identifier": doc.feed_id,
-        "title": doc.title,
+        "title": clean_text(doc.title),
         "modified": doc.updated,
     }
     if doc.total is not None:  # the number of rows the reader may see, never a hidden one

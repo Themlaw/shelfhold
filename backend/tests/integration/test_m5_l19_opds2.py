@@ -11,6 +11,8 @@ token, a web session, an API key, another profile's identifiers (IDOR on a Work,
 series), a search that tries to find a hidden title, malformed identifiers, a path that climbs.
 """
 
+# ruff: noqa: F811  (the fixtures of the L48 and L18 benches are imported to be reused)
+
 from __future__ import annotations
 
 import json
@@ -377,7 +379,29 @@ def test_opds2_a_forged_host_header_changes_no_link(world: World) -> None:
     assert plain == forged and "evil.example" not in json.dumps(forged)
 
 
-def test_opds2_hostile_text_is_data(world: World) -> None:
-    """A title is escaped by the JSON writer, never concatenated: the document always parses."""
-    feed = doc(world.kid.get(f"{V2}/search", params={"q": '"}],"x":[{"'}))
-    assert set(feed) <= {"metadata", "links", "navigation", "publications", "facets", "groups"}
+def test_opds2_hostile_text_is_data_and_cleaned_as_in_atom(world: World) -> None:
+    """A title with quotes, brackets, a line separator, a template brace and control characters is
+    a string: the document parses, nothing is added to it, and the title is the one of the Atom
+    feed (the same cleaning), so the two feeds still agree."""
+    import sqlalchemy as sa
+
+    from shelfhold.infrastructure.schema import catalog
+
+    hostile = 'A"}],"x":[{"\u2028{?q}{pageNumber}\x1b[31m\x00 end'
+    with world.seed.engine.begin() as conn:
+        conn.execute(
+            sa.update(catalog.work)
+            .where(catalog.work.c.id == world.seed.works["ok"])
+            .values(title=hostile)
+        )
+    feed = doc(world.kid.get(f"{V2}/works"))
+    assert set(feed) <= {"metadata", "links", "navigation", "publications"}
+    (found,) = [
+        p
+        for p in publications(feed)
+        if p["metadata"]["identifier"].endswith(world.seed.works["ok"])
+    ]
+    assert "\x1b" not in found["metadata"]["title"] and "\x00" not in found["metadata"]["title"]
+    assert '"}],"x":[{"' in found["metadata"]["title"]  # data, kept as it is
+    assert not any(x.get("templated") for x in found["links"])
+    _same_feeds(world.kid, "hostile")  # the same titles as the Atom feed, byte for byte

@@ -33,6 +33,9 @@ def _clean(text: str) -> str:
     )
 
 
+clean_text = _clean  # the same cleaning for every way of writing a feed (the JSON one too)
+
+
 @dataclass(frozen=True)
 class Link:
     rel: str
