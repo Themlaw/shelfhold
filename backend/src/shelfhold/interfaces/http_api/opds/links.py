@@ -7,54 +7,11 @@ path or nothing. A file name is made of the title of what a reader may see, clea
 separator, no control character, never `..`.
 """
 
-import re
-from collections.abc import Mapping
-from typing import Any
 from urllib.parse import urlencode
 
-_PREFIX = re.compile(r"(?:/[A-Za-z0-9._~-]{1,64}){1,8}")
-_MAX_PREFIX = 128
-_FORBIDDEN = set('/\\:*?"<>|')
-_MAX_NAME = 200
+from shelfhold.interfaces.http_api.path_safety import mount_prefix, safe_filename
 
-
-def _plain(raw: object) -> str | None:
-    """`raw` as a mount prefix: `/a/b` without a trailing slash, or None if it is anything else."""
-    if not isinstance(raw, str):
-        return None
-    cleaned = raw[:-1] if raw.endswith("/") and raw != "/" else raw
-    if cleaned == "":
-        return ""
-    if len(cleaned) > _MAX_PREFIX or not _PREFIX.fullmatch(cleaned):
-        return None
-    if any(segment in {".", ".."} for segment in cleaned.split("/")):
-        return None
-    return cleaned
-
-
-def mount_prefix(scope: Mapping[str, Any]) -> str:
-    """The prefix of the mount point: the one a trusted proxy announced
-    (`state["client_prefix"]`, set by `ClientIpMiddleware`), else the server's `root_path`."""
-    state = scope.get("state") or {}
-    announced = _plain(state.get("client_prefix")) if isinstance(state, Mapping) else None
-    if announced:
-        return announced
-    return _plain(scope.get("root_path", "")) or ""
-
-
-def safe_filename(raw: str) -> str:
-    """A file name from a title: no separator, no control character, no `..`, never empty."""
-    kept = "".join(c for c in raw if c not in _FORBIDDEN and c.isprintable())
-    while ".." in kept:
-        kept = kept.replace("..", ".")
-    kept = kept.strip(chr(32) + ".")
-    if len(kept) > _MAX_NAME:
-        stem, dot, ext = kept.rpartition(".")
-        if dot and 0 < len(ext) <= 8:
-            kept = stem[: _MAX_NAME - len(ext) - 1] + "." + ext
-        else:
-            kept = kept[:_MAX_NAME]
-    return kept or "download"
+__all__ = ["Paths", "mount_prefix", "safe_filename"]
 
 
 class Paths:
@@ -91,6 +48,12 @@ class Paths:
     def recent(self, *, offset: int = 0, limit: int | None = None) -> str:
         return self._with("/recent", **_page(offset, limit))
 
+    def selections(self) -> str:
+        return self._with("/selections")
+
+    def selection(self, selection_id: str, *, offset: int = 0, limit: int | None = None) -> str:
+        return self._with(f"/selections/{selection_id}", **_page(offset, limit))
+
     def work(self, work_id: str) -> str:
         return self._with(f"/works/{work_id}")
 
@@ -105,6 +68,10 @@ class Paths:
 
     def complete(self, edition_id: str, part: int = 1) -> str:
         return self._with(f"/editions/{edition_id}/complete", part=part if part > 1 else None)
+
+    def pse(self, item_id: str) -> str:
+        """The template of a `pse:stream` link: the client puts the page number (from 0) in it."""
+        return f"{self.base}/pse/{item_id}/{{pageNumber}}"
 
     def bundle(self, version_id: str) -> str:
         return self._with(f"/bundles/{version_id}")

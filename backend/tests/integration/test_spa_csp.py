@@ -236,22 +236,32 @@ def _with_images(sources: str) -> str:
 
 
 @pytest.mark.req("ENF-SEC-004")
-def test_the_policy_served_lets_the_reader_draw_blob_images_and_nothing_else(
+def test_the_policy_served_for_the_spa_draws_images_of_its_own_origin_only(
     settings: Settings, tmp_path: Path
 ) -> None:
-    build = _build(tmp_path, _page(_with_images("'self' blob:")))
+    """L12 took the reader out of the SPA (its own entry, its own policy): nothing of the SPA draws
+    a `blob:` image any more, so the widening of L10 is gone."""
+    build = _build(tmp_path, _page(_with_images("'self'")))
     with _client(settings, build) as client:
-        response = client.get("/lire/unit/01HZZZZZZZZZZZZZZZZZZZZZZA")
+        response = client.get("/bibliotheque")
     csp = response.headers["content-security-policy"]
-    assert _directive(csp, "img-src") == ["'self'", "blob:"]
+    assert _directive(csp, "img-src") == ["'self'"]
     assert "data:" not in csp and "*" not in csp.replace("*/", "")
-    assert _directive(csp, "script-src").count("blob:") == 0  # no script from a blob: either
+    assert _directive(csp, "script-src").count("blob:") == 0
     assert _directive(csp, "default-src") == ["'self'"]
 
 
 @pytest.mark.req("ENF-SEC-004")
 @pytest.mark.parametrize(
-    "wider", ["'self' blob: data:", "*", "'self' https:", "'self' http://x", "'unsafe-inline'"]
+    "wider",
+    [
+        "'self' blob:",
+        "'self' blob: data:",
+        "*",
+        "'self' https:",
+        "'self' http://x",
+        "'unsafe-inline'",
+    ],
 )
 def test_a_build_that_widens_the_image_sources_is_refused(
     settings: Settings, tmp_path: Path, wider: str
@@ -259,4 +269,20 @@ def test_a_build_that_widens_the_image_sources_is_refused(
     build = _build(tmp_path, _page(_with_images(wider)))
     migrate(settings)
     with pytest.raises(RuntimeError, match="img-src"):
+        create_app(settings.model_copy(update={"frontend_dir": build}))
+
+
+@pytest.mark.req("EF-LEC-012", "ENF-SEC-004")
+@pytest.mark.parametrize("name", ["worker-src", "manifest-src"])
+@pytest.mark.parametrize(
+    "wider", ["'self' blob:", "*", "'self' https:", "'unsafe-inline'", "data:"]
+)
+def test_a_build_that_loosens_the_worker_or_manifest_source_is_refused(
+    settings: Settings, tmp_path: Path, name: str, wider: str
+) -> None:
+    """The PWA names its worker and its manifest in the policy of the SPA: a build that widens
+    either is not the page that was audited."""
+    build = _build(tmp_path, _page(f"{_csp(script=sha(BOOT))}; {name} {wider}"))
+    migrate(settings)
+    with pytest.raises(RuntimeError, match=name):
         create_app(settings.model_copy(update={"frontend_dir": build}))

@@ -9,7 +9,7 @@ with the exact command). The route and this command go through the same service.
 the gap is no longer told. `--undo` takes it back.
 `follow check <edition>` asks for a look at one series at once (EF-SRC-038): a job of the news
 class, spaced by upstream source like any look.
-`follow export [--format opml|csv]` writes the followed series as plain text
+`follow export [--format opml|csv] [--user NAME]` writes the followed series as plain text
 (EF-INT-027): read-only, straight from the database, no running instance needed.
 """
 
@@ -18,7 +18,12 @@ from __future__ import annotations
 import argparse
 import sys
 
-from shelfhold.acquisition.application.follows_export import FORMATS, export_follows
+from shelfhold.acquisition.application.follows_export import (
+    FORMATS,
+    export_follows,
+    first_administrator,
+    profile_by_username,
+)
 from shelfhold.config import ResolvedSettings
 from shelfhold.i18n import t
 from shelfhold.interfaces.cli._ops import ops_command
@@ -40,6 +45,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     follow.add_argument(
         "--format", choices=FORMATS, default="opml", help=t("ops.help_export_format")
     )
+    follow.add_argument("--user", help=t("ops.help_export_user"))
     follow.set_defaults(handler=run_follow, configure_logging=False)
     unfollow = commands.add_parser(
         "unfollow", help=t("ops.help_unfollow_series"), allow_abbrev=False
@@ -89,7 +95,16 @@ def _export(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         return 1
     engine = create_db_engine(database)
     try:
-        content = export_follows(engine, args.format)
+        # the last number read is one profile's: the one named, else the first administrator's
+        user_id = (
+            first_administrator(engine)
+            if args.user is None
+            else profile_by_username(engine, args.user)
+        )
+        if args.user is not None and user_id is None:
+            print(t("ops.follow_export_unknown_user"), file=sys.stderr)
+            return 1
+        content = export_follows(engine, args.format, user_id)
     finally:
         engine.dispose()
     print(content, end="")

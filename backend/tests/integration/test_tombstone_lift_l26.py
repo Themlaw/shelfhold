@@ -89,7 +89,7 @@ def test_tombstone_lift_reserved_and_audited_without_title(tmp_path: Path) -> No
     haystack = repr(_audit(env, "tombstone.lifted")) + repr(env.table_rows())
     for root in env.roots:
         haystack += repr(env.journal(root))
-    for value in (TITLE, SLUG, "4422", "suwayomi"):
+    for value in (TITLE, SLUG, "src-series-qz", "suwayomi"):
         assert value not in haystack
     for root in env.roots:
         assert b"suwayomi" not in env.journal(root)  # sealed, like the line it lifts

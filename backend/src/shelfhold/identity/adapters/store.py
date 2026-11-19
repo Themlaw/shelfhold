@@ -1,5 +1,6 @@
 """SQL storage of users, sessions, API keys and audit entries (tables of migration 0002)."""
 
+import json
 import secrets
 import time
 from collections.abc import Callable, Iterator, Sequence
@@ -22,6 +23,11 @@ from shelfhold.identity.application.ports import (
     NewDeviceToken,
     NewPasskey,
     NewSession,
+    OidcIdentityRecord,
+    OidcIdentityView,
+    OidcLastUnlink,
+    OidcLink,
+    OidcUnlink,
     PasskeyGoneError,
     PasskeyRecord,
     ProfileRecord,
@@ -63,6 +69,7 @@ _key = identity.api_key
 _device = identity.device_token
 _registry = identity.device  # M5 L02: the device a token belongs to
 _passkey = identity.webauthn_credential
+_oidc = identity.oidc_identity  # M5 L03
 
 
 def _retire_devices(
@@ -125,7 +132,44 @@ def _user_of(row: Any) -> UserRecord:
     )
 
 
+def _tell(conn: sa.Connection, user_id: str, what: str, now: datetime) -> None:
+    """A security notice for the holder of an account, by the channel that already tells people
+    what is new (M5 L04): a row of the notification digest, due now and urgent, which the sweep
+    sends to the account's channels like any other. It says what happened to the account, never
+    an identifier and never who did it. Quiet hours do not hold it back: it is the one notice a
+    person must not find out about in the morning."""
+    table = identity.notification_digest
+    item = {"kind": "security", "what": what}
+    held = conn.execute(
+        sa.select(table.c.payload).where(table.c.user_id == user_id, table.c.due_at == now)
+    ).scalar_one_or_none()
+    if held is None:
+        conn.execute(
+            sa.insert(table).values(
+                user_id=user_id,
+                due_at=now,
+                payload={"urgent": True, "attempts": 0, "items": [item]},
+            )
+        )
+        return
+    payload = dict(held)
+    items = list(payload.get("items", []))
+    if item not in items:
+        items.append(item)
+    conn.execute(
+        sa.update(table)
+        .where(table.c.user_id == user_id, table.c.due_at == now)
+        .values(payload={**payload, "urgent": True, "items": items})
+    )
+
+
 # Labelled: joined with `session` or `api_key`, whose own `id` and `user_id` must not clash.
+def _oidc_of(row: Any) -> OidcIdentityRecord:
+    return OidcIdentityRecord(
+        id=row.id, user_id=row.user_id, issuer=row.issuer, sub=row.sub, linked_at=row.linked_at
+    )
+
+
 _USER_COLUMNS = (
     _user.c.id.label("u_id"),
     _user.c.username.label("u_username"),
@@ -263,6 +307,18 @@ def _passkey_of(row: Any) -> PasskeyRecord:
     )
 
 
+def _selection_documents(found: list[Any]) -> list[Any]:
+    """The query of a saved selection is a document of its own in the export, not a text in a text;
+    one that is not valid JSON (the table checks it is) would be kept as it is."""
+    for item in found:
+        text = item.pop("query_json")
+        try:
+            item["query"] = json.loads(text)
+        except ValueError:
+            item["query"] = text
+    return found
+
+
 def _words_of(raw: object) -> tuple[str, ...]:
     """The words stored for a profile: text only (the column is JSON, whatever was written)."""
     if not isinstance(raw, list):
@@ -339,6 +395,150 @@ class SqlIdentityStore:
 
     def user_by_id(self, user_id: str) -> UserRecord | None:
         return self._one_user(_user.c.id == user_id)
+
+    def oidc_user(self, issuer: str, sub: str) -> UserRecord | None:
+        """The account the person `sub` of `issuer` is linked to (None: nobody, never created)."""
+        query = (
+            sa.select(*_USER_COLUMNS)
+            .join(_oidc, _oidc.c.user_id == _user.c.id)
+            .where(_oidc.c.issuer == issuer, _oidc.c.sub == sub)
+        )
+        with self._engine.connect() as conn:
+            row = conn.execute(query).first()
+        return None if row is None else _user_of(row)
+
+    def oidc_identity_of(self, user_id: str, issuer: str) -> OidcIdentityRecord | None:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                sa.select(_oidc).where(_oidc.c.user_id == user_id, _oidc.c.issuer == issuer)
+            ).first()
+        return None if row is None else _oidc_of(row)
+
+    def oidc_identities_of(self, user_id: str) -> list[OidcIdentityView]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(_oidc.c.issuer, _oidc.c.linked_at)
+                .where(_oidc.c.user_id == user_id)
+                .order_by(_oidc.c.linked_at)
+            ).all()
+            actor = conn.execute(
+                sa.select(identity.audit.c.actor_id)
+                .where(identity.audit.c.action == "oidc.linked", identity.audit.c.target == user_id)
+                .order_by(identity.audit.c.at.desc(), identity.audit.c.id.desc())
+                .limit(1)
+            ).first()
+        by_other = None if actor is None else actor[0] != user_id
+        return [OidcIdentityView(r.issuer, r.linked_at, by_other) for r in rows]
+
+    def link_oidc_identity(
+        self,
+        *,
+        user_id: str,
+        issuer: str,
+        sub: str,
+        now: datetime,
+        audit: AuditEntry,
+        admin_actor: str | None = None,
+    ) -> OidcLink:
+        """One transaction under the write lock: the role is read where the row is written, so an
+        account turned into a child profile meanwhile is refused, and two links of one person
+        cannot both be made."""
+        engine = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with write_transaction(engine) as conn:
+            role = conn.execute(sa.select(_user.c.role).where(_user.c.id == user_id)).scalar()
+            if role is None:
+                return OidcLink.NO_ACCOUNT
+            if role == "child":
+                return OidcLink.CHILD
+            if admin_actor is not None and role == "admin" and user_id != admin_actor:
+                return OidcLink.ADMIN_TARGET  # an admin never takes another admin's account
+            owner = conn.execute(
+                sa.select(_oidc.c.user_id).where(_oidc.c.issuer == issuer, _oidc.c.sub == sub)
+            ).scalar()
+            if owner is not None:
+                return OidcLink.UNCHANGED if owner == user_id else OidcLink.SUBJECT_TAKEN
+            held = conn.execute(
+                sa.select(_oidc.c.id).where(_oidc.c.user_id == user_id, _oidc.c.issuer == issuer)
+            ).first()
+            if held is not None:
+                return OidcLink.ACCOUNT_HAS_ANOTHER
+            conn.execute(
+                sa.insert(_oidc).values(
+                    id=new_ulid(), user_id=user_id, issuer=issuer, sub=sub, linked_at=now
+                )
+            )
+            conn.execute(self._audit_insert(audit))
+            if admin_actor is not None and admin_actor != user_id:
+                _tell(conn, user_id, "identity_linked_by_admin", now)  # M5 L04 (#362 MIN-B)
+        return OidcLink.LINKED
+
+    def unlink_oidc_identity(
+        self,
+        *,
+        user_id: str,
+        issuer: str,
+        now: datetime,
+        audit: AuditEntry,
+        by_user_id: str,
+    ) -> OidcUnlink:
+        """One transaction under the write lock: the rule (an admin unlinks her own account or a
+        non-admin's, never another admin's), the link, the sessions the provider opened for this
+        account, the audit line and the notice to the holder. A session is the provider's when what
+        proved it last is the provider (`session.proof`), whatever the audit still holds."""
+        engine = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with write_transaction(engine) as conn:
+            role = conn.execute(sa.select(_user.c.role).where(_user.c.id == user_id)).scalar()
+            if role is None:
+                return OidcUnlink.NO_ACCOUNT
+            if role == "admin" and user_id != by_user_id:
+                return OidcUnlink.ADMIN_TARGET
+            gone = conn.execute(
+                sa.delete(_oidc).where(_oidc.c.user_id == user_id, _oidc.c.issuer == issuer)
+            ).rowcount
+            if not gone:
+                return OidcUnlink.NOT_LINKED
+            conn.execute(
+                sa.update(_session)
+                .where(
+                    _session.c.user_id == user_id,
+                    _session.c.revoked_at.is_(None),
+                    _session.c.proof == "provider",
+                )
+                .values(revoked_at=now)
+            )
+            conn.execute(self._audit_insert(audit))
+            # always told, the holder's own unlink included: a stolen fresh session could do it
+            by_other = by_user_id != user_id
+            _tell(
+                conn,
+                user_id,
+                "identity_unlinked_by_admin" if by_other else "identity_unlinked",
+                now,
+            )
+        return OidcUnlink.UNLINKED
+
+    def oidc_last_unlink(self, user_id: str) -> OidcLastUnlink | None:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                sa.select(identity.audit.c.actor_id, identity.audit.c.at)
+                .where(
+                    identity.audit.c.action == "oidc.unlinked", identity.audit.c.target == user_id
+                )
+                .order_by(identity.audit.c.at.desc(), identity.audit.c.id.desc())
+                .limit(1)
+            ).first()
+        return None if row is None else OidcLastUnlink(row.at, row.actor_id != user_id)
+
+    def session_is_live(self, session_id: str, *, now: datetime) -> bool:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                sa.select(_session.c.id).where(
+                    _session.c.id == session_id,
+                    _session.c.revoked_at.is_(None),
+                    _session.c.absolute_expiry > now,
+                )
+            ).first()
+        return row is not None
 
     def admins(self) -> Sequence[UserRecord]:
         with self._engine.connect() as conn:
@@ -516,6 +716,7 @@ class SqlIdentityStore:
             token, account = identity.device_token, identity.destination_account
             notify, listing = identity.notify_destination, identity.request_list_import
             collection, item = catalog.collection, catalog.collection_item
+            saved = catalog.saved_selection
             marker, hint = acquisition.read_marker, acquisition.tracker_hint
             src_account, backup = acquisition.source_account, acquisition.tachibk_import
             # a key issued FOR her (a device token), or one of hers that is for nobody else: the
@@ -561,6 +762,13 @@ class SqlIdentityStore:
                     conn, "reading_conflicts", conflict, conflict.c.user_id == user_id,
                     "id", "carrier_type", "carrier_id", "winner_position_id",
                     "loser_position_id", "choice", "created_at", "resolved_at",
+                ),
+                # M5 L21: her stored queries (a name and the closed grammar; no Work, no result)
+                "saved_selections": _selection_documents(
+                    rows(
+                        conn, "saved_selections", saved, saved.c.owner_user_id == user_id,
+                        "id", "name", "query_json", "created_at", "updated_at",
+                    )
                 ),
                 "sessions": rows(
                     conn, "sessions", _session, _session.c.user_id == user_id,
@@ -726,6 +934,19 @@ class SqlIdentityStore:
                     .where(_user.c.id == user_id)
                     .values(hide_unrated_remote=True, subject_filter=[])
                 )
+                if role == "child":  # a child is never linked to a provider (M5 L03)
+                    gone = conn.execute(sa.delete(_oidc).where(_oidc.c.user_id == user_id)).rowcount
+                    if gone:
+                        conn.execute(
+                            audit_insert(
+                                AuditEntry(
+                                    actor_id=actor_id,
+                                    action="oidc.unlinked_role_change",
+                                    target=user_id,
+                                    at=now,
+                                )
+                            )
+                        )
                 if role != "child":  # only a child is audited by her Kavita account (M3 L10)
                     conn.execute(
                         sa.update(_user).where(_user.c.id == user_id).values(kavita_username=None)
@@ -1142,7 +1363,11 @@ class SqlIdentityStore:
     def insert_session(self, session: NewSession) -> None:
         # the write lock is taken first whenever the proof can be withdrawn meanwhile: a passkey
         # revoked or a password reset between the check and the insert must not leave a session
-        guarded = session.passkey_id is not None or session.password_hash is not None
+        guarded = (
+            session.passkey_id is not None
+            or session.password_hash is not None
+            or session.oidc is not None
+        )
         engine = (
             self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
             if guarded
@@ -1154,6 +1379,20 @@ class SqlIdentityStore:
                     sa.select(_user.c.password_hash).where(_user.c.id == session.user_id)
                 ).scalar()
                 if stored != session.password_hash:  # reset (or removed) since it was checked
+                    raise ProofWithdrawnError
+            if session.oidc is not None:  # still this account's identity, and not a child profile
+                issuer, sub = session.oidc
+                live = conn.execute(
+                    sa.select(_oidc.c.id)
+                    .join(_user, _user.c.id == _oidc.c.user_id)
+                    .where(
+                        _oidc.c.user_id == session.user_id,
+                        _oidc.c.issuer == issuer,
+                        _oidc.c.sub == sub,
+                        _user.c.role != "child",
+                    )
+                ).first()
+                if live is None:
                     raise ProofWithdrawnError
             if session.passkey_id:  # the write lock is held: no revocation can come in between
                 live = conn.execute(
@@ -1171,12 +1410,13 @@ class SqlIdentityStore:
                     csrf_secret=session.csrf_secret,
                     created_at=session.now,
                     last_seen_at=session.now,
-                    auth_time=session.now,
+                    auth_time=session.auth_time or session.now,
                     absolute_expiry=session.absolute_expiry,
                     remember=session.remember,
                     ip=session.ip,
                     user_agent_label=session.device,
                     passkey_id=session.passkey_id,
+                    proof=session.proof,
                 )
             )
 
@@ -1200,6 +1440,7 @@ class SqlIdentityStore:
             absolute_expiry=row.absolute_expiry,
             remember=bool(row.remember),
             revoked_at=row.revoked_at,
+            proof=row.proof,
         )
 
     def touch_session(self, session_id: str, *, now: datetime, absolute_expiry: datetime) -> None:
@@ -1211,15 +1452,31 @@ class SqlIdentityStore:
             )
 
     def rotate_session(
-        self, session_id: str, *, token_hash: str, csrf_secret: str, now: datetime
-    ) -> None:
+        self,
+        session_id: str,
+        *,
+        token_hash: str,
+        csrf_secret: str,
+        now: datetime,
+        auth_time: datetime | None = None,
+        proof: str = "local",
+    ) -> bool:
+        """`auth_time`: when the proof was given (a provider's sign-in a moment ago), `now` unless
+        said; `proof`: what gave it. False when the session is closed: nothing was changed."""
         with write_transaction(self._engine) as conn:
-            conn.execute(
-                sa.update(_session)
-                .where(_session.c.id == session_id, _session.c.revoked_at.is_(None))
-                .values(
-                    token_hash=token_hash, csrf_secret=csrf_secret, auth_time=now, last_seen_at=now
-                )
+            return (
+                conn.execute(
+                    sa.update(_session)
+                    .where(_session.c.id == session_id, _session.c.revoked_at.is_(None))
+                    .values(
+                        token_hash=token_hash,
+                        csrf_secret=csrf_secret,
+                        auth_time=auth_time or now,
+                        proof=proof,
+                        last_seen_at=now,
+                    )
+                ).rowcount
+                > 0
             )
 
     def revoke_session_by_token_hash(self, token_hash: str, *, now: datetime) -> None:

@@ -44,7 +44,7 @@ jobs:
     env:
       # The only place where the number of shards is defined (see CONTRIBUTING.md).
       BACKEND_SHARDS: "4"
-      BACKEND_INTEGRATION_SHARDS: "8"
+      BACKEND_INTEGRATION_SHARDS: "10"
       E2E_SHARDS: "2"
     steps:
       - id: shards
@@ -81,6 +81,10 @@ jobs:
               - '.github/workflows/ci.yml'
             unit_tests:
               - 'backend/tests/unit/**'
+              - 'tools/check_submodule_pin.py'
+              - '.gitmodules'
+              - 'THIRD_PARTY_NOTICES'
+              - 'docs/dependencies.md'
             integration_tests:
               - 'backend/tests/integration/**'
             golden_tests:
@@ -100,6 +104,8 @@ jobs:
             frontend:
               - 'frontend/**'
               - 'open-api/**'
+              - 'tools/check_submodule_pin.py'
+              - '.gitmodules'
               - '.github/workflows/ci.yml'
             openapi:
               - 'backend/**'
@@ -197,6 +203,8 @@ jobs:
         run: uv run --locked python ../tools/i18n_parity.py
       - name: published migrations frozen (a new migration is frozen by its own PR, ENF-OPS-002)
         run: python3 tools/check_patch_migrations.py
+      - name: foliate-js submodule pinned to the commit of docs/dependencies.md (EF-LEC-003, R13)
+        run: python3 tools/check_submodule_pin.py pin
       - name: typos
         id: typos-first
         continue-on-error: true  # the action downloads its binary from a release: one more try below
@@ -508,12 +516,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true  # frontend/vendor/foliate-js, the commit of the gitlink (never recursive)
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - name: no reader asset from a third-party origin, vendored code included (EF-LEC-003)
+        working-directory: .
+        run: python3 tools/check_submodule_pin.py assets --require-checkout
+      - name: pinned foliate-js commit is at least 14 days old (EF-LEC-003, update rule)
+        working-directory: .
+        run: python3 tools/check_submodule_pin.py pin --min-age 14
       - name: eslint
         run: npm run lint
       - name: svelte-check (TypeScript strict)
@@ -571,6 +586,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true  # frontend/vendor/foliate-js, the commit of the gitlink (never recursive)
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.x"
@@ -606,6 +622,72 @@ jobs:
           SHARD: ${{ matrix.shard }}/${{ needs.changes.outputs.e2e_shard_total }}
         run: npx playwright test --shard="$SHARD" --pass-with-no-tests
 
+  # EPUB reader (M5 L12): a blob: document inherits the policy of the page that made it, which is a
+  # behaviour of each browser (ADR-0055): the specs of the reader are played on all three engines,
+  # and a failure on one of them blocks the merge (WebKit included).
+  e2e-reader:
+    name: e2e-reader (${{ matrix.browser }})
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # WebKit runs in the official image of Playwright (the version of the package, by digest): its
+    # system libraries are 180 packages from a mirror that stalls, and a step killed in the middle
+    # of apt leaves the dpkg lock held. The browsers of the image are the ones of the package.
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - browser: chromium
+            image: ''
+          - browser: firefox
+            image: ''
+          - browser: webkit
+            image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
+    steps:
+      - name: git (the image of Playwright has none; the submodule needs it)
+        if: matrix.image != ''
+        run: command -v git >/dev/null || (apt-get update && apt-get install -y --no-install-recommends git ca-certificates)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true  # frontend/vendor/foliate-js, the commit of the gitlink (never recursive)
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - run: uv sync --project backend --locked
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm ci
+        working-directory: e2e
+      - name: Playwright browser
+        if: matrix.image == ''
+        working-directory: e2e
+        timeout-minutes: 8
+        env:
+          BROWSER: ${{ matrix.browser }}
+        # The libraries are installed to the end, never cut by `timeout`: a killed `npx` leaves its
+        # `apt-get` holding the dpkg lock and every later attempt fails on the lock. The step is
+        # bounded by `timeout-minutes` instead (which stops the whole process group).
+        run: npx playwright install --with-deps "$BROWSER"
+      - name: Playwright (reader, one engine)
+        working-directory: e2e
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: npx playwright test -c playwright.reader.config.ts --project="$BROWSER"
+
   # Workshop harness (M3 L02): the SPA served by the API on a synthetic base, played on a desktop
   # window and on 360x780 (projects workshop-desktop and workshop-mobile), axe blocking on serious
   # and critical. No outbound network: the base is synthetic and the API runs on the runner.
@@ -623,6 +705,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true  # frontend/vendor/foliate-js, the commit of the gitlink (never recursive)
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.x"
@@ -764,7 +847,7 @@ jobs:
     # Also gated on the test jobs (not on ci-success, which needs this job). Filtered jobs may be
     # skipped, hence !failure(): a failed or cancelled needed job blocks the publication.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !cancelled() && !failure()
-    needs: [image-main, lint, denylist, fixtures, backend-unit, backend-integration, backend-suites, coverage, frontend, openapi, e2e-front]
+    needs: [image-main, lint, denylist, fixtures, backend-unit, backend-integration, backend-suites, coverage, frontend, openapi, e2e-front, e2e-reader]
     permissions:
       contents: read
       packages: write
@@ -861,7 +944,7 @@ jobs:
 
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, frontend-e2e, reader-bench, client-drift, image-pr, image-main, image-publish, scan]
+    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, e2e-reader, frontend-e2e, reader-bench, client-drift, image-pr, image-main, image-publish, scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions: {}
@@ -897,6 +980,7 @@ jobs:
           OPENAPI: ${{ needs.openapi.result }}
           OPENAPI_CHANGED: ${{ needs.changes.outputs.openapi }}
           E2E: ${{ needs.e2e-front.result }}
+          E2E_READER: ${{ needs.e2e-reader.result }}
           E2E_CHANGED: ${{ needs.changes.outputs.e2e }}
           FRONTEND_E2E: ${{ needs.frontend-e2e.result }}
           READER_BENCH: ${{ needs.reader-bench.result }}
@@ -927,6 +1011,7 @@ jobs:
           check_filtered "$FRONTEND" "$FRONTEND_CHANGED"
           check_filtered "$OPENAPI" "$OPENAPI_CHANGED"
           check_filtered "$E2E" "$E2E_CHANGED"
+          check_filtered "$E2E_READER" "$E2E_CHANGED"
           check_filtered "$FRONTEND_E2E" "$E2E_CHANGED"
           check_filtered "$CLIENT_DRIFT" "$OPENAPI_CHANGED"
           # Exactly one image path per event: pull request -> image-pr, push -> image-main + image-publish.

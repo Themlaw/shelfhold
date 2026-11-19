@@ -29,6 +29,7 @@ The reading context knows nothing of HTTP: `ProgressRemote` is the port the Kavi
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -42,6 +43,7 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.kavita_names import same_kavita_username
 from shelfhold.infrastructure.schema import export, identity, reading
 from shelfhold.infrastructure.secrets.keyring import Keyring
+from shelfhold.reading.application.lease import ProgressBusyError, ProgressLease, progress_leased
 from shelfhold.reading.application.member_keys import MemberKeyRevokedError, live_member_account
 from shelfhold.reading.application.page_map import relayable, verify_page_maps
 from shelfhold.reading.application.progress import (
@@ -62,6 +64,7 @@ __all__ = [
     "MemberRemote",
     "ProgressRemote",
     "RemotePosition",
+    "RemoteShare",
     "RemoteUnavailable",
     "TokenRefused",
     "TokenUnreadable",
@@ -100,12 +103,22 @@ class ChapterRef:
     library_id: int
     pages: int  # Kavita's page count: reading it all is `pageNum == pages`
     carrier_id: str
+    reflowable: bool = False  # an EPUB: Kavita counts it in documents, so it goes by its share
 
 
 @dataclass(frozen=True)
 class RemotePosition:
     page: int  # 0 when Kavita holds nothing for the account
     modified: str | None  # Kavita's own stamp, opaque: compared for equality only
+
+
+@dataclass(frozen=True)
+class RemoteShare:
+    """What Kavita holds for an EPUB of the account: a share of the book (0 when it holds
+    nothing)."""
+
+    share: float
+    modified: str | None  # opaque, compared for equality only
 
 
 class MemberRemote(Protocol):
@@ -126,6 +139,17 @@ class MemberRemote(Protocol):
     def get(self, chapter: ChapterRef) -> RemotePosition: ...
 
     def save(self, chapter: ChapterRef, page: int) -> None: ...
+
+    def get_epub(self, document: str) -> RemoteShare:
+        """The share Kavita holds for the book of this digest (kosync route, M5 L09)."""
+        ...
+
+    def save_epub(
+        self, document: str, *, share: float, xpointer: str, device: str, device_id: str | None
+    ) -> None:
+        """Say where the member is in the book of this digest: the share, and the xpointer as the
+        device wrote it. Never a page, never an index of the spine."""
+        ...
 
 
 class ProgressRemote(Protocol):
@@ -149,6 +173,7 @@ class MemberOutcome:
     hidden: int = 0
     rejected: int = 0
     unverified: int = 0  # chapters whose page of the block was not handed to Kavita (L50)
+    busy: int = 0  # chapters left to the next pass: a job holds the Work (M5 L22a)
 
 
 CODES: Final = (
@@ -204,6 +229,7 @@ def sync_member(
     page_map_keyring: Callable[[], Keyring] | None = None,
     max_session_hours: float = DEFAULT_MAX_SESSION_HOURS,
     mode: str = "sync",
+    hold_work: ProgressLease | None = None,
 ) -> MemberOutcome:
     """One pass for one member. Never raises for what Kavita or the key does: it says why.
 
@@ -232,12 +258,13 @@ def sync_member(
             should_stop,
             max_session_hours * 3600,
             mode,
+            hold_work,
         )
     except _Stop as stop:
         outcome.code = stop.code
     log.info(
         "progress_sync.member_done", code=outcome.code, pulled=outcome.pulled,
-        pushed=outcome.pushed, echoes=outcome.echoes, hidden=outcome.hidden,
+        pushed=outcome.pushed, busy=outcome.busy, echoes=outcome.echoes, hidden=outcome.hidden,
     )  # fmt: skip
     return outcome
 
@@ -251,6 +278,7 @@ def sync_destination(
     should_stop: Callable[[], bool] | None = None,
     page_map_keyring: Callable[[], Keyring] | None = None,
     max_session_hours: float = DEFAULT_MAX_SESSION_HOURS,
+    hold_work: ProgressLease | None = None,
 ) -> dict[str, MemberOutcome]:
     """Every member with a live key on the destination, one after the other. A member whose key
     stops does not stop the others; a Kavita that cannot be asked stops them all, quietly."""
@@ -277,7 +305,7 @@ def sync_destination(
         results[user] = sync_member(
             engine, remote, user_id=user, destination_id=destination_id, clock=clock,
             chapters=chapters, should_stop=should_stop, page_map_keyring=page_map_keyring,
-            max_session_hours=max_session_hours,
+            max_session_hours=max_session_hours, hold_work=hold_work,
         )  # fmt: skip
         down = results[user].code == "unavailable"
     return results
@@ -417,6 +445,7 @@ def _pass(
     should_stop: Callable[[], bool] | None = None,
     max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
     mode: str = "sync",
+    hold_work: ProgressLease | None = None,
 ) -> None:
     started = clock.now()
     account_id = _live(engine, user_id, destination_id)
@@ -427,7 +456,7 @@ def _pass(
     try:
         _pass_open(
             engine, member, user_id, destination_id, account_id, declared, clock, started,
-            chapters, outcome, should_stop, max_session_s, mode,
+            chapters, outcome, should_stop, max_session_s, mode, hold_work,
         )  # fmt: skip
     finally:
         member.close()
@@ -447,6 +476,7 @@ def _pass_open(
     should_stop: Callable[[], bool] | None,
     max_session_s: float,
     mode: str = "sync",
+    hold_work: ProgressLease | None = None,
 ) -> None:
     try:
         who = member.account_name()
@@ -498,7 +528,7 @@ def _pass_open(
                     changed = _chapter(
                         engine, member, user_id, destination_id, ref, clock, started, outcome,
                         notes.get(ref.chapter_id), ref.chapter_id in pending, stamp,
-                        max_session_s, mode,
+                        max_session_s, mode, hold_work,
                     )  # fmt: skip
                 except ChapterRejected:
                     outcome.rejected += 1  # this chapter only: not for the account, or gone
@@ -737,6 +767,7 @@ def _chapter(
     stamp: str | None,
     max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
     mode: str = "sync",
+    hold_work: ProgressLease | None = None,
 ) -> _Note | None:
     """Pull, then push, one chapter. The note to write, or `None` when it would be the same.
 
@@ -745,6 +776,11 @@ def _chapter(
     one, whatever its source (a rescan of Kavita has deleted what it held)."""
     if old is not None and old.carrier_id != ref.carrier_id:
         old = None  # another file under the same id: its echo and its date are not this one's
+    if ref.reflowable:
+        return _epub_chapter(
+            engine, member, user_id, destination_id, ref, clock, started, outcome, old,
+            has_pending, stamp, mode,
+        )  # fmt: skip
     seen = member.get(ref)
     pushed_page = old.pushed_page if old else None
     pushed_at = old.pushed_at if old else None
@@ -756,11 +792,17 @@ def _chapter(
         outcome.echoes += 1
     elif (  # a page 0 where the note had seen more is Kavita's « unread » (a chapter it made new
         # has no note: its 0 is a new chapter, not a reading taken back)
-        not unchanged
-        and (seen.page > 0 or (old is not None and (old.seen_page or 0) > 0))
-        and _record_pull(engine, user_id, destination_id, ref, seen.page, clock)
+        not unchanged and (seen.page > 0 or (old is not None and (old.seen_page or 0) > 0))
     ):
-        outcome.pulled += 1
+        try:
+            pulled = _record_pull(engine, user_id, destination_id, ref, seen.page, clock, hold_work)
+        except ProgressBusyError:
+            # a job is rewriting the Work: the chapter waits whole for the next pass, and its note
+            # stays as it was (a note that said "seen" would make the next pass find it unchanged)
+            outcome.busy += 1
+            return None
+        if pulled:
+            outcome.pulled += 1
     if not echo:
         pushed_page = None  # Kavita moved on its own: what we pushed is no longer what it holds
     wanted: int | None = None
@@ -794,12 +836,164 @@ def _chapter(
     return None if new == old else new
 
 
+_SHARE_UNIT: Final = 10_000  # a share is kept in the note as a whole number of ten-thousandths
+_SHARE_EPSILON: Final = 0.5 / _SHARE_UNIT
+_NEUTRAL: Final = "shelfhold"  # the `device_id` of a device that said none
+
+
+@dataclass(frozen=True)
+class _EpubPlace:
+    share: float
+    xpointer: str
+    device: str
+    device_id: str
+
+
+def _epub_chapter(
+    engine: sa.Engine,
+    member: MemberRemote,
+    user_id: str,
+    destination_id: str,
+    ref: ChapterRef,
+    clock: Any,
+    started: datetime,
+    outcome: MemberOutcome,
+    old: _Note | None,
+    has_pending: bool,
+    stamp: str | None,
+    mode: str,
+) -> _Note | None:
+    """An EPUB goes to Kavita by its **share** alone (M5 L09, #292): Kavita counts an EPUB in
+    documents
+    and Shelfhold in shares, so a page of one is no page of the other and none is ever sent. What
+    the
+    member's device wrote (an xpointer and a share) is handed over through Kavita's own kosync
+    route,
+    forward only (read again just before the write), under the digest of the file; a file with no
+    digest has no identity there and is never guessed. What the reader of the web wrote (a `cfi`) is
+    no xpointer and is not relayed. Nothing is read back into Shelfhold: Kavita's share of an EPUB
+    is not a position here.
+
+    The note keeps the shares in ten-thousandths, in the columns of the pages."""
+    document = _document_of(engine, ref.carrier_id)
+    if document is None:
+        return None
+    seen = member.get_epub(document)
+    pushed_page = old.pushed_page if old else None
+    pushed_at = old.pushed_at if old else None
+    seen_units = round(seen.share * _SHARE_UNIT)
+    echo = pushed_page is not None and seen_units == pushed_page
+    if not echo:
+        pushed_page = None  # Kavita moved on its own: what we sent is no longer what it holds
+    if mode == "sync" and (has_pending or old is None):
+        place = _pending_epub(engine, user_id, ref, old.synced_at if old else EPOCH)
+        if place is not None and place.share > seen.share + _SHARE_EPSILON:
+            _live(engine, user_id, destination_id)
+            latest = member.get_epub(document)  # never back from what it holds
+            if place.share > latest.share + _SHARE_EPSILON:
+                member.save_epub(
+                    document, share=place.share, xpointer=place.xpointer, device=place.device,
+                    device_id=place.device_id,
+                )  # fmt: skip
+                outcome.pushed += 1
+                pushed_page, pushed_at = round(place.share * _SHARE_UNIT), clock.now()
+                seen = RemoteShare(place.share, None)
+                seen_units = pushed_page
+    touched = (has_pending or old is None) and mode != "pull"
+    new = _Note(
+        ref.chapter_id, ref.carrier_id, ref.series_id, stamp, pushed_page, pushed_at,
+        seen_units, seen.modified,
+        started if touched else old.synced_at if old else EPOCH,
+    )  # fmt: skip
+    return None if new == old else new
+
+
+def _document_of(engine: sa.Engine, carrier_id: str) -> str | None:
+    """The digest of the file as KOReader and Kavita compute it (`document_alias`): 32 lower-case
+    hexadecimal characters. A file with none, or with two different ones, has no identity."""
+    alias = export.document_alias
+    with engine.connect() as connection:
+        found = {
+            str(d).lower().removeprefix("md5:")
+            for d in connection.execute(
+                sa.select(alias.c.koreader_partial_md5).where(
+                    alias.c.export_item_id == carrier_id,
+                    alias.c.koreader_partial_md5.is_not(None),
+                )
+            ).scalars()
+        }
+    if len(found) != 1:
+        return None
+    (digest,) = found
+    return digest if re.fullmatch(r"[0-9a-f]{32}", digest) else None
+
+
+def _pending_epub(
+    engine: sa.Engine, user_id: str, ref: ChapterRef, since: datetime
+) -> _EpubPlace | None:
+    """The latest xpointer position of a device of the member on the file, since the last pass (the
+    server's clock), on the content the file carries now: its share, and its text as it was
+    written. A position with no xpointer (the reader of the web) says nothing here."""
+    position = reading.reading_position
+    with engine.connect() as connection:
+        current = _current_hash(connection, "export_item", ref.carrier_id)
+        if current is None:
+            return None
+        row = connection.execute(
+            sa.select(
+                position.c.content_hash,
+                position.c.locator,
+                position.c.percent,
+            )
+            .where(
+                position.c.user_id == user_id,
+                position.c.carrier_type == "export_item",
+                position.c.carrier_id == ref.carrier_id,
+                position.c.source == "device",
+                relayable_position(position),
+                sa.func.json_extract(position.c.locator, "$.xpointer").is_not(None),
+                position.c.percent.is_not(None),
+                position.c.server_ts >= since,
+            )
+            .order_by(position.c.server_ts.desc(), position.c.id.desc())
+            .limit(1)
+        ).first()
+    if row is None or row.content_hash != current or not isinstance(row.locator, dict):
+        return None
+    text, device = row.locator.get("xpointer"), row.locator.get("device")
+    if not isinstance(text, str) or not text or not 0.0 <= float(row.percent) <= 1.0:
+        return None
+    return _EpubPlace(
+        round(float(row.percent), 4), text,
+        device if isinstance(device, str) and device else "Shelfhold",
+        _said_device_id(row.locator),
+    )  # fmt: skip
+
+
+def _said_device_id(locator: dict[str, Any]) -> str:
+    """What leaves for Kavita as the device's `device_id`: the device's own word (`client_id`), or a
+    neutral name when it said none. Never the `device_id` column of a kosync write, which is the
+    server's name of the writer (`kosync:` and a digest of the token): that name is never shown,
+    and Kavita gives it to every reader that syncs against the member's account."""
+    said = locator.get("client_id")
+    return said if isinstance(said, str) and said and not said.startswith("kosync:") else _NEUTRAL
+
+
 def _record_pull(
-    engine: sa.Engine, user_id: str, destination_id: str, ref: ChapterRef, page: int, clock: Any
+    engine: sa.Engine,
+    user_id: str,
+    destination_id: str,
+    ref: ChapterRef,
+    page: int,
+    clock: Any,
+    hold_work: ProgressLease | None = None,
 ) -> bool:
     now = clock.now()
     at = server_page(page, ref.pages)
-    with write_transaction(engine) as connection:
+    with (
+        progress_leased(engine, hold_work, "export_item", ref.carrier_id),
+        write_transaction(engine) as connection,
+    ):
         content_hash = _current_hash(connection, "export_item", ref.carrier_id)
         if content_hash is None:  # a file with no content to anchor a position on
             return False

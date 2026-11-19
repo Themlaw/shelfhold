@@ -10,7 +10,8 @@ is what `restored_behind` detects: no clock is read anywhere.
 import sqlalchemy as sa
 from sqlalchemy import Engine
 
-from shelfhold.export.domain.path_map import clean_absolute
+from shelfhold.export.domain.path_map import PathMode, clean_absolute
+from shelfhold.export.domain.physical_roots import ExpectedRoot
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.freeze import FreezeState
 from shelfhold.infrastructure.fsops.reading import RootReading
@@ -47,6 +48,28 @@ class GenerationCounter:
                 sa.select(table.c.generation).where(table.c.path_entry == clean_absolute(root_path))
             ).scalar()
         return None if value is None else int(value)
+
+    def expected(self) -> list[ExpectedRoot]:
+        """Every read-write root as the database stands now (path, generation, instance, epoch),
+        from one connection."""
+        table = platform.physical_root
+        with self._engine.connect() as connection:
+            head = connection.execute(
+                sa.select(platform.instance.c.instance_id, platform.instance.c.restore_epoch)
+            ).first()
+            if head is None:
+                return []
+            rows = connection.execute(sa.select(table).where(table.c.mode == PathMode.RW.value))
+            return [
+                ExpectedRoot(
+                    r.root_id,
+                    clean_absolute(r.path_entry),
+                    head.instance_id,
+                    int(r.generation),
+                    int(head.restore_epoch or 0),
+                )
+                for r in rows
+            ]
 
     def read(self, root_path: str, root_id: str) -> RootReading | None:
         """The generation, the restore epoch and the freeze the database holds for the root

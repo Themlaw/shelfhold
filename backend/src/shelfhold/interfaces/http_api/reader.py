@@ -15,6 +15,7 @@ what to do. Nothing is written: no position, no history, no state.
 from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
@@ -28,6 +29,13 @@ from shelfhold.reading.application.content_access import (
     FullReadNotAllowedError,
     NoReadableCopyError,
 )
+from shelfhold.reading.application.continue_reading import (
+    DEFAULT_ENTRIES,
+    MAX_ENTRIES,
+    ContinueEntry,
+    ContinueReading,
+)
+from shelfhold.reading.application.lease import ProgressBusyError
 from shelfhold.reading.application.positions import (
     ClientTsInFutureError,
     ClientTsOutOfRangeError,
@@ -49,6 +57,7 @@ __all__ = ["build_reader_router"]
 
 Session = Annotated[Principal, Depends(require_session)]
 _ABSENT = {"Cache-Control": "no-store"}
+_BUSY = {"Cache-Control": "no-store", "Retry-After": "2"}  # a job holds the Work (M5 L22a)
 
 
 class EntryOut(BaseModel):
@@ -89,6 +98,53 @@ def _out(found: Publication) -> PublicationOut:
     )
 
 
+class ContinueItemOut(BaseModel):
+    work_id: str
+    title: str
+    unit_id: str
+    number: str
+    unit_title: str | None
+    state: Literal["in_progress", "next"]  # the Unit being read, or the one after the last read
+    target: Literal["kept_copy", "kavita"]  # the kept copy here, or the file read where it was sent
+    approximate: bool
+    # `target = kept_copy`: the pair the reader route takes, `/lire/<carrier_type>/<carrier_id>`
+    carrier_type: Literal["content"] | None
+    carrier_id: str | None
+
+
+class ContinueOut(BaseModel):
+    items: list[ContinueItemOut]
+    kavita_url: str | None  # the address "Ouvrir dans Kavita" opens, read on the server
+
+
+def _item(found: ContinueEntry) -> ContinueItemOut:
+    return ContinueItemOut(
+        work_id=found.work_id, title=found.title, unit_id=found.unit_id, number=found.number,
+        unit_title=found.unit_title, state=found.state, target=found.target,
+        approximate=found.approximate, carrier_type=found.carrier_type,
+        carrier_id=found.carrier_id,
+    )  # fmt: skip
+
+
+def web_address(value: str | None) -> str | None:
+    """An address the browser may be sent to: http or https, with no `user:pass@` part (a secret
+    is never given back to the browser), else None."""
+    if not value:
+        return None
+    try:
+        parts = urlsplit(value)
+        host = parts.hostname
+        port = parts.port  # raises for a port that is not a number from 0 to 65535
+    except ValueError:
+        return None  # an address nobody can open is no link: the home is never an error
+    if parts.scheme not in ("http", "https") or not host or port == 0:
+        return None
+    netloc = f"[{host}]" if ":" in host else host
+    if port is not None:
+        netloc += f":{port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
 class PositionIn(BaseModel):
     """What a reader says of where it is. The profile is the session's: no field names one."""
 
@@ -107,6 +163,10 @@ class PositionIn(BaseModel):
 
 class StoredOut(BaseModel):
     id: str
+    carrier_type: (
+        str  # the file it was written on: an EPUB read on a device is on its exported file
+    )
+    carrier_id: str
     locator: dict[str, Any]
     client_ts: datetime
     server_ts: datetime
@@ -140,7 +200,8 @@ class ResolveIn(BaseModel):
 
 def _stored(found: StoredPosition) -> StoredOut:
     return StoredOut(
-        id=found.id, locator=found.locator, client_ts=found.client_ts,
+        id=found.id, carrier_type=found.carrier_type, carrier_id=found.carrier_id,
+        locator=found.locator, client_ts=found.client_ts,
         server_ts=found.server_ts, device_id=found.device_id, approximate=found.approximate,
     )  # fmt: skip
 
@@ -169,8 +230,25 @@ def _own_session(principal: Principal) -> None:
 def build_reader_router(
     get_service: Callable[[], PublicationService],
     get_positions: Callable[[], ReaderPositions],
+    get_continue: Callable[[], ContinueReading],
+    kavita_url: Callable[[], str | None] = lambda: None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/reader", tags=["reader"])
+
+    @router.get("/continue", operation_id="reader_continue", response_model=ContinueOut)
+    def continue_reading(
+        response: Response,
+        principal: Session,
+        limit: Annotated[int, Query(ge=1, le=MAX_ENTRIES)] = DEFAULT_ENTRIES,
+    ) -> ContinueOut:
+        """« Reprendre la lecture »: the next Unit of every series under way, for the profile of
+        the session only (the progress is hers, the filter is the one of every surface)."""
+        _own_session(principal)
+        response.headers["Cache-Control"] = "no-store"
+        return ContinueOut(
+            items=[_item(e) for e in get_continue().entries(principal.user_id, limit)],
+            kavita_url=web_address(kavita_url()),
+        )
 
     @router.get(
         "/{carrier_type}/{carrier_id}/publication",
@@ -200,11 +278,11 @@ def build_reader_router(
         except UnknownCarrierError:
             raise ProblemError("not_found", headers=_ABSENT) from None
         except FullReadNotAllowedError:
-            raise ProblemError("full_read_not_allowed") from None
+            raise ProblemError("full_read_not_allowed", headers=_ABSENT) from None
         except ExcerptUnavailableError:  # before its parent: a typed refusal of its own
-            raise ProblemError("excerpt_unavailable") from None
+            raise ProblemError("excerpt_unavailable", headers=_ABSENT) from None
         except NoReadableCopyError:
-            raise ProblemError("no_readable_copy") from None
+            raise ProblemError("no_readable_copy", headers=_ABSENT) from None
         response.headers["Cache-Control"] = "no-store"  # it holds tickets: kept nowhere
         return _out(found)
 
@@ -232,6 +310,8 @@ def build_reader_router(
             )  # fmt: skip
         except InvalidLocatorV1Error:
             raise ProblemError("invalid_locator") from None
+        except ProgressBusyError:
+            raise ProblemError("progress_busy", headers=_BUSY) from None
         except ClientTsInFutureError:
             raise ProblemError("client_ts_in_future") from None
         except ClientTsOutOfRangeError:
@@ -322,6 +402,8 @@ def build_reader_router(
             )
         except (UnknownConflictError, UnknownCarrierError):
             raise ProblemError("not_found", headers=_ABSENT) from None
+        except ProgressBusyError:  # settling writes a position: the lease of the other writers
+            raise ProblemError("progress_busy", headers=_BUSY) from None
         except StaleConflictError:
             raise ProblemError("conflict_stale") from None
         except ExcerptWritesNoPositionError:

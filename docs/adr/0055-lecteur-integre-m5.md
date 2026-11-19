@@ -54,7 +54,7 @@ Elle protège la **navigation directe** vers une URL de contenu (onglet, lien co
 - **Défense en profondeur** : même si un script s'exécutait, les routes sensibles (création et rotation de clés d'API, contrôle parental, jetons d'appareil) sont des actions réservées qui exigent une **ré-authentification récente** (ADR-0049, ENF-SEC-010) et le code de l'entrée `/lire` ne les appelle pas (aucun accès depuis le lecteur). **Limite écrite** : la fenêtre de ré-authentification (`fresh_auth_s`, 300 s par défaut, ADR-0049) fait que, dans les cinq minutes qui suivent une connexion, la session est fraîche et cette défense ne joue pas ; le contrôle parental n'est réservé que si un profil restreint existe, et la demande d'un ticket `full` n'est pas une action réservée. La défense en profondeur ne remplace donc pas les deux barrières. Test : `test_reserved_routes_require_fresh_auth_from_reader_session` (L05), sur une session dont `auth_age_s` **dépasse** `fresh_auth_s`.
 
 #### Navigateurs pris en charge par le moteur EPUB
-Le moteur EPUB exige l'héritage de la CSP par les `blob:` et `'strict-dynamic'` : **Safari et iOS 16.1 au moins** (WebKit n'applique l'héritage de la CSP du créateur que depuis octobre 2022, bogues 245682 et 224745 ; `'strict-dynamic'` depuis Safari 15.4), **Chromium 110 et Firefox 115 au moins** (valeurs proposées, à confirmer par le test de L12). **Détection** : le registre lit les Client Hints (`Sec-CH-UA`) quand ils existent, sinon la chaîne UA, et en cas de doute **refuse** le moteur EPUB. Au-dessous de la version minimale, le lecteur propose Kavita. Le moteur d'images (sans iframe) n'est pas concerné. Test : `test_registry_refuses_epub_engine_below_min_browser` (L12).
+Le moteur EPUB exige l'héritage de la CSP par les `blob:` et `'strict-dynamic'` : **Safari et iOS 16.4 au moins** (WebKit n'applique l'héritage de la CSP du créateur que depuis octobre 2022, bogues 245682 et 224745 ; `'strict-dynamic'` depuis Safari 15.4 ; **16.4** parce que `vendor/zip.js` est le build `zip-core` de foliate-js, sans codec d'inflation JavaScript et sans worker : un EPUB compressé exige `DecompressionStream('deflate-raw')`, présent dans Safari à partir de 16.4 ; amendé le 2026-11-18, L11 #370), **Chromium 110 et Firefox 115 au moins** (valeurs proposées, à confirmer par le test de L12). **Détection** : le registre lit les Client Hints (`Sec-CH-UA`) quand ils existent, sinon la chaîne UA, et en cas de doute **refuse** le moteur EPUB. Au-dessous de la version minimale, le lecteur propose Kavita. Le moteur d'images (sans iframe) n'est pas concerné. Test : `test_registry_refuses_epub_engine_below_min_browser` (L12).
 
 **Test d'héritage (L12, trois moteurs)** : `test_blob_document_inherits_reader_csp` charge un `blob:` de premier niveau, une iframe `blob:` imbriquée dans le livre (second niveau) et un `srcdoc`, et vérifie l'exécution de script **et** `img-src`. **Si le test échoue sur un moteur ciblé, L12 ne fusionne pas.** (L11 ne livre que le sous-module : il ne porte ni le lecteur ni sa CSP.)
 
@@ -79,13 +79,13 @@ Un document `blob:` hérite de la CSP du document qui l'a créé :
 | `style-src-attr` | `'unsafe-inline'` | attributs `style=` omniprésents dans les EPUB |
 | `img-src` | `'self' blob:` | jamais `data:`, jamais d'hôte distant |
 | `font-src` | `'self' blob:` | jamais `data:`, jamais `*` |
-| `media-src` | `'self' blob:` | jamais `*` |
+| `media-src` | `'none'` | le lecteur ne joue ni audio ni vidéo (relecture adverse de #381, C3) ; jamais `*` |
 | `frame-src` | `blob:` | |
 | `worker-src` | `'none'` | `/lire` n'enregistre aucun service worker ni worker ; l'enregistrement de la PWA reste dans la SPA (L16a) |
 | `manifest-src` | `'none'` | le manifeste de la PWA n'est pas lié depuis `/lire` |
 | `connect-src` | `'self'` | pour `fetch` de `/content/*` |
 | `object-src`, `base-uri`, `form-action` | `'none'` | |
-| `frame-ancestors` | `'none'` | ajouté par l'intergiciel |
+| `frame-ancestors` | `'self'` | seul `/lire` ; le reste reste `'none'` (intergiciel). Un document `blob:` hérite de la politique de sa page, `frame-ancestors` compris, et WebKit la vérifie pour le cadre de lecture (mesuré en CI) : `'none'` l'empêchait de s'afficher |
 | `Referrer-Policy` | `no-referrer` | |
 
 **Origines distantes interdites** : toutes. `@import` et `url()` distants dans une CSS ou un attribut `style`, `<link rel="dns-prefetch|preconnect|prefetch">` et toute ressource distante sont refusés. Les métadonnées de la publication (titre, auteur) affichées par `/lire` sont **toujours insérées comme texte**, jamais par `{@html}` (le `style-src 'unsafe-inline'` vaut pour la page elle-même) ; test `test_reader_metadata_rendered_as_text` (L12).
@@ -94,6 +94,7 @@ Un document `blob:` hérite de la CSP du document qui l'a créé :
 - **Audit en L11** des chemins de foliate au commit épinglé qui déplacent des nœuds (`footnotes`, surlignage et `overlayer`, `search`), consigné dans `docs/dependencies.md` ; tout chemin trouvé est écarté ou passe par le filtre.
 - `test_epub_script_never_runs` reçoit le cas « script échappé au filtre puis déplacé par une API DOM » : il doit **échouer sous la seule CSP** (pour documenter la limite) et **réussir avec le filtre**. Les deux barrières sont donc indépendantes pour tout vecteur sauf celui-ci, où le filtre est la barrière.
 - Facultatif, Chromium seulement : `require-trusted-types-for 'script'` sur `/lire` ferme ce cas.
+- **Amorçage (amendé le 2026-11-18, L12, mesuré sur Chromium)** : un `import()` lancé par le script en ligne haché est **refusé** sous `'strict-dynamic'` (la requête hérite de la métadonnée « inséré par l'analyseur »). Le script d'amorçage de `/lire` ajoute donc un `<script type="module">` ; ce module, et tout ce qu'il importe, est de confiance. Un nœud `<script>` déjà bloqué est marqué comme lancé : `importNode` et `cloneNode` ne l'exécutent pas, du balisage réécrit (`createContextualFragment`) si.
 - Les `<link rel="modulepreload">` du HTML de `/lire` sont **filtrés du build** : sous `'strict-dynamic'`, `'self'` est ignoré et ils seraient refusés (rapports de violation bruyants pour les tests qui écoutent `securitypolicyviolation`).
 
 **Invariant pour toute l'origine** : aucune route ne sert des octets fournis par un tiers avec un type JavaScript (`test_no_route_serves_untrusted_bytes_as_script`).

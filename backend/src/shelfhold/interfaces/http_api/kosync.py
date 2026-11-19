@@ -8,7 +8,10 @@ the shapes KOReader and the reference sync server speak (`api.json`, `KOSyncClie
   KOReader only a 200 is a success, and its queue stops at the first failure (a 202 or a 409 on one
   unknown file would hold every later position). Why a position was not taken (unknown or hidden
   digest, two files with one digest, a chapter that is gone, a guard) stays in the log and the
-  counter; the answer is the same for all, so none of them is an oracle;
+  counter; the answer is the same for all, so none of them is an oracle. One exception, and it is
+  transient: while a job is replacing the files of the Work (its lease), the write waits a few
+  seconds and then answers 503 `progress_busy` with `Retry-After`, nothing stored (M5 L22a); the
+  device keeps its place and sends it again. It is answered only for a digest the profile may see;
 * `GET /kosync/syncs/progress/{document}`: 200 `{document, progress, percentage, device,
   device_id, timestamp}`, or 200 `{}` when nothing is known;
 * `POST /kosync/users/create`: 402, always: the accounts are the profiles of Shelfhold and a device
@@ -36,12 +39,14 @@ from shelfhold.i18n import negotiate, t_lang
 from shelfhold.identity.public import Principal
 from shelfhold.interfaces.http_api.device_auth import require_device_kosync
 from shelfhold.interfaces.http_api.problems import ProblemError
+from shelfhold.reading.application.lease import ProgressBusyError
 from shelfhold.reading.public import InvalidProgressError, Kosync
 
 __all__ = ["MAX_BODY", "build_kosync_router"]
 
 MAX_BODY = 16 * 1024
 _NO_STORE = {"Cache-Control": "no-store"}
+_BUSY = {"Cache-Control": "no-store", "Retry-After": "2"}  # a job holds the Work (M5 L22a)
 Device = Annotated[Principal, Depends(require_device_kosync)]
 
 
@@ -127,7 +132,10 @@ def _percentage(body: dict[str, Any]) -> float:
     value = body.get("percentage")
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise _invalid()
-    return float(value)
+    try:
+        return float(value)
+    except OverflowError:  # a JSON integer no float holds: the same wrong field, not a 500
+        raise _invalid() from None
 
 
 def build_kosync_router(service: Callable[[], Kosync], now: Callable[[], datetime]) -> APIRouter:
@@ -189,6 +197,8 @@ def build_kosync_router(service: Callable[[], Kosync], now: Callable[[], datetim
             )  # fmt: skip
         except InvalidProgressError:
             raise _invalid() from None
+        except ProgressBusyError:  # the only PUT that is not a 200: the device keeps its place
+            raise ProblemError("progress_busy", headers=_BUSY) from None
         del stored  # stored or not, the device is told the same: only a 200 is a success to it
         return JSONResponse(
             {"document": document, "timestamp": int(now().timestamp())}, headers=_NO_STORE

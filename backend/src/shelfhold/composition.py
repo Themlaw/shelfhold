@@ -18,7 +18,7 @@ import math
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,7 +56,13 @@ from shelfhold.infrastructure.secrets.errors import SecretsError
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.wake import Wakes
 from shelfhold.integrations.apprise import operating_bus
-from shelfhold.library.public import Normalizers, TombstoneRoot, TombstoneService
+from shelfhold.library.public import (
+    ContentHash,
+    Normalizers,
+    PlaceRef,
+    TombstoneRoot,
+    TombstoneService,
+)
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
 from shelfhold.plugin_host.refs_guard import screened, secret_of, values_of
@@ -137,6 +143,23 @@ class WriteContext:
 
 
 PROBE_INTERVAL_S = 30.0  # a root that is not MISSING but is not right is looked at this often
+
+
+class LazyTombstones:
+    """The part of the tombstone service a rendition asks (`SourceTombstones`), looked up at each
+    question: the service depends on the roots, which can change while the process runs."""
+
+    def __init__(self, composition: Composition) -> None:
+        self._composition = composition
+
+    def _service(self) -> TombstoneService:
+        return self._composition.read_context()[2]
+
+    def has_values(self, candidate: PlaceRef) -> bool:
+        return self._service().has_values(candidate)
+
+    def check_content(self, hashes: Iterable[ContentHash] = ()) -> bool:
+        return self._service().check_content(hashes)
 
 
 class Composition:
@@ -324,7 +347,7 @@ class Composition:
         under the lease taken for the purpose (the session pays them before the generation
         moves)."""
         try:
-            fsops, loaded, service = self.read_context()
+            fsops, loaded, service = self._context()
             if loaded.restore_pending or not service.owed_roots():
                 return  # frozen: nothing is written; nothing owed: nothing to take a lease for
             with self._hold(fsops, loaded):  # the lease pays them (`_pay_owed`)
@@ -354,8 +377,23 @@ class Composition:
         return tuple(away)
 
     def read_context(self) -> tuple[Fsops, LoadedRoots, TombstoneService]:
-        """Everything that reads the library or the tombstones, and writes nothing
-        (the lines owed to a root are paid by `write_context` and `flush_owed_tombstones`)."""
+        """Everything that reads the library or the tombstones, and writes nothing: the `Fsops` is
+        a view that refuses every write (`Fsops.refuse_writes`), so a deletion or a write cannot
+        slip past the lease and the look at the whole instance by this door. What writes goes
+        through `write_context`, which pays the lines owed to a root
+        (`flush_owed_tombstones` pays them too)."""
+        _disk, loaded, tombstones = self._context()  # the service writes its own journal lines
+        view = self.open_fsops(loaded)  # on `disk`; what the caller gets refuses every write
+        view.refuse_writes()
+        return view, loaded, tombstones
+
+    def lease_context(self) -> tuple[Fsops, LoadedRoots, TombstoneService]:
+        """The `Fsops` of a caller that hands it to `session_opener` (which binds the lease
+        verifier on it): its writes then need a write session open on the root. Not for a caller
+        that never opens one: that is `read_context`."""
+        return self._context()
+
+    def _context(self) -> tuple[Fsops, LoadedRoots, TombstoneService]:
         loaded = self.load_roots()
         if loaded is None:
             raise NoLibraryError("no physical root is registered")
@@ -404,6 +442,10 @@ class Composition:
                 beat.start()
                 stack.callback(beat.stop)
                 self._lease = (stack, sessions, mounted)
+            else:
+                # a job that joins the lease already held looks at the whole instance too: a
+                # root may have come back ahead of the database since it was taken (ADR-0044)
+                cast("Any", self._lease)[1].require_whole_instance()
             self._held += 1
             _stack, sessions, mounted = cast("Any", self._lease)
         try:
@@ -419,7 +461,7 @@ class Composition:
     @contextmanager
     def write_context(self) -> Iterator[WriteContext]:
         """The lease for the time of the block; `Fsops` refuses a write without it (ENF-OPS-015)."""
-        fsops, loaded, tombstones = self.read_context()
+        fsops, loaded, tombstones = self._context()
         with self._hold(fsops, loaded) as (sessions, mounted):
             self.sessions_for(fsops).enforce()
             yield WriteContext(fsops, loaded, WriteSession(sessions, mounted), tombstones, self.bus)

@@ -144,6 +144,8 @@ def test_reauth_list_is_the_irreversible_or_secret_revealing_effects() -> None:
                 Effect.FREEZES_INSTANCE,  # M3 L13: `maintenance on|off`, fresh in every profile
                 Effect.RATES_CONTENT,  # porteur 2026-11-11: classing needs a fresh session
                 Effect.ENROLS_PASSKEY,  # porteur 2026-11-11: so does adding a passkey
+                Effect.LINKS_IDENTITY,  # M5 L03: nor links an identity provider that outlives it
+                Effect.UNLINKS_IDENTITY,  # M5 L04: nor removes it
                 Effect.MANAGES_PROFILES,  # M3 L05: a stolen session makes no admin
                 Effect.ENDS_OWN_SESSIONS,  # M3 L07: nor locks the owner out of the rest
             }

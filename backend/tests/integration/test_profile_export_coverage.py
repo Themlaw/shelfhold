@@ -28,6 +28,7 @@ EXPORTED: dict[str, str] = {
     "notification_digest": "notification_digests",
     "reading_position": "reading_positions",
     "reading_conflict": "reading_conflicts",
+    "saved_selection": "saved_selections",  # M5 L21: a name and a stored query, no result
     "session": "sessions",
     "api_key": "api_keys",
     "webauthn_credential": "passkeys",  # the list of keys, never the key material
@@ -56,6 +57,7 @@ EXCLUDED: dict[str, str] = {
     "instance": "the instance row (`maintenance_by`): a state of the host",
     "unit": "`deleted_by` and the like: who acted on a Unit, not data of the person",
     "read_state_push_note": "a note of the push to Kavita, rebuilt by the next pass; no content",
+    "oidc_identity": "who of the provider may sign in as her (M5 L03): a credential, linked again",
 }
 
 SECRET_NAMES = (

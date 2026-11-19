@@ -389,6 +389,15 @@ created_at = "When it was paired (UTC)."
 last_seen_at = "When one of its tokens was last accepted (UTC); empty: never seen."
 revoked_at = "When it was removed (UTC); its tokens end with it."
 
+[tables.oidc_identity]
+description = "OpenID Connect identities: the person `sub` of a provider (`issuer`) is this account. Linked to an account that already exists, never created by a sign-in; one account per person, one identity per provider."
+[tables.oidc_identity.columns]
+id = "Identity identifier (ULID)."
+user_id = "The account the person signs in as."
+issuer = "The provider's issuer address, as configured."
+sub = "The provider's stable identifier of the person (the `sub` claim); never a name or an address."
+linked_at = "When the account was linked (UTC)."
+
 [tables.device_token]
 description = "Device tokens: the credential of an e-reader (OPDS, kosync), issued for a reader profile. Only the SHA-256 of the md5 of the secret is stored; the secret is shown once."
 [tables.device_token.columns]
@@ -479,6 +488,16 @@ choice = "What closed it: `winner` (she kept the latest), `loser` (she resumed a
 created_at = "When the divergence was noticed (UTC)."
 resolved_at = "When she chose (UTC); empty while the proposal is open."
 
+[tables.saved_selection]
+description = "A saved selection: a name and a stored query of a closed grammar, evaluated at each read in the scope of the profile that reads it (M5 L21). It holds no Work and no result."
+[tables.saved_selection.columns]
+id = "Selection identifier (ULID)."
+owner_user_id = "The profile it belongs to (`user.id`); nobody else reads it, and it goes with her."
+name = "The name she gave it (1 to 200 characters)."
+query_json = "The query: one JSON object of at most 2 KiB with the criteria `reading_state`, `kind`, `shelf`, `lang` (lists of plain values) and `added_within_days` (a number); never SQL."
+created_at = "When it was saved (UTC)."
+updated_at = "When its name or its query last changed (UTC)."
+
 [tables.session]
 description = "Login sessions. Only the hash of the token is stored."
 [tables.session.columns]
@@ -491,6 +510,7 @@ remember = "The user ticked \"remember me\"."
 user_agent_label = "Short label of the browser."
 ip = "Client address at login."
 passkey_id = "Passkey that opened the session (`webauthn_credential.id`); revoking it closes the session."
+proof = "What proved the session: `local` (a password or a passkey typed here) or `provider` (a sign-in at the identity provider). A freshness proved by the provider alone does not add a way in that outlives the session."
 
 [tables.source_account]
 description = "Per-user credentials of a connected service. Secrets are sealed."
@@ -1548,3 +1568,13 @@ job_id = "The one job that applies it, once it is queued."
 summary = "Counts of what the job did, for the screen: no title."
 created_at = "When the selection was frozen (UTC); an order not applied within the hour is dropped."
 applied_at = "When the job applied it (UTC)."
+
+[tables.rendition]
+description = "A converted image for a client that lacks the format (AVIF, WebP to JPEG or PNG), kept by the hash of what was made (M5 L20a)."
+[tables.rendition.columns]
+source_content_hash = "Hash of the source content (`sha256:<hex>`); a purge of that content erases the rendition."
+kind = "What was made: `jpeg` or `png`."
+params = "What else was asked (the page of the archive, the JPEG quality), as canonical JSON."
+content_hash = "Hash of the converted bytes (`sha256:<hex>`); it names the file, so two sources may share one."
+size = "Size of the converted file in bytes."
+created_at = "When it was made (UTC)."

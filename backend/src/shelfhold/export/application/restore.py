@@ -49,6 +49,7 @@ from shelfhold.export.domain.physical_roots import (
     SENTINEL_FILE,
     ExpectedRoot,
     RootState,
+    SentinelDocument,
     SentinelFormatError,
     judge_sentinel,
 )
@@ -336,8 +337,43 @@ class RestoreGuard:
         self._counter = counter  # the identity counter of /data, moved by the revocation
 
     def assess(self) -> RestoreStatus:
-        """Read only: every read-write root against its sentinel, as the database stands now."""
+        """Read only: every read-write root against its sentinel, as the database stands now.
+
+        The sentinels are read **before** the counters of the database. Order of writes (I39): a
+        write session commits `generation + 1` in the database first and re-stamps the sentinel
+        after, so at every instant `sentinel <= database` unless a backup was put back (and the
+        epoch of a restore is written the same way: database first; only the first stamp of a
+        new root comes before its row, and the root is not listed yet). The database only moves
+        forward. Read in that order, the value of a sentinel is therefore never above the counter
+        read after it: a session that overlaps the look can only leave the sentinel behind the
+        database (consistent by one step, or `stale` for a root alone), never ahead of it. A
+        sentinel above the counter read after it can only come from a database older than the
+        disk, which is the restore this guard exists for: no write is ever let through for fear
+        of a false verdict, and no false verdict is written (`enter_restored_behind` persists
+        the epoch and the freeze). The opposite order (database, then sentinels) read the
+        stamp of a session that committed in between as a restore (ADR-0044, I39).
+
+        The first look only names the roots (their ids and paths); the counters, the epoch, the
+        instance and the freeze that are judged are those of the second look, taken after the
+        last sentinel was read. A root registered or removed in between is left to the next
+        look."""
         with self._engine.connect() as connection:
+            head = connection.execute(sa.select(platform.instance.c.instance_id)).first()
+            paths = [r.path_entry for r in connection.execute(sa.select(platform.physical_root))]
+            if head is None or not paths:
+                return RestoreStatus(0, ())
+            named = load_roots(connection, PathMap.same_path(paths))
+        read: dict[tuple[str, str], SentinelDocument | None] = {}
+        unreadable: set[tuple[str, str]] = set()
+        for expected in named.expected:
+            try:
+                doc = self._fsops.sentinel_of(expected.path, strict=True)
+            except (OSError, SentinelFormatError):
+                # present but unreadable (not JSON, a field of the wrong type): not trusted
+                unreadable.add((expected.root_id, expected.path))
+                continue
+            read[(expected.root_id, expected.path)] = doc
+        with self._engine.connect() as connection:  # after the sentinels: see the docstring
             head = connection.execute(
                 sa.select(platform.instance.c.instance_id, platform.instance.c.restore_epoch)
             ).first()
@@ -348,10 +384,10 @@ class RestoreGuard:
             loaded = load_roots(connection, PathMap.same_path(paths))
         findings = []
         for expected in loaded.expected:
-            try:
-                doc = self._fsops.sentinel_of(expected.path, strict=True)
-            except (OSError, SentinelFormatError):
-                # present but unreadable (not JSON, a field of the wrong type): not trusted
+            key = (expected.root_id, expected.path)
+            if key not in read and key not in unreadable:
+                continue  # registered since the first look: no sentinel was read for it
+            if key in unreadable:
                 findings.append(
                     RootFinding(
                         expected.root_id,
@@ -363,6 +399,7 @@ class RestoreGuard:
                     )
                 )
                 continue
+            doc = read[key]
             state = judge_sentinel(doc, expected).state
             findings.append(
                 RootFinding(
@@ -439,6 +476,15 @@ class RestoreGuard:
                 default=0,
             )
             with write_transaction(self._engine) as connection:
+                if FreezeState.read(connection).frozen:
+                    # Another entry counted this restore between our look and the lock: once.
+                    counted_epoch = connection.execute(
+                        sa.select(platform.instance.c.restore_epoch)
+                    ).scalar_one()
+                    self._fsops.freeze()
+                    return RestoreStatus(
+                        int(counted_epoch), status.findings, pending=True, revoked=None
+                    )
                 if status.epoch <= seen:
                     epoch = min(max(status.epoch, seen) + 1, MAX_RESTORE_EPOCH)
                 # the freeze is written with the epoch: it survives a restart (until the adoption)

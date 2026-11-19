@@ -298,8 +298,20 @@
   remember = "Remember me"
   submit = "Log in"
   passkey = "Log in with a passkey"
+  oidc = "Log in with an identity provider"
+  oidc_error = "Sign-in through the identity provider did not work."
   error = "Unable to connect."
   source = "Source code"
+
+[oidc_confirm]
+  title = "Link an identity to this account?"
+  question = "The identity provider has just confirmed who you are. Once linked, this person will be able to sign in to this account."
+  identity = "Identity"
+  provider = "Identity provider"
+  account = "Shelfhold account"
+  yes = "Link"
+  no = "Cancel"
+  error = "The link could not be confirmed. Sign in again and start over."
 
 [passkeys]
 
@@ -423,6 +435,7 @@
   help_restore_acknowledge = "Confirms that passkeys and passwords changed since backup have been rechecked (action reserved); remove the status warning."
   restore_acknowledged = "Noted: the restore warning is lifted, the passkey connection is reestablished."
   restore_passkey_change = "Passkey changed since the backup: {change}"
+  restore_oidc_link = "Identity-provider link to check (a link removed since the backup comes back): {link}"
   help_store_reinit = "Stamp /store; the chapters whose copy was kept there go to “store_missing” (reserved action)."
   root_done = "{command}: root {root} ({path}), left state: {previous}. No files have been deleted."
   root_predecessors = "{count, plural, one {# previous identity retained} other {# previous identities retained}} (the tombstones remain legible)."
@@ -682,6 +695,8 @@
   follow_extra_argument = "A number only makes sense with “follow gap-ack”."
   follow_needs_remote_id = "Specify the series ID: shelfhold follow <source> <series>."
   help_export_format = "With “export”: the output format, opml or csv (opml by default)."
+  help_export_user = "With “export”: the profile whose last read chapter is written (the first administrator by default)."
+  follow_export_unknown_user = "unknown profile: nothing is exported."
   follow_check_recent = "Source interviewed less than an hour ago: request ignored, nothing was provided."
   follow_check_always_on = "“Always active” mode: no source is queried by Shelfhold, monitoring will only read back what the service knows."
   follow_check_queued = "Verification requested: the series will be watched on the next pass, at the pace permitted by its source."
@@ -1383,6 +1398,36 @@
     action = "A child always has a maximum age and never the right to classify; an adult has no maximum age; a child can only add or request from a “family” source."
     cause = "The requested settings violate a profile rule: a child has a maximum age and does not classify, an adult has no maximum age."
 
+  [errors.oidc_unavailable]
+    title = "The identity provider cannot be reached."
+    action = "Sign in with your password or a passkey, and ask the administrator to check the provider's address and that Shelfhold may reach it."
+    cause = "The provider did not answer, answered something unusable, or its address is refused by the outbound-request guard."
+
+  [errors.oidc_conflict]
+    title = "This identity cannot be linked to this account."
+    action = "Each person of the provider belongs to one account, and an account holds one identity per provider. Check which account holds it."
+    cause = "The person is already linked to another account, or this account is already linked to another person of the same provider."
+
+  [errors.oidc_child_profile]
+    title = "A child profile is never linked to an identity provider."
+    action = "A child signs in on the shared device with the parents' help; link an adult account instead."
+    cause = "The account is a child profile: Shelfhold refuses any way in that does not go through the household."
+
+  [errors.oidc_admin_target]
+    title = "An admin does not link another admin's account."
+    action = "Each admin links their own account from their own session. An admin can link their own account or an adult member's."
+    cause = "Linking an identity of the provider to another admin would give it that account without them knowing."
+
+  [errors.oidc_link_expired]
+    title = "This link is no longer waiting for a confirmation."
+    action = "Start the link again from your account."
+    cause = "The link was already confirmed or declined, it expired, or the confirmation does not come from the session that asked for it."
+
+  [errors.oidc_not_linked]
+    title = "This account is not linked to an identity provider."
+    action = "Link it from the settings of your account first."
+    cause = "There is no link to remove or to prove again: it was never made, or it was removed."
+
   [errors.device_token_not_found]
     title = "This device token does not exist for you."
     action = "Refresh the list of your devices."
@@ -1453,6 +1498,16 @@
     action = "Open the series page again on your e-reader: an up-to-date version is offered there."
     cause = "A file changed since this version was made, the version was purged, or your access ended."
 
+  [errors.not_acceptable]
+    title = "This page exists in no format your app accepts."
+    action = "Allow JPEG or PNG in the Accept header of your reading app (image/jpeg, image/png or image/*)."
+    cause = "The page is in a format your app cannot read, and Shelfhold cannot convert it to one it accepts."
+
+  [errors.rendition_busy]
+    title = "Too many pages are being converted at once."
+    action = "Try again in a few seconds: your reading app can ask for the page again."
+    cause = "Converting a page is heavy: Shelfhold does only a few at a time."
+
   [errors.kosync_registration_disabled]
     title = "An e-reader does not create accounts."
     action = "Ask the Shelfhold administrator for a device token, then enter it in the e-reader's sync settings."
@@ -1467,6 +1522,11 @@
     title = "No excerpt is available for this book."
     action = "Read it in the app it was sent to, or ask an administrator to keep a copy."
     cause = "The book cannot be cut within the limit of an excerpt (a single file, or a first chapter that is too long): the whole file is never served."
+
+  [errors.content_changed]
+    title = "The book changed while you were reading."
+    action = "Reload the book: the reader starts again from an up-to-date manifest."
+    cause = "The file being read was replaced since the book was opened."
 
   [errors.full_read_not_allowed]
     title = "This book is not read in full here."
@@ -1502,6 +1562,11 @@
     title = "Too many blocks are being served right now."
     action = "Wait a few moments, then start the download again."
     cause = "Your device, or the whole instance, has reached the number of simultaneous block downloads allowed."
+
+  [errors.progress_busy]
+    title = "This work is being updated: the position was not saved."
+    action = "Keep reading: the device will try again, or reopen the book in a few moments."
+    cause = "A job is replacing files of this work (an upgrade, a team switch, a volume assembly) and holds its lock for the swap; saving the position now could mark read a chapter that is about to be replaced."
 
   [errors.too_many_streams]
     title = "Too many event streams open for this profile."
@@ -1933,6 +1998,16 @@
     action = "Type the chapter ID to confirm. No copies will be deleted without this."
     cause = "This chapter no longer exists anywhere else: deleting it would lose it forever, so Shelfhold requires explicit confirmation."
 
+  [errors."rendition.format_unsupported"]
+    title = "This image cannot be converted."
+    action = "Use a file the client can read as it is, or an AVIF or WebP image."
+    cause = "Only AVIF and WebP images can be converted for a client that lacks the format; JPEG XL has no decoder in this version."
+
+  [errors."rendition.remote_refused_watermarked"]
+    title = "A marked file is never sent to an outside service."
+    action = "Keep the conversion local, or leave this file out of the outside service."
+    cause = "This file carries its buyer's mark: a processor that sends bytes out of the host never receives it."
+
   [errors."unit.safeguard_failed"]
     title = "Safeguarding a chapter failed."
     action = "Consult the Activity and restart the chapter's sheltering."
@@ -2157,6 +2232,21 @@
     title = "This list is full."
     action = "A list holds at most 5,000 items: remove some or make another list."
     cause = "The largest number of items of a collection or reading list is reached."
+
+  [errors."selection.query_refused"]
+    title = "This selection cannot be saved."
+    action = "Choose among the criteria offered (reading state, kind, shelf, language, recently added), with at most 20 values each, and try again."
+    cause = "A selection holds a short list of criteria and nothing else: no expression, no free text, no nesting, and at most 2 KB."
+
+  [errors."selection.full"]
+    title = "You have saved as many selections as are allowed."
+    action = "A profile holds at most 50 selections: delete one you no longer use, or change an existing one."
+    cause = "The largest number of saved selections of a profile is reached."
+
+  [errors."selection.too_slow"]
+    title = "This selection took too long to compute."
+    action = "Try again in a moment, or narrow it with another criterion (a shelf, a kind)."
+    cause = "The selection is computed each time it is read, and it was stopped after a few seconds so that the library stays responsive."
 
   [errors."collection.not_private"]
     title = "This collection is the household's: there is nothing to approve."
@@ -2894,11 +2984,52 @@
   series = "Series"
   works = "All works"
   recent = "Latest"
+  selections = "Saved selections"
   results = "Search results"
   search_description = "Search the library"
   complete = "{title} — Complete series"
   complete_in = "{title} — Complete series ({lang})"
+  stream = "{title} — page by page"
   excluded = "{count, plural, one {# chapter left out} other {# chapters left out}}: format not readable on an e-reader, or file unavailable."
+
+[lite]
+  root_title = "Shelfhold"
+  home = "Home"
+  shelves = "Shelves"
+  series = "Series"
+  works = "All works"
+  recent = "Recently added"
+  results = "Search results"
+  search_label = "Search"
+  search_button = "Search"
+  sign_out = "Sign out"
+  empty = "Nothing to show here."
+  previous = "Previous page"
+  next = "Next page"
+  sign_in_title = "Sign in"
+  sign_in_lead = "Enter the identifier and the secret of this e-reader, as they were shown when it was paired."
+  sign_in_failed = "Sign-in refused. Check the identifier and the secret."
+  identifier = "Identifier"
+  secret = "Secret"
+  sign_in_submit = "Sign in"
+  retry = "Back to sign-in"
+  not_found_title = "Not found"
+  not_found_text = "This page does not exist."
+  tls_title = "Connection not secure"
+  tls_text = "This page only opens over HTTPS: the secret of the e-reader must not travel in clear."
+  csrf_title = "Form expired"
+  csrf_text = "The form was not accepted. Open the sign-in page again and retry."
+  throttled_title = "Too many attempts"
+  throttled_text = "Too many sign-in attempts. Wait a moment before trying again."
+  gone_title = "File unavailable"
+  gone_text = "This file is no longer available."
+  busy_title = "Too many downloads"
+  busy_text = "Too many downloads in progress. Try again in a moment."
+  edition_in = "Edition ({lang})"
+  excluded = "{count, plural, one {# chapter left out} other {# chapters left out}}: format not readable on an e-reader, or file unavailable."
+  download_sized = "Download ({mb} MB)"
+  download = "Download"
+  no_download = "No file to download for this work."
 
   [errors."source_migration.collision"]
     title = "Two numbers of the new source would land on the same place."

@@ -6,10 +6,10 @@ n'exporte jamais l'original : il exporte un **dérivé neutralisé** (EF-BIB-051
 
 ## Ce que le neutraliseur retire
 
-`xhtml-neutralizer@v1` retire des pages XHTML les scripts, les gestionnaires d'événements (`on…`), les adresses
+`xhtml-neutralizer@v2` retire des pages XHTML les scripts, les gestionnaires d'événements (`on…`), les adresses
 `javascript:` et `data:text/html`, les cadres, objets, éléments `embed` et formulaires, et toute ressource ou
 `@import` distant. Il neutralise aussi les SVG (`<script>`, `foreignObject`). La liste de ce qui reste est une liste
-blanche, pas une liste noire. Le résultat est déterministe : le même original donne le même dérivé.
+blanche, pas une liste noire. Là où il retire un élément du corps, il laisse un élément vide au même rang, pour que les positions de lecture restent valables d'une version à l'autre. Le résultat est déterministe : le même original donne le même dérivé.
 
 Un EPUB que le neutraliseur ne sait pas rendre sûr est **refusé** : ni dérivé, ni original rangé, ni export. L'Unité
 passe `quarantined` avec la raison (`content.untrusted_entry`) ; elle sort de cet état quand un autre fichier de la

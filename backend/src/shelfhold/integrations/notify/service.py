@@ -105,7 +105,7 @@ def _merge(old: Mapping[str, Any], new: Mapping[str, Any]) -> dict[str, Any]:
         for held in items:
             same = held["kind"] == item["kind"] and all(
                 held.get(k) == item.get(k)
-                for k in ("work_id", "vis", "owner_id", "request_id", "type", "start_id")
+                for k in ("work_id", "vis", "owner_id", "request_id", "type", "start_id", "what")
             )
             if same:
                 if item["kind"] == "chapters":
@@ -136,6 +136,16 @@ def _put(
             .where(digest.c.user_id == user_id, digest.c.due_at == due_at)
             .values(payload=_merge(held, payload))
         )
+
+
+# What a person is told about their own account (M5 L04). No identifier, no name of who did it.
+_SECURITY_LINES = {
+    "identity_linked_by_admin": "- An administrator linked your account to an identity provider",
+    "identity_unlinked": "- The identity-provider link of your account was removed",
+    "identity_unlinked_by_admin": (
+        "- An administrator removed the identity-provider link of your account"
+    ),
+}
 
 
 class NotificationRouter:
@@ -433,17 +443,28 @@ class NotificationSender:
             message = None if person is None else self._build(connection, person, payload)
             titled = (
                 self._build(connection, person, payload, titles=True)
-                if person is not None and message is not None and self._may_be_titled(person)
+                if person is not None and self._may_be_titled(person)
                 else None
             )
-        if message is None:  # a person who is gone, or nothing left that is theirs to be told
+        if message is None and titled is None:  # a person who is gone, or nothing left to tell
             self._finish(user_id, leased_at)
             return "dropped"
         try:
             private = None if titled is None else self._send_private(user_id, titled)
-            # a destination of their own decides: the titles go there and only there, and a
-            # failure there is a failure (retried), never a fallback to the shared channels
-            delivered = private if private is not None else bool(self._deliver(user_id, message))
+            if message is None:
+                # only what the person alone may read (a security notice about their account): it
+                # goes to their own destination or nowhere, never to the shared channels. The
+                # settings screen of the account keeps the trace for whoever has none.
+                if private is None:
+                    self._finish(user_id, leased_at)
+                    return "dropped"
+                delivered = private
+            else:
+                # a destination of their own decides: the titles go there and only there, and a
+                # failure there is a failure (retried), never a fallback to the shared channels
+                delivered = (
+                    private if private is not None else bool(self._deliver(user_id, message))
+                )
         except Exception:
             delivered = False  # never the text of the error: it may carry a URL
         if delivered:
@@ -493,9 +514,16 @@ class NotificationSender:
         chapters = arrivals = outages = 0
         named: dict[str, int] = {}
         reminders = False
+        security: list[str] = []
         alive = self._alive(connection, payload)
         for item in payload.get("items", []):
             kind = item["kind"]
+            if kind == "security":  # M5 L04: what happened to the account itself, always theirs
+                # said only where the person alone reads: never in the shared channels, which a
+                # household (a child, the admin who did it) reads
+                if titles and item.get("what") in _SECURITY_LINES:
+                    security.append(str(item["what"]))
+                continue
             if kind == "withdrawal_pending":
                 reminders = reminders or (
                     person.role == "admin" and self._withdrawals(connection) > 0
@@ -516,7 +544,7 @@ class NotificationSender:
                 if item.get("work_id"):
                     key = str(item["work_id"])
                     named[key] = named.get(key, 0) + int(item.get("count", 1))
-        if not (chapters or arrivals or outages or reminders):
+        if not (chapters or arrivals or outages or reminders or security):
             return None
         lines: list[str] = []
         if person.role != "child" and person.username:  # a child is never named in a shared place
@@ -531,11 +559,13 @@ class NotificationSender:
             lines.append(f"- {outages} outage(s) have lasted over one hour")
         if reminders:
             lines.append("- A withdrawal is still pending: it waits for an admin")
+        lines += [_SECURITY_LINES[what] for what in dict.fromkeys(security)]
         if self._app_url:
             lines.append(f"Open Shelfhold: {self._app_url}")
         only_arrival = arrivals and not (chapters or outages or reminders)
         title = (
-            "Shelfhold - a request arrived" if only_arrival
+            "Shelfhold - security notice" if security
+            else "Shelfhold - a request arrived" if only_arrival
             else "Shelfhold - outage over one hour" if outages
             else "Shelfhold - daily digest"
         )  # fmt: skip

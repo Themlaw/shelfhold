@@ -121,6 +121,7 @@ FIRST_PARTY_PLUGINS: Final = frozenset({"suwayomi", "lncrawl"})  # named as is; 
 # -- the settings, each in one class: a new setting is in none, and the test of the classes fails
 _AS_IS = (
     "port", "log_level", "log_format", "received_cbz_max_bytes", "auth_hardened", "fresh_auth_s",
+    "oidc_max_age_s",
     "metrics_enabled", "revision_min_page_ratio", "follow_fallback_return",
     "page_target_format", "page_target_quality",
     "follow_check_min_s", "follow_check_max_s", "follow_check_finished_s",
@@ -138,6 +139,7 @@ _PRESENCE = (
     "wake_url", "update_check_url", "plugin_index_url",
     "wake_token", "auth_forward_secret", "setup_token", "backup_dir", "backup_passphrase_file",
     "metadata_contact", "import_dir", "comicvine_api_key",
+    "oidc_issuer", "oidc_client_id", "oidc_client_secret",
 )  # fmt: skip
 _VOLUMES = ("data_dir", "store_dir", "library_dir")
 _COUNTS = ("plugin_repos", "active_sources", "http_trusted_proxies", "wake_suwayomi",
@@ -1034,6 +1036,7 @@ def build_bundle(
         "wake_url",
         "update_check_url",
         "plugin_index_url",
+        "oidc_issuer",
     ):
         forbidden.add(f"settings.{name}", getattr(settings, name))
     forbidden.add("settings.host", settings.host, word=True)

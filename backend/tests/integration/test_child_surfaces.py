@@ -68,6 +68,13 @@ PUBLIC = (
     "POST /api/v1/setup/admin",  # ...and makes it, behind the secret of the compose
     "POST /api/v1/auth/passkeys/login",
     "POST /api/v1/auth/passkeys/login/options",
+    # M5 L03: the OpenID Connect sign-in is anonymous by nature (a browser sent to the provider and
+    # back); absent (404) unless configured, never a catalogue datum
+    "GET /api/v1/auth/oidc/login",
+    "GET /api/v1/auth/oidc/callback",
+    # ...and its confirmation page is the same-site page the callback sends the browser to, whose
+    # `Strict` session cookie did not come along: bound to the flow cookie, it writes nothing
+    "GET /api/v1/auth/oidc/link/confirm",
     "GET /healthz",
     "GET /readyz",
 )
@@ -76,6 +83,7 @@ OWN = (
     "GET /api/v1/about",
     "POST /api/v1/auth/logout",
     "GET /api/v1/auth/passkeys",
+    "GET /api/v1/auth/oidc/identities",  # M5 L03: the links of her own account, never a `sub`
     "POST /api/v1/auth/passkeys",
     "POST /api/v1/auth/passkeys/options",
     "POST /api/v1/auth/passkeys/reauth/options",
@@ -122,14 +130,39 @@ OPDS = (
     "GET /opds/works",
     "GET /opds/works/{work_id}",
     "GET /opds/recent",
+    "GET /opds/selections",  # M5 L21: the profile's own selections, evaluated in her scope
+    "GET /opds/selections/{selection_id}",
     "GET /opds/search",
     "GET /opds/covers/{content_hash}/{size}",
     "GET /opds/editions/{edition_id}/complete",
     "GET /opds/bundles/{version_id}",
+    "GET /opds/pse/{item_id}/{page}",  # M5 L18: OPDS-PSE, a page of an exported volume
+)
+# LITE (M5 L17a): the pages of `/lite`, behind a cookie that a device token's secret opened. Every
+# route is hers when it shows catalogue data, and answers like OPDS: a hidden thing is an absent
+# one. The two forms (sign-in, sign-out) hold no catalogue data. The attacks:
+# `tests/integration/test_m5_l17a_lite.py`.
+LITE = (
+    "GET /lite",
+    "GET /lite/sign-in",
+    "POST /lite/sign-in",
+    "POST /lite/sign-out",
+    "GET /lite/shelves",
+    "GET /lite/shelves/{shelf_id}",
+    "GET /lite/series",
+    "GET /lite/series/{series_id}",
+    "GET /lite/works",
+    "GET /lite/works/{work_id}",
+    "GET /lite/recent",
+    "GET /lite/search",
+    "GET /lite/covers/{content_hash}/{size}",
+    "GET /lite/editions/{edition_id}/complete",
+    "GET /lite/{rest:path}",
 )
 DEVICE = (*KOSYNC, *OPDS)
 DEVICE_ALL = (*DEVICE, *KOSYNC_WRITE)
 OPEN = {
+    **{route: "lite" for route in LITE},  # M5 L17a
     "GET /api/v1/activity": "activity",
     "GET /api/v1/events": "sse",
     "GET /api/v1/me/state": "me_state_list",
@@ -143,6 +176,10 @@ OPEN = {
     "GET /content/{ticket}/{path:path}": "content",  # M5 L05a: the bytes of a book, by ticket
     # M5 L06: what the reader opens (pages or spine, a ticket in each link); only for a carrier,
     # or a Unit, she may see: the rest is one 404 with the answer for an absent one
+    # M5 L14: « Reprendre la lecture » of the home: her own progress, narrowed by the filter of
+    # every surface; a hidden series, though a pull reports it, is exactly absent
+    # (`test_m5_l14_continue_reading.py`)
+    "GET /api/reader/continue": "continue_reading",
     "GET /api/reader/{carrier_type}/{carrier_id}/publication": "reader",
     # M5 L07: where the reader is, its history, and the choice between two places: hers only, on a
     # carrier she may see; the rest is the answer for an absent one (`test_m5_l07_positions.py`)
@@ -161,6 +198,13 @@ OPEN = {
     "DELETE /api/v1/collections/{collection_id}": "collections",
     "POST /api/v1/collections/{collection_id}/items": "collections",
     "DELETE /api/v1/collections/{collection_id}/items/{item_id}": "collections",
+    # M5 L21: the saved selections: a stored query, evaluated in her scope at each read; another
+    # profile's selection is an absent one (`test_m5_l21_saved_selections.py`)
+    "GET /api/v1/selections": "selections",
+    "POST /api/v1/selections": "selections",
+    "GET /api/v1/selections/{selection_id}": "selections",
+    "PUT /api/v1/selections/{selection_id}": "selections",
+    "DELETE /api/v1/selections/{selection_id}": "selections",
     # M4 L19: the relations of a Work she may see, and of those the ones whose other end she may
     # see too (`test_m4_l19_relations.py`); making and removing one is the admin's (CLOSED)
     "GET /api/v1/works/{work_id}/relations": "relations",
@@ -212,6 +256,15 @@ CLOSED = (
     "POST /api/v1/device-tokens",
     "GET /api/v1/device-tokens/setup",
     "DELETE /api/v1/device-tokens/{public_id}",
+    # M5 L03: linking an identity provider to an account is an adult's reserved action (the
+    # admin's for another account): a child is refused by session and by key
+    "POST /api/v1/auth/oidc/link",
+    "POST /api/v1/auth/oidc/link/confirm",
+    "PUT /api/v1/profiles/{profile_id}/oidc",
+    # M5 L04: unlinking, and proving oneself again at the provider: the same rule
+    "DELETE /api/v1/auth/oidc/identities",
+    "DELETE /api/v1/profiles/{profile_id}/oidc",
+    "POST /api/v1/auth/oidc/reauth",
     # M5 L02: the registry of devices, its rotation and its removal: the same rule
     "GET /api/v1/devices",
     "POST /api/v1/devices/{device_id}/rotate",
@@ -439,7 +492,9 @@ PENDING_SURFACES: dict[
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
-    "content", "reader", "work_redirect", "opds", "support_author", "collections", "relations",
+    "content", "reader", "continue_reading", "work_redirect", "opds", "support_author",
+    "collections", "relations", "selections",
+    "lite",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -968,6 +1023,14 @@ def _surface_collections(world: World) -> None:
     child_case(world)
 
 
+def _surface_selections(world: World) -> None:
+    """M5 L21: a selection is evaluated in her scope (the attacks are in
+    `test_m5_l21_saved_selections`)."""
+    from tests.integration.test_m5_l21_saved_selections import child_case
+
+    child_case(world)
+
+
 def _surface_relations(world: World) -> None:
     """M4 L19: a relation to a Work she may not see is not shown, nor counted (the attacks are in
     `test_m4_l19_relations`)."""
@@ -1288,6 +1351,51 @@ def _surface_reader(world: World) -> None:
             world.clean(got.text)
 
 
+def _surface_continue_reading(world: World) -> None:
+    """M5 L14: the home of the child lists what she is reading and may see, and nothing of what a
+    pull reports on a Work that is hidden from her: the answer is the one of a profile with none."""
+    import sqlalchemy as sa
+
+    from shelfhold.infrastructure.schema import export, storage
+    from shelfhold.reading.application.progress import insert_position
+    from tests.content_env import add_carrier
+
+    home, seed = "/api/reader/continue", world.seed
+    nothing = world.kid.get(home)  # before anything is pulled: the answer of an empty history
+    assert nothing.status_code == 200 and nothing.json()["items"] == []
+    for key in ("ok", "twelve", "above", "adult_edition", "misfiled", "reserved", "mixed_new"):
+        carrier = add_carrier(seed.engine, seed.editions[key], format="cbz")
+        with seed.engine.begin() as connection:
+            unit = connection.execute(
+                sa.select(storage.content.c.unit_id).where(storage.content.c.id == carrier)
+            ).scalar_one()
+            connection.execute(
+                sa.update(storage.content).where(storage.content.c.id == carrier)
+                .values(content_hash="sha256:" + "c" * 64, content_hash_by="norm@1")
+            )  # fmt: skip
+            connection.execute(
+                sa.insert(export.unit_coverage).values(
+                    carrier_type="content", carrier_id=carrier, unit_id=unit, position=1,
+                    origin="manual",
+                )
+            )  # fmt: skip
+            insert_position(
+                connection, user_id=world.kid_id, carrier_type="content", carrier_id=carrier,
+                content_hash="sha256:" + "c" * 64, locator={"page": 3}, percent=0.1,
+                client_ts=world.env.clock.now(), device_id="server:kavita", source="server",
+                now=world.env.clock.now(),
+            )  # fmt: skip
+        got = world.kid.get(home)
+        assert got.status_code == 200, key
+        shown = {i["work_id"] for i in got.json()["items"]}
+        assert shown <= {seed.works[k] for k in VISIBLE_FOR_CEILING_10}, key
+        for hidden in (*HIDDEN_FROM_CEILING_10, "x", "unrated"):
+            assert seed.title_of(hidden) not in got.text, (key, hidden)
+        world.clean(got.text)
+    final = {i["work_id"] for i in world.kid.get(home).json()["items"]}
+    assert final == {seed.works["ok"]}  # the control: what is hers is there
+
+
 def _surface_opds(world: World) -> None:
     """L48: the OPDS feed behind a device token is a projection like any other. Every feed of the
     graph, every page and every search holds only what her ceiling lets through, and a hidden
@@ -1330,6 +1438,107 @@ def _surface_opds(world: World) -> None:
         assert "<entry" not in found.text  # the query is echoed encoded in a link, never as a hit
     paged = client.get("/opds/works", params={"limit": 1, "offset": 3}, headers=headers)
     assert paged.status_code == 200 and "<entry" not in paged.text  # the visible ones are three
+    _opds_pse(world, client, headers)
+
+
+def _opds_pse(world: World, client: Any, headers: dict[str, str]) -> None:
+    """M5 L18: the page of an exported volume is a projection like any other. A volume of every
+    Edition of the seed is exported; the child's feed offers a stream for the ones she sees and no
+    other, and a page of a hidden one answers exactly like a page of an item that does not exist."""
+    import sqlalchemy as sa
+
+    from shelfhold.infrastructure.schema import export
+    from tests.content_env import PNG, FakeArchives, add_carrier
+    from tests.integration.test_schema_storage_export import add_destination, add_target
+
+    seed = world.seed
+    fake = FakeArchives()
+    world.env.app.state.content_access.archives = fake  # type: ignore[attr-defined]
+    items: dict[str, str] = {}
+    for key, edition in seed.editions.items():
+        carrier = add_carrier(seed.engine, edition, format="cbz")
+        fake.by_content[carrier] = {"p1.png": PNG, "p2.png": PNG + b"2"}
+        item = new_ulid()
+        with seed.engine.begin() as connection:
+            connection.execute(
+                sa.insert(export.export_item).values(
+                    id=item, edition_id=edition, kind="unit", content_id=carrier
+                )
+            )
+        fake.item_content[item] = carrier
+        items[key] = item
+        with seed.engine.begin() as connection:  # a stream is only offered for a live export
+            destination = add_destination(connection, seed.shelves["adult"], add_target(connection))
+            connection.execute(
+                sa.insert(export.export_record).values(
+                    shelf_destination_id=destination, export_item_id=item,
+                    locator_type="none", state="written",
+                )
+            )  # fmt: skip
+    absent = client.get(f"/opds/pse/{ULID}/0", headers=headers)
+    assert absent.status_code == 404
+    offered = ""
+    for work_id in seed.works.values():
+        got = client.get(f"/opds/works/{work_id}", headers=headers)
+        if got.status_code == 200:
+            offered += got.text
+    for key in ("ok", "mixed_rated"):
+        assert items[key] in offered, key
+        assert client.get(f"/opds/pse/{items[key]}/0", headers=headers).status_code == 200, key
+    for key in ("twelve", "above", "adult_edition", "misfiled", "mixed_new", "reserved", "x"):
+        assert items[key] not in offered, key
+        page = client.get(f"/opds/pse/{items[key]}/0", headers=headers)
+        assert _shape(page) == _shape(absent), key
+        world.clean(page.text)
+
+
+def _surface_lite(world: World) -> None:
+    """L17a: `/lite` is a projection like any other. Every page of the graph reached by links,
+    every search, and a hidden identifier is one 404 with an absent one (the attacks:
+    `tests/integration/test_m5_l17a_lite.py`)."""
+    from html.parser import HTMLParser
+
+    class Hrefs(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__()
+            self.found: list[str] = []
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            self.found += [v for k, v in attrs if k == "href" and v]
+
+    token = world.env.app.state.auth_gate.auth.create_device_token(subject_username="kid")  # type: ignore[attr-defined]
+    client = world.env.other_client("10.0.0.62")
+    form = client.get("/lite/sign-in")
+    csrf = form.text.split('name="csrf" value="', 1)[1].split('"', 1)[0]
+    done = client.post(
+        "/lite/sign-in",
+        data={"identifier": token.public_id, "secret": token.secret, "csrf": csrf},
+        follow_redirects=False,
+    )
+    assert done.status_code == 303
+    seen_text, todo, done_paths = "", ["/lite"], set()
+    while todo:
+        path = todo.pop()
+        if path in done_paths:
+            continue
+        done_paths.add(path)
+        got = client.get(path)
+        assert got.status_code == 200, (path, got.status_code)
+        world.clean(got.text)
+        seen_text += got.text
+        parser = Hrefs()
+        parser.feed(got.text)
+        todo += [h for h in parser.found if h.startswith("/lite") and "/complete" not in h]
+    for key in VISIBLE_FOR_CEILING_10:
+        assert world.seed.title_of(key) in seen_text, key
+    for key in HIDDEN_FROM_CEILING_10:
+        assert world.seed.title_of(key) not in seen_text, key
+        absent = client.get(f"/lite/works/{ULID}")
+        hidden = client.get(f"/lite/works/{world.seed.works[key]}")
+        assert (hidden.status_code, hidden.text) == (absent.status_code, absent.text), key
+        found = client.get("/lite/search", params={"q": world.seed.title_of(key)})
+        # the query is echoed in the box she typed it in, never as a hit
+        assert "/lite/works/" not in found.text, key
 
 
 def _surface_notification(world: World) -> None:

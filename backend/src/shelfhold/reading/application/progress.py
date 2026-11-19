@@ -19,7 +19,7 @@
 """
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -119,6 +119,9 @@ class PositionRecord:
     device_id: str | None
 
 
+FULL_EXTENT = "full"  # `unit_coverage.extent` of a file that covers a Unit whole
+
+
 def _edition_of(connection: sa.Connection, carrier_type: str, carrier_id: str) -> str | None:
     if carrier_type == "export_item":
         query = sa.select(export.export_item.c.edition_id).where(
@@ -150,6 +153,7 @@ def _coverage(connection: sa.Connection, carrier_type: str, carrier_id: str) -> 
         connection.execute(
             sa.select(
                 cover.c.unit_id,
+                cover.c.extent,
                 sa.func.json_extract(cover.c.start_locator, "$.page").label("start_page"),
                 sa.func.json_extract(cover.c.end_locator, "$.page").label("end_page"),
             )
@@ -254,6 +258,27 @@ def _mark_state(
     return after, already
 
 
+def partial_units(connection: sa.Connection, carriers: Mapping[str, str]) -> set[str]:
+    """The Units (keys of `carriers`) that the given `export_item` covers only in part: the pages
+    of such a file are not those Units read, whatever walk crosses them."""
+    cover = export.unit_coverage
+    found: set[str] = set()
+    pairs = list(carriers.items())
+    for start in range(0, len(pairs), 400):
+        chunk = pairs[start : start + 400]
+        found.update(
+            str(r[0])
+            for r in connection.execute(
+                sa.select(cover.c.unit_id).where(
+                    cover.c.carrier_type == "export_item",
+                    cover.c.extent != FULL_EXTENT,
+                    sa.tuple_(cover.c.unit_id, cover.c.carrier_id).in_(chunk),
+                )
+            )
+        )
+    return found
+
+
 def mark_traversed_in_frame(
     connection: sa.Connection,
     position_id: str,
@@ -261,12 +286,20 @@ def mark_traversed_in_frame(
     steps: list[Step],
     spans: list[Span],
     max_pages_per_minute: float = DEFAULT_MAX_PAGES_PER_MINUTE,
+    carriers: Mapping[str, str] | None = None,
 ) -> list[str]:
     """The traversal of a frame that is not one file's: the pages of a block of a series, whose
     chapters sit on several files. `steps` are the profile's positions in that frame (page of the
     block, `server_ts`), oldest first, and `spans` the Units' ranges of pages in it. The rule is the
     one of `_mark_traversed` (speed on `server_ts` alone, no instant jump, undoable); the marks go
-    in the journal of the position that closed the move."""
+    in the journal of the position that closed the move.
+
+    `carriers` maps each Unit of `spans` to the file (`export_item`) that holds it in the block: a
+    Unit that file covers only in part is never a span here either, the rule of `_mark_traversed`
+    (`partial_units`, one rule for both writers; M5 L22a)."""
+    if carriers:
+        partial = partial_units(connection, carriers)
+        spans = [span for span in spans if span.unit_id not in partial]
     row = connection.execute(
         sa.select(reading.reading_position.c.user_id).where(
             reading.reading_position.c.id == position_id
@@ -306,16 +339,31 @@ def _mark_traversed(
     cover = _coverage(connection, row.carrier_type, row.carrier_id)
     if not cover:
         return []
+    if row.locator.get("xpointer") is not None and (
+        row.locator.get("end") is not True or not isinstance(row.locator.get("who"), str)
+    ):
+        return []  # a place in a reflowable text: read only at the end of its last document (L09)
     paged = all(isinstance(c.start_page, int) and isinstance(c.end_page, int) for c in cover)
     scale: float | None = None
     if paged and isinstance(row.locator.get("page"), int):
         mode = PAGES
-        spans = [Span(c.unit_id, float(c.start_page), float(c.end_page)) for c in cover]
-    elif len(cover) == 1 and row.percent is not None:
+        # the pages a file holds of a Unit it covers only in part are not that Unit read (M5 L22a,
+        # `reading_progress`): such a Unit is never a span, whatever walk crosses its pages
+        spans = [
+            Span(c.unit_id, float(c.start_page), float(c.end_page))
+            for c in cover
+            if c.extent == FULL_EXTENT
+        ]
+        if not spans:
+            return []
+    elif len(cover) == 1 and cover[0].extent == FULL_EXTENT and row.percent is not None:
         mode = SHARE
         spans = [Span(cover[0].unit_id, 0.0, 1.0)]
         count = _page_count(connection, row.carrier_type, row.carrier_id)
-        scale = None if count is None else float(count)
+        # a place in a reflowable text is not paged: the page count of an EPUB is its number of
+        # sections, never a speed to judge a share by (a leap to the end would pass for a read)
+        is_text = row.locator.get("xpointer") is not None
+        scale = None if count is None or is_text else float(count)
     else:
         return []
     history = list(
@@ -327,8 +375,7 @@ def _mark_traversed(
                 table.c.carrier_id == row.carrier_id,
                 table.c.content_hash == row.content_hash,
                 table.c.source == "device",
-                # a place in a reflowable text measures nothing (L51): never an anchor
-                sa.func.json_extract(table.c.locator, "$.xpointer").is_(None),
+                *_same_writer(table, row.locator),
                 # nor is a position carried over from another Edition (EF-BIB-026): a guess
                 sa.func.json_extract(table.c.locator, "$.transposed").is_(None),
             )
@@ -361,6 +408,22 @@ def _mark_traversed(
         )
         log.info("reading.read_marked", position=position_id, units=len(marked))
     return marked
+
+
+def _same_writer(table: sa.Table, locator: dict[str, Any]) -> list[sa.ColumnElement[bool]]:
+    """Which positions are the steps of a walk. For a position that is not an xpointer: the ones
+    that are not either (a place in a reflowable text measures nothing there). For an xpointer: the
+    xpointers of **that device** (`who`) whose document was read (`spine`): the positions of another
+    device, or of another writer of the same file (the reader of the web), are never a step of its
+    chain, and neither is its own place when it was not one of a document (M4 MIN-6, M5 L09)."""
+    xpointer = sa.func.json_extract(table.c.locator, "$.xpointer")
+    if locator.get("xpointer") is None:
+        return [xpointer.is_(None)]
+    return [
+        xpointer.is_not(None),
+        sa.func.json_extract(table.c.locator, "$.spine").is_not(None),
+        sa.func.json_extract(table.c.locator, "$.who") == locator["who"],
+    ]
 
 
 def insert_position(
@@ -432,7 +495,8 @@ def record_position(
     """Record where `subject_id` is in a file, as that same reader; returns the position id.
 
     `traverse=False` stores the position and looks for no traversal: a locator the server cannot
-    measure (an EPUB xpointer, until L51) is a place, never a proof of reading.
+    measure (an EPUB xpointer that is not the end of its book, M5 L09) is a place, never a proof of
+    reading.
 
     This is a reader's own report (KOReader, the integrated reader, a device token): it never
     makes a Unit read by itself, only a plausible pass over it does (`reading.domain.traversal`).

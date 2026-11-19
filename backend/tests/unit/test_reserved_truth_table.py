@@ -53,6 +53,8 @@ P3 = {
     "freezes_instance",  # `maintenance on|off` (M3 L13): a stolen session stops the household
     "rates_content",  # fresh session in every profile (porteur, 2026-11-11): a stolen session
     "enrols_passkey",  # must not file adult content as "0" nor add a passkey that outlives it
+    "links_identity",  # M5 L03: nor tie an identity provider to an account, as a passkey does
+    "unlinks_identity",  # M5 L04: nor remove the link, which closes the sessions it opened
     "manages_profiles",  # M3 L05: a stolen session makes no admin, lifts no child's ceiling
     "renames_exported_files",  # M3 L29: `plan.apply_rename` moves exported files and folders
 }
@@ -316,6 +318,10 @@ FRESHNESS_LINE = {
             "notify.profile_destination",  # M4 L39: an Apprise URL with a token, sealed
             "device_token.issue",  # M4 L46b: the secret of an e-reader is shown once
             "device_token.rotate",  # M5 L02: a new secret of an e-reader is shown once
+            "oidc.link_own",  # M5 L03: a way in that outlives the session that added it
+            "oidc.link_account",  # M5 L03: the admin adds one for another account
+            "oidc.unlink_own",  # M5 L04: a stolen session must not cut the owner off
+            "oidc.unlink_account",  # M5 L04: nor an admin do it unseen
         ),
         "p3",
     ),

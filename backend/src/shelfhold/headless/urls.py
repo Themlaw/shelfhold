@@ -75,6 +75,12 @@ def validate_target_url(url: str, *, resolve: Callable[[str], list[str]] | None 
     parts = urlsplit(url)
     host = parts.hostname or ""
     try:
+        port = parts.port  # raises for anything that is not a number from 0 to 65535
+    except ValueError:
+        raise ValueError("a target port is a number from 1 to 65535") from None
+    if port == 0:
+        raise ValueError("a target port is a number from 1 to 65535")
+    try:
         literal = ipaddress.ip_address(host)
     except ValueError:
         literal = None

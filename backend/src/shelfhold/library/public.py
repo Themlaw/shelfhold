@@ -1,6 +1,7 @@
 """What the interfaces and the composition root may use from the library context."""
 
 from shelfhold.infrastructure.content_trust import UntrustedEntryError
+from shelfhold.infrastructure.imaging import ImageRejected
 from shelfhold.library.adapters.epub_derivative import (
     EpubIngested,
     Regenerated,
@@ -61,7 +62,9 @@ from shelfhold.library.adapters.purge_inventory import (
     erase_work_rows,
     leftover_tickets,
     let_go_tickets,
+    rendition_rels,
     request_ids,
+    take_renditions,
     title_needles,
     unresolved_bin_items,
     upstream_tokens,
@@ -172,6 +175,13 @@ from shelfhold.library.application.reclaim import (
     oldest_first,
     require_empty_phrase,
 )
+from shelfhold.library.application.renditions import (
+    RenditionService,
+    UnknownSourceError,
+)
+from shelfhold.library.application.renditions import (
+    collect_orphans as collect_rendition_orphans,
+)
 from shelfhold.library.application.reneutralize import (
     ReneutralizePlan,
     Reneutralizer,
@@ -227,6 +237,14 @@ from shelfhold.library.domain.irreplaceable import (
     CONFIRMATION_CODE,
     ConfirmationRequiredError,
     confirmation_phrase,
+)
+from shelfhold.library.domain.rendition import (
+    DECODABLE_SOURCES,
+    KIND_MEDIA,
+    RemoteProcessorRefusedError,
+    RenditionParams,
+    UnsupportedSourceError,
+    source_format,
 )
 from shelfhold.library.domain.safeguard_rules import (
     NO_KAVITA_COPY,
@@ -343,6 +361,7 @@ __all__ = [
     "CANDIDATE_AFTER",
     "CONFIRMATION_CODE",
     "CONTENT_HASH_BY",
+    "DECODABLE_SOURCES",
     "DEFAULT_BATCH_BYTES",
     "DEFAULT_BATCH_UNITS",
     "DEFAULT_MAX_RECEIVED_BYTES",
@@ -356,6 +375,7 @@ __all__ = [
     "GIB",
     "INDEX_NAME",
     "KEPT_PREFIX",
+    "KIND_MEDIA",
     "NOT_DOWNLOADED",
     "NO_KAVITA_COPY",
     "OPTION_OFF",
@@ -403,6 +423,7 @@ __all__ = [
     "ExportVerdict",
     "FileImpact",
     "Hash",
+    "ImageRejected",
     "ImportFolder",
     "ImportFolderOverlapError",
     "ImportItem",
@@ -445,6 +466,9 @@ __all__ = [
     "Regenerated",
     "RegenerationBlockedError",
     "ReleaseOutcome",
+    "RemoteProcessorRefusedError",
+    "RenditionParams",
+    "RenditionService",
     "ReneutralizePlan",
     "ReneutralizeReport",
     "Reneutralizer",
@@ -483,6 +507,8 @@ __all__ = [
     "UnitImpact",
     "UnitJson",
     "UnitJsonCorruptError",
+    "UnknownSourceError",
+    "UnsupportedSourceError",
     "UntrustedEntryError",
     "UntrustedEpubStore",
     "UpstreamPurge",
@@ -509,6 +535,7 @@ __all__ = [
     "check_add_fits",
     "clear_page_issue",
     "closed_request_ids",
+    "collect_rendition_orphans",
     "complete_interrupted_keep",
     "confirmation_phrase",
     "content_error_candidates",
@@ -588,6 +615,7 @@ __all__ = [
     "relocate_destination_copy",
     "relocate_root_paths",
     "removal_would_strip",
+    "rendition_rels",
     "replica_snapshot",
     "request_ids",
     "require_deletion_allowed",
@@ -602,9 +630,11 @@ __all__ = [
     "safe_to_clean",
     "servable_epub",
     "sniff_kind",
+    "source_format",
     "space_by_shelf",
     "spans_of",
     "store_unit_ids",
+    "take_renditions",
     "title_needles",
     "unit_files",
     "unit_tombstoned",

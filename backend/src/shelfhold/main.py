@@ -17,7 +17,7 @@ from sqlalchemy import Engine
 from shelfhold import __version__
 from shelfhold.acquisition.public import RootGuard
 from shelfhold.catalog.public import ensure_search_tables, sync_search_index
-from shelfhold.composition import Composition, Network
+from shelfhold.composition import Composition, LazyTombstones, Network
 from shelfhold.config import Settings, load_settings
 from shelfhold.events.bus import EventBus
 from shelfhold.events.since_key import SinceKey
@@ -81,6 +81,7 @@ from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
 from shelfhold.interfaces.http_api.kosync import build_kosync_router
 from shelfhold.interfaces.http_api.library import build_library_router
+from shelfhold.interfaces.http_api.lite import build_lite_router
 from shelfhold.interfaces.http_api.maintenance import build_maintenance_router
 from shelfhold.interfaces.http_api.me import build_me_router
 from shelfhold.interfaces.http_api.metrics import build_metrics_router
@@ -96,6 +97,7 @@ from shelfhold.interfaces.http_api.request_lists import build_request_lists_rout
 from shelfhold.interfaces.http_api.requests import build_requests_router
 from shelfhold.interfaces.http_api.revisions import build_revisions_router
 from shelfhold.interfaces.http_api.search import build_search_router
+from shelfhold.interfaces.http_api.selections import build_selections_router
 from shelfhold.interfaces.http_api.series_sheet import build_series_sheet_router
 from shelfhold.interfaces.http_api.setup import build_setup_router
 from shelfhold.interfaces.http_api.shelves import (
@@ -117,7 +119,7 @@ from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.http_api.webhooks import build_webhooks_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.jobs.mode import MaintenanceMode
-from shelfhold.library.public import ReadableCopies, ThumbnailService
+from shelfhold.library.public import ReadableCopies, RenditionService, ThumbnailService
 from shelfhold.ops import OpsServices
 from shelfhold.ops.activity_feed import kavita_open_url_of
 from shelfhold.ops.health import OpsHealth
@@ -127,13 +129,17 @@ from shelfhold.ops.wiring import open_ops
 from shelfhold.plugin_host.attestation import AttestationStore
 from shelfhold.plugin_host.public import PluginRegistry, installed_versions, start_plugins
 from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse_settings_schema
+from shelfhold.progress_lease import build_progress_lease
 from shelfhold.reading.application.content_access import (
     ContentAccess,
     ContentKey,
     NoReadableCopyError,
 )
+from shelfhold.reading.application.continue_reading import ContinueReading
+from shelfhold.reading.application.lease import ProgressLease
+from shelfhold.reading.application.page_stream import PageStream
 from shelfhold.reading.application.positions import ReaderPositions
-from shelfhold.reading.application.publication import PublicationService
+from shelfhold.reading.application.publication import PublicationService, epub_spine_of
 from shelfhold.reading.bundle import SeriesBundles
 from shelfhold.reading.public import Kosync
 from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
@@ -202,6 +208,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "naming_segment_policy_confirmed": "naming_segment_policy_confirmed",
     "wake_url": "wake_url", "wake_suwayomi": "wake_suwayomi", "wake_kavita": "wake_dest",
     "wake_timeout_s": "wake_timeout_s", "wake_session_s": "wake_duration_s",
+    "oidc_issuer": "oidc_issuer", "oidc_client_id": "oidc_client_id",
     "fetcher_cache": "fetcher_cache", "fetcher_cache_off_sources": "fetcher_cache_off_sources",
     "cli_allow_host": "cli_allow_host", "allow_network_data_dir": "allow_network_data_dir",
     "disk_pause_percent": "disk_pause_percent", "disk_pause_gib": "disk_pause_gib",
@@ -209,6 +216,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "auth_hardened": "hardened_profile",  # a switch
     "metrics_enabled": "metrics_enabled",  # a switch
     "fresh_auth_s": "recent_login_window_s",  # a duration
+    "oidc_max_age_s": "oidc_max_age_s",  # a duration
     "revision_min_page_ratio": "revision_min_page_ratio",
     "reading_relay_max_session_hours": "reading_relay_max_hours",  # a duration
     "follow_fallback_return": "follow_fallback_return",
@@ -239,6 +247,7 @@ SECRET_SETTINGS = frozenset(
         "backup_passphrase_file",
         "metadata_contact",
         "comicvine_api_key",
+        "oidc_client_secret",
         "auth_forward_secret",
         "setup_token",
     }
@@ -289,7 +298,13 @@ def create_app(
                 {"user_id": record.user_id, "passkey_id": record.id},
             )
 
-    auth = local_auth(engine, resolved, clock, on_passkey_registered=passkey_registered)
+    auth = local_auth(
+        engine,
+        resolved,
+        clock,
+        on_passkey_registered=passkey_registered,
+        network=composition.network,
+    )
     ready = Readiness()
     gate = AuthGate(auth, public_url=resolved.public_url, ready=ready.is_set)
 
@@ -349,6 +364,16 @@ def create_app(
         )  # fmt: skip
 
     @cache
+    def page_stream() -> PageStream:  # M5 L18: the pages of an exported volume, by device token
+        return PageStream(engine, content_access())
+
+    @cache
+    def renditions() -> RenditionService:  # M5 L18: an image for a client that lacks its format
+        return RenditionService(
+            engine, resolved.data_dir, clock, tombstones=LazyTombstones(composition)
+        )
+
+    @cache
     def thumbnails() -> ThumbnailService:  # the session route and the OPDS one share it
         return ThumbnailService(engine, resolved.data_dir, clock)
 
@@ -384,8 +409,15 @@ def create_app(
         return series_bundles(engine, composition.keyring, clock.now)
 
     @cache
+    def progress_lease() -> ProgressLease:  # M5 L22a: the lock of the Work a job is rewriting
+        return build_progress_lease(engine, clock)
+
+    @cache
     def kosync() -> Kosync:  # one: it counts the unknown fingerprints of each token
-        return Kosync(engine, composition.keyring, clock.now)
+        return Kosync(
+            engine, composition.keyring, clock.now,
+            spine_of=epub_spine_of(content_access), hold_work=progress_lease(),
+        )  # fmt: skip
 
     def relations_after_audience_change() -> None:
         pools = runtime.pools
@@ -448,6 +480,7 @@ def create_app(
         build_collections_router(
             lambda: engine, relations_after_audience_change
         ),  # M4 L18a: collections and reading lists
+        build_selections_router(lambda: engine, clock.now),  # M5 L21: saved selections
         build_relations_router(lambda: engine, clock.now),  # M4 L19: related Works
         build_stream_router(
             lambda: engine,
@@ -465,10 +498,20 @@ def create_app(
         ),
         build_reader_router(  # M5 L06: what the reader opens; L07: where it is
             lambda: PublicationService(engine, content_access()),
-            lambda: ReaderPositions(engine, content_access(), clock.now),
+            lambda: ReaderPositions(engine, content_access(), clock.now, progress_lease()),
+            lambda: ContinueReading(engine, content_access()),  # M5 L14: « Reprendre la lecture »
+            lambda: kavita_open_url_of(engine),
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
-            lambda: engine, thumbnails, bundles, clock.now
+            lambda: engine,
+            thumbnails,
+            bundles,
+            clock.now,
+            page_stream,  # M5 L18: OPDS-PSE, a page at a time
+            renditions,
+        ),
+        build_lite_router(  # M5 L17a: pages with no script, behind a cookie a token's secret opened
+            lambda: engine, thumbnails, bundles
         ),
         build_kosync_router(  # M4 L47: where the e-reader is, behind the same device token
             kosync, clock.now
