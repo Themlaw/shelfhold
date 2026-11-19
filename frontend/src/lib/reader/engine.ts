@@ -48,6 +48,8 @@ export interface PublicationView {
   spine: PublicationEntry[];
   /** The link of the package document (OPF) of an EPUB: its ticket is the one of every entry. */
   package: string | null;
+  /** When the tickets of the links end, in milliseconds since the epoch; `null` when unknown. */
+  expiresAt?: number | null;
 }
 
 /** The typed ways an engine is stopped; the screen words them. */
@@ -84,7 +86,8 @@ export function toView(out: PublicationOut): PublicationView {
     language: out.language,
     pages: toEntries(out.pages),
     spine: toEntries(out.spine),
-    package: out.package ?? null
+    package: out.package ?? null,
+    expiresAt: Number.isFinite(Date.parse(out.expires_at)) ? Date.parse(out.expires_at) : null
   };
 }
 

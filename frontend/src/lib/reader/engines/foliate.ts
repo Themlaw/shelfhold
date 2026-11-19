@@ -35,6 +35,8 @@ export interface EpubEngineOptions {
   openExternal?: (href: string) => void;
   /** New links for the same book (a ticket lives 10 minutes); `null`: nothing more to give. */
   renew?: () => Promise<PublicationView | null>;
+  /** The clock, in milliseconds (default `Date.now`). */
+  now?: () => number;
 }
 
 /** What the adapter uses of `EPUB` (foliate is plain JavaScript: this is its typing, here and nowhere else). */
@@ -50,6 +52,16 @@ interface EpubLoader {
   getSize(name: string): number;
   sha1: undefined;
 }
+
+/** The ticket ran out and no new one could be had: not a section that is missing. */
+class TicketError extends Error {
+  constructor() {
+    super('ticket');
+  }
+}
+
+/** A ticket is renewed this long before the clock ends it. */
+const TICKET_SKEW_MS = 5_000;
 
 class MissingError extends Error {
   constructor(readonly entry: string) {
@@ -117,24 +129,55 @@ export function createEpubEngine(options: EpubEngineOptions = {}): ReaderEngine 
       const first = ticketBase(publication.package);
       const opf = first.entry;
       let base = first.base;
-      let renewed = false;
+      let expiresAt = publication.expiresAt ?? null;
+      const now = options.now ?? Date.now;
+      const expired = () => expiresAt !== null && now() >= expiresAt - TICKET_SKEW_MS;
+
+      // One renewal at a time, shared: the requests that find the ticket gone together wait for the
+      // same new one (a flag shared between them made the second one read a stale ticket and
+      // report a section that is there as missing).
+      let renewing: Promise<boolean> | null = null;
+      const renewTickets = (): Promise<boolean> => {
+        if (renewing) return renewing;
+        const run = (async () => {
+          try {
+            const fresh = options.renew ? await options.renew() : null;
+            if (!fresh?.package) return false;
+            base = ticketBase(fresh.package).base;
+            expiresAt = fresh.expiresAt ?? null;
+            return true;
+          } catch {
+            return false;
+          }
+        })();
+        renewing = run;
+        void run.finally(() => {
+          if (renewing === run) renewing = null;
+        });
+        return run;
+      };
 
       const get = async (name: string): Promise<Response> => {
-        const ask = () =>
-          doFetch(`${base}${name.split('/').map(encodeURIComponent).join('/')}`, {
+        const ask = (from: string) =>
+          doFetch(`${from}${name.split('/').map(encodeURIComponent).join('/')}`, {
             credentials: 'same-origin',
             referrerPolicy: 'no-referrer',
             redirect: 'error'
           });
-        let response = await ask();
-        if (!response.ok && !renewed && options.renew) {
-          renewed = true; // once: a ticket that ran out, not a page that is not there
-          const fresh = await options.renew().catch(() => null);
-          if (fresh?.package) {
-            ({ base } = ticketBase(fresh.package));
-            response = await ask();
+        // a ticket that the clock says is gone is renewed before the request, not after a 404
+        if (expired()) await renewTickets();
+        const used = base;
+        let response = await ask(used);
+        if (!response.ok) {
+          if (used !== base) {
+            response = await ask(base); // another request renewed the ticket meanwhile
+          } else if (options.renew && (publication.scope === 'full' || expired())) {
+            // The route answers 404 for a gone ticket as for an absent entry: in a full book that
+            // is a ticket until a new one has said otherwise; in an excerpt, an entry outside the
+            // cut is the same answer and must not call the API (only the clock says "expired").
+            if (!(await renewTickets())) throw new TicketError();
+            response = await ask(base);
           }
-          renewed = false;
         }
         if (!response.ok) throw new MissingError(name);
         return response;

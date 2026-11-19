@@ -133,7 +133,7 @@ describe('the reader entry (ADR-0055, "CSP du lecteur")', () => {
     expect(csp['style-src-attr']).toEqual(["'unsafe-inline'"]);
     expect(csp['img-src']).toEqual(["'self'", 'blob:']);
     expect(csp['font-src']).toEqual(["'self'", 'blob:']);
-    expect(csp['media-src']).toEqual(["'self'", 'blob:']);
+    expect(csp['media-src']).toEqual(["'none'"]);
     expect(csp['frame-src']).toEqual(['blob:']);
     expect(csp['worker-src']).toEqual(["'none'"]);
     expect(csp['manifest-src']).toEqual(["'none'"]);

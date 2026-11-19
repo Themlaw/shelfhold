@@ -190,7 +190,7 @@ _READER_TABLE = (
     ("style-src-attr", ("'unsafe-inline'",)),
     ("img-src", ("'self'", "blob:")),
     ("font-src", ("'self'", "blob:")),
-    ("media-src", ("'self'", "blob:")),
+    ("media-src", ("'none'",)),
     ("frame-src", ("blob:",)),
     ("worker-src", ("'none'",)),
     ("manifest-src", ("'none'",)),

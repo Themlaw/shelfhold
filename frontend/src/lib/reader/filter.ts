@@ -372,6 +372,63 @@ const MATH_ELEMENTS = new Set(
 const INERT = { [NS_HTML]: 'span', [NS_SVG]: 'g', [NS_MATH]: 'mrow' } as const;
 
 
+// ---------------------------------------------------------------------------------------------
+// The closed list of attributes (#381, C5). What the book writes and is not here is removed, whatever
+// its name: `attributionsrc`, `ping`, `data-*`, a handler, a name nobody knows yet. The list is the
+// one of the neutralizer of the server (`xhtml_neutralizer.py`: `_GLOBAL_ATTRS`, `_XHTML_ATTRS`,
+// `_SVG_ATTRS`), which is what a book is made of by the time it gets here, plus the `aria-*` names
+// of the reader, the attributes of MathML that the reader draws, and `srcset` (judged below).
+const words = (text: string): ReadonlySet<string> => new Set(text.trim().split(/\s+/));
+const GLOBAL_ATTRS = words(
+  `id class lang dir title role style aria-label aria-hidden aria-labelledby aria-describedby
+   aria-level aria-roledescription`
+);
+const HTML_ATTRS: Readonly<Record<string, ReadonlySet<string>>> = {
+  a: words('href'),
+  img: words('src srcset alt width height'),
+  td: words('colspan rowspan headers scope abbr'),
+  th: words('colspan rowspan headers scope abbr'),
+  ol: words('start reversed type'),
+  li: words('value'),
+  col: words('span'),
+  colgroup: words('span'),
+  time: words('datetime'),
+  details: words('open'),
+  link: words('rel type href media'),
+  meta: words('charset name content'),
+  style: words('type media')
+};
+const SVG_ATTRS = new Set(
+  [
+    ...words(
+      `viewBox width height x y x1 y1 x2 y2 cx cy r rx ry fx fy d points transform fill stroke
+       stroke-width stroke-linecap stroke-linejoin stroke-dasharray stroke-dashoffset stroke-opacity
+       stroke-miterlimit fill-opacity fill-rule clip-rule opacity offset stop-color stop-opacity
+       gradientUnits gradientTransform spreadMethod patternUnits patternTransform
+       patternContentUnits clipPathUnits maskUnits maskContentUnits preserveAspectRatio font-family
+       font-size font-weight font-style text-anchor dominant-baseline dx dy rotate textLength
+       lengthAdjust letter-spacing word-spacing text-decoration visibility display clip-path mask
+       version href media type`
+    ),
+    ...GLOBAL_ATTRS
+  ].map((a) => a.toLowerCase())
+);
+const MATH_ATTRS = new Set([
+  ...words(
+    `display displaystyle scriptlevel mathvariant mathsize mathcolor mathbackground columnalign
+     rowalign columnspan rowspan linethickness fence separator stretchy symmetric lspace rspace open
+     close separators accent accentunder movablelimits notation width height`
+  ),
+  ...GLOBAL_ATTRS
+]);
+
+/** Is `key` (a lower-case local name, no namespace) one the reader keeps on this element? */
+function isKnownAttr(ns: string | null, element: string, key: string): boolean {
+  if (ns === NS_SVG) return SVG_ATTRS.has(key);
+  if (ns === NS_MATH) return MATH_ATTRS.has(key);
+  return GLOBAL_ATTRS.has(key) || (HTML_ATTRS[element]?.has(key) ?? false);
+}
+
 function isUrlAttr(name: string): boolean {
   return URL_ATTRS.has(name.toLowerCase());
 }
@@ -415,6 +472,10 @@ function cleanAttributes(el: Element, options: FilterOptions): void {
       drop();
       continue;
     }
+    if (ans === null && !isKnownAttr(ns, name, key)) {
+      drop();
+      continue;
+    }
     if (key === 'style') {
       el.setAttribute(attr.name, filterCss(value, options));
       continue;
@@ -433,6 +494,16 @@ function cleanAttributes(el: Element, options: FilterOptions): void {
     // a presentation attribute of SVG or a value of MathML parsed as CSS: a fetch hides in there
     if (/url\s*\(|image-set|expression|@import|\\/i.test(value) && (ns === NS_SVG || ns === NS_MATH)) {
       el.setAttribute(attr.name, filterCss(value, options));
+    }
+  }
+  // C1: foliate intercepts a click on `a[href]` only. An SVG `<a>` that has an `xlink:href` alone
+  // would navigate the reading frame to the document of the book, out of foliate: it gets a plain
+  // `href` (SVG 2 reads that one first), and the `xlink:href` goes.
+  if (ns === NS_SVG && name === 'a') {
+    const old = el.getAttributeNodeNS(NS_XLINK, 'href');
+    if (old) {
+      if (!el.hasAttribute('href')) el.setAttribute('href', old.value);
+      el.removeAttributeNode(old);
     }
   }
 }

@@ -19,7 +19,7 @@ describe('#381 adverse review', () => {
   // document of the book, out of foliate (no pagination, no link interception, no key relay,
   // positions frozen). No script runs (inherited policy, `frame-src blob:`, sandbox with no popup
   // nor top navigation): a gap of the reader, not of the barrier.
-  it.fails('test_kept_link_is_one_foliate_intercepts: an SVG <a xlink:href> keeps a loader blob that no click handler sees', () => {
+  it('test_kept_link_is_one_foliate_intercepts: an SVG <a xlink:href> keeps a loader blob that no click handler sees', () => {
     const out = filterMarkup(
       page(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><a xlink:href="${LOADER}"><text id="t">go</text></a></svg>`),
       XHTML,

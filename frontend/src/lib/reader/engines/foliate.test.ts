@@ -260,3 +260,101 @@ describe('the EPUB engine', () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe('the tickets of the engine (#381 C2)', () => {
+  const NEW = '/content/NEW';
+  // the route answers 404 for a gone ticket as for an absent entry
+  const served = (live: string) =>
+    (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requested.push({ url, init });
+      if (!url.startsWith(`${live}/`)) return new Response('no', { status: 404 });
+      const body = files[decodeURIComponent(url.slice(live.length + 1).split('?')[0]!)];
+      return body == null ? new Response('no', { status: 404 }) : new Response(body, { status: 200 });
+    }) as typeof fetch;
+  const fresh = (): PublicationView =>
+    view({ package: `${NEW}/OEBPS/content.opf`, spine: [], expiresAt: Date.now() + 600_000 });
+  const outcomes = (engine: ReturnType<typeof createEpubEngine>) => {
+    const errors: { kind: string; index: number }[] = [];
+    const ends: number[] = [];
+    engine.onError((e) => errors.push(e));
+    engine.onEnd(() => ends.push(1));
+    return { errors, ends };
+  };
+
+  // req: EF-LEC-003
+  it('renews a ticket that the clock has ended once for all the requests that find it gone, and shows no missing section', async () => {
+    const renew = vi.fn(async () => fresh());
+    let clock = 1_000;
+    let live = '/content/TKT';
+    const route = (async (input: RequestInfo | URL, init?: RequestInit) => served(live)(input, init)) as typeof fetch;
+    const { engine, book } = await opened({ renew, now: () => clock, fetch: route }, view({ expiresAt: 100_000 }));
+    const { errors } = outcomes(engine);
+    clock = 200_000;
+    live = NEW; // what the server does once the first ticket is gone
+    const reads = await Promise.all(['OEBPS/nav.xhtml', 'OEBPS/c1.xhtml', 'OEBPS/content.opf'].map((name) => book.loadText(name)));
+    expect(renew).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
+    expect(reads.every((r) => typeof r === 'string' && r.length > 0)).toBe(true);
+  });
+
+  // req: EF-LEC-003
+  it('a request that found the old ticket gone while another one renewed it asks again with the new one, not a missing section', async () => {
+    let live = '/content/TKT';
+    const renew = vi.fn(async () => {
+      live = NEW;
+      return fresh();
+    });
+    const route = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await served(live)(input, init);
+      return response;
+    }) as typeof fetch;
+    const { engine, book } = await opened({ renew, fetch: route });
+    const { errors } = outcomes(engine);
+    live = NEW; // the first ticket is gone for everyone, the clock does not know it
+    const reads = await Promise.all(['OEBPS/nav.xhtml', 'OEBPS/c1.xhtml'].map((name) => book.loadText(name)));
+    expect(renew).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
+    expect(reads.every((r) => typeof r === 'string')).toBe(true);
+  });
+
+  // req: EF-LEC-003
+  it('in a full book, a 404 under a ticket the clock calls live asks for a new one once, then says missing if it is still not there', async () => {
+    const renew = vi.fn(async () => view({ package: `/content/TKT/OEBPS/content.opf`, spine: [] }));
+    const { engine, book } = await opened({ renew, fetch: served('/content/TKT') });
+    const { errors } = outcomes(engine);
+    await expect(book.sections[1]!.load()).rejects.toBeDefined();
+    expect(renew).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([{ kind: 'missing', index: 1 }]);
+  });
+
+  // req: EF-LEC-003
+  it('a ticket that cannot be renewed is a failure of the reading, never a section that is missing', async () => {
+    const renew = vi.fn(async () => null);
+    const { engine, book } = await opened({ renew, fetch: served('/content/TKT') });
+    const { errors } = outcomes(engine);
+    await expect(book.sections[1]!.load()).rejects.toBeDefined();
+    expect(errors).toEqual([{ kind: 'failed', index: 1 }]);
+  });
+
+  // req: EF-LEC-003
+  it('in an excerpt, a section outside the cut ends the reading without a call to the API', async () => {
+    const renew = vi.fn(async () => fresh());
+    const { engine, book } = await opened({ renew, fetch: served('/content/TKT') }, view({ scope: 'excerpt', expiresAt: Date.now() + 600_000 }));
+    const { errors, ends } = outcomes(engine);
+    await expect(book.sections[1]!.load()).rejects.toBeDefined();
+    expect(renew).not.toHaveBeenCalled();
+    expect(errors).toEqual([]);
+    expect(ends).toEqual([1]);
+  });
+
+  // req: EF-LEC-003
+  it('in an excerpt too, a ticket the clock has ended is renewed', async () => {
+    let clock = 1_000;
+    const renew = vi.fn(async () => view({ package: `/content/TKT/OEBPS/content.opf`, spine: [], scope: 'excerpt', expiresAt: 900_000 }));
+    const { book } = await opened({ renew, now: () => clock, fetch: served('/content/TKT') }, view({ scope: 'excerpt', expiresAt: 100_000 }));
+    clock = 200_000;
+    await book.loadText('OEBPS/nav.xhtml');
+    expect(renew).toHaveBeenCalledTimes(1);
+  });
+});

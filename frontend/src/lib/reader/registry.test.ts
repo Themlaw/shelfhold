@@ -41,6 +41,14 @@ describe('the browser', () => {
     expect(ok(UA.chrome109)).toBe(false);
     expect(ok(UA.firefox114)).toBe(false);
     expect(ok(UA.safari163)).toBe(false);
+    // C4: the minor is a whole number, `16.10` comes after `16.4` (not a tenth, which would be 16.1)
+    const safari1610 = UA.safari164.replace('Version/16.4', 'Version/16.10');
+    const ios1610 = UA.ios164.replace('OS 16_4', 'OS 16_10').replace('Version/16.4', 'Version/16.10');
+    expect(detectBrowser({ userAgent: safari1610 })).toEqual({ family: 'safari', version: 16, minor: 10 });
+    expect(ok(safari1610)).toBe(true);
+    expect(ok(ios1610)).toBe(true);
+    expect(supportsEpub({ family: 'safari', version: 15, minor: 9 })).toBe(false);
+    expect(supportsEpub({ family: 'safari', version: 17, minor: 0 })).toBe(true);
     expect(ok(UA.ios163)).toBe(false);
     expect(ok(UA.chromeIos163)).toBe(false); // every browser of iOS is the WebKit of the system
   });
@@ -77,7 +85,7 @@ describe('the registry', () => {
   // req: EF-LEC-003
   it('refuses the EPUB engine below the minimum browser, with a typed reason, without loading it', async () => {
     const epub = fake([EPUB_TYPE], { contentFilter: true });
-    for (const browser of [{ family: 'safari' as const, version: 16.3 }, { family: 'firefox' as const, version: 114 }, null]) {
+    for (const browser of [{ family: 'safari' as const, version: 16, minor: 3 }, { family: 'firefox' as const, version: 114 }, null]) {
       const registry = createRegistry({ descriptors: [epub], browser });
       await expect(registry.engineFor(EPUB_TYPE)).rejects.toMatchObject({ reason: 'browser' });
       await expect(registry.engineFor(EPUB_TYPE)).rejects.toBeInstanceOf(EngineRefusedError);

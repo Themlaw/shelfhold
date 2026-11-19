@@ -367,3 +367,60 @@ describe('the hooks on the loader', () => {
     await expect(Promise.resolve(invalid.data)).rejects.toBeInstanceOf(FilterRefusal);
   });
 });
+
+describe('the closed list of attributes (#381 C5)', () => {
+  const attrs = (el: Element | null) => (el ? Array.from(el.attributes).map((a) => a.name).sort() : null);
+
+  // req: ENF-SEC-004
+  it('removes whatever is not on the list, by name: the fetchers of today and the ones of tomorrow', () => {
+    const doc = run(
+      page(
+        `<a id="a" href="#x" attributionsrc="https://t.example/" ping="https://t.example/" data-x="1" referrerpolicy="unsafe-url" target="_blank" download="f" rel="opener" hreflang="fr" fetchpriority="high" nonexistent="1">a</a>` +
+          `<img id="i" src="${LOADER}" alt="x" loading="lazy" decoding="async" crossorigin="use-credentials" attributionsrc="" width="3" height="4" sizes="10px"/>` +
+          `<p id="p" class="c" lang="fr" dir="ltr" hidden="" contenteditable="true" tabindex="0" accesskey="x" draggable="true" popover="" inert="" autofocus="" spellcheck="true" slot="s" part="p" exportparts="x" itemprop="x" is="x-y" aria-label="l" aria-owns="z" aria-live="polite">t</p>`
+      )
+    );
+    expect(attrs(doc.getElementById('a'))).toEqual(['href', 'id']);
+    expect(attrs(doc.getElementById('i'))).toEqual(['alt', 'height', 'id', 'src', 'width']);
+    expect(attrs(doc.getElementById('p'))).toEqual(['aria-label', 'class', 'dir', 'id', 'lang']);
+  });
+
+  // req: ENF-SEC-004
+  it('keeps what a book is made of: epub:type, xml:lang, the viewport of a fixed layout, a table', () => {
+    const doc = run(
+      page(
+        `<section id="s" epub:type="chapter" xml:lang="fr"><table><tr><td id="td" colspan="2" rowspan="1" headers="h" onclick="x()">c</td></tr></table></section>`,
+        `<meta name="viewport" content="width=800, height=1200"/><meta charset="utf-8"/><meta name="x" content="y" http-equiv="refresh"/>`
+      )
+    );
+    expect(doc.getElementById('s')?.getAttributeNS('http://www.idpf.org/2007/ops', 'type')).toBe('chapter');
+    expect(doc.getElementById('s')?.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang')).toBe('fr');
+    expect(attrs(doc.getElementById('td'))).toEqual(['colspan', 'headers', 'id', 'rowspan']);
+    const meta = Array.from(doc.querySelectorAll('meta')).map((m) => [m.getAttribute('name'), m.getAttribute('content')]);
+    expect(meta).toContainEqual(['viewport', 'width=800, height=1200']);
+    expect(doc.querySelector('meta[http-equiv]')).toBeNull();
+  });
+
+  // req: ENF-SEC-004
+  it('applies the same list to SVG: its own names stay, the rest goes (a handler, a fetcher)', () => {
+    const doc = run(
+      page(
+        svg(
+          `<rect id="r" x="1" y="2" width="3" height="4" fill="red" stroke-width="1" attributionsrc="https://t.example/" ping="x" data-a="1" requiredExtensions="x" filter="none"/>`
+        )
+      )
+    );
+    expect(attrs(doc.getElementById('r'))).toEqual(['fill', 'height', 'id', 'stroke-width', 'width', 'x', 'y']);
+  });
+
+  // req: ENF-SEC-004
+  it('an SVG <a> with only an xlink:href gets a plain href (C1), a link foliate sees', () => {
+    const doc = run(page(svg(`<a id="l" xlink:href="${LOADER}"><text>t</text></a><a id="m" xlink:href="https://x.example/"><text>t</text></a>`)));
+    const kept = doc.getElementById('l');
+    expect(kept?.getAttribute('href')).toBe(LOADER);
+    expect(kept?.getAttributeNS('http://www.w3.org/1999/xlink', 'href')).toBeNull();
+    const out = doc.getElementById('m');
+    expect(out?.hasAttribute('href')).toBe(false);
+    expect(out?.getAttributeNS('http://www.w3.org/1999/xlink', 'href')).toBeNull();
+  });
+});

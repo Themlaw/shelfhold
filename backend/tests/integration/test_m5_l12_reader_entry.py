@@ -89,7 +89,7 @@ def test_reader_csp_font_media_frame_blob() -> None:
         "style-src-attr": ["'unsafe-inline'"],
         "img-src": ["'self'", "blob:"],
         "font-src": ["'self'", "blob:"],
-        "media-src": ["'self'", "blob:"],
+        "media-src": ["'none'"],
         "frame-src": ["blob:"],
         "worker-src": ["'none'"],
         "manifest-src": ["'none'"],

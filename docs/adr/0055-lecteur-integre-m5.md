@@ -79,7 +79,7 @@ Un document `blob:` hérite de la CSP du document qui l'a créé :
 | `style-src-attr` | `'unsafe-inline'` | attributs `style=` omniprésents dans les EPUB |
 | `img-src` | `'self' blob:` | jamais `data:`, jamais d'hôte distant |
 | `font-src` | `'self' blob:` | jamais `data:`, jamais `*` |
-| `media-src` | `'self' blob:` | jamais `*` |
+| `media-src` | `'none'` | le lecteur ne joue ni audio ni vidéo (relecture adverse de #381, C3) ; jamais `*` |
 | `frame-src` | `blob:` | |
 | `worker-src` | `'none'` | `/lire` n'enregistre aucun service worker ni worker ; l'enregistrement de la PWA reste dans la SPA (L16a) |
 | `manifest-src` | `'none'` | le manifeste de la PWA n'est pas lié depuis `/lire` |

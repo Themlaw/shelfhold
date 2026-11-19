@@ -249,7 +249,7 @@ describe('the reader of images', () => {
   // req: EF-LEC-003
   it('proposes Kavita, and builds no EPUB engine, below the minimum browser', async () => {
     server.use(...serve(epub()));
-    render(Page, { props: { ...props, browser: { family: 'safari', version: 16.3 } } });
+    render(Page, { props: { ...props, browser: { family: 'safari', version: 16, minor: 3 } } });
     expect(await screen.findByRole('alert')).toHaveTextContent('Kavita');
     expect(engineSpy.created).toBe(0);
   });
