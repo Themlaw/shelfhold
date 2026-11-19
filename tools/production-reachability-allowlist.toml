@@ -139,10 +139,4 @@ until = "M5"  # settled by L18 (page stream: the image conversion); L20b serves 
 symbols = [
   "shelfhold.library.application.renditions:RenditionService.cached",
   "shelfhold.library.application.renditions:RenditionService.collect_orphans",
-  "shelfhold.library.domain.rendition:LOCAL_PROCESSOR",
-  "shelfhold.library.domain.rendition:RemoteProcessorRefusedError",
-  "shelfhold.library.domain.rendition:UnsupportedSourceError",
-  "shelfhold.library.domain.rendition:avif_announced_size",
-  "shelfhold.library.domain.rendition:ensure_processor_allowed",
-  "shelfhold.library.domain.rendition:webp_announced_size",
 ]
