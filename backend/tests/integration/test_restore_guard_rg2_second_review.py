@@ -32,11 +32,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
 
-from shelfhold.composition import open_fsops
+from shelfhold.composition import Composition, open_fsops
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.locks import ResourceLocks
 from shelfhold.export.application.remove_destination import (
@@ -46,6 +48,7 @@ from shelfhold.export.application.remove_destination import (
 )
 from shelfhold.export.application.root_ref import RootRef
 from shelfhold.identity.public import Credential, Principal
+from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.instance import HEARTBEAT_INTERVAL, WriteSessions
 from shelfhold.infrastructure.instance.generation import GenerationCounter
@@ -96,13 +99,17 @@ def _sessions_of(
 
 
 def _remover_of(env: RestoreEnv) -> RemoveDestination:
-    """The wiring of `target remove` (ops/detach.py: `DetachOps._context` and `_remover` over
-    `Composition.read_context()`): the `Fsops` no verifier is ever bound to, the journal, and
-    the removal over them. No session is opened anywhere on this path."""
-    fsops = open_fsops(
-        env.loaded, umask=0o022, generation_source=GenerationCounter(env.engine).read
-    )
-    fsops.refuse_writes()  # what `Composition.read_context()` does: the view writes nothing
+    """The wiring of `target remove` (ops/detach.py: `_remover` over the `Fsops` of the real
+    `Composition.read_context()`), the journal, and the removal over them."""
+
+    def opened(loaded: Any) -> Fsops:
+        return open_fsops(loaded, umask=0o022, generation_source=GenerationCounter(env.engine).read)
+
+    # the real `Composition.read_context`, over the pieces it asks of `self`: what it hands out is
+    # what production hands out (a view that refuses every write), not what this test makes of it
+    host = SimpleNamespace(open_fsops=opened)
+    host._context = lambda: (opened(env.loaded), env.loaded, None)
+    fsops, _loaded, _tombstones = Composition.read_context(host)  # type: ignore[arg-type]
     journal = IntentJournal(env.engine, fsops, clock=env.ex.clock)
     rows = {r.root_id: r for r in env.loaded.roots}
 

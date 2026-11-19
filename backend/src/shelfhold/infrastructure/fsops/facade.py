@@ -387,10 +387,6 @@ class Fsops:
         `ReadOnlyFsopsError`. One way, no way back: a writer opens its own (`write_context`)."""
         self._writes_refused = True
 
-    @property
-    def writes_refused(self) -> bool:
-        return self._writes_refused
-
     def enforce_lease(self, verify: Callable[[str, bytes | None], None] | None) -> None:
         """From now on every write passes `verify(root_path, raw_lease)`, which raises when the
         root's lease is not this instance's valid one (ENF-OPS-015). Set once at start-up, so no

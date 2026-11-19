@@ -25,7 +25,6 @@ READS = frozenset(
         "open",
         "frozen",
         "freeze_state",
-        "writes_refused",
         "refuse_writes",
         "on_root_blocked",
         "on_restored_behind",
@@ -169,6 +168,5 @@ def test_a_read_view_refuses_every_write_before_it_touches_anything(env: Env, na
 
 def test_the_reads_still_work_on_a_read_view(env: Env) -> None:
     env.fsops.refuse_writes()
-    assert env.fsops.writes_refused
     assert env.fsops.root_state(str(env.library)) is not None
     assert env.fsops.sentinel_of(str(env.library)) is not None
