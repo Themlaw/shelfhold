@@ -41,8 +41,8 @@ def test_no_production_symbol_only_called_from_tests() -> None:
 
 def test_no_allowlist_entry_until_past_milestone() -> None:
     """L31 (M2), L56 (M3), L43 (M4) and L22b (M5): a milestone that is over has no entry
-    waiting for it. What was not wired is wired, deleted with its code, or written down for the milestone of its
-    culprit, with a date and a reason (docs/decisions/M3.md and M4.md, sections of the debts)."""
+    waiting for it. What was not wired is wired, deleted with its code, or written down for the
+    milestone of its culprit, with a date and a reason (docs/decisions/M3.md, M4.md and M5.md)."""
     entries = [*reach.load_allowlist(REPO), *reach.load_route_tests(REPO)]
     waiting = [
         f"{e['category']} (until {e['until']})"
