@@ -4448,6 +4448,25 @@ export type RatedOut = {
 };
 
 /**
+ * ReaderSettingsOut
+ *
+ * What the reader reads with. `direction` is `None` when the profile chose nothing: the
+ * publication's own direction wins (the Œuvre's, ADR-0055).
+ */
+export type ReaderSettingsOut = {
+    /**
+     * Comfort
+     */
+    comfort: {
+        [key: string]: string;
+    };
+    /**
+     * Direction
+     */
+    direction: 'ltr' | 'rtl' | 'webtoon' | null;
+};
+
+/**
  * ReadyzResponse
  */
 export type ReadyzResponse = {
@@ -5534,6 +5553,36 @@ export type SetAsideOut = {
     aside: {
         [key: string]: string;
     };
+};
+
+/**
+ * SettingIn
+ *
+ * One choice, with the portée the reader was asked for: `device` names the device the choice
+ * belongs to (« pour cet appareil »), `everywhere` names none (« partout »). The profile is the
+ * session's: no field names one.
+ */
+export type SettingIn = {
+    /**
+     * Device Id
+     */
+    device_id?: string | null;
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Kind
+     */
+    kind: 'direction' | 'comfort';
+    /**
+     * Scope
+     */
+    scope: 'device' | 'everywhere';
+    /**
+     * Value
+     */
+    value: string;
 };
 
 /**
@@ -8305,6 +8354,81 @@ export type ReaderPutPositionResponses = {
 };
 
 export type ReaderPutPositionResponse = ReaderPutPositionResponses[keyof ReaderPutPositionResponses];
+
+export type ReaderSettingsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Series Id
+         */
+        series_id?: string | null;
+        /**
+         * Device Id
+         */
+        device_id?: string | null;
+    };
+    url: '/api/reader/settings';
+};
+
+export type ReaderSettingsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReaderSettingsError = ReaderSettingsErrors[keyof ReaderSettingsErrors];
+
+export type ReaderSettingsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReaderSettingsOut;
+};
+
+export type ReaderSettingsResponse = ReaderSettingsResponses[keyof ReaderSettingsResponses];
+
+export type ReaderPutSettingsData = {
+    body: SettingIn;
+    path?: never;
+    query?: never;
+    url: '/api/reader/settings';
+};
+
+export type ReaderPutSettingsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReaderPutSettingsError = ReaderPutSettingsErrors[keyof ReaderPutSettingsErrors];
+
+export type ReaderPutSettingsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReaderSettingsOut;
+};
+
+export type ReaderPutSettingsResponse = ReaderPutSettingsResponses[keyof ReaderPutSettingsResponses];
 
 export type ReaderPositionData = {
     body?: never;
