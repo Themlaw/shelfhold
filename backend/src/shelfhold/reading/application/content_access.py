@@ -33,11 +33,13 @@ from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
+from urllib.parse import quote
 
 import sqlalchemy as sa
 
 from shelfhold.identity.public import live_session_ids
-from shelfhold.infrastructure.schema import export, identity
+from shelfhold.infrastructure.export_states import LIVE_STATES
+from shelfhold.infrastructure.schema import export, identity, storage
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.tombstone_aead import hkdf_sha256
 from shelfhold.reading.application.progress import UnknownCarrierError, check_carrier
@@ -55,12 +57,14 @@ __all__ = [
     "ArchiveSource",
     "ContentAccess",
     "ContentArchive",
+    "ContentChangedError",
     "ContentKey",
     "ContentRefusedError",
     "ExcerptUnavailableError",
     "FullReadNotAllowedError",
     "IssuedTicket",
     "NoReadableCopyError",
+    "ResolvedCarrier",
     "ServedEntry",
 ]
 
@@ -83,6 +87,15 @@ class FullReadNotAllowedError(ValueError):
     reads (ADR-0055 D-P1); anything else is an excerpt."""
 
 
+class ContentChangedError(LookupError):
+    """The file under a full ticket is no longer the one the ticket was made for (replaced between
+    two pages): typed, so that the reader loads the manifest again. Only ever said to the holder of
+    a ticket that is good and whose profile still sees the carrier."""
+
+    def __init__(self) -> None:
+        super().__init__("content changed")
+
+
 class ContentRefusedError(LookupError):
     """The one answer of every refusal of `/content`: a ticket that is not good, a profile that
     may not see, an entry that is not allowed or not there."""
@@ -93,6 +106,11 @@ class ContentRefusedError(LookupError):
 
 class ContentArchive(Protocol):
     def names(self) -> frozenset[str]: ...
+    def fingerprint(self) -> str:
+        """What the file is, cheaply (its registered identity, size and time): a full ticket pins
+        it, so that a file replaced between two pages is refused, not served."""
+        ...
+
     def read(self, name: str) -> bytes: ...
     def close(self) -> None: ...
 
@@ -128,6 +146,16 @@ class ContentKey:
 class IssuedTicket:
     token: str
     expires_at: datetime
+
+
+@dataclass(frozen=True)
+class ResolvedCarrier:
+    """What a carrier the profile sees is: the content it resolves to, its format, and whether the
+    profile may read it in full (ADR-0055 D-P1) or only as an excerpt."""
+
+    content_id: str
+    format: str
+    full_allowed: bool
 
 
 @dataclass(frozen=True)
@@ -177,12 +205,11 @@ class ContentAccess:
             ):
                 raise FullReadNotAllowedError
         digest: str | None = None
-        if scope == "excerpt":  # computed now, from the file: refused here when it cannot be cut
-            archive = self.archives.open(carrier_type, carrier_id, "excerpt")
-            try:
-                digest = _digest(archive.names())
-            finally:
-                archive.close()
+        archive = self.archives.open(carrier_type, carrier_id, scope)  # refused here: no copy, or
+        try:  # an excerpt that cannot be cut; a full ticket pins the file, an excerpt its list
+            digest = _digest(archive.names()) if scope == "excerpt" else _pin(archive)
+        finally:
+            archive.close()
         now = self._now()
         expires = now + timedelta(seconds=TICKET_TTL_S)
         key = self._key()
@@ -200,9 +227,24 @@ class ContentAccess:
         )
         return IssuedTicket(token, expires)
 
+    def resolve(self, user_id: str, carrier_type: str, carrier_id: str) -> ResolvedCarrier:
+        """The carrier as `issue` would judge it, without a ticket: `UnknownCarrierError` when the
+        profile does not see it (the one answer for absent and hidden)."""
+        with self._engine.connect() as connection:
+            content_id = self._checked(connection, user_id, carrier_type, carrier_id)
+            kind = connection.execute(
+                sa.select(storage.content.c.format).where(storage.content.c.id == content_id)
+            ).scalar()
+            allowed = self._full_allowed(connection, user_id, carrier_type, content_id)
+        if kind is None:
+            raise UnknownCarrierError
+        return ResolvedCarrier(content_id, str(kind), allowed)
+
     def url(self, token: str, entry: str) -> str:
-        """Where the reader fetches `entry`: this origin, or the separate one when it is set."""
-        return f"{self.content_origin or ''}/content/{token}/{entry}"
+        """Where the reader fetches `entry`: this origin, or the separate one when it is set. The
+        name is the archive's own, so it is percent-encoded: an entry called `%2e%2e/x?y#z` must
+        not climb out of `/content/<ticket>/` or end the path where the archive's name does not."""
+        return f"{self.content_origin or ''}/content/{token}/{quote(entry, safe='/')}"
 
     # -- serving -----------------------------------------------------------------------------
 
@@ -241,6 +283,8 @@ class ContentAccess:
             names = archive.names()
             if claims.scope == "excerpt" and _digest(names) != claims.entries:
                 raise ContentRefusedError  # the file is not the one the excerpt was cut from
+            if claims.scope == "full" and _pin(archive) != claims.entries:
+                raise ContentChangedError  # replaced since the ticket: load the manifest again
             if entry not in names:
                 raise ContentRefusedError
             body = archive.read(entry)
@@ -309,7 +353,7 @@ class ContentAccess:
             )
             .where(
                 item.c.content_id == content_id,
-                record.c.state == "written",
+                record.c.state.in_(sorted(LIVE_STATES)),
                 account.c.user_id == user_id,
                 account.c.revoked_at.is_(None),
                 account.c.verified_at.is_not(None),
@@ -321,6 +365,10 @@ class ContentAccess:
 
 def _digest(names: Collection[str]) -> str:
     return hashlib.sha256("\n".join(sorted(names)).encode()).hexdigest()
+
+
+def _pin(archive: ContentArchive) -> str:
+    return "fp:" + hashlib.sha256(archive.fingerprint().encode()).hexdigest()
 
 
 def _same(left: str, right: str) -> bool:

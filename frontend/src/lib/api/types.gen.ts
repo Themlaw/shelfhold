@@ -1784,6 +1784,24 @@ export type ElsewhereIn = {
 };
 
 /**
+ * EntryOut
+ */
+export type EntryOut = {
+    /**
+     * Href
+     */
+    href: string;
+    /**
+     * Index
+     */
+    index: number;
+    /**
+     * Media Type
+     */
+    media_type: string;
+};
+
+/**
  * EstimateOut
  */
 export type EstimateOut = {
@@ -4192,6 +4210,60 @@ export type ProposeIn = {
      * Source Key
      */
     source_key: string;
+};
+
+/**
+ * PublicationOut
+ */
+export type PublicationOut = {
+    /**
+     * Carrier Id
+     */
+    carrier_id: string;
+    /**
+     * Carrier Type
+     */
+    carrier_type: 'content' | 'export_item';
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Kind
+     */
+    kind: 'pages' | 'epub';
+    /**
+     * Language
+     */
+    language: string | null;
+    /**
+     * Number
+     */
+    number: string | null;
+    /**
+     * Package
+     */
+    package: string | null;
+    /**
+     * Pages
+     */
+    pages: Array<EntryOut>;
+    /**
+     * Reading Direction
+     */
+    reading_direction: 'ltr' | 'rtl' | 'webtoon';
+    /**
+     * Scope
+     */
+    scope: 'full' | 'excerpt';
+    /**
+     * Spine
+     */
+    spine: Array<EntryOut>;
+    /**
+     * Title
+     */
+    title: string;
 };
 
 /**
@@ -8012,6 +8084,61 @@ export type ShelfholdInterfacesHttpApiTachibkImportItemOut = {
      */
     trackers: number;
 };
+
+export type ReaderPublicationData = {
+    body?: never;
+    path: {
+        /**
+         * Carrier Type
+         */
+        carrier_type: string;
+        /**
+         * Carrier Id
+         */
+        carrier_id: string;
+    };
+    query?: {
+        /**
+         * Scope
+         */
+        scope?: 'full' | 'excerpt' | null;
+    };
+    url: '/api/reader/{carrier_type}/{carrier_id}/publication';
+};
+
+export type ReaderPublicationErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * not-readable
+     */
+    409: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReaderPublicationError = ReaderPublicationErrors[keyof ReaderPublicationErrors];
+
+export type ReaderPublicationResponses = {
+    /**
+     * Successful Response
+     */
+    200: PublicationOut;
+};
+
+export type ReaderPublicationResponse = ReaderPublicationResponses[keyof ReaderPublicationResponses];
 
 export type AboutData = {
     body?: never;

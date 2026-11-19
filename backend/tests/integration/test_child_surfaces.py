@@ -171,6 +171,9 @@ OPEN = {
     # M3 L24: a cover's thumbnail, by session only; hers when an Edition she may see points at it
     "GET /api/v1/thumbnails/{content_hash}/{size}": "thumbnail",
     "GET /content/{ticket}/{path:path}": "content",  # M5 L05a: the bytes of a book, by ticket
+    # M5 L06: what the reader opens (pages or spine, a ticket in each link); only for a carrier,
+    # or a Unit, she may see: the rest is one 404 with the answer for an absent one
+    "GET /api/reader/{carrier_type}/{carrier_id}/publication": "reader",
     # M4 L23: the official links of an Edition she may see; a hidden one is an absent one
     "GET /api/v1/editions/{edition_id}/support-author": "support_author",
     # M4 L18a: the collections and reading lists, made of the Works she may see and a list of her
@@ -465,7 +468,8 @@ PENDING_SURFACES: dict[
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
-    "content", "work_redirect", "opds", "support_author", "collections", "relations", "lite",
+    "content", "reader", "work_redirect", "opds", "support_author", "collections", "relations",
+    "lite",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -1254,6 +1258,55 @@ def _surface_content(world: World) -> None:
     )
     assert by_key.status_code in {401, 403}
     world.clean(by_key.text)
+
+
+def _surface_reader(world: World) -> None:
+    """M5 L06: the manifest of a book is a projection like any other. By the content, by the Unit
+    and by an `export_item`, a carrier she may not see answers exactly like one that does not
+    exist (no title, no number, no link, no ticket), and the ones she may see are a manifest."""
+    import sqlalchemy as sa
+
+    from shelfhold.infrastructure.schema import export, storage
+    from tests.content_env import PNG, FakeArchives, add_carrier
+
+    seed = world.seed
+    fake = FakeArchives()
+    world.env.app.state.content_access.archives = fake  # type: ignore[attr-defined]
+    absent = world.kid.get("/api/reader/content/01HZZZZZZZZZZZZZZZZZZZZZZZ/publication")
+    assert absent.status_code == 404
+    for key in (
+        "ok", "mixed_rated", "twelve", "above", "adult_edition", "misfiled", "mixed_new",
+        "reserved",
+    ):  # fmt: skip
+        carrier = add_carrier(seed.engine, seed.editions[key], format="cbz")
+        fake.by_content[carrier] = {"p1.png": PNG}
+        with seed.engine.begin() as connection:
+            unit = connection.execute(
+                sa.select(storage.content.c.unit_id).where(storage.content.c.id == carrier)
+            ).scalar_one()
+            item = new_ulid()
+            connection.execute(
+                sa.insert(export.export_item).values(
+                    id=item, edition_id=seed.editions[key], kind="unit", content_id=carrier
+                )
+            )
+        fake.item_content[item] = carrier
+        for carrier_type, carrier_id in (
+            ("content", carrier),
+            ("unit", unit),
+            ("export_item", item),
+        ):
+            got = world.kid.get(f"/api/reader/{carrier_type}/{carrier_id}/publication")
+            if key in ("ok", "mixed_rated") and carrier_type != "export_item":
+                assert got.status_code == 200, (key, carrier_type)
+                assert got.json()["pages"], key
+            elif key in ("ok", "mixed_rated"):
+                # an exported file is a sample only, and one page has nothing to cut from
+                assert got.status_code == 409 and got.json()["code"] == "excerpt_unavailable", key
+            else:
+                assert _shape(got) == _shape(absent), (key, carrier_type)
+                assert "/content/" not in got.text
+            world.clean(got.text)
 
 
 def _surface_opds(world: World) -> None:

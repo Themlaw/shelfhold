@@ -2981,6 +2981,29 @@
         "title": "ElsewhereIn",
         "type": "object"
       },
+      "EntryOut": {
+        "properties": {
+          "href": {
+            "title": "Href",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "href",
+          "media_type"
+        ],
+        "title": "EntryOut",
+        "type": "object"
+      },
       "EstimateOut": {
         "properties": {
           "free_bytes": {
@@ -7008,6 +7031,119 @@
           "remote_id"
         ],
         "title": "ProposeIn",
+        "type": "object"
+      },
+      "PublicationOut": {
+        "properties": {
+          "carrier_id": {
+            "title": "Carrier Id",
+            "type": "string"
+          },
+          "carrier_type": {
+            "enum": [
+              "content",
+              "export_item"
+            ],
+            "title": "Carrier Type",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "pages",
+              "epub"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number"
+          },
+          "package": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Package"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/EntryOut"
+            },
+            "title": "Pages",
+            "type": "array"
+          },
+          "reading_direction": {
+            "enum": [
+              "ltr",
+              "rtl",
+              "webtoon"
+            ],
+            "title": "Reading Direction",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "full",
+              "excerpt"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "spine": {
+            "items": {
+              "$ref": "#/components/schemas/EntryOut"
+            },
+            "title": "Spine",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "carrier_type",
+          "carrier_id",
+          "scope",
+          "kind",
+          "title",
+          "number",
+          "language",
+          "reading_direction",
+          "expires_at",
+          "pages",
+          "spine",
+          "package"
+        ],
+        "title": "PublicationOut",
         "type": "object"
       },
       "PurgeIn": {
@@ -13167,6 +13303,103 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/reader/{carrier_type}/{carrier_id}/publication": {
+      "get": {
+        "operationId": "reader_publication",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "carrier_type",
+            "required": true,
+            "schema": {
+              "title": "Carrier Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "carrier_id",
+            "required": true,
+            "schema": {
+              "title": "Carrier Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "full",
+                    "excerpt"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "409": {
+            "description": "not-readable"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Publication",
+        "tags": [
+          "reader"
+        ]
+      }
+    },
     "/api/v1/about": {
       "get": {
         "operationId": "about",
@@ -31512,6 +31745,10 @@
       "code": "config.unknown_key",
       "status": 404
     },
+    "/api/v1/problems/content-changed": {
+      "code": "content_changed",
+      "status": 409
+    },
     "/api/v1/problems/content.untrusted-entry": {
       "code": "content.untrusted_entry",
       "status": 422
@@ -31594,6 +31831,10 @@
     },
     "/api/v1/problems/edition.merge-refused": {
       "code": "edition.merge_refused",
+      "status": 409
+    },
+    "/api/v1/problems/excerpt-unavailable": {
+      "code": "excerpt_unavailable",
       "status": 409
     },
     "/api/v1/problems/export.age-tier-mix": {
@@ -31715,6 +31956,10 @@
     "/api/v1/problems/forbidden": {
       "code": "forbidden",
       "status": 403
+    },
+    "/api/v1/problems/full-read-not-allowed": {
+      "code": "full_read_not_allowed",
+      "status": 409
     },
     "/api/v1/problems/idempotency-in-progress": {
       "code": "idempotency_in_progress",
@@ -31977,6 +32222,10 @@
     "/api/v1/problems/mount.sentinel-missing": {
       "code": "mount.sentinel_missing",
       "status": 503
+    },
+    "/api/v1/problems/no-readable-copy": {
+      "code": "no_readable_copy",
+      "status": 409
     },
     "/api/v1/problems/not-found": {
       "code": "not_found",

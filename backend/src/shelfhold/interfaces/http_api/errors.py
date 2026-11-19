@@ -11,6 +11,10 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("resync_required", 410, "user"),
     ErrorCode("too_many_streams", 429, "user"),
     ErrorCode("bundle_gone", 410, "user"),  # M4 L49a: a block that cannot be served any more
+    ErrorCode("no_readable_copy", 409, "user"),  # M5 L06: no file of this Work may be read here
+    ErrorCode("excerpt_unavailable", 409, "user"),  # M5 L06: nothing can be cut within the bound
+    ErrorCode("content_changed", 409, "user"),  # M5 L06: the file changed under a full ticket
+    ErrorCode("full_read_not_allowed", 409, "user"),  # M5 L06: a sample only, not the whole book
     ErrorCode("bundle_busy", 429, "user"),  # M4 L49a: too many blocks at a time
     ErrorCode("kosync_registration_disabled", 402, "user"),  # M4 L47: accounts are Shelfhold's
     ErrorCode("precondition_failed", 412, "user"),

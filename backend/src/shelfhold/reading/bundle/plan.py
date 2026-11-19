@@ -3,6 +3,10 @@
 Nothing here opens a file: the feed lists a shelf of series with this, and a file is opened only
 when a version is made or served. A chapter of the block is an `export_item` of the Edition with a
 live record that is a path in a tree destination; the Units it covers give its place in the series.
+A `pull` destination has no file of its own (its record has no locator): an `export_item` it
+carries that no tree destination holds is read from the kept copy of its Unit (`/library`, never
+the original of `/store`), when that copy is a CBZ the integrity check has not marked damaged
+(M5 L06, EF-EXP-058): a `pull` binding is served only from a readable copy, else not at all.
 
 Parts are cut on boundaries that are *written* (`bundle_partition.first_unit_id`) when a part is
 first made, and never move: a chapter added goes to the last part until the cap, then opens the
@@ -19,7 +23,8 @@ import sqlalchemy as sa
 from sqlalchemy import Connection
 
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import bundle, catalog, export
+from shelfhold.infrastructure.schema import bundle, catalog, export, storage
+from shelfhold.library.public import library_copies
 from shelfhold.reading.bundle import store
 from shelfhold.reading.bundle.limits import BundleLimits
 from shelfhold.reading.bundle.sources import clean_relative, root_of
@@ -131,7 +136,116 @@ def load_candidates(connection: Connection, edition_id: str) -> list[Candidate]:
         held = best.get(r.item_id)
         if held is None or (found.order, found.destination_id) < (held.order, held.destination_id):
             best[r.item_id] = found  # the first Unit it covers, the lowest destination
+    for found in _kept_copies(connection, edition_id, set(best)):
+        best[found.item_id] = found
     return sorted(best.values(), key=lambda c: (c.order, c.item_id))
+
+
+def _kept_copies(connection: Connection, edition_id: str, held: set[str]) -> list[Candidate]:
+    """The chapters a `pull` destination carries and no tree destination holds, read from the
+    kept copy of the one Unit they cover (EF-EXP-058).
+
+    Nothing ties an `export_item` to what it points at, so each link is checked here: the Unit is
+    of this Edition (the one the reader's scope was checked on), the item covers that Unit alone
+    (a volume of several is no one chapter's file and is left out), the file is a CBZ replica of
+    the very content the item names, not damaged, and its folder, name, size and modification time
+    are the registry's: `open_source` opens it beneath that folder and `_open_one` refuses a file
+    that is no longer what the registry recorded (a 410, nothing sent)."""
+    item, coverage, unit, record = (
+        export.export_item,
+        export.unit_coverage,
+        catalog.unit,
+        export.export_record,
+    )
+    destination, content = export.shelf_destination, storage.content
+    live_pull = (
+        sa.select(sa.literal(1))
+        .select_from(record.join(destination, destination.c.id == record.c.shelf_destination_id))
+        .where(
+            record.c.export_item_id == item.c.id,
+            record.c.state.in_(LIVE),
+            destination.c.transport == "pull",
+        )
+        .exists()
+    )
+    rows = connection.execute(
+        sa.select(
+            item.c.id.label("item_id"),
+            item.c.content_id,
+            unit.c.id.label("unit_id"),
+            unit.c.edition_id,
+            unit.c.number_norm,
+            unit.c.number_sort,
+            unit.c.number_segment_ordinal,
+            unit.c.source_order,
+        )
+        .select_from(
+            item.join(
+                coverage,
+                sa.and_(
+                    coverage.c.carrier_type == "export_item", coverage.c.carrier_id == item.c.id
+                ),
+            ).join(unit, unit.c.id == coverage.c.unit_id)
+        )
+        .where(item.c.edition_id == edition_id, item.c.kind.in_(ITEM_KINDS), live_pull)
+        .order_by(item.c.id, coverage.c.position)
+    ).all()
+    covered: dict[str, list[Any]] = {}
+    for r in rows:
+        if r.item_id not in held:
+            covered.setdefault(r.item_id, []).append(r)
+    found: list[Candidate] = []
+    for item_id, units in covered.items():
+        if len(units) != 1 or units[0].edition_id != edition_id:
+            continue
+        r = units[0]
+        kept = connection.execute(
+            sa.select(content.c.id, content.c.content_hash, content.c.format).where(
+                content.c.unit_id == r.unit_id,
+                *([content.c.id == r.content_id] if r.content_id is not None else []),
+            )
+        ).all()
+        copy = next(
+            (
+                c
+                for k in kept
+                if k.format == "cbz"
+                for c in library_copies(connection, r.unit_id)
+                if not c.damaged
+                and c.rel_path.lower().endswith(".cbz")
+                and (
+                    c.content_hash == k.content_hash
+                    if k.content_hash is not None
+                    else c.size is not None and c.mtime_ns is not None  # proved by `_open_one`
+                )
+            ),
+            None,
+        )
+        if copy is None or not copy.root.startswith("/") or not clean_relative(copy.rel_path):
+            continue
+        order = (
+            r.number_sort is None,
+            r.number_sort or 0.0,
+            r.number_segment_ordinal,
+            r.source_order,
+            r.unit_id,
+        )
+        found.append(
+            Candidate(
+                item_id,
+                r.unit_id,
+                r.number_norm,
+                order,
+                "",
+                copy.rel_path,
+                "cbz",
+                copy.size,
+                copy.mtime_ns,
+                copy.file_hash,
+                copy.root,
+            )
+        )
+    return found
 
 
 @dataclass(frozen=True)
