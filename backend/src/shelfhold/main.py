@@ -135,6 +135,7 @@ from shelfhold.reading.application.content_access import (
     ContentKey,
     NoReadableCopyError,
 )
+from shelfhold.reading.application.continue_reading import ContinueReading
 from shelfhold.reading.application.kepub_delivery import KepubDelivery
 from shelfhold.reading.application.lease import ProgressLease
 from shelfhold.reading.application.page_stream import PageStream
@@ -503,6 +504,8 @@ def create_app(
         build_reader_router(  # M5 L06: what the reader opens; L07: where it is
             lambda: PublicationService(engine, content_access()),
             lambda: ReaderPositions(engine, content_access(), clock.now, progress_lease()),
+            lambda: ContinueReading(engine, content_access()),  # M5 L14: « Reprendre la lecture »
+            lambda: kavita_open_url_of(engine),
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
             lambda: engine,

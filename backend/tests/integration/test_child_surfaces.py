@@ -178,6 +178,10 @@ OPEN = {
     "GET /content/{ticket}/{path:path}": "content",  # M5 L05a: the bytes of a book, by ticket
     # M5 L06: what the reader opens (pages or spine, a ticket in each link); only for a carrier,
     # or a Unit, she may see: the rest is one 404 with the answer for an absent one
+    # M5 L14: « Reprendre la lecture » of the home: her own progress, narrowed by the filter of
+    # every surface; a hidden series, though a pull reports it, is exactly absent
+    # (`test_m5_l14_continue_reading.py`)
+    "GET /api/reader/continue": "continue_reading",
     "GET /api/reader/{carrier_type}/{carrier_id}/publication": "reader",
     # M5 L07: where the reader is, its history, and the choice between two places: hers only, on a
     # carrier she may see; the rest is the answer for an absent one (`test_m5_l07_positions.py`)
@@ -490,8 +494,8 @@ PENDING_SURFACES: dict[
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
-    "content", "reader", "work_redirect", "opds", "support_author", "collections", "relations",
-    "selections",
+    "content", "reader", "continue_reading", "work_redirect", "opds", "support_author",
+    "collections", "relations", "selections",
     "lite",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
@@ -1347,6 +1351,51 @@ def _surface_reader(world: World) -> None:
                     )
                     assert [_shape(w) for w in where] == [_shape(a) for a in absent_where], key
             world.clean(got.text)
+
+
+def _surface_continue_reading(world: World) -> None:
+    """M5 L14: the home of the child lists what she is reading and may see, and nothing of what a
+    pull reports on a Work that is hidden from her: the answer is the one of a profile with none."""
+    import sqlalchemy as sa
+
+    from shelfhold.infrastructure.schema import export, storage
+    from shelfhold.reading.application.progress import insert_position
+    from tests.content_env import add_carrier
+
+    home, seed = "/api/reader/continue", world.seed
+    nothing = world.kid.get(home)  # before anything is pulled: the answer of an empty history
+    assert nothing.status_code == 200 and nothing.json()["items"] == []
+    for key in ("ok", "twelve", "above", "adult_edition", "misfiled", "reserved", "mixed_new"):
+        carrier = add_carrier(seed.engine, seed.editions[key], format="cbz")
+        with seed.engine.begin() as connection:
+            unit = connection.execute(
+                sa.select(storage.content.c.unit_id).where(storage.content.c.id == carrier)
+            ).scalar_one()
+            connection.execute(
+                sa.update(storage.content).where(storage.content.c.id == carrier)
+                .values(content_hash="sha256:" + "c" * 64, content_hash_by="norm@1")
+            )  # fmt: skip
+            connection.execute(
+                sa.insert(export.unit_coverage).values(
+                    carrier_type="content", carrier_id=carrier, unit_id=unit, position=1,
+                    origin="manual",
+                )
+            )  # fmt: skip
+            insert_position(
+                connection, user_id=world.kid_id, carrier_type="content", carrier_id=carrier,
+                content_hash="sha256:" + "c" * 64, locator={"page": 3}, percent=0.1,
+                client_ts=world.env.clock.now(), device_id="server:kavita", source="server",
+                now=world.env.clock.now(),
+            )  # fmt: skip
+        got = world.kid.get(home)
+        assert got.status_code == 200, key
+        shown = {i["work_id"] for i in got.json()["items"]}
+        assert shown <= {seed.works[k] for k in VISIBLE_FOR_CEILING_10}, key
+        for hidden in (*HIDDEN_FROM_CEILING_10, "x", "unrated"):
+            assert seed.title_of(hidden) not in got.text, (key, hidden)
+        world.clean(got.text)
+    final = {i["work_id"] for i in world.kid.get(home).json()["items"]}
+    assert final == {seed.works["ok"]}  # the control: what is hers is there
 
 
 def _surface_opds(world: World) -> None:
