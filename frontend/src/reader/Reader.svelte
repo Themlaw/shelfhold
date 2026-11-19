@@ -12,6 +12,9 @@
   // order is the ADR's: the bar, the content, then the pagination.
   import { onDestroy, onMount } from 'svelte';
   import { readerPublication, readerPutPosition, readerPutSettings, readerSettings } from '#lib/api/index.ts';
+  import { offlineStore } from '#lib/offline/runtime.ts';
+  import { createQueueingPut } from '#lib/offline/sync.ts';
+  import type { PositionIn, PublicationOut } from '#lib/api/types.gen.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
@@ -68,6 +71,8 @@
   let at = $state<Locator | null>(null);
   let finished = $state(false);
   let failed = $state<'load' | 'display' | null>(null);
+  let offline = $state(false); // read from a copy kept on this device
+  let unavailable = $state(false); // no network and no copy
   let settings = $state<SettingsView | null>(null);
   let panel = $state(false); // the settings of the reader
   let help = $state(false); // the list of the shortcuts
@@ -98,8 +103,32 @@
 
   const path = () => ({ carrier_type: carrierType, carrier_id: carrierId });
 
+  /** The copy kept for this book by the profile signed in on this browser, if there is one. */
+  async function keptCopy(): Promise<{ publication: PublicationOut; profile: string } | null> {
+    try {
+      const store = offlineStore();
+      const profile = await store.activeProfile();
+      const token = csrfToken();
+      // another session than the one the copies were kept under (another profile signed in): none is opened
+      if (token && (await store.sessionMatches(token)) === false) return null;
+      const copy = profile ? await store.find(profile, carrierType, carrierId) : undefined;
+      return profile && copy ? { publication: copy.publication, profile } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function activeProfileId(): Promise<string | null> {
+    try {
+      return await offlineStore().activeProfile();
+    } catch {
+      return null;
+    }
+  }
+
   /** The same book again, with new tickets and the same scope: a reading outlives a ticket. */
   async function renew(): Promise<PublicationView | null> {
+    if (offline) return view; // a copy has no ticket to renew
     const { data } = await readerPublication({ path: path(), query: { scope: view?.scope ?? 'full' } });
     return data ? toView(data) : null;
   }
@@ -153,27 +182,64 @@
       return;
     }
     if (left) return;
-    const { data, error } = await readerPublication({
-      path: path(),
-      query: asksExcerpt ? { scope: 'excerpt' } : undefined
-    });
+    let data: PublicationOut | undefined;
+    let error: unknown;
+    let profile: string | null = null;
+    try {
+      const got = await readerPublication({
+        path: path(),
+        query: asksExcerpt ? { scope: 'excerpt' } : undefined
+      });
+      if (got.response === undefined) throw got.error; // the client returns a failed fetch instead of throwing it
+      ({ data, error } = got);
+    } catch {
+      // no network: the copy this profile kept on this device (M5 L16b), never an extract's
+      const copy = asksExcerpt ? null : await keptCopy();
+      if (copy) {
+        data = copy.publication;
+        profile = copy.profile;
+        offline = true;
+      } else {
+        unavailable = true;
+        return;
+      }
+    }
     if (left) return;
     if (error !== undefined || !data) {
       problem = problemView(error);
       return;
     }
     view = toView(data);
+    profile ??= await activeProfileId();
+    const send = (body: PositionIn) =>
+      readerPutPosition({
+        body,
+        headers: { 'X-CSRF-Token': csrfToken() },
+        keepalive: true, // the last position still leaves when the tab is closing
+        throwOnError: true
+      });
     sender = createPositionSender({
       carrier: { type: data.carrier_type, id: data.carrier_id },
       scope: data.scope,
       deviceId: readerDeviceId(),
-      put: (body) =>
-        readerPutPosition({
-          body,
-          headers: { 'X-CSRF-Token': csrfToken() },
-          keepalive: true, // the last position still leaves when the tab is closing
-          throwOnError: true
-        })
+      // with a profile on this device, what cannot leave waits in its queue with the time it was read at
+      put:
+        profile
+          ? createQueueingPut({
+              store: offlineStore(),
+              profileId: profile,
+              sessionOk: async () => {
+                const token = csrfToken();
+                return !token || (await offlineStore().sessionMatches(token)) !== false;
+              },
+              put: async (body) => {
+                const { response } = await readerPutPosition({ body, headers: { 'X-CSRF-Token': csrfToken() }, keepalive: true });
+                if (response === undefined) throw new TypeError('network'); // a failed fetch is returned, not thrown
+                const retry = Number(response.headers.get('Retry-After'));
+                return { status: response.status, ...(Number.isFinite(retry) && retry > 0 ? { retryAfter: retry } : {}) };
+              }
+            })
+          : send
     });
     await readSettings();
     await mount();
@@ -299,7 +365,9 @@
 </svelte:head>
 
 <main class="reader" data-direction={direction}>
-  {#if problem}
+  {#if unavailable}
+    <p role="alert">{t('reader.offline_missing')}</p>
+  {:else if problem}
     <ProblemCard {problem} level={1} />
   {:else if unsupported}
     <p role="alert">
@@ -314,6 +382,7 @@
       <button type="button" onclick={() => history.back()}>{t('reader.close')}</button>
       <h1>{view?.title ?? t('reader.loading')}</h1>
       {#if isExcerpt}<span class="badge">{t('reader.excerpt_badge')}</span>{/if}
+      {#if offline}<span class="badge">{t('reader.offline_badge')}</span>{/if}
       {#if view?.kind === 'pages'}
         <button
           type="button"

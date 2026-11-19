@@ -31,6 +31,7 @@
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
   import BundleSlices from './BundleSlices.svelte';
+  import OfflineButton from './OfflineButton.svelte';
   import ReadButton from './ReadButton.svelte';
   import RelatedWorks from './RelatedWorks.svelte';
   import SupportAuthor from './SupportAuthor.svelte';
@@ -47,6 +48,7 @@
 
   const editionId = $derived(page.params.id ?? '');
   let sheet = $state<SheetOut | null>(null);
+  let readScope = $state<'full' | 'excerpt' | null>(null); // what the read button found: a copy is kept only for a full read
   let problem = $state<ProblemView | null>(null);
   let actionProblem = $state<ProblemView | null>(null);
   let message = $state('');
@@ -228,7 +230,8 @@
         />
       {/if}
       <h2>{sheet.title}</h2>
-      <ReadButton unitId={sheet.first_unit_id} />
+      <ReadButton unitId={sheet.first_unit_id} bind:scope={readScope} />
+      {#if readScope === 'full'}<OfflineButton unitId={sheet.first_unit_id} />{/if}
     </header>
 
     {#if message}<p role="status">{message}</p>{/if}

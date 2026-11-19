@@ -1,10 +1,14 @@
 // The service worker of the PWA shell (M5 L16a, EF-LEC-012, ADR-0055). It keeps the shell of the SPA
 // and its hashed assets so that the app opens with no network, and nothing else:
-// - no answer of the API (`/api`), no byte of a book (`/content`): a book enters an offline copy
-//   only through L16b, by profile, with its own headers;
+// - no answer of the API (`/api`), no byte of a book from the network (`/content`): a book enters an
+//   offline copy only through L16b (`lib/offline`), by profile, with the headers it was served with;
 // - never the shell in place of the reader (`/lire` is its own page under its own policy: the worker
 //   does not answer there, online or not, and the server writes the header);
 // - nothing from another origin; no eval, no dynamic import, no inline script.
+
+import { COPY_PATH, type OfflineEnv } from '#lib/offline/env.ts';
+import { isReaderAsset, isReaderPage, readerAsset, readerPage, warmReader } from '#lib/offline/reader-cache.ts';
+import { serveCopyEntry } from '#lib/offline/store.ts';
 
 export const SHELL_CACHE_PREFIX = 'shelfhold-shell-';
 
@@ -20,7 +24,7 @@ export interface PwaScope {
   fetch: (input: Request | string) => Promise<Response>;
   skipWaiting: () => Promise<void>;
   clients: { claim: () => Promise<void> };
-  addEventListener: (type: 'install' | 'activate' | 'fetch', handler: (event: never) => void) => void;
+  addEventListener: (type: 'install' | 'activate' | 'fetch' | 'message', handler: (event: never) => void) => void;
 }
 
 interface Waitable {
@@ -43,7 +47,7 @@ const ASSET = /^\/(?:_app\/immutable\/|manifest\.webmanifest$|icons\/)/;
  * never answers it either (no fallback to the shell, and the same for every prefix, `/lire`,
  * `/content`, `/api`). One rule on both sides (`odd_path` of `spa.py`): the two never read one line
  * as two paths. A path that does not decode is reserved. */
-export function isReserved(pathname: string): boolean {
+export function isOdd(pathname: string): boolean {
   if (/%2f/i.test(pathname)) return true;
   let decoded: string;
   try {
@@ -51,9 +55,12 @@ export function isReserved(pathname: string): boolean {
   } catch {
     return true;
   }
-  if (decoded.includes('//')) return true;
-  const segments = decoded.split('/');
-  if (segments.some((segment) => segment === '.' || segment === '..')) return true;
+  return decoded.includes('//') || decoded.split('/').some((segment) => segment === '.' || segment === '..');
+}
+
+export function isReserved(pathname: string): boolean {
+  if (isOdd(pathname)) return true;
+  const segments = decodeURIComponent(pathname).split('/');
   return RESERVED.has((segments.find((segment) => segment !== '') ?? '').toLowerCase());
 }
 
@@ -64,7 +71,7 @@ export function versionOf(manifest: PrecacheEntry[]): string {
   return hash.toString(36);
 }
 
-export function installPwa(scope: PwaScope, manifest: PrecacheEntry[], version: string): void {
+export function installPwa(scope: PwaScope, manifest: PrecacheEntry[], version: string, offline?: OfflineEnv): void {
   const name = `${SHELL_CACHE_PREFIX}${version}`;
   const origin = scope.location.origin;
   const shell = `${origin}/`;
@@ -124,8 +131,33 @@ export function installPwa(scope: PwaScope, manifest: PrecacheEntry[], version: 
     const { request } = event;
     if (request.method !== 'GET') return;
     const url = new URL(request.url);
-    if (url.origin !== origin || isReserved(url.pathname)) return; // the browser asks the network
+    if (url.origin !== origin) return;
+    // The one answer of the worker under `/content`: the copy a profile chose to keep (L16b), under a
+    // name no server ticket can have. Only the active profile's, headers as served, never the network.
+    if (offline && COPY_PATH.test(url.pathname) && !isOdd(url.pathname)) {
+      event.respondWith(serveCopyEntry(offline, url));
+      return;
+    }
+    // The reader opens with no network: its page and its assets are kept as served, with their headers
+    // (never the shell of the SPA in their place). Only with an offline store, i.e. in the SPA's worker.
+    if (offline && !isOdd(url.pathname)) {
+      if (request.mode === 'navigate' && isReaderPage(url.pathname)) {
+        event.respondWith(readerPage(scope, offline, request));
+        return;
+      }
+      if (isReaderAsset(url.pathname)) {
+        event.respondWith(readerAsset(scope, request));
+        return;
+      }
+    }
+    if (isReserved(url.pathname)) return; // the browser asks the network
     if (request.mode === 'navigate') event.respondWith(page(request));
     else if (ASSET.test(url.pathname)) event.respondWith(asset(request));
   }) as (event: never) => void);
+  if (offline) {
+    // the page that has just kept a copy asks for the reader to be kept as well
+    scope.addEventListener('message', ((event: Waitable & { data?: { type?: unknown } }) => {
+      if (event.data?.type === 'shelfhold-warm-reader') event.waitUntil(warmReader(scope, offline).catch(() => 0));
+    }) as (event: never) => void);
+  }
 }

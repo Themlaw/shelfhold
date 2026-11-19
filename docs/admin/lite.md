@@ -96,10 +96,9 @@ voisin.
 
 ## Ce qui n'existe pas encore
 
-- **La copie hors ligne d'un livre.** La coquille de l'application web (PWA) s'ouvre sans réseau,
-  mais un livre n'entre pas encore dans une copie hors ligne gérée par Shelfhold : c'est
-  **pas encore disponible**. Ce que vous téléchargez par `/lite` ou par l'OPDS reste sur la
-  liseuse, hors de portée de Shelfhold (voir plus bas).
+- **La copie hors ligne d'un livre.** Elle se fait dans l'application web (PWA), pas dans `/lite` :
+  voir [copies hors ligne](../famille/copies-hors-ligne.md). Ce que vous téléchargez par `/lite`
+  ou par l'OPDS reste sur la liseuse, hors de portée de Shelfhold (voir plus bas).
 - **La lecture à l'écran dans `/lite`** : elle n'est pas prévue. Pour lire, utilisez KOReader
   (OPDS et kosync) ou Kavita.
 
