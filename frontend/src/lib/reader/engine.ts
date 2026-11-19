@@ -12,8 +12,18 @@ export interface PageLocator {
   count: number;
 }
 
-/** What an engine says and is told. EPUB adds its own member (L12), without touching a screen. */
-export type Locator = PageLocator;
+/** Where a reader is in an EPUB: ADR-0055, "Format du locator". `filter` is the version of the filter
+ * that produced the DOM the CFI was taken in. */
+export interface CfiLocator {
+  v: 1;
+  type: 'cfi';
+  cfi: string;
+  totalProgression: number;
+  filter: string;
+}
+
+/** What an engine says and is told. */
+export type Locator = PageLocator | CfiLocator;
 
 export type ReadingDirection = 'ltr' | 'rtl' | 'webtoon';
 export type Scope = 'full' | 'excerpt';
@@ -34,6 +44,12 @@ export interface PublicationView {
   title: string;
   language: string | null;
   pages: PublicationEntry[];
+  /** The reading order of an EPUB, in the same shape as `pages`. */
+  spine: PublicationEntry[];
+  /** The link of the package document (OPF) of an EPUB: its ticket is the one of every entry. */
+  package: string | null;
+  /** When the tickets of the links end, in milliseconds since the epoch; `null` when unknown. */
+  expiresAt?: number | null;
 }
 
 /** The typed ways an engine is stopped; the screen words them. */
@@ -58,6 +74,9 @@ export interface ReaderEngine {
   destroy(): void;
 }
 
+const toEntries = (entries: PublicationOut['pages']): PublicationEntry[] =>
+  [...entries].sort((a, b) => a.index - b.index).map((p, place) => ({ index: place, href: p.href, mediaType: p.media_type }));
+
 export function toView(out: PublicationOut): PublicationView {
   return {
     kind: out.kind,
@@ -65,9 +84,10 @@ export function toView(out: PublicationOut): PublicationView {
     readingDirection: out.reading_direction,
     title: out.title,
     language: out.language,
-    pages: [...out.pages]
-      .sort((a, b) => a.index - b.index)
-      .map((p, place) => ({ index: place, href: p.href, mediaType: p.media_type }))
+    pages: toEntries(out.pages),
+    spine: toEntries(out.spine),
+    package: out.package ?? null,
+    expiresAt: Number.isFinite(Date.parse(out.expires_at)) ? Date.parse(out.expires_at) : null
   };
 }
 
