@@ -16,7 +16,9 @@ const view = (direction: PublicationView['readingDirection']): PublicationView =
   title: 'Une série',
   language: 'fr',
   seriesId: '01HZZZZZZZZZZZZZZZZZZZZZZW',
-  pages: []
+  pages: [],
+  spine: [],
+  package: null
 });
 
 describe('the settings of the reader', () => {

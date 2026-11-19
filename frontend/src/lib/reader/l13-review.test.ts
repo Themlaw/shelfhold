@@ -11,18 +11,19 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { client } from '#lib/api/client.gen.ts';
-import Page from '../../routes/lire/[carrier_type]/[carrier_id]/+page.svelte';
-
-const state = vi.hoisted(() => ({
-  page: {
-    params: { carrier_type: 'unit', carrier_id: 'U1' },
-    url: new URL('http://shelfhold.test/lire/unit/U1')
-  }
-}));
-vi.mock('$app/state', () => state);
+import Reader from '../../reader/Reader.svelte';
 
 const BASE = 'http://shelfhold.test';
 const server = setupServer();
+
+// The reader is mounted as the entry of L12 mounts it: a carrier, a scope, and a policy that
+// already said yes (the tests have no header to read).
+const props = {
+  carrierType: 'unit',
+  carrierId: 'U1',
+  scope: null,
+  guard: async () => 'ok' as const
+};
 
 // The manifest of a book, as the server of L06 gives it (the series is the anchor of L13).
 const publication = () => ({
@@ -112,7 +113,7 @@ describe('the settings of the reader, read adversarially', () => {
     // turns the wrong way — although the server still holds the pinned row.
     const user = userEvent.setup();
     server.use(...serve());
-    render(Page);
+    render(Reader, { props });
     expect(await screen.findByAltText('Page 1 sur 3')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Réglages de lecture' }));
     await user.click(screen.getByRole('radio', { name: 'De droite à gauche' }));
@@ -139,7 +140,7 @@ describe('the settings of the reader, read adversarially', () => {
     // announced (a `status` or an `alert`), as the page counter already is.
     const user = userEvent.setup();
     server.use(...serve());
-    render(Page);
+    render(Reader, { props });
     expect(await screen.findByAltText('Page 1 sur 3')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Réglages de lecture' }));
     await user.click(screen.getByRole('radio', { name: 'Pleine largeur' }));

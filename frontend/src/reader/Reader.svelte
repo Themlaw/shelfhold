@@ -1,14 +1,15 @@
 <script lang="ts">
-  // The reader of images (M5 L10, EF-LEC-001, EF-LEC-002, EF-UX-006), with its settings and its
-  // keyboard (M5 L13, EF-LEC-006, EF-LEC-011, ENF-A11Y-002). The screen knows the port
-  // `ReaderEngine` and nothing of how a page is drawn: the engine is loaded on demand when a book
-  // is opened (ADR-0013), so the rest of the app does not carry it. Every byte comes through the
-  // links of the publication, that is through the content route, which asks the profile's
-  // visibility again at each page. An extract says so, writes nothing and ends on a sentence.
-  // The settings follow the priority the server resolves (a series beats the mode, a device
-  // beats the default) and a comfort change is asked its portée: « pour cet appareil » ou
-  // « partout ». The tab order is the ADR's: the bar, the content, then the pagination.
-  import { page } from '$app/state';
+  // The reader (M5 L10 and L12, EF-LEC-001 to EF-LEC-003, EF-UX-006), mounted by the entry
+  // `reader.html`, which is not a route of the SPA (ADR-0055). The screen knows the port
+  // `ReaderEngine` and the registry, and nothing of how a page is drawn: an engine is loaded on
+  // demand when a book is opened. Every byte comes through the links of the publication, that is
+  // through the content route, which asks the profile's visibility again at each page. An extract
+  // says so, writes nothing and ends on a sentence. Titles and every word of a book are inserted
+  // as text, never as markup (the page itself allows inline styles).
+  // The settings and the keyboard are L13's (EF-LEC-006, EF-LEC-011, ENF-A11Y-002): the settings
+  // follow the priority the server resolves (a series beats the mode, a device beats the default),
+  // a comfort change is asked its portée — « pour cet appareil » ou « partout » — and the tab
+  // order is the ADR's: the bar, the content, then the pagination.
   import { onDestroy, onMount } from 'svelte';
   import { readerPublication, readerPutPosition, readerPutSettings, readerSettings } from '#lib/api/index.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
@@ -16,6 +17,8 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { readerDeviceId } from '#lib/reader/device.ts';
+  import { detectBrowser, type Browser } from '#lib/reader/browser.ts';
+  import { checkReaderCsp, type GuardVerdict } from '#lib/reader/csp-guard.ts';
   import {
     toView,
     type Locator,
@@ -24,6 +27,7 @@
     type ReadingDirection
   } from '#lib/reader/engine.ts';
   import { createPositionSender, type PositionSender } from '#lib/reader/positions.ts';
+  import { EPUB_TYPE, EngineRefusedError, defaultRegistry } from '#lib/reader/registry.ts';
   import {
     effectiveDirection,
     effectiveFit,
@@ -46,10 +50,20 @@
     width: 'reader.fit_width'
   };
 
+  interface Props {
+    carrierType: string;
+    carrierId: string;
+    scope: 'excerpt' | null;
+    /** The check of the policy in force; replaced by the tests, which have none. */
+    guard?: () => Promise<GuardVerdict>;
+    browser?: Browser | null;
+  }
+  let { carrierType, carrierId, scope, guard = () => checkReaderCsp(), browser }: Props = $props();
+
   let host = $state<HTMLElement | null>(null);
   let toolbar = $state<HTMLElement | null>(null);
   let problem = $state<ProblemView | null>(null);
-  let unsupported = $state(false);
+  let unsupported = $state<'format' | 'browser' | 'policy' | null>(null);
   let view = $state<PublicationView | null>(null);
   let at = $state<Locator | null>(null);
   let finished = $state(false);
@@ -66,21 +80,28 @@
   // place another device holds must not be replaced by the first page just because the book opened.
   let moved = false;
 
-  const asksExcerpt = $derived(page.url.searchParams.get('scope') === 'excerpt');
+  const asksExcerpt = $derived(scope === 'excerpt');
   const isExcerpt = $derived(view?.scope === 'excerpt');
-  const direction = $derived(view ? effectiveDirection(view, settings) : 'ltr');
+  // The EPUB engine exposes no way to apply a choice (L12): a book of pages reads with the
+  // setting, an EPUB keeps the direction of its publication.
+  const direction = $derived(
+    view ? (view.kind === 'pages' ? effectiveDirection(view, settings) : view.readingDirection) : 'ltr'
+  );
   const fit = $derived(effectiveFit(settings));
-  const status = $derived(at ? t('reader.status', { n: at.index + 1, count: at.count }) : '');
+  const status = $derived(
+    !at
+      ? ''
+      : at.type === 'page'
+        ? t('reader.status', { n: at.index + 1, count: at.count })
+        : t('reader.status_epub', { percent: Math.round(at.totalProgression * 100) })
+  );
 
-  const path = () => ({
-    carrier_type: page.params.carrier_type ?? '',
-    carrier_id: page.params.carrier_id ?? ''
-  });
+  const path = () => ({ carrier_type: carrierType, carrier_id: carrierId });
 
   /** The same book again, with new tickets and the same scope: a reading outlives a ticket. */
   async function renew(): Promise<PublicationView | null> {
     const { data } = await readerPublication({ path: path(), query: { scope: view?.scope ?? 'full' } });
-    return data && data.kind === 'pages' ? toView(data) : null;
+    return data ? toView(data) : null;
   }
 
   /** What the profile chose for this series and this device; a book opens even without it. */
@@ -92,14 +113,25 @@
     if (!left && data) settings = toSettingsView(data);
   }
 
-  /** Draws the book with the direction and the fit in hand; keeps the page the reader is on. */
+  /** Draws the book with an engine of the registry, the direction and the fit in hand; keeps the
+   * place the reader is on. */
   async function mount(keep: Locator | null = null): Promise<void> {
     if (left || !host || !view) return;
-    const { createImageEngine } = await import('#lib/reader/engines/images.ts');
-    if (left || !host || !view) return;
+    let found: ReaderEngine;
+    try {
+      const registry = defaultRegistry({ browser: browser === undefined ? detectBrowser(navigator) : browser, renew });
+      found = await registry.engineFor(view.kind === 'epub' ? EPUB_TYPE : (view.pages[0]?.mediaType ?? ''));
+    } catch (e) {
+      unsupported = e instanceof EngineRefusedError && e.reason === 'browser' ? 'browser' : 'format';
+      return;
+    }
+    if (left || !host) {
+      found.destroy();
+      return;
+    }
     for (const stop of stops) stop();
     engine?.destroy();
-    engine = createImageEngine({ renew });
+    engine = found;
     stops = [
       engine.onLocator((locator) => {
         at = locator;
@@ -110,11 +142,17 @@
       engine.onError((e) => (failed = e.kind === 'undisplayable' ? 'display' : 'load'))
     ];
     await engine.open({ ...view, readingDirection: direction }, host);
-    at = keep ?? { v: 1, type: 'page', index: 0, count: view.pages.length };
+    if (view.kind === 'pages') at = keep ?? { v: 1, type: 'page', index: 0, count: view.pages.length };
     if (keep) engine.goTo(keep);
   }
 
   async function open(): Promise<void> {
+    // nothing is asked, nothing is drawn, under a policy that is not the reader's (ADR-0055)
+    if ((await guard()) !== 'ok') {
+      unsupported = 'policy';
+      return;
+    }
+    if (left) return;
     const { data, error } = await readerPublication({
       path: path(),
       query: asksExcerpt ? { scope: 'excerpt' } : undefined
@@ -122,10 +160,6 @@
     if (left) return;
     if (error !== undefined || !data) {
       problem = problemView(error);
-      return;
-    }
-    if (data.kind !== 'pages') {
-      unsupported = true; // the EPUB engine comes with L12
       return;
     }
     view = toView(data);
@@ -152,7 +186,7 @@
   }
 
   function turnTo(index: number): void {
-    if (!view) return;
+    if (!view || view.kind !== 'pages') return;
     moved = true;
     engine?.goTo({ v: 1, type: 'page', index, count: view.pages.length });
   }
@@ -169,15 +203,14 @@
     });
     if (left || !data) return;
     settings = {
-      direction:
-        change.kind === 'direction' ? data.direction : (settings?.direction ?? null),
+      direction: change.kind === 'direction' ? data.direction : (settings?.direction ?? null),
       comfort: change.kind === 'direction' ? (settings?.comfort ?? {}) : data.comfort
     };
   }
 
   /** The sens of this series: written for the series, and the book is drawn again at once. */
   async function changeDirection(value: ReadingDirection): Promise<void> {
-    if (!view || direction === value) return;
+    if (!view || view.kind !== 'pages' || direction === value) return;
     const before = at;
     settings = { direction: value, comfort: settings?.comfort ?? {} };
     await mount(before);
@@ -211,7 +244,8 @@
       toolbar?.querySelector<HTMLElement>('button, a')?.focus();
       return;
     }
-    const target = event.target as HTMLElement | null;
+    // a key relayed from a document of the book has the window for target, which is not an element
+    const target = event.target instanceof Element ? event.target : null;
     if (target?.closest('input, textarea, select')) return; // a control keeps its own keys
     if (!view) return;
     const action = readerShortcut(direction, event.key);
@@ -229,7 +263,7 @@
     }
     event.preventDefault();
     if (action === 'first') turnTo(0);
-    else if (action === 'last') turnTo(view.pages.length - 1);
+    else if (action === 'last') turnTo((view.pages.length || 1) - 1);
     else turn(action);
   }
 
@@ -268,18 +302,25 @@
   {#if problem}
     <ProblemCard {problem} level={1} />
   {:else if unsupported}
-    <p role="alert">{t('reader.unsupported')}</p>
+    <p role="alert">
+      {unsupported === 'policy'
+        ? t('reader.csp_refused')
+        : unsupported === 'browser'
+          ? t('reader.browser_unsupported')
+          : t('reader.unsupported')}
+    </p>
   {:else}
     <header bind:this={toolbar} role="group" aria-label={t('reader.toolbar')}>
       <button type="button" onclick={() => history.back()}>{t('reader.close')}</button>
       <h1>{view?.title ?? t('reader.loading')}</h1>
       {#if isExcerpt}<span class="badge">{t('reader.excerpt_badge')}</span>{/if}
-      <button
-        type="button"
-        aria-expanded={panel}
-        aria-disabled={!view}
-        onclick={() => (panel = !panel)}>{t('reader.settings')}</button
-      >
+      {#if view?.kind === 'pages'}
+        <button
+          type="button"
+          aria-expanded={panel}
+          onclick={() => (panel = !panel)}>{t('reader.settings')}</button
+        >
+      {/if}
       <button type="button" aria-expanded={help} onclick={() => (help = !help)}>?</button>
     </header>
     <p class="hint">{t('reader.keys')}</p>
@@ -301,7 +342,7 @@
       <button
         type="button"
         onclick={() => turn('previous')}
-        aria-disabled={!at || at.index === 0}>{t('reader.previous')}</button
+        aria-disabled={!at || (at.type === 'page' && at.index === 0)}>{t('reader.previous')}</button
       >
       <button type="button" onclick={() => turn('next')} aria-disabled={!at}>{t('reader.next')}</button>
     </nav>
@@ -310,7 +351,7 @@
         {isExcerpt ? t('reader.end_of_excerpt') : t('reader.end_of_book')}
       </p>
     {/if}
-    {#if panel}
+    {#if panel && view?.kind === 'pages'}
       <section class="panel" aria-label={t('reader.settings')} data-reader-settings>
         <fieldset>
           <legend>{t('reader.settings_direction')}</legend>
