@@ -330,6 +330,8 @@ class WriteSessions:
             if current is None:
                 continue
             if seen is not None and seen.generation > current:
+                if self._on_behind is not None:  # the database went back since the look of `open`
+                    self._on_behind()
                 raise RootBlockedError(root, RootState.RESTORED_BEHIND)
             # one ahead already (an earlier stop): re-stamp, do not advance
             plan.append((root, current, seen is not None and current == seen.generation + 1))

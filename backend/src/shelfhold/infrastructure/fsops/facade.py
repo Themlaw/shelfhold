@@ -965,7 +965,8 @@ class Fsops:
 
     def record_tombstone_chain(self, root_path: str, chain: dict[str, Any]) -> bool:
         """The chained label of the journal, copied into the root's sentinel (authenticated)."""
-        with self._gated(self._host_root(root_path), tombstone=True) as root:
+        gated = self._gated(self._host_root(root_path), tombstone=True)
+        with gated as root, self._stamp_lock:  # rewrites the whole sentinel: never older
             return set_sentinel_chain(root, chain)
 
     def tombstone_chain(self, root_path: str) -> dict[str, Any] | None:
@@ -988,7 +989,8 @@ class Fsops:
 
     def record_tombstone_kid(self, root_path: str, kid: str, tags: dict[str, str]) -> None:
         """Add `kid` and its tags to the registry of the root's sentinel, before any line."""
-        with self._gated(self._host_root(root_path), tombstone=True) as root:
+        gated = self._gated(self._host_root(root_path), tombstone=True)
+        with gated as root, self._stamp_lock:  # rewrites the whole sentinel: never older
             add_sentinel_kid(root, kid, tags)
 
     def read_tombstone_journal(self, root_path: str, *, max_bytes: int) -> bytes | None:

@@ -11,6 +11,7 @@ thread.
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -138,6 +139,44 @@ def test_a_lower_stamp_after_a_higher_one_changes_nothing() -> None:
         env.fsops.stamp_sentinel(library, generation=top)
         env.fsops.stamp_sentinel(library, generation=top - 3)
         assert int(env.sentinel()["generation"]) == top  # type: ignore[call-overload]
+
+
+def test_a_tombstone_rewrite_of_the_sentinel_never_takes_its_generation_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The journal rewrites the whole sentinel from what it read: a session that stamps a higher
+    generation in between must keep it (the stamp and the rewrite exclude each other)."""
+    from shelfhold.infrastructure.fsops import tombstone_journal
+
+    with restore_env() as env:
+        library = str(env.library)
+        top = counters(env, env.library)[0] + 2  # the session itself moves the root to + 1
+        real = tombstone_journal.write_sentinel
+        done: list[bool] = []
+        failures: list[BaseException] = []
+
+        def stamp() -> None:
+            try:
+                env.fsops.stamp_sentinel(library, generation=top)
+            except BaseException as error:  # reported by the assertion below
+                failures.append(error)
+
+        def racing(root: object, doc: object) -> None:
+            if not done:
+                done.append(True)
+                other = threading.Thread(target=stamp)
+                other.start()
+                other.join(timeout=0.3)  # under the lock it waits for this rewrite to end
+                racing.other = other  # type: ignore[attr-defined]
+            real(root, doc)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(tombstone_journal, "write_sentinel", racing)
+        with sessions_of(env, []).open(library):
+            env.fsops.record_tombstone_kid(library, "kid-1", {"purpose": "test"})
+        racing.other.join(timeout=5)  # type: ignore[attr-defined]
+        assert done, "the rewrite never ran"
+        assert not failures, failures
+        assert int(env.sentinel()["generation"]) >= top  # type: ignore[call-overload]
 
 
 # -- no generation moves under a sentinel that is ahead --------------------------------------
