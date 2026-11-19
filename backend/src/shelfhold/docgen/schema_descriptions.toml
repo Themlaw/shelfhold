@@ -479,6 +479,16 @@ choice = "What closed it: `winner` (she kept the latest), `loser` (she resumed a
 created_at = "When the divergence was noticed (UTC)."
 resolved_at = "When she chose (UTC); empty while the proposal is open."
 
+[tables.saved_selection]
+description = "A saved selection: a name and a stored query of a closed grammar, evaluated at each read in the scope of the profile that reads it (M5 L21). It holds no Work and no result."
+[tables.saved_selection.columns]
+id = "Selection identifier (ULID)."
+owner_user_id = "The profile it belongs to (`user.id`); nobody else reads it, and it goes with her."
+name = "The name she gave it (1 to 200 characters)."
+query_json = "The query: one JSON object of at most 2 KiB with the criteria `reading_state`, `kind`, `shelf`, `lang` (lists of plain values) and `added_within_days` (a number); never SQL."
+created_at = "When it was saved (UTC)."
+updated_at = "When its name or its query last changed (UTC)."
+
 [tables.session]
 description = "Login sessions. Only the hash of the token is stored."
 [tables.session.columns]

@@ -9,6 +9,7 @@ with a reason before anything is stored or evaluated.
 import json
 
 import pytest
+
 from shelfhold.catalog.domain.selection_query import (
     MAX_QUERY_BYTES,
     MAX_VALUES,

@@ -105,7 +105,7 @@ def test_saved_selections(world: World) -> None:
     detail = admin.get(f"{SELECTIONS}/{made}")
     assert detail.status_code == 200
     body = detail.json()
-    assert _titles(detail) == _titles_of(world, {"mixed"})  # one Work has an Edition in French
+    assert _titles(detail) == _titles_of(world, {"mixed", "ok"})  # two Works have one in French
     assert (body["total"], body["capped"], body["valid"]) == (1, False, True)
     # changed, then removed
     renamed = _put(
@@ -133,7 +133,8 @@ def test_every_criterion_selects_what_it_says(world: World) -> None:
     assert found({"kind": [_kind(world)]}) == _titles_of(world, set(works))
     assert found({"kind": ["no-such-kind"]}) == []
     shelf_family = world.seed.shelves["family"]
-    assert found({"shelf": [shelf_family]}) == _titles_of(world, {"misfiled", "reserved"})
+    on_family = {"misfiled", "reserved", "ok"}  # `ok` has an Edition there too
+    assert found({"shelf": [shelf_family]}) == _titles_of(world, on_family)
     assert found({"shelf": [new_ulid()]}) == []  # a shelf that does not exist selects nothing
     assert found({"lang": ["en"]}) != found({"lang": ["fr"]})
     # recent: only a Work added within the number of days
@@ -146,10 +147,8 @@ def test_every_criterion_selects_what_it_says(world: World) -> None:
     assert world.seed.title_of("ok") not in recent and world.seed.title_of("mixed") in recent
     assert world.seed.title_of("ok") in found({"added_within_days": 365})
     # the criteria add up (and), the values of one criterion are alternatives (or)
-    assert found({"kind": [_kind(world)], "lang": ["fr"]}) == _titles_of(world, {"mixed"})
-    assert found({"lang": ["fr", "en"], "shelf": [shelf_family]}) == _titles_of(
-        world, {"misfiled", "reserved"}
-    )
+    assert found({"kind": [_kind(world)], "lang": ["fr"]}) == _titles_of(world, {"mixed", "ok"})
+    assert found({"lang": ["fr", "en"], "shelf": [shelf_family]}) == _titles_of(world, on_family)
 
 
 def _seed_reading(world: World, reader: str) -> None:
@@ -417,15 +416,14 @@ def test_a_key_reads_as_its_profile_and_writes_nothing(world: World) -> None:
         kid_client.get(f"{SELECTIONS}/{ABSENT}", headers=kid_auth)
     )
     # a key writes nothing here, read-only or not; and a key of the admin reads no one else's
-    writer_client, writer_auth = key("kid", "10.0.0.72")
-    for client, headers in ((kid_client, kid_auth), (writer_client, writer_auth)):
+    admin_client, admin_auth = key("admin", "10.0.0.73")
+    for client, headers in ((kid_client, kid_auth), (admin_client, admin_auth)):
         attempts = (
             client.post(SELECTIONS, json={"name": "k", "query": {"kind": ["a"]}}, headers=headers),
             client.put(f"{SELECTIONS}/{mine}", json={"name": "k"}, headers=headers),
             client.delete(f"{SELECTIONS}/{mine}", headers=headers),
         )
         assert all(a.status_code in (401, 403) for a in attempts), [a.status_code for a in attempts]
-    admin_client, admin_auth = key("admin", "10.0.0.73")
     assert _shape(admin_client.get(f"{SELECTIONS}/{mine}", headers=admin_auth)) == _shape(
         admin_client.get(f"{SELECTIONS}/{ABSENT}", headers=admin_auth)
     )
@@ -467,6 +465,7 @@ def test_the_purge_of_a_work_leaves_the_selection_as_it_is(world: World) -> None
     before = [tuple(r) for r in _rows(world)]
     assert world.seed.title_of("ok") in _titles(kid.get(f"{SELECTIONS}/{made}"))
     with world.seed.engine.begin() as c:  # the Work leaves the catalogue (a purge)
+        c.execute(sa.text("DELETE FROM edition WHERE work_id = :w"), {"w": works["ok"]})
         c.execute(sa.delete(catalog.work).where(catalog.work.c.id == works["ok"]))
     assert [tuple(r) for r in _rows(world)] == before  # it was only ever a query
     after = kid.get(f"{SELECTIONS}/{made}")

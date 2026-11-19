@@ -114,7 +114,10 @@ def _seed(env: AuthEnv, username: str, role: str = "member", **kw: Any) -> str:
     _sql(
         env,
         "INSERT INTO saved_selection (id, owner_user_id, name, query_json) VALUES (?, ?, ?, ?)",
-        new_ulid(), user_id, f"Unread of {username}", '{"reading_state":["unread"]}',
+        new_ulid(),
+        user_id,
+        f"Unread of {username}",
+        '{"reading_state":["unread"]}',
     )  # fmt: skip  (M5 L21: a stored query, no result)
     if role != "child":  # a child has no policy off a family source
         _auth(env).profile_policy_set(user_id, "source-a", "request")

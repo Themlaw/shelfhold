@@ -155,6 +155,7 @@ from shelfhold.catalog.application.preferred_edition import (
     set_preferred_edition,
 )
 from shelfhold.catalog.application.queries import (
+    MAX_PAGE,
     ReaderScope,
     VisibleEdition,
     VisibleWork,
@@ -229,6 +230,16 @@ from shelfhold.catalog.application.search import (
 from shelfhold.catalog.application.search import rebuild as _rebuild_search
 from shelfhold.catalog.application.search import remove_works as remove_from_search_index
 from shelfhold.catalog.application.search import sync as sync_search_index
+from shelfhold.catalog.application.selections import (
+    MAX_SELECTIONS,
+    SelectionFullError,
+    SelectionNotFoundError,
+    SelectionPage,
+    SelectionRecord,
+    Selections,
+    SelectionTooSlowError,
+    SelectionViewer,
+)
 from shelfhold.catalog.application.separate import (
     MergeAlreadyUndoneError,
     MergeExpiredError,
@@ -293,6 +304,15 @@ from shelfhold.catalog.domain.placement import IngestOutcome, VariantFacts, plac
 from shelfhold.catalog.domain.provenance import FieldKey, is_age_field
 from shelfhold.catalog.domain.public_domain import Verdict
 from shelfhold.catalog.domain.revisions import DEFAULT_MIN_PAGE_RATIO, suspect_reason
+from shelfhold.catalog.domain.selection_query import (
+    MAX_QUERY_BYTES as MAX_SELECTION_QUERY_BYTES,
+)
+from shelfhold.catalog.domain.selection_query import (
+    QueryRefusedError,
+    SelectionQuery,
+    parse_query,
+)
+from shelfhold.catalog.domain.selection_query import dump_query as dump_selection_query
 from shelfhold.catalog.domain.sort_key import sort_key
 from shelfhold.catalog.domain.subject_filter import (
     MAX_TERM_CHARS,
@@ -497,8 +517,11 @@ __all__ = [
     "LINK_PROVIDERS",
     "MAX_CBL_BYTES",
     "MAX_COLLECTION_ITEMS",
+    "MAX_PAGE",
     "MAX_RELATIONS_PER_WORK",
     "MAX_REMOVED",
+    "MAX_SELECTIONS",
+    "MAX_SELECTION_QUERY_BYTES",
     "MAX_TERMS",
     "MAX_TERM_CHARS",
     "MERGE_WINDOW_DAYS",
@@ -572,6 +595,7 @@ __all__ = [
     "PendingRevision",
     "PersonField",
     "PreferredChange",
+    "QueryRefusedError",
     "RatingRefusedError",
     "RatingResult",
     "RatingService",
@@ -600,6 +624,14 @@ __all__ = [
     "SearchCapability",
     "SearchHit",
     "SearchPage",
+    "SelectionFullError",
+    "SelectionNotFoundError",
+    "SelectionPage",
+    "SelectionQuery",
+    "SelectionRecord",
+    "SelectionTooSlowError",
+    "SelectionViewer",
+    "Selections",
     "Separated",
     "SeparationBlockedError",
     "SeriesAlreadyAttachedError",
@@ -641,6 +673,7 @@ __all__ = [
     "cover_ref_visible",
     "default_registry",
     "detect_suwayomi_migrations",
+    "dump_selection_query",
     "edit_field",
     "edition_key_lang",
     "edition_parts",
@@ -671,6 +704,7 @@ __all__ = [
     "parse_cbl",
     "parse_number",
     "parse_partial_date",
+    "parse_query",
     "pause_community_binding",
     "pause_community_binding_of",
     "period_start",

@@ -2158,6 +2158,21 @@
     action = "A list holds at most 5,000 items: remove some or make another list."
     cause = "The largest number of items of a collection or reading list is reached."
 
+  [errors."selection.query_refused"]
+    title = "This selection cannot be saved."
+    action = "Choose among the criteria offered (reading state, kind, shelf, language, recently added), with at most 20 values each, and try again."
+    cause = "A selection holds a short list of criteria and nothing else: no expression, no free text, no nesting, and at most 2 KB."
+
+  [errors."selection.full"]
+    title = "You have saved as many selections as are allowed."
+    action = "A profile holds at most 50 selections: delete one you no longer use, or change an existing one."
+    cause = "The largest number of saved selections of a profile is reached."
+
+  [errors."selection.too_slow"]
+    title = "This selection took too long to compute."
+    action = "Try again in a moment, or narrow it with another criterion (a shelf, a kind)."
+    cause = "The selection is computed each time it is read, and it was stopped after a few seconds so that the library stays responsive."
+
   [errors."collection.not_private"]
     title = "This collection is the household's: there is nothing to approve."
     action = "Only a profile's own list needs your word to be shown in Kavita; the household's collections already are."
@@ -2894,6 +2909,7 @@
   series = "Series"
   works = "All works"
   recent = "Latest"
+  selections = "Saved selections"
   results = "Search results"
   search_description = "Search the library"
   complete = "{title} — Complete series"

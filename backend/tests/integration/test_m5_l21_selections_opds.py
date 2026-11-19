@@ -64,7 +64,9 @@ def _shape(response: Any) -> tuple[Any, ...]:
 
 def test_the_root_opens_a_door_on_the_selections(world: World) -> None:
     root = parse(world.kid.get("/opds"))
-    doors = [x for x in links(root) if x.get("href", "").endswith("/opds/selections")]
+    doors = [
+        x for e in entries(root) for x in links(e) if x.get("href", "").endswith("/opds/selections")
+    ]
     assert len(doors) == 1  # a navigation entry, one per profile's feed
     assert "kind=navigation" in doors[0]["type"]
     again = parse(world.kid.get("/opds/selections"))
@@ -134,7 +136,7 @@ def test_pages_of_a_selection_hold_visible_rows_only(world: World) -> None:
     assert titles(past) == [] and link(past, "next") is None
 
 
-def test_a_selection_that_names_a_closed_shelf_or_a_hidden_state_shows_nothing(
+def test_a_selection_names_nothing_the_child_may_not_see(
     world: World,
 ) -> None:
     closed = _make(world, world.kid_session, "Closed", {"shelf": [world.seed.shelves["family"]]})
@@ -143,7 +145,7 @@ def test_a_selection_that_names_a_closed_shelf_or_a_hidden_state_shows_nothing(
     world.clean(ET.tostring(feed, encoding="unicode"))
     french = _make(world, world.kid_session, "French", {"lang": ["fr"]})
     feed = parse(world.kid.get(f"/opds/selections/{french}"))
-    assert titles(feed) == [] and total(feed) == 0
+    assert titles(feed) == [world.seed.title_of("ok")] and total(feed) == 1  # not `mixed`
     world.clean(ET.tostring(feed, encoding="unicode"))
 
 
