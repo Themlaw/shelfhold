@@ -53,7 +53,6 @@ def _kosync(world: World, monkeypatch: pytest.MonkeyPatch, item: str) -> Kosync:
 
 
 @pytest.mark.req("EF-LEC-014", "EF-LEC-007")
-@pytest.mark.xfail(strict=True, reason="#378 C1: a kosync write proposes no divergence (L07 D8)")
 def test_koreader_behind_the_reader_is_proposed_not_silently_taken(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:

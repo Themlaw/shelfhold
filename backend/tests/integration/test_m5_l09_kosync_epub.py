@@ -30,10 +30,13 @@ class Spines:
     def __init__(self) -> None:
         self.by_item: dict[str, int | None] = {}
         self.asked: list[str] = []
+        self.on_ask: Callable[[], None] | None = None  # a probe of the moment the file is opened
 
     def factory(self, _access: Callable[[], Any]) -> Callable[[str], int | None]:
         def spine_of(item_id: str) -> int | None:
             self.asked.append(item_id)
+            if self.on_ask is not None:
+                self.on_ask()
             return self.by_item.get(item_id)
 
         return spine_of
@@ -50,6 +53,12 @@ def spines(monkeypatch: pytest.MonkeyPatch) -> Spines:
 def lab(spines: Spines, monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World]:
     with make_world(monkeypatch, settings) as made:
         yield made
+
+
+def second_device(lab: World, who: Reader) -> Reader:
+    """Another token of the same profile: another device (the token is the identity of a device)."""
+    created = auth_of(lab.env).create_device_token(subject_username=who.name, name="seconde")
+    return Reader(who.name, who.client, created.public_id, created.secret)
 
 
 def xp(fragment: int, n: int = 1) -> str:
@@ -183,8 +192,9 @@ def test_epub_position_not_proof_of_other_writer(lab: World, spines: Spines) -> 
     walk(lab, lab.mum, digest, stop=0.96, device_id="TABLET")  # a long read, on the tablet
     assert state(lab, item.unit_id) != "read"
     lab.env.clock.advance(timedelta(minutes=2))
-    # a phone shows up at the end of the book: it has said nothing before
-    assert push(lab.mum, digest, xp(3, 9000), 1.0, device_id="PHONE").status_code == 200
+    # a phone (its own token) shows up at the end of the book: it has said nothing before
+    phone = second_device(lab, lab.mum)
+    assert push(phone, digest, xp(3, 9000), 1.0, device_id="PHONE").status_code == 200
     assert state(lab, item.unit_id) != "read" and marks(lab) == 0
     # and the other way: the tablet's own walk is still its own
     lab.env.clock.advance(timedelta(minutes=2))

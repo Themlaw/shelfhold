@@ -199,8 +199,8 @@ class ReaderPositions:
             self._propose(connection, user_id, carrier_type, carrier_id, now)
             return self._current(connection, user_id, carrier_type, carrier_id)
 
+    @staticmethod
     def _propose(
-        self,
         connection: sa.Connection,
         user_id: str,
         carrier_type: str,
@@ -208,7 +208,7 @@ class ReaderPositions:
         now: datetime,
     ) -> None:
         """Record the divergence of two devices, once (D8), if there is one."""
-        rows = self._v1_rows(connection, user_id, carrier_type, carrier_id)
+        rows = ReaderPositions._v1_rows(connection, user_id, carrier_type, carrier_id)
         if not rows:
             return
         table = reading.reading_conflict
@@ -278,8 +278,9 @@ class ReaderPositions:
                   reverse=True)  # fmt: skip
         return [_stored(r, now_hash) for r in rows[: max(0, min(limit, HISTORY_LIMIT))]]
 
+    @staticmethod
     def _v1_rows(
-        self, connection: sa.Connection, user_id: str, carrier_type: str, carrier_id: str
+        connection: sa.Connection, user_id: str, carrier_type: str, carrier_id: str
     ) -> list[Any]:
         """The positions that say where she is in this book: the ones of the reader (locator v1) on
         this carrier and, for an EPUB, the ones a device wrote through kosync on the file exported
@@ -304,12 +305,13 @@ class ReaderPositions:
                 .limit(HISTORY_LIMIT)
             )
         )
-        rows += self._device_rows(connection, user_id, carrier_type, carrier_id)
+        rows += ReaderPositions._device_rows(connection, user_id, carrier_type, carrier_id)
         rows.sort(key=lambda r: (min(_utc(r.client_ts), _utc(r.server_ts)), r.id), reverse=True)
         return rows[:HISTORY_LIMIT]
 
+    @staticmethod
     def _device_rows(
-        self, connection: sa.Connection, user_id: str, carrier_type: str, carrier_id: str
+        connection: sa.Connection, user_id: str, carrier_type: str, carrier_id: str
     ) -> list[Any]:
         """The xpointer positions of the profile's devices on the exported files of the content
         this carrier is (or carries), and only on the very file this carrier holds now (the same
@@ -471,6 +473,18 @@ class ReaderPositions:
                 sa.update(table).where(table.c.id == row.id).values(choice=choice, resolved_at=now)
             )
             return self._current(connection, user_id, row.carrier_type, row.carrier_id)
+
+
+def propose_for_exported_file(
+    connection: sa.Connection, user_id: str, item_id: str, now: datetime
+) -> None:
+    """A device wrote on an exported file (kosync): the divergence of L07 is judged for the reader
+    of the same content, by the rule a write of the reader goes through (`ReaderPositions.write`),
+    so that no door lets a further place be taken without a word (D8). The proposal is the
+    reader's (the key of a conflict is the carrier of the reader, never the exported file)."""
+    content_id = _content_of(connection, "export_item", item_id)
+    if content_id is not None:
+        ReaderPositions._propose(connection, user_id, "content", content_id, now)
 
 
 def _resumed(locator: dict[str, Any]) -> dict[str, Any]:

@@ -53,6 +53,7 @@ from shelfhold.identity.public import reader_scope
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import bundle, export, reading
 from shelfhold.infrastructure.secrets.keyring import Keyring
+from shelfhold.reading.application.positions import propose_for_exported_file
 from shelfhold.reading.application.progress import (
     HISTORY_LIMIT,
     UnknownCarrierError,
@@ -197,10 +198,12 @@ def _who(device_id: str | None, token: str) -> str:
     return "t:" + hashlib.sha256(token.lower().encode()).hexdigest()[:16]
 
 
-def _writer(device_id: str | None, token: str) -> str:
-    """The writer of an EPUB position: the device the token pairs **and** the identifier it says. An
-    identifier is the client's word: another token that repeats it is another writer."""
-    return _who(device_id, token) + ":" + hashlib.sha256(token.lower().encode()).hexdigest()[:16]
+def _writer(token: str) -> str:
+    """The device of a kosync write, as the server knows it: the token that wrote, in a namespace of
+    its own (`kosync:`) that the `device_id` of the reader of the web can never take. What the
+    client says of itself (`device_id`) is its word and is never an identity: a reader that repeats
+    the identifier of a browser stays another device."""
+    return "kosync:" + hashlib.sha256(token.lower().encode()).hexdigest()[:16]
 
 
 def _digest_of(raw: str) -> str | None:
@@ -221,7 +224,7 @@ class Kosync:
         self._now = now
         # how many documents the spine of an exported EPUB has (`None`: cannot be told, so no end)
         self._spine_of = spine_of or (lambda _item: None)
-        self._spines: dict[tuple[str, str | None], int | None] = {}
+        self._spines: dict[tuple[str, str | None], int] = {}
         self.unknown = unknown or UnknownCounter()
         # The last page of a block a GET gave to each (profile, token): (version, page of the block,
         # when). In memory and bounded, on purpose: it is a hint about a start, not a fact to keep
@@ -345,6 +348,7 @@ class Kosync:
             raise InvalidProgressError("percentage")
         if not 0.0 <= percentage <= 1.0:
             raise InvalidProgressError("percentage")
+        known = self._spine_before(user_id, document, progress, percentage)
         with write_transaction(self._engine) as connection:
             try:
                 doc = self._resolve(connection, user_id, document)
@@ -354,6 +358,7 @@ class Kosync:
                 return self._refused(token, "unknown")
             now = self._now()
             bundled: tuple[store.VersionRow, int] | None = None
+            kind_reflowable = False
             if doc.version is not None:
                 page = _page(progress)
                 if page > doc.version_pages:
@@ -377,11 +382,15 @@ class Kosync:
                 item_id = doc.item_id
                 kind = self._kind(connection, item_id)
                 if kind == "reflowable":
+                    kind_reflowable = True
                     locator = self._epub_locator(
-                        connection, item_id, _xpointer(progress), percentage
+                        connection, item_id, _xpointer(progress), percentage, known
                     )
                     traverse = locator.get("end") is True  # a walk to the end, or nothing
-                    locator["who"] = _writer(device_id, token)
+                    locator["who"] = _writer(token)
+                    if device_id is not None:
+                        locator["client_id"] = device_id  # what it said: given back to it, no more
+                    device_id = locator["who"]  # the token's, not what the client says (m3)
                 elif kind == "paged" or _DIGITS.fullmatch(progress.strip()):
                     locator = {"page": _page(progress)}
                     traverse = True
@@ -409,35 +418,68 @@ class Kosync:
                         reading.reading_position.c.id == replaces
                     )
                 )
+            if kind_reflowable:
+                # the same rule as a write of the reader: a further place left behind is asked
+                # about, once (D8, C1), whichever door the position came through
+                propose_for_exported_file(connection, user_id, item_id, now)
             if bundled is not None and locator.get("anchor") is not True:
                 self._cross_chapters(connection, user_id, position_id, token, *bundled)
             return True
 
+    def _spine_before(
+        self, user_id: str, document: str, progress: str, percentage: float
+    ) -> tuple[tuple[str, str | None], int | None] | None:
+        """The spine of the file a position at the end of an EPUB may be on, read **before** the
+        write transaction: the file is opened (a zip, an OPF) with no write lock held. Nothing is
+        asked for a place that cannot be the end (a share under `END_SHARE`, no xpointer)."""
+        if percentage < END_SHARE or parse_xpointer(_xpointer(progress)) is None:
+            return None
+        with self._engine.connect() as connection:
+            try:
+                doc = self._resolve(connection, user_id, document)
+            except AmbiguousDocumentError:
+                return None
+            if doc is None or doc.version is not None or doc.item_id is None:
+                return None
+            if self._kind(connection, doc.item_id) != "reflowable":
+                return None
+            key = (doc.item_id, self._anchor(connection, doc.item_id))
+        return key, self._spine(key)
+
     def _epub_locator(
-        self, connection: Connection, item_id: str, text: str, percentage: float
+        self,
+        connection: Connection,
+        item_id: str,
+        text: str,
+        percentage: float,
+        known: tuple[tuple[str, str | None], int | None] | None = None,
     ) -> dict[str, Any]:
         """The xpointer as it came, the index of its document when it fits the grammar and, when it
-        may be the end of the book, whether it is (the spine is asked only then: the file of a
-        position in the middle of a book is not opened). All of it the server's, none of it from the
-        request."""
+        may be the end of the book, whether it is. `known` is the spine read before the transaction:
+        it counts only for the very file and content the write ends up on (else no end). All of it
+        the server's, none of it from the request."""
         locator: dict[str, Any] = {"xpointer": text}
         parsed = parse_xpointer(text)
         if parsed is None:
             return locator
         locator["spine"] = spine_index(text)
-        if percentage >= END_SHARE and parsed.fragment >= 1:
-            spine = self._spine(connection, item_id)
-            if reaches_end(text, percentage, spine):
+        if percentage >= END_SHARE and parsed.fragment >= 1 and known is not None:
+            key, spine = known
+            if key == (item_id, self._anchor(connection, item_id)) and reaches_end(
+                text, percentage, spine
+            ):
                 locator["end"] = True
         return locator
 
-    def _spine(self, connection: Connection, item_id: str) -> int | None:
+    def _spine(self, key: tuple[str, str | None]) -> int | None:
         """The documents of the spine of this file, asked of the file once per (file, content) and
-        kept (bounded): a device that sends the end of a book over and over opens it once."""
-        key = (item_id, self._anchor(connection, item_id))
+        kept (bounded): a device that sends the end of a book over and over opens it once. A file
+        that could not be opened is not kept (m2): it may be readable a moment later."""
         if key in self._spines:
             return self._spines[key]
-        found = self._spine_of(item_id)
+        found = self._spine_of(key[0])
+        if found is None:
+            return None
         if len(self._spines) >= _SPINES_BOUND:
             del self._spines[next(iter(self._spines))]
         self._spines[key] = found
@@ -738,7 +780,11 @@ class Kosync:
         device = locator.get("device")
         if not isinstance(device, str) or not device:
             device = "Kavita" if position.source == "server" else "Shelfhold"
-        return Pulled(doc.digest, progress, percentage, device, position.device_id, stamp)
+        said = locator.get("client_id")
+        device_id = said if isinstance(said, str) else position.device_id
+        if device_id is not None and device_id.startswith("kosync:"):
+            device_id = None  # the server's name of a writer is never shown to a device
+        return Pulled(doc.digest, progress, percentage, device, device_id, stamp)
 
 
 def within_guard(page: int, total: int, percentage: float) -> bool:
