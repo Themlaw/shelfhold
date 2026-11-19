@@ -15,7 +15,7 @@ source of KOReader (`plugins/kosync.koplugin/KOSyncClient.lua` and `api.json` of
   (`document`, `progress`, `percentage`, `device`, `device_id`) and `GET
   /kosync/syncs/progress/<document>` asks where the other devices left it.
 
-Usage: `python client.py '<json>'` where the JSON holds `public_id`, `secret`, `file` (the book as
+Usage: `python client.py '<json>'` where the JSON holds `public_id`, `word` (what the person typed in the plugin: the plugin sends its md5), `file` (the book as
 KOReader holds it, a path in the container), `progress` (an xpointer or a page, as text),
 `percentage`, `device` and `device_id`. The output is a JSON list `[[name, status, body], ...]`.
 """
@@ -68,7 +68,7 @@ def call(
 
 
 def play(spec: dict[str, str]) -> list[list[object]]:
-    key = hashlib.md5(spec["secret"].encode()).hexdigest()  # noqa: S324 - the plugin's own scheme
+    key = hashlib.md5(spec["word"].encode()).hexdigest()  # noqa: S324 - the plugin's own scheme: it sends the md5 of what the person typed
     auth = {"x-auth-user": spec["public_id"], "x-auth-key": key}
     document = partial_md5(spec["file"])
     steps: list[list[object]] = [["document", 0, document]]

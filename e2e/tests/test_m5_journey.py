@@ -61,7 +61,7 @@ def koreader(j: Journey, token: tuple[str, str], path: str, **extra: str) -> lis
     """What the simulated KOReader of `fakes/koreader` saw, for the book at `path`."""
     j.put("/tmp/koreader_client.py", KOREADER)
     spec = {
-        "public_id": token[0], "secret": token[1], "file": path,
+        "public_id": token[0], "word": token[1], "file": path,
         "progress": "/body/DocFragment[3]/body/div/p[4]/text().12", "percentage": "0.31",
         "device": "KOReader", "device_id": "A1B2C3D4E5F60718293A4B5C6D7E8F90", **extra,
     }  # fmt: skip
