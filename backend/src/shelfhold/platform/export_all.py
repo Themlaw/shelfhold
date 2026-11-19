@@ -98,6 +98,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "secret_key": _CREDENTIAL, "export_target": _CREDENTIAL, "source_account": _CREDENTIAL,
     "destination_account": _CREDENTIAL, "device_token": _CREDENTIAL,
     "device": _CREDENTIAL,  # M5 L02: the registry of the e-readers whose tokens stay behind
+    "oidc_identity": _CREDENTIAL,  # M5 L03: who of the provider may sign in as whom, linked again
     "notify_destination": _CREDENTIAL,
     "source_secret": _CREDENTIAL, "source_config": _CREDENTIAL, "plugin_attestation": _CREDENTIAL,
     "provider_secret": _CREDENTIAL, "webhook_subscription": _CREDENTIAL,
@@ -124,6 +125,7 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "request_proposal": _NOISE,  # what a search found, asked again (M4 L30)
     "request_list_import": _NOISE, "request_list_item": _NOISE,  # the batch of a list (M4 L31)
     # a Mihon backup waiting for its series (M4 L26): the file is the source, import it again
+    "rendition": _NOISE,  # a cache of converted images: made again on demand (M5 L20a)
     "reading_conflict": _NOISE,  # a question put to the reader, asked again on the next position
     "bulk_order": _NOISE,  # a preview frozen for one job, dropped when it expires (M4 L28)
     "tachibk_import": _NOISE, "read_marker": _NOISE, "tracker_hint": _NOISE,

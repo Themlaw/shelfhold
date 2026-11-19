@@ -28,6 +28,7 @@ STORAGE_TABLES = {
     "content", "trash_item", "replica", "safeguard_backlog", "import_entry",
     "thumbnail",  # migration 0046 (M3 L01)
     "page_issue",  # migration 0085 (M4 L53)
+    "rendition",  # migration 0104 (M5 L20a)
 }  # fmt: skip
 EXPORT_TABLES = {
     "export_target", "kavita_instance", "shelf", "shelf_destination", "remote_library",
@@ -38,7 +39,11 @@ EXPORT_TABLES = {
     "export_assembly",  # migration 0089 (M4 L10, EF-EXP-019)
     "tree", "tree_indexer",  # migration 0064 (M4 L02, ADR-0052)
 }  # fmt: skip
-M5_TABLES = {"device", "saved_selection"}  # 0100 (M5 L02, EF-USR-008), 0105 (M5 L21, EF-BIB-017)
+M5_TABLES = {
+    "device",  # migration 0100 (M5 L02, EF-USR-008)
+    "oidc_identity",  # migration 0101 (M5 L03, EF-USR-004)
+    "saved_selection",  # migration 0105 (M5 L21, EF-BIB-017)
+}
 READING_TABLES = {
     "reading_position", "progress_sync_cursor", "progress_sync_note", "read_state_push_note",
     "reading_conflict",

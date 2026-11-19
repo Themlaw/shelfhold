@@ -24,9 +24,9 @@ USER = new_ulid()
 HEAD_BEFORE = "0098"
 
 
-def test_the_revision_is_0100_the_head_on_0098() -> None:
+def test_the_revision_is_0100_on_0098() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert len(script.get_heads()) == 1  # the head is pinned by the newest migration test
+    assert script.get_revision("0100") is not None  # the head is pinned by the newest, 0101
     assert script.get_revision("0100").down_revision == HEAD_BEFORE
 
 

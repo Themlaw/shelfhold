@@ -21,10 +21,10 @@ pytestmark = pytest.mark.req("ENF-OPS-002", "EF-BIB-017")
 USER = "01HZZZZZZZZZZZZZZZZZZZZZZA"
 OTHER = "01HZZZZZZZZZZZZZZZZZZZZZZB"
 FIRST, SECOND = "01HZZZZZZZZZZZZZZZZZZZZZZ1", "01HZZZZZZZZZZZZZZZZZZZZZZ2"
-HEAD_BEFORE = "0102"
+HEAD_BEFORE = "0104"
 
 
-def test_the_revision_is_0105_the_head_on_0102() -> None:
+def test_the_revision_is_0105_the_head_on_0104() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0105"]  # the head is pinned here, by the newest
     assert script.get_revision("0105").down_revision == HEAD_BEFORE

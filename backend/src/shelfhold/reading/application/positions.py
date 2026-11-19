@@ -43,7 +43,7 @@ import structlog
 
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import reading
+from shelfhold.infrastructure.schema import export, reading
 from shelfhold.reading.application.content_access import ContentAccess, NoReadableCopyError
 from shelfhold.reading.application.progress import (
     HISTORY_LIMIT,
@@ -199,8 +199,8 @@ class ReaderPositions:
             self._propose(connection, user_id, carrier_type, carrier_id, now)
             return self._current(connection, user_id, carrier_type, carrier_id)
 
+    @staticmethod
     def _propose(
-        self,
         connection: sa.Connection,
         user_id: str,
         carrier_type: str,
@@ -208,7 +208,7 @@ class ReaderPositions:
         now: datetime,
     ) -> None:
         """Record the divergence of two devices, once (D8), if there is one."""
-        rows = self._v1_rows(connection, user_id, carrier_type, carrier_id)
+        rows = ReaderPositions._v1_rows(connection, user_id, carrier_type, carrier_id)
         if not rows:
             return
         table = reading.reading_conflict
@@ -278,11 +278,16 @@ class ReaderPositions:
                   reverse=True)  # fmt: skip
         return [_stored(r, now_hash) for r in rows[: max(0, min(limit, HISTORY_LIMIT))]]
 
+    @staticmethod
     def _v1_rows(
-        self, connection: sa.Connection, user_id: str, carrier_type: str, carrier_id: str
+        connection: sa.Connection, user_id: str, carrier_type: str, carrier_id: str
     ) -> list[Any]:
+        """The positions that say where she is in this book: the ones of the reader (locator v1) on
+        this carrier and, for an EPUB, the ones a device wrote through kosync on the file exported
+        from the same content (M5 L09). Both are one reader on one book, so they merge by the one
+        rule; the device's place stays on its own file, as written."""
         table = reading.reading_position
-        return list(
+        rows = list(
             connection.execute(
                 sa.select(table)
                 .where(
@@ -294,6 +299,43 @@ class ReaderPositions:
                 )
                 # the window is cut on effective time (`client_ts` bounded by `server_ts`), never
                 # on arrival: a late batch cannot push the current position out of it
+                .order_by(
+                    sa.func.min(table.c.client_ts, table.c.server_ts).desc(), table.c.id.desc()
+                )
+                .limit(HISTORY_LIMIT)
+            )
+        )
+        rows += ReaderPositions._device_rows(connection, user_id, carrier_type, carrier_id)
+        rows.sort(key=lambda r: (min(_utc(r.client_ts), _utc(r.server_ts)), r.id), reverse=True)
+        return rows[:HISTORY_LIMIT]
+
+    @staticmethod
+    def _device_rows(
+        connection: sa.Connection, user_id: str, carrier_type: str, carrier_id: str
+    ) -> list[Any]:
+        """The xpointer positions of the profile's devices on the exported files of the content
+        this carrier is (or carries), and only on the very file this carrier holds now (the same
+        hash: the share of another file is not the same quantity). Her own rows and no one
+        else's."""
+        content_id = _content_of(connection, carrier_type, carrier_id)
+        hash_ = _current_hash(connection, carrier_type, carrier_id)
+        if content_id is None or hash_ is None:
+            return []
+        table, item = reading.reading_position, export.export_item
+        return list(
+            connection.execute(
+                sa.select(table)
+                .where(
+                    table.c.user_id == user_id,
+                    table.c.carrier_type == "export_item",
+                    table.c.carrier_id.in_(
+                        sa.select(item.c.id).where(item.c.content_id == content_id)
+                    ),
+                    table.c.source == "device",
+                    table.c.content_hash == hash_,
+                    sa.func.json_extract(table.c.locator, "$.xpointer").is_not(None),
+                    table.c.percent.is_not(None),
+                )
                 .order_by(
                     sa.func.min(table.c.client_ts, table.c.server_ts).desc(), table.c.id.desc()
                 )
@@ -417,10 +459,11 @@ class ReaderPositions:
                 }
                 lost = sides.get(row.loser_position_id)
                 if lost is not None:
+                    check_carrier(connection, user_id, lost.carrier_type, lost.carrier_id)
                     insert_position(
-                        connection, user_id=user_id, carrier_type=row.carrier_type,
-                        carrier_id=row.carrier_id, content_hash=lost.content_hash,
-                        locator=lost.locator, percent=lost.percent, client_ts=now,
+                        connection, user_id=user_id, carrier_type=lost.carrier_type,
+                        carrier_id=lost.carrier_id, content_hash=lost.content_hash,
+                        locator=_resumed(lost.locator), percent=lost.percent, client_ts=now,
                         device_id=device_id
                         or (sides[row.winner_position_id].device_id
                             if row.winner_position_id in sides else lost.device_id),
@@ -430,6 +473,40 @@ class ReaderPositions:
                 sa.update(table).where(table.c.id == row.id).values(choice=choice, resolved_at=now)
             )
             return self._current(connection, user_id, row.carrier_type, row.carrier_id)
+
+
+def propose_for_exported_file(
+    connection: sa.Connection, user_id: str, item_id: str, now: datetime
+) -> None:
+    """A device wrote on an exported file (kosync): the divergence of L07 is judged for the reader
+    of the same content, by the rule a write of the reader goes through (`ReaderPositions.write`),
+    so that no door lets a further place be taken without a word (D8). The proposal is the
+    reader's (the key of a conflict is the carrier of the reader, never the exported file)."""
+    content_id = _content_of(connection, "export_item", item_id)
+    if content_id is not None:
+        ReaderPositions._propose(connection, user_id, "content", content_id, now)
+
+
+def _resumed(locator: dict[str, Any]) -> dict[str, Any]:
+    """The place a reader resumes from, written again as the latest. An xpointer a device wrote
+    keeps
+    its text and its document but not its writer, its window nor its end: the copy is the reader's
+    choice, never a step of that device's walk and never a proof that a book was finished."""
+    if locator.get("xpointer") is None:
+        return locator
+    return {k: v for k, v in locator.items() if k not in {"who", "end", "w", "f"}}
+
+
+def _content_of(connection: sa.Connection, carrier_type: str, carrier_id: str) -> str | None:
+    """The content a carrier is, or the one an exported file points at."""
+    if carrier_type == "content":
+        return carrier_id
+    if carrier_type != "export_item":
+        return None
+    found = connection.execute(
+        sa.select(export.export_item.c.content_id).where(export.export_item.c.id == carrier_id)
+    ).scalar()
+    return None if found is None else str(found)
 
 
 def _overtaken(row: Any, reports: dict[str, Reported], won: Reported) -> bool:
