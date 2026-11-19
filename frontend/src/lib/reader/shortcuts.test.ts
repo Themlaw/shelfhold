@@ -30,6 +30,7 @@ describe('the keyboard of the reader', () => {
     expect(readerShortcut('webtoon', '?')).toBe('help');
   });
 
+  // req: EF-LEC-011
   it('says nothing of a key that does nothing', () => {
     for (const key of ['a', 'Enter', 'Shift', 'F1', 'é']) {
       expect(readerShortcut('ltr', key)).toBeNull();

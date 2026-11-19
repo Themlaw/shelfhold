@@ -350,6 +350,10 @@ class PublicationService:
             ).first()
         if row is None:
             raise UnknownCarrierError
-        return str(row.title), row.number_raw, row.default_direction, row.reading_direction, str(
-            row.id
+        return (
+            str(row.title),
+            row.number_raw,
+            row.default_direction,
+            row.reading_direction,
+            str(row.id),
         )

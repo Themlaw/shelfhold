@@ -59,12 +59,19 @@ def test_settings_priority_per_type(tmp_path: Any) -> None:
         reader = env.user("lectrice")
         service = ReaderSettings(env.engine)
         series, other = env.seed.works["ok"], env.seed.works["x"]
-        service.set(user_id=reader, kind="direction", key="default", value="ltr",
-                    scope="everywhere")
+        service.set(
+            user_id=reader, kind="direction", key="default", value="ltr", scope="everywhere"
+        )
         service.set(user_id=reader, kind="direction", key=series, value="rtl", scope="everywhere")
         service.set(user_id=reader, kind="comfort", key="fit", value="contain", scope="everywhere")
-        service.set(user_id=reader, kind="comfort", key="fit", value="width",
-                    scope="device", device_id=DEVICE)
+        service.set(
+            user_id=reader,
+            kind="comfort",
+            key="fit",
+            value="width",
+            scope="device",
+            device_id=DEVICE,
+        )
         # the direction: the series wins over the mode, the other series reads the mode
         assert service.resolve(user_id=reader, series_id=series).direction == "rtl"
         assert service.resolve(user_id=reader, series_id=other).direction == "ltr"
@@ -89,12 +96,30 @@ def test_the_portee_is_part_of_the_write(tmp_path: Any) -> None:
         with pytest.raises(DeviceScopeError):
             service.set(user_id=reader, kind="comfort", key="fit", value="width", scope="device")
         with pytest.raises(DeviceScopeError):
-            service.set(user_id=reader, kind="comfort", key="fit", value="width",
-                        scope="everywhere", device_id=DEVICE)
-        service.set(user_id=reader, kind="comfort", key="fit", value="width",
-                    scope="device", device_id=DEVICE)
-        service.set(user_id=reader, kind="comfort", key="fit", value="contain",
-                    scope="device", device_id=DEVICE)
+            service.set(
+                user_id=reader,
+                kind="comfort",
+                key="fit",
+                value="width",
+                scope="everywhere",
+                device_id=DEVICE,
+            )
+        service.set(
+            user_id=reader,
+            kind="comfort",
+            key="fit",
+            value="width",
+            scope="device",
+            device_id=DEVICE,
+        )
+        service.set(
+            user_id=reader,
+            kind="comfort",
+            key="fit",
+            value="contain",
+            scope="device",
+            device_id=DEVICE,
+        )
         assert service.resolve(user_id=reader, device_id=DEVICE).comfort == {"fit": "contain"}
         with env.engine.connect() as connection:
             rows = int(
@@ -131,8 +156,14 @@ def test_settings_stay_in_their_profile(tmp_path: Any) -> None:
         series = env.seed.works["ok"]
         service.set(user_id=adult, kind="direction", key=series, value="rtl", scope="everywhere")
         service.set(user_id=child, kind="direction", key=series, value="ltr", scope="everywhere")
-        service.set(user_id=child, kind="comfort", key="fit", value="width",
-                    scope="device", device_id=DEVICE)
+        service.set(
+            user_id=child,
+            kind="comfort",
+            key="fit",
+            value="width",
+            scope="device",
+            device_id=DEVICE,
+        )
         assert service.resolve(user_id=adult, series_id=series).direction == "rtl"
         assert service.resolve(user_id=child, series_id=series).direction == "ltr"
         assert service.resolve(user_id=child, device_id=DEVICE).comfort == {"fit": "width"}
@@ -180,8 +211,7 @@ def test_settings_routes_answer_the_profile_that_asks(world: World) -> None:
     got = put_setting(
         world,
         world.admin,
-        {"kind": "comfort", "key": "fit", "value": "width", "scope": "device",
-         "device_id": DEVICE},
+        {"kind": "comfort", "key": "fit", "value": "width", "scope": "device", "device_id": DEVICE},
     )
     assert got.status_code == 200
     assert settings_of(world.admin, series_id=series, device_id=DEVICE).json() == {
@@ -231,8 +261,12 @@ def test_no_setting_widens_what_parental_control_hides(world: World) -> None:
     got = put_setting(
         world,
         world.kid,
-        {"kind": "direction", "key": world.seed.works["twelve"], "value": "rtl",
-         "scope": "everywhere"},
+        {
+            "kind": "direction",
+            "key": world.seed.works["twelve"],
+            "value": "rtl",
+            "scope": "everywhere",
+        },
     )
     assert got.status_code == 200  # her own choice, in her own profile
     assert _shape(publication(world.kid, "content", hidden)) == _shape(absent)
@@ -258,9 +292,7 @@ def test_a_series_she_cannot_see_answers_like_one_that_is_not_there(world: World
         kept = connection.execute(
             sa.select(sa.func.count())
             .select_from(reading.reader_setting)
-            .where(
-                reading.reader_setting.c.user_id == user_id_of(world.seed.engine, "kid")
-            )
+            .where(reading.reader_setting.c.user_id == user_id_of(world.seed.engine, "kid"))
         ).scalar_one()
     assert kept == 0
 

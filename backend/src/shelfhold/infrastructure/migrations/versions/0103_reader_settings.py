@@ -43,7 +43,7 @@ CREATE TABLE reader_settings (
     )
     op.execute(
         "CREATE UNIQUE INDEX ux_reader_settings_place ON reader_settings"
-        ' (user_id, kind, "key", scope, ifnull(device_id, \'\'))'
+        " (user_id, kind, \"key\", scope, ifnull(device_id, ''))"
     )
 
 

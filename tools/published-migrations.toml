@@ -332,7 +332,7 @@ since = "1.2"
 
 [[migration]]
 file = "0103_reader_settings.py"
-sha256 = "c59b42da3cce96809c44f878829c1d40d5c1829c92ce7ec59add8c5b1e007221"
+sha256 = "f75e697b781608b774d1c39e80c6735c6f0339ce3e6d5d9b501ecb0ab6cfda7f"
 since = "1.2"
 
 [[migration]]
