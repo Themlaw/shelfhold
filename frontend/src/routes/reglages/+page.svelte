@@ -172,6 +172,8 @@
       <li><a href="/reglages/apparence">{t('settings.link.appearance')}</a></li>
       <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
       <li><a href="/reglages/compte-kavita">{t('kavita.title')}</a></li>
+      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+      <li><a href="/reglages/compte/oidc">{t('oidc.title')}</a></li>
     </ul>
   </nav>
 

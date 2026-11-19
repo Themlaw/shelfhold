@@ -21,7 +21,7 @@ pytestmark = pytest.mark.req("ENF-OPS-002", "EF-LEC-014")
 
 def test_the_revision_is_0106_the_head_on_0104() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0106"]  # the head is pinned here, by the newest
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     # 0105 is L21's: chained on 0104, re-chained if another lot lands first
     assert script.get_revision("0106").down_revision == "0104"
 
