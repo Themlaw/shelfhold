@@ -162,6 +162,7 @@ OPEN = {
     "GET /api/v1/works": "works_since",  # M3 L11: the list of Works and its `?since=` removals
     # M3 L24: a cover's thumbnail, by session only; hers when an Edition she may see points at it
     "GET /api/v1/thumbnails/{content_hash}/{size}": "thumbnail",
+    "GET /content/{ticket}/{path:path}": "content",  # M5 L05a: the bytes of a book, by ticket
     # M4 L23: the official links of an Edition she may see; a hidden one is an absent one
     "GET /api/v1/editions/{edition_id}/support-author": "support_author",
     # M4 L18a: the collections and reading lists, made of the Works she may see and a list of her
@@ -451,7 +452,7 @@ PENDING_SURFACES: dict[
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
-    "work_redirect", "opds", "support_author", "collections", "relations", "lite",
+    "content", "work_redirect", "opds", "support_author", "collections", "relations", "lite",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -1172,6 +1173,73 @@ def _surface_thumbnail(world: World) -> None:
         f"/api/v1/thumbnails/{digests['ok']}/160", headers={"Authorization": f"Bearer {key}"}
     )
     assert by_key.status_code == 403
+    world.clean(by_key.text)
+
+
+def _surface_content(world: World) -> None:
+    """M5 L05a: the bytes of a book are a projection like any other. A ticket is not issued for a
+    carrier she may not see; the ticket of an adult, shown by her, is an absent thing; a carrier
+    reclassified under her own ticket is an absent thing at the next byte; and every refusal has
+    the shape of the answer for a carrier that does not exist."""
+    from shelfhold.reading.public import UnknownCarrierError
+    from tests.content_env import PNG, FakeArchives, add_carrier, session_id_of, user_id_of
+
+    seed = world.seed
+    fake = FakeArchives()
+    access = world.env.app.state.content_access  # type: ignore[attr-defined]
+    access.archives = fake
+    admin_id, kid_id = user_id_of(seed.engine, "admin"), user_id_of(seed.engine, "kid")
+    admin_session, kid_session = (
+        session_id_of(seed.engine, "admin"),
+        session_id_of(seed.engine, "kid"),
+    )
+    carriers: dict[str, str] = {}
+    for key in (
+        "ok",
+        "mixed_rated",
+        "twelve",
+        "above",
+        "adult_edition",
+        "misfiled",
+        "mixed_new",
+        "reserved",
+    ):
+        carriers[key] = add_carrier(seed.engine, seed.editions[key], format="epub")
+        fake.by_content[carriers[key]] = {"p1.png": PNG}
+    absent = world.kid.get("/content/" + "A" * 80 + "/p1.png")
+    assert absent.status_code == 404
+    for key, carrier in carriers.items():
+        adult = access.issue(
+            user_id=admin_id, session_id=admin_session, carrier_type="content", carrier_id=carrier
+        ).token
+        shown = world.kid.get(f"/content/{adult}/p1.png")  # her client, an adult's ticket
+        assert _shape(shown) == _shape(absent), key
+        world.clean(shown.text)
+        if key in ("ok", "mixed_rated"):
+            hers = access.issue(
+                user_id=kid_id, session_id=kid_session, carrier_type="content", carrier_id=carrier
+            ).token
+            assert world.kid.get(f"/content/{hers}/p1.png").status_code == 200, key
+        else:
+            with pytest.raises(UnknownCarrierError):
+                access.issue(
+                    user_id=kid_id,
+                    session_id=kid_session,
+                    carrier_type="content",
+                    carrier_id=carrier,
+                )
+    key = (
+        local_auth(seed.engine, world.env.settings)
+        .create_api_key(name="kidkey4", username="kid", read_only=True)
+        .value
+    )
+    ticket = access.issue(
+        user_id=kid_id, session_id=kid_session, carrier_type="content", carrier_id=carriers["ok"]
+    ).token
+    by_key = world.env.other_client("10.0.0.59").get(
+        f"/content/{ticket}/p1.png", headers={"Authorization": f"Bearer {key}"}
+    )
+    assert by_key.status_code in {401, 403}
     world.clean(by_key.text)
 
 

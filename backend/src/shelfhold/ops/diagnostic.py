@@ -134,8 +134,8 @@ _AS_IS = (
     "backup_stale_hours", "fetcher_cache", "comicvine_enabled", "googlebooks_daily_budget",
 )  # fmt: skip
 _PRESENCE = (
-    "public_url", "api_token", "secret_key_file", "frontend_dir", "source_url", "wake_url",
-    "update_check_url", "plugin_index_url",
+    "public_url", "content_origin", "api_token", "secret_key_file", "frontend_dir", "source_url",
+    "wake_url", "update_check_url", "plugin_index_url",
     "wake_token", "auth_forward_secret", "setup_token", "backup_dir", "backup_passphrase_file",
     "metadata_contact", "import_dir", "comicvine_api_key",
 )  # fmt: skip
@@ -1027,7 +1027,14 @@ def build_bundle(
         )
         for index, path in enumerate(log_files, start=1)
     ]
-    for name in ("public_url", "source_url", "wake_url", "update_check_url", "plugin_index_url"):
+    for name in (
+        "public_url",
+        "content_origin",
+        "source_url",
+        "wake_url",
+        "update_check_url",
+        "plugin_index_url",
+    ):
         forbidden.add(f"settings.{name}", getattr(settings, name))
     forbidden.add("settings.host", settings.host, word=True)
     hostname = host_platform.node()
