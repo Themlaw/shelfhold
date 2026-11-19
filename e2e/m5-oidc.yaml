@@ -1,0 +1,41 @@
+# OpenID Connect overlay of the M5 journeys (L24, EF-USR-004, EF-USR-024), added to the M5 files:
+# the simulated provider of `fakes/oidc` answers over TLS under a name the stack gives an address
+# that exists on the loopback of the namespace only (`fakes/m2/hosts`), and the test authority of
+# the run is the one trust anchor (`m2.yaml`). Nothing is a literal: the run draws the client secret
+# and gives the same one to the provider and to Shelfhold (`E2E_OIDC_SECRET`). The provider is
+# asked, by the test, for the subject of the person who signs in (`FAKE_OIDC_SUB`).
+name: shelfhold-e2e-m5-oidc
+
+services:
+  fake-oidc:
+    image: ${SHELFHOLD_IMAGE:?}
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: service:egress-watch
+    command: ["python", "/fakes/oidc/serve.py"]
+    environment:
+      PYTHONPATH: /fakes:/pkg
+      PYTHONDONTWRITEBYTECODE: "1"
+      FAKE_OIDC_SUB: ${E2E_OIDC_SUB:?}
+      FAKE_OIDC_CLIENT_SECRET: ${E2E_OIDC_SECRET:?}
+    depends_on:
+      egress-watch: { condition: service_healthy }
+      fake-net-init: { condition: service_completed_successfully }
+    volumes:
+      - ./fakes:/fakes:ro
+      - ../backend/tests:/pkg/tests:ro
+      - ${E2E_PKI_DIR:?}:/pki:ro
+    tmpfs: ["/tmp"]
+
+  shelfhold:
+    depends_on:
+      fake-oidc: { condition: service_started }
+    environment:
+      # the redirect address of the provider is built from it; the journey calls the callback
+      # itself, on the loopback, where the browser would be sent
+      SHELFHOLD_PUBLIC_URL: https://shelfhold.e2e.test
+      SHELFHOLD_OIDC_ISSUER: https://idp.e2e.test:9443
+      SHELFHOLD_OIDC_CLIENT_ID: shelfhold-test-client
+      SHELFHOLD_OIDC_CLIENT_SECRET: ${E2E_OIDC_SECRET:?}

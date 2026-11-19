@@ -1,0 +1,27 @@
+# M5 overlay (L24), used with compose.yaml, journey.yaml, m2.yaml and m4.yaml: `-f compose.yaml
+# -f journey.yaml -f m2.yaml -f m4.yaml -f m5.yaml`. The M5 journeys play the integrated reader,
+# the e-reader routes and `/lite` on the release image. The door a browser needs is published on
+# the loopback of the host (18080 -> Shelfhold), as the M3 overlay does; the replies go back to
+# the bridge of the stack, inside its own subnet, and `egress-watch` still sees nothing leave.
+#
+# The journeys:
+# - parcours 1: a book kept and never exported is read as an excerpt, then in full;
+# - parcours 2: a booby-trapped EPUB is shown and no script runs;
+# - parcours 3: a simulated KOReader (`fakes/koreader`) pairs, sends its position and reads it back,
+#   and the book appears in "Continuer la lecture";
+# - parcours 4: `/lite` browses and downloads with JavaScript off;
+# - parcours 5: reading offline, reclassifying to 18+, the network back, the copy evicted;
+# - parcours 6: sign-in by the simulated OpenID Connect provider (`m5-oidc.yaml`).
+name: shelfhold-e2e-m5
+
+services:
+  egress-watch:
+    ports:
+      - "127.0.0.1:18080:8080"
+
+  library-init:
+    # the M4 overlay replaces the command of the M2 one: the import folder is chowned here too
+    command:
+      - sh
+      - -c
+      - "mkdir -p /library/manga && chown 1000:1000 /library /library/manga /library/native /import /tree"

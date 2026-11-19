@@ -152,12 +152,14 @@ def require_tls(request: Request) -> None:
 
 def same_origin(request: Request) -> None:
     """A form is sent from this very site: a cross-site page cannot forge its `Origin`, and a
-    browser that sends none is left to the token of the form."""
+    browser that sends none is left to the token of the form. `Origin: null` is none: Chrome sends
+    it for a form posted under `Referrer-Policy: no-referrer`, which every page of `/lite` has, and
+    a cross-site page is caught by `Sec-Fetch-Site` and by the token bound to the flow cookie."""
     headers = request.headers
     if headers.get("sec-fetch-site", "").lower() == "cross-site":
         raise csrf_refused(request)
     origin, host = headers.get("origin"), headers.get("host", "")
-    if origin is not None and (
+    if origin is not None and origin != "null" and (
         not host or origin.split("://", 1)[-1].casefold() != host.casefold()
     ):
         raise csrf_refused(request)
