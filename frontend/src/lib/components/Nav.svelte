@@ -4,6 +4,7 @@
   import { logout } from '#lib/api/index.ts';
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
+  import { wipeOfflineCopies } from '#lib/offline/runtime.ts';
   import { navItems } from '#lib/nav.ts';
 
   let { ids, current = null }: { ids: readonly string[]; current?: string | null } = $props();
@@ -16,6 +17,8 @@
   async function signOut(): Promise<void> {
     busy = true;
     failed = false;
+    // before the request: signing out offline, or a request that fails, still leaves nothing of the profile
+    await wipeOfflineCopies();
     try {
       await logout({ headers: { 'X-CSRF-Token': csrfToken() }, throwOnError: true });
       // eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin

@@ -18,6 +18,17 @@ async function read(fetcher: Fetch, path: string): Promise<Record<string, unknow
   }
 }
 
+/** `/api/v1/me`, with whether the server refused the session (401 or 403): a network failure is not that. */
+async function readMe(fetcher: Fetch): Promise<{ me: Record<string, unknown> | null; refused: boolean }> {
+  try {
+    const response = await fetcher('/api/v1/me');
+    const refused = response.status === 401 || response.status === 403;
+    return { me: response.ok ? ((await response.json()) as Record<string, unknown>) : null, refused };
+  } catch {
+    return { me: null, refused: false };
+  }
+}
+
 /** The language of the interface is a preference of the profile (ENF-I18N-001); nothing set (nobody
  * signed in, or an unknown value): the browser languages decide (the `Accept-Language`). */
 function language(preferences: Record<string, unknown> | null): Language | null {
@@ -37,11 +48,12 @@ export async function load({
   url?: URL;
   untrack?: <T>(fn: () => T) => T;
 }) {
-  const [source, preferences, me] = await Promise.all([
+  const [source, preferences, meRead] = await Promise.all([
     read(fetcher, '/api/v1/source'),
     read(fetcher, '/api/v1/me/preferences'),
-    read(fetcher, '/api/v1/me')
+    readMe(fetcher)
   ]);
+  const me = meRead.me;
   // A new instance has no account: whatever the address opened, the first-run wizard starts on
   // the account screen (EF-UX-001). Nothing to type: opening `/` is the whole way in. Only
   // someone nobody knows can be on a new instance, so the status is read for them alone, and the
@@ -61,5 +73,6 @@ export async function load({
   }
   // The tabs the server offers to the signed-in role (EF-UX-005); nobody signed in: none.
   const nav = Array.isArray(me?.nav) ? me.nav.filter((id): id is string => typeof id === 'string') : [];
-  return { sourceUrl, appearance, nav, language: language(preferences) };
+  const profileId = typeof me?.id === 'string' ? me.id : null; // the owner of the offline copies on this browser (L16b)
+  return { sourceUrl, appearance, nav, language: language(preferences), profileId, sessionLost: meRead.refused };
 }

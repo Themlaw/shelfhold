@@ -17,7 +17,7 @@ garde la copie ?
 
 | Client | Usage | Formats d'image | Hors ligne | Remarque |
 | --- | --- | --- | --- | --- |
-| Navigateurs récents (Chrome, Firefox, Edge, Safari) | SPA de Shelfhold, lecteur intégré, lecteur web de Kavita | JPEG et PNG attendus ; WebP : non vérifié | non vérifié ; la coquille de la PWA s'ouvre sans réseau, la copie hors ligne d'un livre est **pas encore disponible** | la SPA a besoin du serveur pour tout le reste |
+| Navigateurs récents (Chrome, Firefox, Edge, Safari) | SPA de Shelfhold, lecteur intégré, lecteur web de Kavita | JPEG et PNG attendus ; WebP : non vérifié | non vérifié ; la coquille de la PWA s'ouvre sans réseau ; un livre gardé hors ligne se lit sans réseau ([copies hors ligne](../famille/copies-hors-ligne.md)) | la SPA a besoin du serveur pour tout le reste |
 | Safari iOS | idem | non vérifié | non vérifié | à confirmer par un rapport d'appareil |
 | Boox | navigateur Chrome conseillé, ou KOReader | non vérifié | non vérifié | écran e-ink : animations réduites |
 | Kindle (navigateur récent, version 5.16.4 ou plus) | `/lite`, ou la SPA « au mieux » | non vérifié | non vérifié | « SPA au mieux » : peut fonctionner, sans garantie |
@@ -42,8 +42,9 @@ Mihon et CDisplayEx n'utilisent pas OPDS.
 - **Le KEPUB** : un tome EPUB converti pour une Kobo, proposé dans l'OPDS et dans `/lite`, gardé en
   cache et purgé avec sa source. Un Kobo le lit mieux qu'un EPUB (pagination, couverture).
 - **La coquille hors ligne (PWA)** : l'application s'installe et s'ouvre sans réseau. Elle ne garde
-  **aucune** réponse de l'API et **aucun** octet de livre : la copie hors ligne d'un livre est
-  **pas encore disponible**.
+  **aucune** réponse de l'API. Un livre que le membre garde hors ligne est copié pour **son**
+  profil seulement, et effacé à la déconnexion ou quand il ne lui est plus visible : voir
+  [copies hors ligne](../famille/copies-hors-ligne.md).
 
 ## Détection de capacités, jamais d'User-Agent
 

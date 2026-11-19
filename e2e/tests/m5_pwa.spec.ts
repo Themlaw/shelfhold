@@ -90,9 +90,8 @@ test('keeps no answer of the API and no byte of a book', async ({ page }) => {
 test('test_offline_reader_entry_keeps_reader_csp', async ({ page, context }) => {
   await controlled(page);
 
-  // in control of the origin, the worker lets the reader through: its page, its header, no shell
+  // in control of the origin, the worker passes the reader through (L16b keeps it): its page, its header, no shell
   const response = await page.goto('/lire/U1');
-  expect(response?.fromServiceWorker()).toBe(false);
   const csp = response!.headers()['content-security-policy']!;
   expect(directive(csp, 'worker-src')).toEqual(["'none'"]);
   expect(directive(csp, 'manifest-src')).toEqual(["'none'"]);
@@ -100,7 +99,8 @@ test('test_offline_reader_entry_keeps_reader_csp', async ({ page, context }) => 
   expect(await page.locator('link[rel="manifest"]').count()).toBe(0);
   expect(await page.locator('#reader').count()).toBe(1);
 
-  // with no network, the reader entry is not replaced by the shell (it is cached by L16b, with its headers)
+  // with no network and nobody signed in on this browser, the reader entry is a network error: never the
+  // shell (L16b answers the kept page, with its headers, only where a profile is signed in)
   await context.setOffline(true);
   const offline = await page.goto('/lire/U1').then(
     (r) => r,
@@ -112,8 +112,8 @@ test('test_offline_reader_entry_keeps_reader_csp', async ({ page, context }) => 
     // encountered an internal error"): what is asserted is that the navigation failed.
     expect(offline.message).toMatch(/^page\.goto:/);
   } else {
-    expect(offline?.fromServiceWorker()).toBe(false);
     expect(await offline!.text()).not.toContain('__sveltekit');
+    expect(offline!.headers()['content-security-policy']).toBeTruthy();
   }
   await context.setOffline(false);
 });
