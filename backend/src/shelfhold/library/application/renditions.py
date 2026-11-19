@@ -191,7 +191,7 @@ class RenditionService:
         body["src"] = hashlib.sha256(data).hexdigest()
         return json.dumps(body, sort_keys=True, separators=(",", ":"))
 
-    def _purged(self, origin: _Origin) -> bool:
+    def _tombstoned(self, origin: _Origin) -> bool:
         """This content is being purged, or was: its own place is tombstoned. A file that
         carries several Units has no one place: the hash of its file then decides."""
         if origin.place is not None:
@@ -199,7 +199,7 @@ class RenditionService:
         return self._tombstones.check_content([ContentHash(FILE_HASH_BY, origin.source)])
 
     def _refuse_purged(self, origin: _Origin) -> None:
-        if self._purged(origin):
+        if self._tombstoned(origin):
             raise TombstonedContentError("the content was purged: nothing is made from it")
 
     def _origin(self, content_id: str) -> _Origin:
@@ -253,7 +253,7 @@ class RenditionService:
         """The rendition already made from these bytes of this content, if its file is there and
         intact."""
         origin = self._origin(content_id)
-        if self._purged(origin):  # as `render` refuses: nothing is handed back during a purge
+        if self._tombstoned(origin):  # as `render` refuses: nothing is handed back during a purge
             return None
         return self._cached(origin.source, params, self._key(params, data))
 
