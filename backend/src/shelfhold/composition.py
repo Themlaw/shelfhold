@@ -262,16 +262,11 @@ class Composition:
                 or entry[1] != self._roots_epoch
             ):  # fmt: skip
                 epoch = self._roots_epoch
-                # The service writes its own journal lines (replay, owed lines) on a disk of its
-                # own: a read view refuses every write, and a writer hands it its `Fsops` by
-                # `use_disk` below.
-                disk = self.open_fsops(loaded) if fsops.writes_refused else fsops
-                service = TombstoneService(self.engine, self.keyring(), disk, self.bus)
-                away = self._replay(service, disk, loaded)
+                service = TombstoneService(self.engine, self.keyring(), fsops, self.bus)
+                away = self._replay(service, fsops, loaded)
                 entry = self._tombstones = (signature, epoch, service, away)
             service = entry[2]
-        if not fsops.writes_refused:  # a read view never becomes the disk the service writes on
-            service.use_disk(fsops)
+        service.use_disk(fsops)
         fsops.enforce_tombstone_flush(
             lambda path: any(
                 r.path == path and service.has_pending(r.root_id) for r in loaded.roots
@@ -364,9 +359,10 @@ class Composition:
         slip past the lease and the look at the whole instance by this door. What writes goes
         through `write_context`, which pays the lines owed to a root
         (`flush_owed_tombstones` pays them too)."""
-        fsops, loaded, tombstones = self._context()
-        fsops.refuse_writes()
-        return fsops, loaded, tombstones
+        _disk, loaded, tombstones = self._context()  # the service writes its own journal lines
+        view = self.open_fsops(loaded)  # on `disk`; what the caller gets refuses every write
+        view.refuse_writes()
+        return view, loaded, tombstones
 
     def lease_context(self) -> tuple[Fsops, LoadedRoots, TombstoneService]:
         """The `Fsops` of a caller that hands it to `session_opener` (which binds the lease
