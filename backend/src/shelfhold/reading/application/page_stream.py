@@ -36,7 +36,8 @@ from shelfhold.reading.domain.publication import page_names
 
 __all__ = ["MAX_STREAMS", "PageStream", "StreamOffer", "StreamPage"]
 
-MAX_STREAMS: Final = 50  # the streams one Edition's entry of a feed offers, so a feed stays bounded
+MAX_STREAMS: Final = 50  # the streams one feed offers in all, so a feed stays bounded
+_MAX_SCAN: Final = 4 * MAX_STREAMS  # rows looked at to find them (a hidden one is skipped)
 _CARRIER: Final = "export_item"
 _FORMAT: Final = "cbz"
 
@@ -60,7 +61,9 @@ class PageStream:
     def __init__(self, engine: sa.Engine, access: ContentAccess) -> None:
         self._engine, self._access = engine, access
 
-    def offers(self, user_id: str, edition_id: str) -> list[StreamOffer]:
+    def offers(
+        self, user_id: str, edition_id: str, *, limit: int = MAX_STREAMS
+    ) -> list[StreamOffer]:
         """The streams of an Edition the caller has already shown to the profile: those whose item
         and content the profile sees now, whose kept copy can be read and has pages."""
         item, content, unit = export.export_item, storage.content, catalog.unit
@@ -74,10 +77,12 @@ class PageStream:
                 )
                 .where(item.c.edition_id == edition_id, content.c.format == _FORMAT)
                 .order_by(item.c.id)
-                .limit(MAX_STREAMS)
+                .limit(_MAX_SCAN)
             ).all()
         found: list[StreamOffer] = []
         for row in rows:
+            if len(found) >= limit:
+                break
             item_id = str(row.id)
             try:
                 count = self._count(user_id, item_id)
@@ -87,8 +92,7 @@ class PageStream:
         return found
 
     def _count(self, user_id: str, item_id: str) -> int:
-        self._resolve(user_id, item_id)
-        archive = self._open(item_id)
+        archive = self._open(self._resolve(user_id, item_id))
         try:
             count = len(page_names(archive.names()))
         finally:
@@ -100,7 +104,7 @@ class PageStream:
     def page(self, user_id: str, item_id: str, number: int) -> StreamPage:
         """Page `number` (from 0) of the volume. `UnknownCarrierError` for every refusal."""
         content_id = self._resolve(user_id, item_id)
-        archive = self._open(item_id)
+        archive = self._open(content_id)
         try:
             names = page_names(archive.names())
             if not 0 <= number < len(names):
@@ -119,8 +123,10 @@ class PageStream:
             raise UnknownCarrierError
         return resolved.content_id
 
-    def _open(self, item_id: str) -> ContentArchive:
+    def _open(self, content_id: str) -> ContentArchive:
+        """The file of the content that was judged, never of what the item names at this moment
+        (X4: the bytes read are those of the `content_id` the filter passed)."""
         try:
-            return self._access.archives.open(_CARRIER, item_id, "full")
+            return self._access.archives.open("content", content_id, "full")
         except NoReadableCopyError:
             raise UnknownCarrierError from None

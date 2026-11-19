@@ -359,7 +359,6 @@ def create_app(
         )  # fmt: skip
 
     @cache
-    @cache
     def page_stream() -> PageStream:  # M5 L18: the pages of an exported volume, by device token
         return PageStream(engine, content_access())
 
@@ -369,6 +368,7 @@ def create_app(
             engine, resolved.data_dir, clock, tombstones=LazyTombstones(composition)
         )
 
+    @cache
     def thumbnails() -> ThumbnailService:  # the session route and the OPDS one share it
         return ThumbnailService(engine, resolved.data_dir, clock)
 

@@ -1495,6 +1495,11 @@
     action = "Allow JPEG or PNG in the Accept header of your reading app (image/jpeg, image/png or image/*)."
     cause = "The page is in a format your app cannot read, and Shelfhold cannot convert it to one it accepts."
 
+  [errors.rendition_busy]
+    title = "Too many pages are being converted at once."
+    action = "Try again in a few seconds: your reading app can ask for the page again."
+    cause = "Converting a page is heavy: Shelfhold does only a few at a time."
+
   [errors.kosync_registration_disabled]
     title = "An e-reader does not create accounts."
     action = "Ask the Shelfhold administrator for a device token, then enter it in the e-reader's sync settings."

@@ -33102,6 +33102,10 @@
       "code": "rename.refused",
       "status": 409
     },
+    "/api/v1/problems/rendition-busy": {
+      "code": "rendition_busy",
+      "status": 429
+    },
     "/api/v1/problems/rendition.format-unsupported": {
       "code": "rendition.format_unsupported",
       "status": 422

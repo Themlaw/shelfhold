@@ -134,10 +134,9 @@ symbols = [
 
 [[allow]]
 category = "unwired-m5-renditions"
-reason = "2026-11-19 (M5 L18): the page-by-page stream (`pse:stream`) now makes and reads renditions (`render`, `read`). Two methods of `RenditionService` have no production caller: `cached` (a lookup without making, for the KEPUB link of L20b, which shares this table and this cache) and the method form of `collect_orphans` (the sweep is called by the window job through the module function)."
+reason = "2026-11-19 (M5 L18): the page-by-page stream (`pse:stream`) now makes and reads renditions (`render`, `read`). One method of `RenditionService` has no production caller: the method form of `collect_orphans` (the sweep is called by the window job through the module function)."
 until = "M5"
 symbols = [
-  "shelfhold.library.application.renditions:RenditionService.cached",
   "shelfhold.library.application.renditions:RenditionService.collect_orphans",
 ]
 
