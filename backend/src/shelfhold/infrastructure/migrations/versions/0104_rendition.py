@@ -6,15 +6,14 @@ is keyed by what was asked (the hash of the source content, the kind, the canoni
 a purge erases the files, then the rows. A cache: regenerable, left out of the export. Nothing
 existing is touched; reversible.
 
-Number: 0104 is the one PLAN-M5 reserves for L20a. `down_revision` is the head of main (0101); it is
-rechained on 0102 when the reading positions (L07) merge.
+Number: 0104 is the one PLAN-M5 reserves for L20a. `down_revision` is the head of main (0102, L07).
 """
 # ruff: noqa: E501  (the DDL is the one SQLAlchemy writes, kept as it is)
 
 from alembic import op
 
 revision = "0104"
-down_revision = "0101"
+down_revision = "0102"
 branch_labels = None
 depends_on = None
 

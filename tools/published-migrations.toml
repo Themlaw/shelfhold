@@ -326,6 +326,11 @@ sha256 = "b052b7e0b3071b30bc57dc65be876d7f4d2e7a2e9483bca07388a23c0cc4952f"
 since = "1.2"
 
 [[migration]]
+file = "0102_reading_conflict.py"
+sha256 = "e5f3947eb9f4e355f8cc5667a3afdc5e78735b42f5817103d4d1a34cf2f9ce00"
+since = "1.2"
+
+[[migration]]
 file = "0104_rendition.py"
-sha256 = "39d73cabdb981c65b7278a1cb1da1c84701dc1a48ad7d88e7249016d0ca220d2"
+sha256 = "11897a28f7af6091440fed589bc88b8bf9adbd89358f7b08ff5474c56abc5ff6"
 since = "1.2"

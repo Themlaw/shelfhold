@@ -174,6 +174,12 @@ OPEN = {
     # M5 L06: what the reader opens (pages or spine, a ticket in each link); only for a carrier,
     # or a Unit, she may see: the rest is one 404 with the answer for an absent one
     "GET /api/reader/{carrier_type}/{carrier_id}/publication": "reader",
+    # M5 L07: where the reader is, its history, and the choice between two places: hers only, on a
+    # carrier she may see; the rest is the answer for an absent one (`test_m5_l07_positions.py`)
+    "GET /api/reader/{carrier_type}/{carrier_id}/position": "reader",
+    "GET /api/reader/{carrier_type}/{carrier_id}/positions": "reader",
+    "PUT /api/reader/positions": "reader",
+    "POST /api/reader/conflicts/{conflict_id}/resolve": "reader",
     # M4 L23: the official links of an Edition she may see; a hidden one is an absent one
     "GET /api/v1/editions/{edition_id}/support-author": "support_author",
     # M4 L18a: the collections and reading lists, made of the Works she may see and a list of her
@@ -1274,6 +1280,9 @@ def _surface_reader(world: World) -> None:
     world.env.app.state.content_access.archives = fake  # type: ignore[attr-defined]
     absent = world.kid.get("/api/reader/content/01HZZZZZZZZZZZZZZZZZZZZZZZ/publication")
     assert absent.status_code == 404
+    gone = "/api/reader/content/01HZZZZZZZZZZZZZZZZZZZZZZZ"
+    absent_where = (world.kid.get(f"{gone}/position"), world.kid.get(f"{gone}/positions"))
+    assert [a.status_code for a in absent_where] == [404, 404]
     for key in (
         "ok", "mixed_rated", "twelve", "above", "adult_edition", "misfiled", "mixed_new",
         "reserved",
@@ -1306,6 +1315,12 @@ def _surface_reader(world: World) -> None:
             else:
                 assert _shape(got) == _shape(absent), (key, carrier_type)
                 assert "/content/" not in got.text
+                if carrier_type == "content":  # M5 L07: nor her place, nor her history
+                    where = (
+                        world.kid.get(f"/api/reader/content/{carrier_id}/position"),
+                        world.kid.get(f"/api/reader/content/{carrier_id}/positions"),
+                    )
+                    assert [_shape(w) for w in where] == [_shape(a) for a in absent_where], key
             world.clean(got.text)
 
 

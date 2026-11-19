@@ -2016,6 +2016,33 @@
         "title": "ConfigRow",
         "type": "object"
       },
+      "ConflictOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "loser": {
+            "$ref": "#/components/schemas/shelfhold__interfaces__http_api__reader__StoredOut"
+          },
+          "winner": {
+            "$ref": "#/components/schemas/shelfhold__interfaces__http_api__reader__StoredOut"
+          }
+        },
+        "required": [
+          "id",
+          "winner",
+          "loser",
+          "created_at"
+        ],
+        "title": "ConflictOut",
+        "type": "object"
+      },
       "ContributorsIn": {
         "additionalProperties": false,
         "properties": {
@@ -2079,6 +2106,36 @@
           "csrf_token"
         ],
         "title": "CsrfToken",
+        "type": "object"
+      },
+      "CurrentOut": {
+        "properties": {
+          "conflict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConflictOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "position": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/shelfhold__interfaces__http_api__reader__StoredOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "position",
+          "conflict"
+        ],
+        "title": "CurrentOut",
         "type": "object"
       },
       "DeletionIn": {
@@ -3960,34 +4017,6 @@
           "payload"
         ],
         "title": "HistoryEntryOut",
-        "type": "object"
-      },
-      "HistoryOut": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/HistoryEntryOut"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_before": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Before"
-          }
-        },
-        "required": [
-          "items",
-          "next_before"
-        ],
-        "title": "HistoryOut",
         "type": "object"
       },
       "HumanInterventions": {
@@ -6344,6 +6373,77 @@
           "effective"
         ],
         "title": "PolicyOut",
+        "type": "object"
+      },
+      "PositionIn": {
+        "additionalProperties": false,
+        "description": "What a reader says of where it is. The profile is the session's: no field names one.",
+        "properties": {
+          "carrier_id": {
+            "maxLength": 26,
+            "title": "Carrier Id",
+            "type": "string"
+          },
+          "carrier_type": {
+            "enum": [
+              "content",
+              "export_item"
+            ],
+            "title": "Carrier Type",
+            "type": "string"
+          },
+          "client_ts": {
+            "format": "date-time",
+            "title": "Client Ts",
+            "type": "string"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "locator": {
+            "additionalProperties": true,
+            "title": "Locator",
+            "type": "object"
+          },
+          "scope": {
+            "default": "full",
+            "enum": [
+              "full",
+              "excerpt"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "ticket": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket"
+          }
+        },
+        "required": [
+          "carrier_type",
+          "carrier_id",
+          "locator",
+          "client_ts"
+        ],
+        "title": "PositionIn",
         "type": "object"
       },
       "PrecreateIn": {
@@ -10218,19 +10318,6 @@
         "title": "StorageOut",
         "type": "object"
       },
-      "StoredOut": {
-        "properties": {
-          "state": {
-            "title": "State",
-            "type": "string"
-          }
-        },
-        "required": [
-          "state"
-        ],
-        "title": "StoredOut",
-        "type": "object"
-      },
       "SuggestionOut": {
         "properties": {
           "a": {
@@ -12881,6 +12968,34 @@
         "title": "SecretIn",
         "type": "object"
       },
+      "shelfhold__interfaces__http_api__ops_dashboard__HistoryOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryEntryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before"
+          }
+        },
+        "required": [
+          "items",
+          "next_before"
+        ],
+        "title": "HistoryOut",
+        "type": "object"
+      },
       "shelfhold__interfaces__http_api__ops_dashboard__ShelfOut": {
         "properties": {
           "by_location": {
@@ -12956,6 +13071,106 @@
           "value"
         ],
         "title": "SecretIn",
+        "type": "object"
+      },
+      "shelfhold__interfaces__http_api__reader__HistoryOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/shelfhold__interfaces__http_api__reader__StoredOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "limit"
+        ],
+        "title": "HistoryOut",
+        "type": "object"
+      },
+      "shelfhold__interfaces__http_api__reader__ResolveIn": {
+        "additionalProperties": false,
+        "properties": {
+          "choice": {
+            "enum": [
+              "winner",
+              "loser"
+            ],
+            "title": "Choice",
+            "type": "string"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          }
+        },
+        "required": [
+          "choice"
+        ],
+        "title": "ResolveIn",
+        "type": "object"
+      },
+      "shelfhold__interfaces__http_api__reader__StoredOut": {
+        "properties": {
+          "approximate": {
+            "title": "Approximate",
+            "type": "boolean"
+          },
+          "client_ts": {
+            "format": "date-time",
+            "title": "Client Ts",
+            "type": "string"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "locator": {
+            "additionalProperties": true,
+            "title": "Locator",
+            "type": "object"
+          },
+          "server_ts": {
+            "format": "date-time",
+            "title": "Server Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "locator",
+          "client_ts",
+          "server_ts",
+          "device_id",
+          "approximate"
+        ],
+        "title": "StoredOut",
         "type": "object"
       },
       "shelfhold__interfaces__http_api__requests__QueueOut": {
@@ -13152,6 +13367,19 @@
         "title": "SearchOut",
         "type": "object"
       },
+      "shelfhold__interfaces__http_api__sources__StoredOut": {
+        "properties": {
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "StoredOut",
+        "type": "object"
+      },
       "shelfhold__interfaces__http_api__status__QueueOut": {
         "properties": {
           "command": {
@@ -13303,6 +13531,315 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/reader/conflicts/{conflict_id}/resolve": {
+      "post": {
+        "description": "Settle the proposal: keep the latest position (`winner`) or resume at the further one\n(`loser`). Another profile's proposal, a settled one and an absent one answer alike.",
+        "operationId": "reader_resolve_conflict",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conflict_id",
+            "required": true,
+            "schema": {
+              "title": "Conflict Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/shelfhold__interfaces__http_api__reader__ResolveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "409": {
+            "description": "conflict-stale"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Resolve",
+        "tags": [
+          "reader"
+        ]
+      }
+    },
+    "/api/reader/positions": {
+      "put": {
+        "description": "Record where the reader is (locator v1, `client_ts` bounded by the server's clock);\nanswers where she is now and any divergence to propose. Never for an excerpt.",
+        "operationId": "reader_put_position",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PositionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "409": {
+            "description": "excerpt-writes-no-position"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Put Position",
+        "tags": [
+          "reader"
+        ]
+      }
+    },
+    "/api/reader/{carrier_type}/{carrier_id}/position": {
+      "get": {
+        "description": "Where the reader is on this file (the latest position), and the proposal if open.",
+        "operationId": "reader_position",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "carrier_type",
+            "required": true,
+            "schema": {
+              "title": "Carrier Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "carrier_id",
+            "required": true,
+            "schema": {
+              "title": "Carrier Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Position",
+        "tags": [
+          "reader"
+        ]
+      }
+    },
+    "/api/reader/{carrier_type}/{carrier_id}/positions": {
+      "get": {
+        "description": "The positions written on this file, the latest first, at most `HISTORY_LIMIT`.",
+        "operationId": "reader_position_history",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "carrier_type",
+            "required": true,
+            "schema": {
+              "title": "Carrier Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "carrier_id",
+            "required": true,
+            "schema": {
+              "title": "Carrier Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shelfhold__interfaces__http_api__reader__HistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "History",
+        "tags": [
+          "reader"
+        ]
+      }
+    },
     "/api/reader/{carrier_type}/{carrier_id}/publication": {
       "get": {
         "operationId": "reader_publication",
@@ -13471,7 +14008,7 @@
                       "$ref": "#/components/schemas/JobAccepted"
                     },
                     {
-                      "$ref": "#/components/schemas/StoredOut"
+                      "$ref": "#/components/schemas/shelfhold__interfaces__http_api__sources__StoredOut"
                     }
                   ],
                   "title": "Response Acquire"
@@ -21871,7 +22408,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HistoryOut"
+                  "$ref": "#/components/schemas/shelfhold__interfaces__http_api__ops_dashboard__HistoryOut"
                 }
               }
             },
@@ -31717,6 +32254,14 @@
       "code": "bundle_gone",
       "status": 410
     },
+    "/api/v1/problems/client-ts-in-future": {
+      "code": "client_ts_in_future",
+      "status": 422
+    },
+    "/api/v1/problems/client-ts-out-of-range": {
+      "code": "client_ts_out_of_range",
+      "status": 422
+    },
     "/api/v1/problems/collection.cbl-refused": {
       "code": "collection.cbl_refused",
       "status": 422
@@ -31744,6 +32289,10 @@
     "/api/v1/problems/config.unknown-key": {
       "code": "config.unknown_key",
       "status": 404
+    },
+    "/api/v1/problems/conflict-stale": {
+      "code": "conflict_stale",
+      "status": 409
     },
     "/api/v1/problems/content-changed": {
       "code": "content_changed",
@@ -31835,6 +32384,10 @@
     },
     "/api/v1/problems/excerpt-unavailable": {
       "code": "excerpt_unavailable",
+      "status": 409
+    },
+    "/api/v1/problems/excerpt-writes-no-position": {
+      "code": "excerpt_writes_no_position",
       "status": 409
     },
     "/api/v1/problems/export.age-tier-mix": {
@@ -32144,6 +32697,10 @@
     "/api/v1/problems/invalid-cursor": {
       "code": "invalid_cursor",
       "status": 400
+    },
+    "/api/v1/problems/invalid-locator": {
+      "code": "invalid_locator",
+      "status": 422
     },
     "/api/v1/problems/job.busy": {
       "code": "job.busy",

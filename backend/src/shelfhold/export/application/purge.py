@@ -1089,6 +1089,21 @@ class PurgeService:
                 )
             )
         )
+        conflict = reading.reading_conflict  # the questions put to readers on this Work's files
+        connection.execute(
+            sa.delete(conflict).where(
+                sa.or_(
+                    sa.and_(
+                        conflict.c.carrier_type == "export_item",
+                        conflict.c.carrier_id.in_(plan.items),
+                    ),
+                    sa.and_(
+                        conflict.c.carrier_type == "content",
+                        conflict.c.carrier_id.in_(plan.contents),
+                    ),
+                )
+            )
+        )
         PurgeService._scrub_positions(connection, plan)
         connection.execute(
             sa.delete(export.export_item).where(export.export_item.c.id.in_(plan.items))
