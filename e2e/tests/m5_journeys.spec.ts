@@ -15,6 +15,7 @@ interface World {
   admin: { username: string; password: string };
   book: { title: string; series_id: string; unit_id: string; carrier_id: string; marker: string };
   trapped: { title: string; unit_id: string; beacon: string };
+  offline: { title: string; series_id: string; marker: string; work_id: string };
   lite: { identifier: string; secret: string; title: string; child: { identifier: string; secret: string } };
 }
 
@@ -125,6 +126,7 @@ test.describe('test_m5_journey_lite_without_javascript', () => {
   test.use({ javaScriptEnabled: false });
   test.setTimeout(120_000); // a hang must name its line, not run out the clock
 
+  // req: EF-LEC-010, ENF-COMP-002
   test('/lite browses and downloads with JavaScript off, for the person the device is paired to', async ({ page }) => {
     const { lite } = world();
     await page.goto('/lite/sign-in');
@@ -144,6 +146,7 @@ test.describe('test_m5_journey_lite_without_javascript', () => {
     expect(await page.content()).not.toContain('<script');
   });
 
+  // req: EF-LEC-010, ENF-COMP-002
   test('the child of the household sees none of it', async ({ page }) => {
     const { lite } = world();
     await page.goto('/lite/sign-in');
@@ -156,15 +159,73 @@ test.describe('test_m5_journey_lite_without_javascript', () => {
 });
 
 // req: EF-LEC-012
-// L16b (offline copies, #396) is not on main yet: this journey is written when it lands (the
-// wrapper skips with the same reason). What it plays, on the image and with a service worker:
-//   1. the person keeps a book for offline reading (a copy per profile) and opens it;
-//   2. the network is cut (`context.setOffline(true)`): the copy is read, a page turned, the
-//      position queued with its `client_ts`;
-//   3. the administrator reclassifies the Work 18+ (the profile is a child): still offline, the copy
-//      is on the device;
-//   4. the network is back: the queue is sent, the change feed (`?since=`) says the Work is no longer
-//      visible, and the copy is evicted (the cache holds nothing of it, the shelf no longer lists it).
-test.fixme('test_m5_journey_offline_eviction: offline read, reclassified 18+, network back, copy evicted (waits for L16b, #396)', async () => {
-  // see the outline above
+test('test_m5_journey_offline_eviction: offline read, purged, network back, copy evicted', async ({ page, context, browser, baseURL }) => {
+  test.setTimeout(150_000); // a hang must name its line
+  const { admin, offline } = world();
+  await signIn(page, admin);
+  // the worker in control of the page (a reload hands it over), as the installed app has it
+  await page.goto('/');
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+
+  // 1. she keeps the book on this device, then finds it in her copies
+  await page.goto(`/serie/${offline.series_id}`);
+  await page.getByRole('button', { name: 'Lire hors ligne' }).click();
+  await expect(page.getByText('Copie gardée sur cet appareil')).toBeVisible({ timeout: 60_000 });
+  await page.goto('/hors-ligne');
+  await expect(page.getByText(offline.title)).toBeVisible();
+  // give the worker the time to keep the page of the reader and its files
+  await page.waitForTimeout(3_000);
+
+  // 2. the network is cut: the copy opens and turns pages
+  await context.setOffline(true);
+  await page.goto('/hors-ligne');
+  await expect(page.getByText(offline.title)).toBeVisible();
+  await page.getByRole('link', { name: 'Lire', exact: true }).click();
+  await expect.poll(() => bookText(page), { timeout: 30_000 }).toContain(`${offline.marker} chapitre 1`);
+  await expect(page.getByText('Copie hors ligne')).toBeVisible();
+  await readOn(page, (text) => text.includes(`${offline.marker} chapitre 2`), 30);
+
+  // 3. back on the list of copies (nothing leaves while the network is gone), the Work is purged from
+  //    another browser (a fresh session: the purge is a reserved action): the copy is still on the device
+  await page.goto('/hors-ligne');
+  await expect(page.getByText(offline.title)).toBeVisible();
+  const other = await browser.newContext({ baseURL: baseURL! });
+  try {
+    const answer = await other.request.post('/api/v1/auth/login', { data: admin });
+    expect(answer.status()).toBe(200);
+    const csrf = (await other.cookies()).find((c) => c.name.endsWith('csrf'))?.value ?? '';
+    const purged = await other.request.post(`/api/v1/works/${offline.work_id}/purge`, {
+      data: { typed: offline.work_id },
+      headers: { 'X-CSRF-Token': csrf }
+    });
+    expect(purged.status(), await purged.text()).toBe(200);
+  } finally {
+    await other.close();
+  }
+  await expect(page.getByText(offline.title)).toBeVisible();
+
+  // 4. the network is back: the feed says the Work left her view, the copy is evicted
+  await context.setOffline(false);
+  // (the list is read when the page opens: it is opened again until the sync of the reconnection has run)
+  await expect
+    .poll(
+      async () => {
+        await page.goto('/hors-ligne');
+        return page.getByText('Aucune copie gardée sur cet appareil').waitFor({ timeout: 5_000 }).then(() => 1, () => 0);
+      },
+      { timeout: 60_000, intervals: [1_000, 2_000, 3_000] }
+    )
+    .toBe(1);
+  await expect(page.getByText(offline.title)).toHaveCount(0);
+  // and nothing of the book stays in the caches of the device
+  const left = await page.evaluate(async () => {
+    const urls: string[] = [];
+    for (const name of await caches.keys()) for (const r of await (await caches.open(name)).keys()) urls.push(new URL(r.url).pathname);
+    return urls.filter((p) => /\/(content|lire)\//.test(p) || p.includes('offline-copy'));
+  });
+  expect(left).toEqual([]);
 });

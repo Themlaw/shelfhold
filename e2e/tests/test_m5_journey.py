@@ -303,15 +303,54 @@ def test_m5_journey_lite_without_javascript(journey_m5: Journey) -> None:
 
 # -- (5) offline, reclassified, back online, evicted ------------------------------------------------
 
-OFFLINE_PENDING = "the offline copies (M5 L16b, #396) are not on main yet: the journey is written in the spec as a `test.fixme`"
 
-
+@pytest.mark.e2e_timeout(900)
 @pytest.mark.req("EF-LEC-012")
 def test_m5_journey_offline_eviction(journey_m5: Journey) -> None:
-    """Reading offline from a copy kept for the profile, the Work reclassified 18+ while the
-    network is gone, the network back: the copy is evicted by the `?since=` of the change feed, and
-    the positions read offline are sent with their `client_ts`. Waits for #396 (L16b)."""
-    pytest.skip(OFFLINE_PENDING)
+    """A copy kept for offline reading is read with the network cut; the Work leaves the profile's
+    view meanwhile; the network back, the copy is evicted by the `?since=` of the change feed.
+    A child's view (reclassified 18+) is played on the feed itself: the device is the administrator's."""
+    j = journey_m5
+    j.create_admin()
+    title = "Le Livre Hors Ligne"
+    book = kept_book(j, title)  # the administrator's, kept, exported nowhere
+    edition, work = ids_of(j, title)
+    make_profile(j, KID, "child", 8)
+    [(code, shelf)] = j.api(
+        ("POST", "/api/v1/shelves", {"name": "Famille", "phrase": "Famille", "max_age_rating": 12})
+    )
+    assert code == 201, shelf
+    rated, filed = j.api(
+        ("POST", f"/api/v1/works/{work}/rating", {"age": "0"}),
+        ("POST", f"/api/v1/editions/{edition}/shelf", {"shelf_id": shelf["id"]}),  # type: ignore[index]
+    )  # fmt: skip
+    assert rated[0] == 200 and filed == (200, {"filed": True, "reason": None}), (rated, filed)
+
+    # hers, in full; reclassified 18+, the change feed names the Work in her removals (what her
+    # device evicts by) and the server refuses her the book; set back, it is hers again
+    [(code, hers)] = j.api(("GET", f"/api/reader/unit/{book['unit_id']}/publication"), user=KID)
+    assert code == 200 and hers["scope"] == "full", hers  # type: ignore[index]
+    [(code, feed)] = j.api(("GET", "/api/v1/works?limit=1"), user=KID)
+    assert code == 200 and feed["since"], feed  # type: ignore[index]
+    assert j.api(("POST", f"/api/v1/works/{work}/rating", {"age": "18+"}))[0][0] == 200
+    [(code, gone)] = j.api(("GET", f"/api/v1/works?limit=200&since={feed['since']}"), user=KID)  # type: ignore[index]
+    assert code == 200 and work in gone["removed"], gone  # type: ignore[index]
+    assert j.api(("GET", f"/api/reader/unit/{book['unit_id']}/publication"), user=KID)[0][0] == 404
+    assert j.api(("POST", f"/api/v1/works/{work}/rating", {"age": "0"}))[0][0] == 200
+
+    # in the browser: "Lire hors ligne" is a button of the series sheet, which is the administrator's
+    # (the sheet is 403 for anyone else): she keeps the copy, reads it with the network cut, the Work
+    # is purged meanwhile, the network back, the copy is evicted
+    done = playwright(
+        j, "test_m5_journey_offline_eviction", 600,
+        browser_world(j, offline={
+            "title": title, "series_id": book["series_id"], "marker": book["marker"],
+            "work_id": work,
+        }),
+    )  # fmt: skip
+    assert done.returncode == 0, "the offline journey failed (see the output of the spec)"
+    assert j.sql(f"select count(*) from work where id = '{work}'") == [(0,)]
+    assert j.egress() == []
 
 
 # -- (6) sign-in by the simulated provider, a reserved action with `max_age` ------------------------
