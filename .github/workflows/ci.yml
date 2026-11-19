@@ -664,8 +664,11 @@ jobs:
         env:
           BROWSER: ${{ matrix.browser }}
         run: |
-          # WebKit and Firefox need system libraries the runner does not ship: no fallback without them.
-          timeout 300 npx playwright install --with-deps "$BROWSER"
+          # apt waits ~10 min per unreachable mirror: bound it, then install the browser alone
+          # (the runner image ships most system libraries; a missing one fails the run, loudly).
+          timeout 180 npx playwright install --with-deps "$BROWSER" && exit 0
+          echo "::warning::playwright --with-deps failed; installing the browser alone"
+          npx playwright install "$BROWSER"
       - name: Playwright (reader, one engine)
         working-directory: e2e
         env:
