@@ -15,6 +15,7 @@ const server: PublicationOut = {
   pages: [4, 2, 1, 3].map((n) => ({ index: n, href: `/content/T/p${n}.jpg`, media_type: 'image/jpeg' })),
   reading_direction: 'rtl',
   scope: 'full',
+  series_id: '01HZZZZZZZZZZZZZZZZZZZZZZW', // the Œuvre the manifest names since L13
   spine: [],
   title: 'Une série'
 };

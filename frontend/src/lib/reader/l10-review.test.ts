@@ -22,6 +22,7 @@ function serverPublication(over: Partial<PublicationView> = {}, count = 10): Pub
     readingDirection: 'ltr',
     title: 'Une série',
     language: 'fr',
+    seriesId: '01HZZZZZZZZZZZZZZZZZZZZZZW', // the Œuvre the manifest names since L13
     spine: [],
     package: null,
     pages: Array.from({ length: count }, (_, i) => ({
