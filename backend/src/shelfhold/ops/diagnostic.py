@@ -127,7 +127,7 @@ _AS_IS = (
     "naming_segment_policy_confirmed", "cli_allow_host", "allow_network_data_dir",
     "disk_pause_percent", "disk_pause_gib", "disk_resume_percent", "disk_resume_gib",
     "auth_forward_enabled", "http_public_rate_per_minute", "http_device_rate_per_minute",
-    "device_allow_plain_http", "reading_max_pages_per_minute", "reading_relay_max_session_hours",
+    "device_allow_plain_http", "reading_relay_max_session_hours",
     "wake_timeout_s", "wake_session_s", "maintenance_window_start", "maintenance_window_end",
     "timezone", "retention_events_days", "retention_audit_days", "backup_retention",
     "stream_max_per_profile", "adopt_probe_workers",
@@ -138,6 +138,7 @@ _PRESENCE = (
     "wake_url", "update_check_url", "plugin_index_url",
     "wake_token", "auth_forward_secret", "setup_token", "backup_dir", "backup_passphrase_file",
     "metadata_contact", "import_dir", "comicvine_api_key",
+    "oidc_issuer", "oidc_client_id", "oidc_client_secret",
 )  # fmt: skip
 _VOLUMES = ("data_dir", "store_dir", "library_dir")
 _COUNTS = ("plugin_repos", "active_sources", "http_trusted_proxies", "wake_suwayomi",
@@ -1034,6 +1035,7 @@ def build_bundle(
         "wake_url",
         "update_check_url",
         "plugin_index_url",
+        "oidc_issuer",
     ):
         forbidden.add(f"settings.{name}", getattr(settings, name))
     forbidden.add("settings.host", settings.host, word=True)

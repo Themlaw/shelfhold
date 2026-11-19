@@ -121,6 +121,11 @@ path = "backend/tests/unit/test_production_reachability.py"
 reason = "garde de joignabilité des tests `req` (L58) : contrôle les tests, pas une exigence du produit"
 
 [[exception]]
+path = "backend/tests/integration/test_l00_m5_import_contracts.py"
+tests = ["test_allowlist_m5_entries_are_commented"]
+reason = "hygiène de la liste blanche de joignabilité (M5 L00) : chaque entrée `until = \"M5\"` porte son commentaire en ligne ; contrôle la garde, pas une exigence du produit"
+
+[[exception]]
 path = "backend/tests/unit/test_openapi_diff.py"
 reason = "règles de rupture de tools/openapi_diff.py (L58) : test de l'outil lui-même"
 
@@ -139,6 +144,10 @@ tests = [
   "test_poc_a_new_key_for_an_existing_komga_is_not_silently_dropped",
 ]
 reason = "PoC de la relecture adverse de #342 (L46), fichier figé par le contradicteur : les exigences du lot (EF-EXP-020, EF-EXP-022) sont prouvées par test_m4_l46_target_wiring.py"
+
+[[exception]]
+path = "backend/tests/unit/test_l05b_neutralizer_counter_review.py"
+reason = "preuves de la relecture adverse de #365 (M5 L05b), livrées telles quelles par le contradicteur sans marqueur req ; les mêmes vecteurs sont couverts sous EF-LEC-005 et ENF-SEC-004 par test_xhtml_neutralizer_css_tokens.py"
 
 [[deferred]]
 requirement = "ENF-GOV-004"

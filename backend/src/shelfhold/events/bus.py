@@ -26,6 +26,7 @@ import sqlalchemy as sa
 import structlog
 from sqlalchemy import Connection
 
+from shelfhold.events.id_keys import NON_CONTENT_ID_KEYS, NOT_CATALOG_KEYS, is_content_key
 from shelfhold.events.operating import NOT_NOTIFIED, OPERATING_EVENTS
 from shelfhold.events.waiting_state import WaitingState
 from shelfhold.infrastructure.clock import Clock
@@ -61,12 +62,33 @@ VOLUME_VALUES: Final = frozenset(
 # refuses a field that looks like a person's identifier unless the type declares it here, and a
 # test erases the events of every declared type.
 USER_FIELDS: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
-    {"auth.passkey_registered": frozenset({"user_id"})}
+    {
+        "auth.passkey_registered": frozenset({"user_id"}),
+        # the child whose view of a Work changed (written by `changes._insert`)
+        "ops.profile_visibility": frozenset({"profile_id"}),
+    }
 )
 _USER_KEY: Final = re.compile(r"(?:user|actor|requester|owner|subject|profile)_id\Z|by\Z")
 
 PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
     "notify.failed": {"reason": frozenset({"retries_exhausted"})},
+    # the most frequent reason of a night's failed copies to /store (`SafeguardFailedError.reason`)
+    "unit.safeguard_failed": {
+        "reason": frozenset(
+            {
+                "content_hash_mismatch",
+                "library_differs_from_manifest",
+                "library_differs_from_original",
+                "no_content",
+                "not_independent",
+                "origin_refused",
+                "rendered_file",
+                "vanished",
+                "work_busy",
+                "other",
+            }
+        )
+    },
     "job.dead_lettered": {"reason": frozenset({"retries_exhausted", "handler_error"})},
     "ops.window_missed": {"reason": frozenset({"window_over"})},
     # EF-SRC-037: why a binding fell back to the next rank
@@ -237,6 +259,8 @@ def check_payload(payload: Mapping[str, object], event_type: str | None = None) 
         if key.endswith("_id"):
             if not _ULID.fullmatch(value):
                 raise EventPayloadError(f"{key} must be a ULID")
+            if not (is_content_key(key) or key in NON_CONTENT_ID_KEYS | NOT_CATALOG_KEYS):
+                raise EventPayloadError(f"{key} is not in the closed list of id keys of an event")
         elif key in _ENUM_KEYS:
             allowed = PAYLOAD_ENUMS.get(event_type or "", {}).get(key, _DEFAULT_ENUMS[key])
             if value not in allowed:

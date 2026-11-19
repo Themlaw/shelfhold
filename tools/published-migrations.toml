@@ -316,6 +316,16 @@ sha256 = "eaeab68ed573584dffc0d9233e05fcc46f429bfdaa62c4add4bf92d86f3e4820"
 since = "1.1"
 
 [[migration]]
+file = "0100_device_registry.py"
+sha256 = "aa34519af06ba1aed29fa1275152e504d1d0d928535af146ed1f8a32c6affb8f"
+since = "1.2"
+
+[[migration]]
+file = "0101_oidc_identity.py"
+sha256 = "b052b7e0b3071b30bc57dc65be876d7f4d2e7a2e9483bca07388a23c0cc4952f"
+since = "1.2"
+
+[[migration]]
 file = "0104_rendition.py"
-sha256 = "5d3c510df315bb90e9d885461c82163b5229ff9912493751e18bd610e674b7fa"
+sha256 = "39d73cabdb981c65b7278a1cb1da1c84701dc1a48ad7d88e7249016d0ca220d2"
 since = "1.2"

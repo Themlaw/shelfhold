@@ -11,6 +11,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("device_tls_required", 403, "admin"),
     # M4 L46b: another profile's token answers like one that is not there (no probing)
     ErrorCode("device_token_not_found", 404, "user"),  # M4 L46: an e-reader over plain HTTP
+    # M5 L02: two rotations of one device raced; the one that lost shows no secret
+    ErrorCode("device_rotation_conflict", 409, "user"),
     ErrorCode("remember_needs_confirmation", 422, "user"),
     ErrorCode("too_many_attempts", 429, "user"),
     ErrorCode("password_login_suspended", 409, "admin"),  # a restore: passwords may be old ones
@@ -24,6 +26,15 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("passkey_refused", 422, "user"),
     ErrorCode("passkey_not_found", 404, "user"),
     ErrorCode("last_login_factor", 409, "user"),
+    # OpenID Connect (M5 L03): the provider cannot be asked; an admin's link the rules refuse (the
+    # rule is in the `reason` extension, never a `sub`); a child profile is never linked
+    ErrorCode("oidc_unavailable", 503, "admin"),
+    ErrorCode("oidc_conflict", 409, "user"),
+    ErrorCode("oidc_child_profile", 403, "user"),
+    # an admin links her own account or an adult member's, never another admin's; a link that is
+    # no longer waiting for its confirmation (answered, expired, or another session's)
+    ErrorCode("oidc_admin_target", 403, "user"),
+    ErrorCode("oidc_link_expired", 409, "user"),
     # Sessions (M3 L07): another profile's session answers like one that is not there (no probing)
     ErrorCode("session_not_found", 404, "user"),
     # Household profiles (M3 L05): the rule that refused is in the `reason` extension

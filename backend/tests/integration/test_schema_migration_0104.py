@@ -20,20 +20,20 @@ SOURCE = "sha256:" + "a" * 64
 OUT = "sha256:" + "b" * 64
 
 
-def test_the_revision_is_0104_the_head_on_0098() -> None:
+def test_the_revision_is_0104_the_head_on_0101() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0104"]  # the head is pinned here, by the newest
-    assert script.get_revision("0104").down_revision == "0098"
+    assert script.get_revision("0104").down_revision == "0101"
 
 
 def test_the_table_comes_and_goes_with_the_migration(settings: Settings) -> None:
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(database), "0098")
+    command.upgrade(alembic_config(database), "0101")
     assert "rendition" not in tables(database)
     assert "0104" in migrate(settings).applied
     assert "rendition" in tables(database)
-    command.downgrade(alembic_config(database), "0098")
+    command.downgrade(alembic_config(database), "0101")
     assert "rendition" not in tables(database)
 
 

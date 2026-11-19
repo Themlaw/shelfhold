@@ -95,6 +95,8 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "api_key": _CREDENTIAL, "webauthn_credential": _CREDENTIAL, "session": _CREDENTIAL,
     "secret_key": _CREDENTIAL, "export_target": _CREDENTIAL, "source_account": _CREDENTIAL,
     "destination_account": _CREDENTIAL, "device_token": _CREDENTIAL,
+    "device": _CREDENTIAL,  # M5 L02: the registry of the e-readers whose tokens stay behind
+    "oidc_identity": _CREDENTIAL,  # M5 L03: who of the provider may sign in as whom, linked again
     "notify_destination": _CREDENTIAL,
     "source_secret": _CREDENTIAL, "source_config": _CREDENTIAL, "plugin_attestation": _CREDENTIAL,
     "provider_secret": _CREDENTIAL, "webhook_subscription": _CREDENTIAL,

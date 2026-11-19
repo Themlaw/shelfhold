@@ -15,21 +15,27 @@ from shelfhold.identity.application.ports import (
     ApiKeyRecord,
     AuditEntry,
     ChildKavitaAccount,
+    DeviceRecord,
     DeviceTokenRecord,
     KeyConflictError,
     NewApiKey,
     NewDeviceToken,
     NewPasskey,
     NewSession,
+    OidcIdentityRecord,
+    OidcIdentityView,
+    OidcLink,
     PasskeyGoneError,
     PasskeyRecord,
     ProfileRecord,
     ProofWithdrawnError,
+    RotationOutcome,
     SessionRecord,
     SourcePolicyRecord,
     UserRecord,
 )
 from shelfhold.identity.application.sessions import SessionView
+from shelfhold.identity.domain.device import Device
 from shelfhold.identity.domain.kavita_mapping import same_kavita_username
 from shelfhold.identity.domain.policy import check_source_policy, effective_source_policy
 from shelfhold.identity.domain.roles import ProfileError
@@ -58,7 +64,20 @@ _user = identity.user
 _session = identity.session
 _key = identity.api_key
 _device = identity.device_token
+_registry = identity.device  # M5 L02: the device a token belongs to
 _passkey = identity.webauthn_credential
+_oidc = identity.oidc_identity  # M5 L03
+
+
+def _retire_devices(
+    connection: sa.Connection, now: datetime, subject_user_id: str | None = None
+) -> None:
+    """The devices of a profile (or of all) are retired with their tokens, in the same transaction
+    that revoked the tokens: a registry never lists an e-reader that nothing can open."""
+    query = sa.update(_registry).where(_registry.c.revoked_at.is_(None))
+    if subject_user_id is not None:
+        query = query.where(_registry.c.subject_user_id == subject_user_id)
+    connection.execute(query.values(revoked_at=now))
 
 
 _account = identity.destination_account
@@ -111,6 +130,12 @@ def _user_of(row: Any) -> UserRecord:
 
 
 # Labelled: joined with `session` or `api_key`, whose own `id` and `user_id` must not clash.
+def _oidc_of(row: Any) -> OidcIdentityRecord:
+    return OidcIdentityRecord(
+        id=row.id, user_id=row.user_id, issuer=row.issuer, sub=row.sub, linked_at=row.linked_at
+    )
+
+
 _USER_COLUMNS = (
     _user.c.id.label("u_id"),
     _user.c.username.label("u_username"),
@@ -144,6 +169,7 @@ def revoke_all_credentials(
     devices = connection.execute(  # an e-reader of the backup is a credential of a past, too
         sa.update(_device).where(_device.c.revoked_at.is_(None)).values(revoked_at=now)
     ).rowcount
+    _retire_devices(connection, now)
     connection.execute(
         audit_insert(
             AuditEntry(
@@ -324,6 +350,91 @@ class SqlIdentityStore:
     def user_by_id(self, user_id: str) -> UserRecord | None:
         return self._one_user(_user.c.id == user_id)
 
+    def oidc_user(self, issuer: str, sub: str) -> UserRecord | None:
+        """The account the person `sub` of `issuer` is linked to (None: nobody, never created)."""
+        query = (
+            sa.select(*_USER_COLUMNS)
+            .join(_oidc, _oidc.c.user_id == _user.c.id)
+            .where(_oidc.c.issuer == issuer, _oidc.c.sub == sub)
+        )
+        with self._engine.connect() as conn:
+            row = conn.execute(query).first()
+        return None if row is None else _user_of(row)
+
+    def oidc_identity_of(self, user_id: str, issuer: str) -> OidcIdentityRecord | None:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                sa.select(_oidc).where(_oidc.c.user_id == user_id, _oidc.c.issuer == issuer)
+            ).first()
+        return None if row is None else _oidc_of(row)
+
+    def oidc_identities_of(self, user_id: str) -> list[OidcIdentityView]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                sa.select(_oidc.c.issuer, _oidc.c.linked_at)
+                .where(_oidc.c.user_id == user_id)
+                .order_by(_oidc.c.linked_at)
+            ).all()
+            actor = conn.execute(
+                sa.select(identity.audit.c.actor_id)
+                .where(identity.audit.c.action == "oidc.linked", identity.audit.c.target == user_id)
+                .order_by(identity.audit.c.at.desc(), identity.audit.c.id.desc())
+                .limit(1)
+            ).first()
+        by_other = None if actor is None else actor[0] != user_id
+        return [OidcIdentityView(r.issuer, r.linked_at, by_other) for r in rows]
+
+    def link_oidc_identity(
+        self,
+        *,
+        user_id: str,
+        issuer: str,
+        sub: str,
+        now: datetime,
+        audit: AuditEntry,
+        admin_actor: str | None = None,
+    ) -> OidcLink:
+        """One transaction under the write lock: the role is read where the row is written, so an
+        account turned into a child profile meanwhile is refused, and two links of one person
+        cannot both be made."""
+        engine = self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
+        with write_transaction(engine) as conn:
+            role = conn.execute(sa.select(_user.c.role).where(_user.c.id == user_id)).scalar()
+            if role is None:
+                return OidcLink.NO_ACCOUNT
+            if role == "child":
+                return OidcLink.CHILD
+            if admin_actor is not None and role == "admin" and user_id != admin_actor:
+                return OidcLink.ADMIN_TARGET  # an admin never takes another admin's account
+            owner = conn.execute(
+                sa.select(_oidc.c.user_id).where(_oidc.c.issuer == issuer, _oidc.c.sub == sub)
+            ).scalar()
+            if owner is not None:
+                return OidcLink.UNCHANGED if owner == user_id else OidcLink.SUBJECT_TAKEN
+            held = conn.execute(
+                sa.select(_oidc.c.id).where(_oidc.c.user_id == user_id, _oidc.c.issuer == issuer)
+            ).first()
+            if held is not None:
+                return OidcLink.ACCOUNT_HAS_ANOTHER
+            conn.execute(
+                sa.insert(_oidc).values(
+                    id=new_ulid(), user_id=user_id, issuer=issuer, sub=sub, linked_at=now
+                )
+            )
+            conn.execute(self._audit_insert(audit))
+        return OidcLink.LINKED
+
+    def session_is_live(self, session_id: str, *, now: datetime) -> bool:
+        with self._engine.connect() as conn:
+            row = conn.execute(
+                sa.select(_session.c.id).where(
+                    _session.c.id == session_id,
+                    _session.c.revoked_at.is_(None),
+                    _session.c.absolute_expiry > now,
+                )
+            ).first()
+        return row is not None
+
     def admins(self) -> Sequence[UserRecord]:
         with self._engine.connect() as conn:
             rows = conn.execute(
@@ -496,7 +607,7 @@ class SqlIdentityStore:
             request, digest = identity.request, identity.notification_digest
             audit, positions = identity.audit, reading.reading_position
             follow, download = acquisition.follow_request, acquisition.download_request
-            device, account = identity.device_token, identity.destination_account
+            token, account = identity.device_token, identity.destination_account
             notify, listing = identity.notify_destination, identity.request_list_import
             collection, item = catalog.collection, catalog.collection_item
             marker, hint = acquisition.read_marker, acquisition.tracker_hint
@@ -557,9 +668,14 @@ class SqlIdentityStore:
                 # what M4 added (J-FLUX-1). Never a secret: no digest of a token, no sealed column,
                 # no fingerprint; a notice destination is told only as present.
                 "device_tokens": rows(
-                    conn, "device_tokens", device, device.c.subject_user_id == user_id,
+                    conn, "device_tokens", token, token.c.subject_user_id == user_id,
                     "id", "public_id", "name", "expires_at", "last_used_at", "revoked_at",
                     "created_at",
+                ),
+                # M5 L02: the devices are data of the profile; their tokens stay as above
+                "devices": rows(
+                    conn, "devices", _registry, _registry.c.subject_user_id == user_id,
+                    "id", "label", "kind", "created_at", "last_seen_at", "revoked_at",
                 ),
                 "collections": rows(
                     conn, "collections", collection, collection.c.owner_id == user_id,
@@ -699,6 +815,19 @@ class SqlIdentityStore:
                     .where(_user.c.id == user_id)
                     .values(hide_unrated_remote=True, subject_filter=[])
                 )
+                if role == "child":  # a child is never linked to a provider (M5 L03)
+                    gone = conn.execute(sa.delete(_oidc).where(_oidc.c.user_id == user_id)).rowcount
+                    if gone:
+                        conn.execute(
+                            audit_insert(
+                                AuditEntry(
+                                    actor_id=actor_id,
+                                    action="oidc.unlinked_role_change",
+                                    target=user_id,
+                                    at=now,
+                                )
+                            )
+                        )
                 if role != "child":  # only a child is audited by her Kavita account (M3 L10)
                     conn.execute(
                         sa.update(_user).where(_user.c.id == user_id).values(kavita_username=None)
@@ -721,6 +850,7 @@ class SqlIdentityStore:
                     .where(_device.c.subject_user_id == user_id, _device.c.revoked_at.is_(None))
                     .values(revoked_at=now)
                 ).rowcount
+                _retire_devices(conn, now, user_id)
                 if closed:
                     conn.execute(
                         audit_insert(
@@ -1106,6 +1236,7 @@ class SqlIdentityStore:
                 .where(_device.c.subject_user_id == user_id, _device.c.revoked_at.is_(None))
                 .values(revoked_at=now)
             )
+            _retire_devices(conn, now, user_id)
         return int(sessions), int(passkeys), int(keys)
 
     # --- sessions ----------------------------------------------------------------------------
@@ -1113,7 +1244,11 @@ class SqlIdentityStore:
     def insert_session(self, session: NewSession) -> None:
         # the write lock is taken first whenever the proof can be withdrawn meanwhile: a passkey
         # revoked or a password reset between the check and the insert must not leave a session
-        guarded = session.passkey_id is not None or session.password_hash is not None
+        guarded = (
+            session.passkey_id is not None
+            or session.password_hash is not None
+            or session.oidc is not None
+        )
         engine = (
             self._engine.execution_options(shelfhold_begin="BEGIN IMMEDIATE")
             if guarded
@@ -1125,6 +1260,20 @@ class SqlIdentityStore:
                     sa.select(_user.c.password_hash).where(_user.c.id == session.user_id)
                 ).scalar()
                 if stored != session.password_hash:  # reset (or removed) since it was checked
+                    raise ProofWithdrawnError
+            if session.oidc is not None:  # still this account's identity, and not a child profile
+                issuer, sub = session.oidc
+                live = conn.execute(
+                    sa.select(_oidc.c.id)
+                    .join(_user, _user.c.id == _oidc.c.user_id)
+                    .where(
+                        _oidc.c.user_id == session.user_id,
+                        _oidc.c.issuer == issuer,
+                        _oidc.c.sub == sub,
+                        _user.c.role != "child",
+                    )
+                ).first()
+                if live is None:
                     raise ProofWithdrawnError
             if session.passkey_id:  # the write lock is held: no revocation can come in between
                 live = conn.execute(
@@ -1142,7 +1291,7 @@ class SqlIdentityStore:
                     csrf_secret=session.csrf_secret,
                     created_at=session.now,
                     last_seen_at=session.now,
-                    auth_time=session.now,
+                    auth_time=session.auth_time or session.now,
                     absolute_expiry=session.absolute_expiry,
                     remember=session.remember,
                     ip=session.ip,
@@ -1255,8 +1404,18 @@ class SqlIdentityStore:
         try:
             with self._changing() as conn:
                 conn.execute(
+                    sa.insert(_registry).values(
+                        id=token.device_id,
+                        subject_user_id=token.subject_user_id,
+                        label=token.name,
+                        kind=token.kind,
+                        created_at=token.now,
+                    )
+                )
+                conn.execute(
                     sa.insert(_device).values(
                         id=token.id,
+                        device_id=token.device_id,
                         public_id=token.public_id,
                         name=token.name,
                         subject_user_id=token.subject_user_id,
@@ -1275,8 +1434,10 @@ class SqlIdentityStore:
     def _device_tokens(
         self, where: sa.ColumnElement[bool] | None = None
     ) -> list[DeviceTokenRecord]:
-        query = sa.select(_device, *_USER_COLUMNS).join(
-            _user, _user.c.id == _device.c.subject_user_id
+        query = (
+            sa.select(_device, *_USER_COLUMNS, _registry.c.revoked_at.label("device_revoked_at"))
+            .join(_user, _user.c.id == _device.c.subject_user_id)
+            .outerjoin(_registry, _registry.c.id == _device.c.device_id)
         )
         if where is not None:
             query = query.where(where)
@@ -1294,6 +1455,8 @@ class SqlIdentityStore:
                 last_used_at=row.last_used_at,
                 revoked_at=row.revoked_at,
                 secret_digest=row.secret_digest,
+                device_id=row.device_id,
+                device_revoked_at=row.device_revoked_at,
             )
             for row in rows
         ]
@@ -1310,15 +1473,150 @@ class SqlIdentityStore:
             conn.execute(
                 sa.update(_device).where(_device.c.id == token_id).values(last_used_at=now)
             )
+            conn.execute(  # the device is seen when one of its tokens is accepted
+                sa.update(_registry)
+                .where(
+                    _registry.c.id
+                    == sa.select(_device.c.device_id)
+                    .where(_device.c.id == token_id)
+                    .scalar_subquery()
+                )
+                .values(last_seen_at=now)
+            )
 
     def revoke_device_token(self, public_id: str, *, now: datetime) -> bool:
-        with self._changing() as conn:
+        with self._changing(immediate=True) as conn:
+            held = conn.execute(
+                sa.select(_device.c.device_id).where(_device.c.public_id == public_id)
+            ).scalar()
             result = conn.execute(
                 sa.update(_device)
                 .where(_device.c.public_id == public_id, _device.c.revoked_at.is_(None))
                 .values(revoked_at=now)
             )
+            if result.rowcount > 0 and held is not None:  # the last live token retires the device
+                still = conn.execute(
+                    sa.select(sa.func.count())
+                    .select_from(_device)
+                    .where(_device.c.device_id == held, _device.c.revoked_at.is_(None))
+                ).scalar()
+                if not still:
+                    conn.execute(
+                        sa.update(_registry)
+                        .where(_registry.c.id == held, _registry.c.revoked_at.is_(None))
+                        .values(revoked_at=now)
+                    )
         return result.rowcount > 0
+
+    # --- devices (M5 L02) --------------------------------------------------------------------
+
+    def _devices(self, where: sa.ColumnElement[bool] | None = None) -> list[DeviceRecord]:
+        live = sa.and_(_device.c.device_id == _registry.c.id, _device.c.revoked_at.is_(None))
+        query = (
+            sa.select(
+                _registry,
+                *_USER_COLUMNS,
+                _device.c.public_id,
+                _device.c.expires_at,
+                _device.c.secret_digest,
+            )
+            .join(_user, _user.c.id == _registry.c.subject_user_id)
+            .outerjoin(_device, live)
+        )
+        if where is not None:
+            query = query.where(where)
+        with self._engine.connect() as conn:
+            rows = conn.execute(query.order_by(_registry.c.created_at, _registry.c.id)).all()
+        found: dict[str, DeviceRecord] = {}
+        for row in rows:
+            found.setdefault(
+                row.id,
+                DeviceRecord(
+                    device=Device(
+                        id=row.id,
+                        subject_user_id=row.subject_user_id,
+                        label=row.label,
+                        kind=row.kind,
+                        created_at=row.created_at,
+                        last_seen_at=row.last_seen_at,
+                        revoked_at=row.revoked_at,
+                    ),
+                    subject=_user_of(row),
+                    public_id=row.public_id,
+                    expires_at=row.expires_at,
+                    secret_digest=row.secret_digest or "",
+                ),
+            )
+        return list(found.values())
+
+    def devices(self, subject_user_id: str | None = None) -> Sequence[DeviceRecord]:
+        where = _registry.c.subject_user_id == subject_user_id if subject_user_id else None
+        return self._devices(where)
+
+    def device_by_id(self, device_id: str) -> DeviceRecord | None:
+        found = self._devices(_registry.c.id == device_id)
+        return found[0] if found else None
+
+    def rotate_device_secret(
+        self,
+        device_id: str,
+        *,
+        expected_digest: str,
+        secret_digest: str,
+        expires_at: datetime | None,
+        now: Callable[[], datetime],
+        audit: AuditEntry,
+    ) -> RotationOutcome:
+        """Compare and swap, in one write transaction with its audit line. The live token of the
+        device is read again under the lock: gone (retired, revoked) is `gone`; a digest other than
+        the one the caller saw is `conflict` (another rotation won meanwhile: nothing is written,
+        so only the secret that is shown lives); an expiry now past, with no new one given, is
+        `expired` (a secret that would be refused as it is typed is never made)."""
+        with self._changing(immediate=True) as conn:
+            live = conn.execute(
+                sa.select(_device.c.id, _device.c.secret_digest, _device.c.expires_at)
+                .join(_registry, _registry.c.id == _device.c.device_id)
+                .where(
+                    _device.c.device_id == device_id,
+                    _device.c.revoked_at.is_(None),
+                    _registry.c.revoked_at.is_(None),
+                )
+            ).first()
+            if live is None:
+                return "gone"
+            if live.secret_digest != expected_digest:
+                return "conflict"
+            if expires_at is None and live.expires_at is not None and now() >= live.expires_at:
+                return "expired"
+            values: dict[str, Any] = {"secret_digest": secret_digest}
+            if expires_at is not None:
+                values["expires_at"] = expires_at
+            swapped = conn.execute(
+                sa.update(_device)
+                .where(_device.c.id == live.id, _device.c.secret_digest == expected_digest)
+                .values(**values)
+            )
+            if swapped.rowcount == 0:  # cannot happen under the lock; refuse rather than show it
+                return "conflict"
+            conn.execute(self._audit_insert(audit))
+        return "rotated"
+
+    def retire_device(self, device_id: str, *, now: datetime, audit: AuditEntry) -> bool:
+        with self._changing() as conn:
+            result = conn.execute(
+                sa.update(_registry)
+                .where(_registry.c.id == device_id, _registry.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            )
+            if result.rowcount == 0:
+                return False
+            conn.execute(
+                sa.update(_device)
+                .where(_device.c.device_id == device_id, _device.c.revoked_at.is_(None))
+                .values(revoked_at=now)
+            )
+            conn.execute(self._audit_insert(audit))
+        return True
 
     # --- API keys ----------------------------------------------------------------------------
 

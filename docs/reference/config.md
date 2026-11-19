@@ -30,6 +30,9 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_PLUGIN_INDEX_URL` | `plugin_index_url` | str (optionnel) | aucun |  | `SHELFHOLD_PLUGIN_INDEX_URL_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_RECEIVED_CBZ_MAX_BYTES` | `received_cbz_max_bytes` | int | `536870912` | >= 1048576 | `SHELFHOLD_RECEIVED_CBZ_MAX_BYTES_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_AUTH_HARDENED` | `auth_hardened` | bool | `false` |  | `SHELFHOLD_AUTH_HARDENED_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_OIDC_ISSUER` | `oidc_issuer` | str (optionnel) | aucun |  | `SHELFHOLD_OIDC_ISSUER_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_OIDC_CLIENT_ID` | `oidc_client_id` | str (optionnel) | aucun |  | `SHELFHOLD_OIDC_CLIENT_ID_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_OIDC_CLIENT_SECRET` | `oidc_client_secret` | secret (optionnel) | aucun |  | secret, masqué partout; `SHELFHOLD_OIDC_CLIENT_SECRET_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_METRICS_ENABLED` | `metrics_enabled` | bool | `false` |  | `SHELFHOLD_METRICS_ENABLED_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_FRESH_AUTH_S` | `fresh_auth_s` | int | `900` | >= 60, <= 86400 | `SHELFHOLD_FRESH_AUTH_S_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_REVISION_MIN_PAGE_RATIO` | `revision_min_page_ratio` | float | `0.5` | >= 0.05, <= 1.0 | `SHELFHOLD_REVISION_MIN_PAGE_RATIO_FILE` en lit la valeur dans un fichier |
@@ -53,7 +56,6 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_DISK_PAUSE_GIB` | `disk_pause_gib` | float | `10.0` | >= 0 | `SHELFHOLD_DISK_PAUSE_GIB_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_DISK_RESUME_PERCENT` | `disk_resume_percent` | float | `8.0` | >= 0, <= 60 | `SHELFHOLD_DISK_RESUME_PERCENT_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_DISK_RESUME_GIB` | `disk_resume_gib` | float | `15.0` | >= 0 | `SHELFHOLD_DISK_RESUME_GIB_FILE` en lit la valeur dans un fichier |
-| `SHELFHOLD_READING_MAX_PAGES_PER_MINUTE` | `reading_max_pages_per_minute` | float | `20.0` | > 0, <= 10000 | `SHELFHOLD_READING_MAX_PAGES_PER_MINUTE_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_READING_RELAY_MAX_SESSION_HOURS` | `reading_relay_max_session_hours` | float | `24.0` | > 0, <= 720 | `SHELFHOLD_READING_RELAY_MAX_SESSION_HOURS_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_WAKE_URL` | `wake_url` | str (optionnel) | aucun |  | `SHELFHOLD_WAKE_URL_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_WAKE_TOKEN` | `wake_token` | secret (optionnel) | aucun |  | secret, masqué partout; `SHELFHOLD_WAKE_TOKEN_FILE` en lit la valeur dans un fichier |

@@ -58,6 +58,8 @@ from shelfhold.infrastructure.content_trust.xhtml_neutralizer import (
     NeutralizationError,
     is_relative_reference,
     neutralize,
+    neutralize_page,
+    page_references,
     parse_xml_document,
 )
 from shelfhold.infrastructure.xml import Element, XmlLimits
@@ -256,8 +258,52 @@ def _manifest(archive: SafeArchive) -> tuple[set[str], dict[str, str | None]]:
     return set(opfs), declared
 
 
+def _sheet_targets(
+    archive: SafeArchive, opfs: set[str], declared: dict[str, str | None]
+) -> tuple[frozenset[str], frozenset[str]]:
+    """(entries a link must not name, entries to neutralize as style sheets whatever they are).
+
+    A page may load any entry as a style sheet, by any path: its type does not matter to a
+    browser. An entry that is a style sheet by its name or type is neutralized as one anyway. Any
+    other entry that a page loads as a style sheet is neutralized as a style sheet if nothing
+    else uses it (an `.xml` entry); if it has another use (the package, an NCX, a page, an image,
+    a font, a file named by another reference), it cannot be one and the link is replaced.
+    """
+    names = {e.name for e in archive.entries if not e.is_dir}
+    sheets: set[str] = set()
+    others: set[str] = set()
+    for name in sorted(names):
+        if (_EXT_FAMILY.get(_ext(name)) or declared.get(name)) != "xhtml":
+            continue
+        try:
+            found = page_references(bytes(archive.read(name, _PAGE_BYTES)), name)
+        except (NeutralizationError, KeyError):
+            continue  # the pass that writes the page refuses it, with its reason
+        sheets |= found[0]
+        others |= found[1]
+    blocked: set[str] = set()
+    as_css: set[str] = set()
+    for target in sorted(sheets & names):
+        ext = _ext(target)
+        family = _EXT_FAMILY.get(ext) or declared.get(target)
+        if family == "css":
+            continue
+        shared = (
+            target in opfs or target.startswith("META-INF/") or ext == ".ncx" or target in others
+        )
+        if family == "xml" and ext in _XML_EXTS and not shared:
+            as_css.add(target)
+        else:
+            blocked.add(target)
+    return frozenset(blocked), frozenset(as_css)
+
+
 def _classify(
-    archive: SafeArchive, name: str, opfs: set[str], declared: dict[str, str | None]
+    archive: SafeArchive,
+    name: str,
+    opfs: set[str],
+    declared: dict[str, str | None],
+    as_css: frozenset[str] = frozenset(),
 ) -> str:
     """`copy`, or the page kind to neutralize; a refusal if the entry is in no category."""
     if name == "mimetype" or name in opfs or name == "META-INF/container.xml":
@@ -277,6 +323,8 @@ def _classify(
     family = by_ext or by_type
     if family in _PAGE_FAMILIES:
         return family
+    if name in as_css:
+        return "css"
     if family == "xml" and ext in _XML_EXTS:
         _read_xml(archive, name, "xml")
         return "copy"
@@ -331,6 +379,7 @@ def neutralize_epub(
 def _derive(archive: SafeArchive, out: BinaryIO) -> Derivative:
     _check_mimetype(archive)
     opfs, declared = _manifest(archive)
+    blocked, as_css = _sheet_targets(archive, opfs, declared)
     original, derived = _PayloadHash(), _PayloadHash()
     changed: list[str] = []
     with ArchiveWriter(out) as writer:
@@ -339,7 +388,7 @@ def _derive(archive: SafeArchive, out: BinaryIO) -> Derivative:
             if entry.is_dir:
                 writer.add(entry_name, b"")
                 continue
-            kind = _classify(archive, entry_name, opfs, declared)
+            kind = _classify(archive, entry_name, opfs, declared, as_css)
             if kind == "copy":
                 before = hashlib.sha256()
                 stored = _ext(entry_name) in _STORED_EXT or entry_name == "mimetype"
@@ -350,7 +399,10 @@ def _derive(archive: SafeArchive, out: BinaryIO) -> Derivative:
                 continue
             data = bytes(archive.read(entry_name, _PAGE_BYTES))
             try:
-                result = neutralize(data, kind)  # type: ignore[arg-type]
+                if kind == "css":
+                    result = neutralize(data, "css")
+                else:  # a page: its place in the package decides which links survive
+                    result = neutralize_page(data, kind, path=entry_name, blocked=blocked)  # type: ignore[arg-type]
             except NeutralizationError as error:
                 raise NeutralizationError(error.reason, entry_name) from None
             writer.add(entry_name, result, compress=True)

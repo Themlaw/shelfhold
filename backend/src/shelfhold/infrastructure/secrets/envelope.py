@@ -5,10 +5,13 @@ seal and associated data binding the ciphertext to its format version and to the
 `(table, column, row id)` it is stored in, so a secret copied to another row does not open.
 
 The wire form carries `ct` as URL-safe base64 of `nonce || ciphertext`. In the database the nonce
-has its own column (`secret_nonce`), see `to_columns`.
+has its own column (`secret_nonce`), see `to_columns`; a JSON document carries the same envelope
+under one of its keys, see `envelope_of_json`.
 """
 
+import base64
 import struct
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -70,6 +73,25 @@ class Envelope:
             bytes(columns[f"{prefix}nonce"]),
             bytes(columns[f"{prefix}ct"]),
         )
+
+
+def envelope_of_json(blob: Mapping[str, Any]) -> Envelope:
+    """The envelope as one key of a JSON document stores it: `v`, `kid`, `alg`, then `nonce` and
+    `ct` in base64 (the sensitive fields of an upstream snapshot, under `$sealed`). A malformed or
+    partial blob raises (`KeyError`, `ValueError`): the caller owns the row it read it from."""
+    return Envelope(
+        int(blob["v"]), str(blob["kid"]), str(blob["alg"]),
+        base64.b64decode(str(blob["nonce"])), base64.b64decode(str(blob["ct"])),
+    )  # fmt: skip
+
+
+def envelope_to_json(sealed: Envelope) -> dict[str, Any]:
+    """The reverse of `envelope_of_json`: the same wire form, never another."""
+    return {
+        "v": sealed.v, "kid": sealed.kid, "alg": sealed.alg,
+        "nonce": base64.b64encode(sealed.nonce).decode(),
+        "ct": base64.b64encode(sealed.ct).decode(),
+    }  # fmt: skip
 
 
 def seal(

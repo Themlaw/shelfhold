@@ -29,12 +29,16 @@ from shelfhold.identity.application.ports import (
     AuditEntry,
     ChildKavitaAccount,
     DeviceProofPort,
+    DeviceRecord,
     DeviceTokenRecord,
     IdentityStore,
     KeyConflictError,
+    LiteSessionPort,
     NewApiKey,
     NewDeviceToken,
     NewSession,
+    OidcIdentityView,
+    OidcLink,
     PasskeyGoneError,
     PasskeyRecord,
     PasswordHasherPort,
@@ -60,13 +64,23 @@ from shelfhold.identity.domain.credentials import (
     session_policy,
     slid_expiry,
 )
+from shelfhold.identity.domain.device import (
+    DeviceKindError,
+    device_kind,
+    device_name,
+    may_handle,
+)
 from shelfhold.identity.domain.device_secret import (
     PUBLIC_ID_LENGTH,
     key_digest,
     new_device_credential,
     secret_digest,
 )
-from shelfhold.identity.domain.device_token import device_token, token_principal
+from shelfhold.identity.domain.device_token import (
+    device_token,
+    device_token_is_live,
+    token_principal,
+)
 from shelfhold.identity.domain.reserved import (
     DEFAULT_FRESH_AUTH_S,
     DEFAULT_RESERVED_ROLES,
@@ -225,6 +239,7 @@ class CreatedDeviceToken:
     secret: str = field(repr=False)
     subject_user_id: str
     expires_at: datetime | None
+    device_id: str = ""
 
     def __str__(self) -> str:
         return f"CreatedDeviceToken(public_id={self.public_id!r})"
@@ -320,6 +335,7 @@ class LocalAuth:
         throttle: LoginThrottle | None = None,
         reauth_methods: Sequence[ReauthMethod] | None = None,
         device_proof: DeviceProofPort | None = None,
+        lite_session: LiteSessionPort | None = None,
         passkeys: PasskeyCeremony | None = None,
         on_passkey_registered: Callable[[PasskeyRecord], None] | None = None,
     ) -> None:
@@ -335,6 +351,7 @@ class LocalAuth:
             per_address=DEVICE_FAILURES_PER_ADDRESS, per_account=DEVICE_FAILURES_PER_PAIR
         )
         self._device_proof = device_proof
+        self._lite = lite_session
         methods = list(reauth_methods if reauth_methods is not None else [PasswordReauth(hasher)])
         self._passkeys = passkeys
         self._options_throttle = LoginThrottle(
@@ -343,6 +360,7 @@ class LocalAuth:
         if passkeys is not None and passkeys.available:  # the method exists in a secure context
             methods.append(PasskeyReauth(passkeys, store.restore_notice_active))
         self._reauth = {method.name: method for method in methods}
+        self.oidc: Any = None  # the OpenID Connect sign-in, set by the factory when configured
         self._profiles = ProfileService(
             store,
             hasher,
@@ -592,6 +610,8 @@ class LocalAuth:
         passkey_id: str | None = None,
         user_agent: str | None = None,
         password_hash: str | None = None,
+        auth_time: datetime | None = None,
+        oidc: tuple[str, str] | None = None,
     ) -> IssuedSession:
         now = self.now()
         policy = self._policy(user.role)
@@ -610,6 +630,8 @@ class LocalAuth:
                 passkey_id=passkey_id,
                 password_hash=password_hash,
                 device=device_label(user_agent),
+                auth_time=auth_time,
+                oidc=oidc,
             )
         )
         principal = Principal(
@@ -618,7 +640,7 @@ class LocalAuth:
             role=user.role,
             credential=Credential.SESSION,
             session_id=session_id,
-            auth_time=now,
+            auth_time=auth_time or now,
             can_rate=user.can_rate,
             locale=user.locale,
         )
@@ -1011,6 +1033,83 @@ class LocalAuth:
         self._audit("auth.passkey_login", issued.principal, target=passkey.id)
         return issued
 
+    # --- OpenID Connect (M5 L03, EF-USR-004) ----------------------------------------------------
+
+    @property
+    def oidc_available(self) -> bool:
+        return self.oidc is not None
+
+    def reserve_options(self, *, ip: str) -> None:
+        """A cheap anonymous step (`ThrottledError` beyond a few a minute per address)."""
+        wait = self._options_throttle.reserve(ip=ip, account=ip, now=self.now())
+        if wait is not None:
+            raise ThrottledError(max(1, math.ceil(wait)))
+
+    def reserve_attempt(self, *, ip: str, account: str) -> datetime:
+        return self._reserve_attempt(ip=ip, account=account)
+
+    def release_attempt(self, *, ip: str, account: str, at: datetime) -> None:
+        self._throttle.release(ip=ip, account=account, at=at)
+
+    def open_federated_session(
+        self,
+        user: UserRecord,
+        *,
+        ip: str,
+        user_agent: str | None,
+        presented_token: str | None,
+        auth_time: datetime,
+        oidc: tuple[str, str] | None = None,
+    ) -> IssuedSession:
+        """A session for a person an identity provider vouched for: new token whatever the browser
+        held (no fixation), `auth_time` is what the provider said about when they signed in there
+        (never `now`: no local secret was typed), the policy of the role for `remember`."""
+        if presented_token:  # whatever the browser held is closed, never adopted
+            self._store.revoke_session_by_token_hash(token_digest(presented_token), now=self.now())
+        remember = self._policy(user.role).remember_default
+        try:
+            issued = self._issue(
+                user, remember=remember, ip=ip, user_agent=user_agent, auth_time=auth_time,
+                oidc=oidc,
+            )  # fmt: skip
+        except ProofWithdrawnError:  # unlinked, or turned into a child profile, meanwhile
+            raise InvalidCredentialsError from None
+        self._audit("auth.oidc_login", issued.principal)
+        return issued
+
+    def link_oidc_identity(
+        self,
+        *,
+        user_id: str,
+        issuer: str,
+        sub: str,
+        session_id: str | None = None,
+        by: Principal | None = None,
+    ) -> OidcLink:
+        """The outcome of one transaction that also writes the audit line (the issuer and the
+        account, never the `sub`). `by`: the admin who linked another's account."""
+        entry = AuditEntry(
+            actor_id=audit_actor(by) or user_id,
+            action="oidc.linked",
+            at=self.now(),
+            target=user_id,
+            session_id=by.session_id if by is not None else session_id,
+            auth_time=by.auth_time if by is not None else None,
+        )
+        return self._store.link_oidc_identity(
+            user_id=user_id,
+            issuer=issuer,
+            sub=sub,
+            now=self.now(),
+            audit=entry,
+            admin_actor=by.user_id if by is not None else None,
+        )
+
+    def oidc_identities_of(self, principal: Principal) -> Sequence[OidcIdentityView]:
+        """The links of the caller's own account (never another's): the provider and the date, and
+        whether an admin made the link. The identifier itself is not given back."""
+        return self._store.oidc_identities_of(principal.user_id)
+
     # --- API keys ----------------------------------------------------------------------------
 
     def create_api_key(
@@ -1187,6 +1286,7 @@ class LocalAuth:
         subject_username: str,
         name: str | None = None,
         expires_days: int | None = None,
+        kind: str | None = None,
         by: Principal | None = None,
     ) -> CreatedDeviceToken:
         """A token for the reader profile `subject_username`, which has no default: the pairing
@@ -1199,7 +1299,7 @@ class LocalAuth:
         if by is not None and by.role != "admin":
             raise NotAllowedError
         subject = self._store.user_by_name(subject_username.strip())
-        return self._issue_device_token(subject, name, expires_days, by)
+        return self._issue_device_token(subject, name, expires_days, by, kind)
 
     def pair_device_token(
         self,
@@ -1208,6 +1308,7 @@ class LocalAuth:
         subject_user_id: str,
         name: str | None = None,
         expires_days: int | None = None,
+        kind: str | None = None,
     ) -> CreatedDeviceToken:
         """The screen "Connect a device" (M4 L46b): an admin pairs for a member or a child, a member
         for themself, a child for nobody. The same rules as above apply to the subject (never an
@@ -1215,7 +1316,7 @@ class LocalAuth:
         subject = self._store.user_by_id(subject_user_id)
         if not _may_pair(by, subject.id if subject is not None else None):
             raise NotAllowedError  # a member names themself only, a child nobody
-        return self._issue_device_token(subject, name, expires_days, by)
+        return self._issue_device_token(subject, name, expires_days, by, kind)
 
     def _issue_device_token(
         self,
@@ -1223,9 +1324,14 @@ class LocalAuth:
         name: str | None,
         expires_days: int | None,
         by: Principal | None,
+        kind: str | None = None,
     ) -> CreatedDeviceToken:
         if subject is None:
             raise UnknownUserError
+        try:
+            device_type = device_kind(kind)
+        except DeviceKindError:
+            raise ProfileError("device_kind_unknown") from None
         if subject.role == "admin":  # a lost e-reader would open the whole catalogue, unfiltered
             raise ProfileError("device_subject_is_admin")
         if expires_days is not None and expires_days < 1:
@@ -1233,7 +1339,8 @@ class LocalAuth:
         now = self.now()
         expires_at = now + timedelta(days=expires_days) if expires_days is not None else None
         issuer = by.user_id if by is not None and by.credential is Credential.SESSION else None
-        label = (name or "").strip()[:80] or None
+        label = device_name(name)
+        device_id = new_ulid()  # the pairing makes one device; a drawn-again identifier keeps it
         for _attempt in range(3):  # a taken identifier (1 in 10^12) is drawn again
             credential = new_device_credential()
             try:
@@ -1247,6 +1354,8 @@ class LocalAuth:
                         secret_digest=secret_digest(credential.secret),
                         now=now,
                         expires_at=expires_at,
+                        device_id=device_id,
+                        kind=device_type,
                     ),
                     self._entry(
                         "device_token.created", by, _by_host_user(credential.public_id, by)
@@ -1259,8 +1368,91 @@ class LocalAuth:
                 secret=credential.secret,
                 subject_user_id=subject.id,
                 expires_at=expires_at,
+                device_id=device_id,
             )
         raise RuntimeError("device_token_id_exhausted")
+
+    # --- the device registry (M5 L02, EF-USR-008, D19) ----------------------------------------
+
+    def devices(
+        self, *, by: Principal | None = None, subject_user_id: str | None = None
+    ) -> Sequence[DeviceRecord]:
+        """The live devices: every profile's for the host or an admin (narrowed by
+        `subject_user_id`), a member's own for a member, and for a child a refusal. A member who
+        names another profile is refused as for anything of another's."""
+        if by is not None and by.role not in ("admin", "member"):
+            raise NotAllowedError
+        if by is not None and by.role == "member":
+            if subject_user_id is not None and subject_user_id != by.user_id:
+                raise NotAllowedError
+            subject_user_id = by.user_id
+        return tuple(r for r in self._store.devices(subject_user_id) if r.device.active)
+
+    def _own_device(self, device_id: str, by: Principal | None) -> DeviceRecord | None:
+        """A live device `by` may handle, or None: unknown, retired or another profile's all
+        answer alike (no probing). A child is refused."""
+        if by is not None and by.role not in ("admin", "member"):
+            raise NotAllowedError
+        found = self._store.device_by_id(device_id.strip()[:26]) if device_id else None
+        if found is None or not found.device.active:
+            return None
+        if by is not None and not may_handle(
+            role=by.role, user_id=by.user_id, subject_user_id=found.device.subject_user_id
+        ):
+            return None
+        return found
+
+    def rotate_device(
+        self, device_id: str, *, by: Principal | None = None, expires_days: int | None = None
+    ) -> CreatedDeviceToken | None:
+        """A new secret on the same device; the old one is refused from the next request (D19: no
+        grace period). The device keeps its identifier, its label, its kind, its profile and its
+        public identifier: nothing is paired again, the reader types the new secret. A token
+        past its expiry needs a new one (`expiry_required`): the new secret would be refused as
+        it is. None: the device is not there (or not the caller's)."""
+        found = self._own_device(device_id, by)
+        if found is None or found.public_id is None:
+            return None
+        if expires_days is not None and expires_days < 1:
+            raise ValueError("invalid_expiry")
+        now = self.now()
+        if expires_days is None and found.expires_at is not None and now >= found.expires_at:
+            raise ProfileError("expiry_required")
+        expires_at = now + timedelta(days=expires_days) if expires_days is not None else None
+        credential = new_device_credential()
+        outcome = self._store.rotate_device_secret(
+            found.device.id,
+            expected_digest=found.secret_digest,
+            secret_digest=secret_digest(credential.secret),
+            expires_at=expires_at,
+            now=self.now,
+            audit=self._entry("device_token.rotated", by, _by_host_user(found.device.id, by)),
+        )
+        if outcome == "expired":  # it expired between the read and the write
+            raise ProfileError("expiry_required")
+        if outcome == "conflict":  # another rotation won: only its secret lives
+            raise ProfileError("device_rotated_meanwhile")
+        if outcome != "rotated":
+            return None
+        return CreatedDeviceToken(
+            public_id=found.public_id,
+            secret=credential.secret,
+            subject_user_id=found.device.subject_user_id,
+            expires_at=expires_at or found.expires_at,
+            device_id=found.device.id,
+        )
+
+    def retire_device(self, device_id: str, *, by: Principal | None = None) -> bool:
+        """Removing a device ends every token it holds, at once. False: not there (or not the
+        caller's), or already retired."""
+        found = self._own_device(device_id, by)
+        if found is None:
+            return False
+        return self._store.retire_device(
+            found.device.id,
+            now=self.now(),
+            audit=self._entry("device.removed", by, _by_host_user(found.device.id, by)),
+        )
 
     def device_tokens(self, *, by: Principal | None = None) -> Sequence[DeviceTokenRecord]:
         """Every token for the host or an admin; a member's own for a member; none for a child."""
@@ -1291,6 +1483,12 @@ class LocalAuth:
         secret: str | None = None,
         md5_key: str | None = None,
     ) -> Principal | None:
+        found = self._device_authenticated(public_id, ip=ip, secret=secret, md5_key=md5_key)
+        return found[0] if found is not None else None
+
+    def _device_authenticated(
+        self, public_id: str, *, ip: str, secret: str | None, md5_key: str | None
+    ) -> tuple[Principal, DeviceTokenRecord] | None:
         """The profile a device token acts as, or None. One of `secret` (HTTP Basic, OPDS) or
         `md5_key` (`x-auth-key` of KOReader, kosync). The answer is the same for an unknown
         identifier and a wrong key. A wrong attempt is counted before the check, per (address,
@@ -1324,13 +1522,16 @@ class LocalAuth:
             self._device_failed(ip, at)
             return None
         now = self.now()
-        if record.revoked_at is not None or (
-            record.expires_at is not None and now >= record.expires_at
-        ):
+        if not device_token_is_live(
+            record.revoked_at, record.device_revoked_at, record.expires_at, now
+        ):  # a retired device opens nothing (#347 MIN-2), same rule as an open stream
             self._device_failed(ip, at)  # the guess had the right shape: counted
             return None
         self._device_throttle.release(ip=ip, account=account, at=at, skip_address=True)
         self._device_throttle.reset_account(account)
+        return self._device_principal(record, now), record
+
+    def _device_principal(self, record: DeviceTokenRecord, now: datetime) -> Principal:
         if record.last_used_at is None or now - record.last_used_at >= API_KEY_TOUCH_INTERVAL:
             self._store.touch_device_token(record.id, now=now)
         held = device_token(
@@ -1342,6 +1543,57 @@ class LocalAuth:
         return token_principal(
             held, username=record.subject.username, role=record.subject.role, can_rate=False
         )
+
+    # --- `/lite` (M5 L17a, EF-LEC-010): a browser with no script signs in with a token's secret --
+
+    def lite_sign_in(self, public_id: str, secret: str, *, ip: str) -> str | None:
+        """The session cookie of `/lite` for a token and its secret, or None (one answer for an
+        unknown identifier, a wrong secret, a revoked, a retired and an expired token). The check
+        and its counting are those of the e-reader's own door (`authenticate_device_token`), so
+        a guess is slowed the same way and a `ThrottledError` is the same answer."""
+        if self._lite is None:
+            return None
+        found = self._device_authenticated(public_id, ip=ip, secret=secret, md5_key=None)
+        if found is None:
+            return None
+        record = found[1]
+        return self._lite.issue(record.public_id, record.secret_digest, self.now())
+
+    def lite_resume(self, value: str | None) -> Principal | None:
+        """Who a `/lite` cookie is, at this request: the token is read again (live, its device not
+        retired, its secret the one the session was made with) and the profile is the token's
+        subject, read now. A rotated secret ends the session; so does anything that ends the
+        token. Nothing is counted here: the cookie is signed, there is nothing to guess."""
+        if self._lite is None:
+            return None
+        now = self.now()
+        claims = self._lite.verify(value, now)
+        if claims is None:
+            return None
+        record = self._store.device_token_by_public_id(claims.public_id)
+        if record is None or not self._lite.bound(claims, record.secret_digest):
+            return None
+        if not device_token_is_live(
+            record.revoked_at, record.device_revoked_at, record.expires_at, now
+        ):
+            return None
+        return self._device_principal(record, now)
+
+    def lite_new_flow(self) -> tuple[str, str]:
+        if self._lite is None:
+            raise RuntimeError("lite sessions are not configured")
+        return self._lite.new_flow()
+
+    def lite_flow_ok(self, nonce: str | None, token: str | None) -> bool:
+        return self._lite is not None and self._lite.flow_ok(nonce, token)
+
+    def lite_csrf(self, session: str) -> str:
+        if self._lite is None:
+            raise RuntimeError("lite sessions are not configured")
+        return self._lite.csrf_of(session)
+
+    def lite_csrf_ok(self, session: str | None, token: str | None) -> bool:
+        return self._lite is not None and self._lite.csrf_ok(session, token)
 
     def _device_failed(self, ip: str, at: datetime) -> None:
         """A wrong attempt: counted against the address; past its limit it is a 429, not a 401."""
