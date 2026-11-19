@@ -51,12 +51,12 @@ def test_a_kepub_row_is_accepted_and_the_other_checks_stay(settings: Settings) -
                 _insert(conn, **bad)
 
 
-def test_rows_of_0105_come_through_and_the_way_back_drops_only_a_kepub(
+def test_rows_of_0103_come_through_and_the_way_back_drops_only_a_kepub(
     settings: Settings,
 ) -> None:
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(database), "0105")
+    command.upgrade(alembic_config(database), "0103")
     with closing(sqlite3.connect(database, isolation_level=None)) as conn:
         _insert(conn, kind="jpeg", params='{"quality":85}')
     assert "0108" in migrate(settings).applied
@@ -66,7 +66,7 @@ def test_rows_of_0105_come_through_and_the_way_back_drops_only_a_kepub(
         assert conn.execute(
             "SELECT 1 FROM sqlite_master WHERE name = 'ix_rendition_content_hash'"
         ).fetchone()
-    command.downgrade(alembic_config(database), "0105")
+    command.downgrade(alembic_config(database), "0103")
     with closing(sqlite3.connect(database, isolation_level=None)) as conn:
         assert conn.execute("SELECT kind FROM rendition").fetchall() == [("jpeg",)]
         with pytest.raises(sqlite3.IntegrityError):
