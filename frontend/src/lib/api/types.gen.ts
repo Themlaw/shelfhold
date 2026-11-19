@@ -4305,6 +4305,10 @@ export type PublicationOut = {
      */
     scope: 'full' | 'excerpt';
     /**
+     * Series Id
+     */
+    series_id: string;
+    /**
      * Spine
      */
     spine: Array<EntryOut>;

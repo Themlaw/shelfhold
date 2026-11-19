@@ -22,6 +22,7 @@ function serverPublication(over: Partial<PublicationView> = {}, count = 10): Pub
     readingDirection: 'ltr',
     title: 'Une série',
     language: 'fr',
+    seriesId: '01HZZZZZZZZZZZZZZZZZZZZZZW', // the Œuvre the manifest names since L13
     pages: Array.from({ length: count }, (_, i) => ({
       index: i + 1, // from 1: what the server writes, never what the engine may take for a place
       href: `/content/TICKET/p${i + 1}.jpg`,

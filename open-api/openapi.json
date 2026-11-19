@@ -7217,6 +7217,10 @@
             "title": "Scope",
             "type": "string"
           },
+          "series_id": {
+            "title": "Series Id",
+            "type": "string"
+          },
           "spine": {
             "items": {
               "$ref": "#/components/schemas/EntryOut"
@@ -7238,6 +7242,7 @@
           "number",
           "language",
           "reading_direction",
+          "series_id",
           "expires_at",
           "pages",
           "spine",
