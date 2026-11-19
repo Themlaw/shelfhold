@@ -116,6 +116,7 @@ test('test_keyboard_shortcuts_reader', async ({ page }) => {
     const stop = await page.evaluate(() => {
       const el = document.activeElement as HTMLElement | null;
       if (!el) return null;
+      if (el === document.body) return { body: true as const };
       const style = getComputedStyle(el);
       return {
         name: (el.getAttribute('aria-label') ?? el.textContent ?? '').trim(),
@@ -123,6 +124,7 @@ test('test_keyboard_shortcuts_reader', async ({ page }) => {
       };
     });
     if (stop === null) break;
+    if ('body' in stop) continue; // the Tab left the page for the browser: not a stop of the reader
     if (stops.length > 0 && stop.name === stops[0]) break; // back on the first stop: no trap
     stops.push(stop.name);
     expect(stop.ring, `the focus ring is visible on ${stop.name}`).toBe(true);
