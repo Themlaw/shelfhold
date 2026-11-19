@@ -666,7 +666,7 @@ jobs:
         run: |
           # apt waits ~10 min per unreachable mirror: bound it, then install the browser alone
           # (the runner image ships most system libraries; a missing one fails the run, loudly).
-          timeout 180 npx playwright install --with-deps "$BROWSER" && exit 0
+          timeout 480 npx playwright install --with-deps "$BROWSER" && exit 0
           echo "::warning::playwright --with-deps failed; installing the browser alone"
           npx playwright install "$BROWSER"
       - name: Playwright (reader, one engine)
