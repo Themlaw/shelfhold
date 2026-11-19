@@ -28,8 +28,9 @@ export const profileKvName = (profileId: string): string => `${KV_PREFIX}p-${pro
 const ULID = /^[0-9A-Za-z]{1,40}$/;
 export const isCarrierId = (value: string): boolean => ULID.test(value);
 
-/** The path under which the bytes of an entry of a copy are answered: a ticket that no server ever
- * issues (`.` is not in the alphabet of a ticket), so a request for it can only be a copy. */
+/** The path under which the bytes of an entry of a copy are answered: a name no server ticket has
+ * (a ticket is `<body>.<tag>`, its body starting with `WzEs`; `offline.` never does), and `COPY_PATH`
+ * is the only place the worker reads it: a request for it is a copy or a 404, never the network. */
 export function copyUrl(carrierType: string, carrierId: string, entry: string): string {
   return `/content/offline.${carrierType}.${carrierId}/${entry.split('/').map(encodeURIComponent).join('/')}`;
 }

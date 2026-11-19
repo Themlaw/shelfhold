@@ -32,9 +32,10 @@ export function offlineApi(): KeepApi {
       return { status: response.status, ...(data ? { publication: data } : {}) };
     },
     async putPosition(body) {
-      const { response } = answered(await readerPutPosition({ body, headers: { 'X-CSRF-Token': csrfToken() }, keepalive: true }));
+      const { response, error } = answered(await readerPutPosition({ body, headers: { 'X-CSRF-Token': csrfToken() }, keepalive: true }));
+      const code = (error as { code?: unknown } | undefined)?.code;
       const retry = Number(response.headers.get('Retry-After'));
-      return { status: response.status, ...(Number.isFinite(retry) && retry > 0 ? { retryAfter: retry } : {}) };
+      return { status: response.status, ...(typeof code === 'string' ? { code } : {}), ...(Number.isFinite(retry) && retry > 0 ? { retryAfter: retry } : {}) };
     },
     entry: (url) => fetch(url, { credentials: 'same-origin' })
   };

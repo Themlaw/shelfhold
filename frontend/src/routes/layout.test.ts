@@ -125,3 +125,28 @@ describe('root layout load', () => {
     expect(untrack).toHaveBeenCalled();
   });
 });
+
+describe('root layout load: the session of the offline copies (M5 L16b)', () => {
+  const base = { '/api/v1/source': () => json({}), '/api/v1/me/preferences': () => json({}, 401) };
+
+  // req: EF-LEC-012, ENF-SEC-010
+  it('says the session was refused (401, 403) so that the copies go; a network failure is not that', async () => {
+    for (const status of [401, 403]) {
+      const data = await load({ fetch: fetcher({ ...base, '/api/v1/me': () => json({}, status), '/api/v1/setup/status': () => json({}) }) } as never);
+      expect(data).toMatchObject({ sessionLost: true, profileId: null });
+    }
+    const down = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/v1/me') throw new TypeError('offline');
+      return String(input) === '/api/v1/source' ? json({}) : json({}, 401);
+    });
+    const data = await load({ fetch: down, url: new URL('http://x/chercher') } as never).catch(() => null);
+    expect(data?.sessionLost ?? false).toBe(false);
+  });
+
+  // req: EF-LEC-012
+  it('hands over the profile that owns the copies', async () => {
+    const data = await load({ fetch: fetcher({ ...base, '/api/v1/me': () => json({ id: 'P1', nav: [] }) }) } as never);
+    expect(data).toMatchObject({ profileId: 'P1', sessionLost: false });
+  });
+});
+

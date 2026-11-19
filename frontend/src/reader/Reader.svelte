@@ -81,6 +81,14 @@
     }
   }
 
+  async function activeProfileId(): Promise<string | null> {
+    try {
+      return await offlineStore().activeProfile();
+    } catch {
+      return null;
+    }
+  }
+
   /** The same book again, with new tickets and the same scope: a reading outlives a ticket. */
   async function renew(): Promise<PublicationView | null> {
     if (offline) return view; // a copy has no ticket to renew
@@ -123,6 +131,7 @@
       return;
     }
     view = toView(data);
+    profile ??= await activeProfileId();
     const send = (body: PositionIn) =>
       readerPutPosition({
         body,
@@ -134,9 +143,9 @@
       carrier: { type: data.carrier_type, id: data.carrier_id },
       scope: data.scope,
       deviceId: readerDeviceId(),
-      // read from a copy: what cannot leave waits in the profile's queue, with the time it was read at
+      // with a profile on this device, what cannot leave waits in its queue with the time it was read at
       put:
-        offline && profile
+        profile
           ? createQueueingPut({
               store: offlineStore(),
               profileId: profile,

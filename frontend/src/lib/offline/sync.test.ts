@@ -180,3 +180,54 @@ describe('what left the view is evicted at reconnection by ?since=', () => {
     expect(calls.works).not.toHaveBeenCalled();
   });
 });
+
+describe('what must not be lost or missed (review)', () => {
+  // req: EF-LEC-012, EF-USR-006
+  it('410 then a copy that could not be asked (503): the token does not move past it', async () => {
+    const { store } = await setup();
+    await store.setSince(ALICE, 'old');
+    const works = vi.fn(async (since: string | null) => (since === 'old' ? { status: 410 } : { status: 200, since: 'fresh', removed: [] }));
+    const publication = vi.fn(async (_t: string, id: string) => (id === A ? { status: 503 } : { status: 200, publication: publicationOf(id, WORK_B) }));
+    await syncOffline({ store, profileId: ALICE, api: api({ works, publication }) });
+    expect(await store.since(ALICE)).toBe('old'); // the next connection resynchronises again
+  });
+
+  // req: EF-LEC-012
+  it('400 (a token this instance does not know) is a resynchronisation too', async () => {
+    const { store } = await setup();
+    await store.setSince(ALICE, 'old');
+    const works = vi.fn(async (since: string | null) => (since === 'old' ? { status: 400 } : { status: 200, since: 'fresh', removed: [] }));
+    const publication = vi.fn(async (_t: string, id: string) => (id === A ? { status: 404 } : { status: 200, publication: publicationOf(id, WORK_B) }));
+    const result = await syncOffline({ store, profileId: ALICE, api: api({ works, publication }) });
+    expect(result.evicted).toEqual([WORK_A]);
+    expect(await store.since(ALICE)).toBe('fresh');
+  });
+
+  // req: EF-LEC-007
+  it('403 csrf_failed keeps the position and the copies; any other 403 is a lost access', async () => {
+    const { store } = await setup();
+    await store.queuePosition(ALICE, position(A, '2026-11-19T09:00:00Z'));
+    const kept = await syncOffline({ store, profileId: ALICE, api: api({ putPosition: async () => ({ status: 403, code: 'csrf_failed' }) }) });
+    expect(kept.wiped).toBe(false);
+    expect(await store.queued(ALICE)).toHaveLength(1);
+    expect(await store.copies(ALICE)).toHaveLength(2);
+    const lost = await syncOffline({ store, profileId: ALICE, api: api({ putPosition: async () => ({ status: 403, code: 'forbidden' }) }) });
+    expect(lost.wiped).toBe(true);
+  });
+
+  // req: EF-LEC-007
+  it('removing a copy keeps the positions read offline', async () => {
+    const { store } = await setup();
+    await store.queuePosition(ALICE, position(A, '2026-11-19T09:00:00Z'));
+    await store.evictCarrier(ALICE, 'content', A);
+    expect(await store.queued(ALICE)).toHaveLength(1);
+  });
+
+  // req: EF-LEC-012
+  it('a copy is not kept when the token could not be renewed', async () => {
+    const { keepCopy } = await import('./keep.ts');
+    const { store } = await setup();
+    await expect(keepCopy({ store, profileId: ALICE, api: { ...api({ works: async () => ({ status: 503 }) }), entry: async () => new Response('x') }, carrierType: 'unit', carrierId: 'U' })).rejects.toMatchObject({ reason: 'download_failed' });
+  });
+});
+

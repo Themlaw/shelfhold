@@ -135,7 +135,7 @@ export function createOfflineStore(env: OfflineEnv): OfflineStore {
     async evictCarrier(profileId, type, id) {
       await dropBytes(profileId, type, id);
       await own(profileId).delete(COPY + carrierKey(type, id));
-      await own(profileId).delete(POSITION + carrierKey(type, id));
+      // the positions read offline stay queued: removing a copy is not a reason to lose a reading
     },
 
     async evictWorks(profileId, workIds) {
@@ -152,6 +152,7 @@ export function createOfflineStore(env: OfflineEnv): OfflineStore {
     wipe,
 
     async wipeAll() {
+      await active.delete('profile'); // first: if the rest fails, nothing is served any more
       const ids = new Set(await known());
       for (const name of await env.caches.keys()) {
         if (name.startsWith(COPY_CACHE_PREFIX)) ids.add(name.slice(COPY_CACHE_PREFIX.length));

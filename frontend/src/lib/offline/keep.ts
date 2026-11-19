@@ -38,7 +38,7 @@ export async function keepCopy(options: {
   const { store, profileId, api } = options;
   // the token first: whatever changes after it is a removal the server will name; before the copy
   // is made, never after (a Work created after a token is not in its removals)
-  await syncSince({ store, profileId, api }, { evicted: [], wiped: false });
+  if (!(await syncSince({ store, profileId, api }, { evicted: [], wiped: false }))) throw new OfflineKeepError('download_failed');
   if ((await store.activeProfile()) !== profileId) throw new OfflineKeepError('not_readable');
   let asked: Awaited<ReturnType<OfflineApi['publication']>>;
   try {

@@ -9,7 +9,7 @@
 //
 // Copies: `?since=` of the list of Works names every Work that left this profile's view since the
 // token (deleted, purged, reclassified): its copy is evicted. The token is signed and bound to the
-// profile's scope, so it cannot be carried to another profile; a token too old, or one the server
+// profile's scope, so it cannot be carried to a profile of another scope; a token too old, or one the server
 // does not recognise (410), is a resynchronisation: each copy is asked again and answers 404 for
 // what the profile may not see, which tells nothing about any other Work. A 401 or 403 is a
 // session or a token revoked, or access lost: everything of the profile is wiped.
@@ -19,7 +19,7 @@ import type { OfflineStore } from './store.ts';
 export interface OfflineApi {
   works(since: string | null): Promise<{ status: number; since?: string; removed?: string[] }>;
   publication(carrierType: string, carrierId: string): Promise<{ status: number; publication?: PublicationOut }>;
-  putPosition(body: PositionIn): Promise<{ status: number; retryAfter?: number }>;
+  putPosition(body: PositionIn): Promise<{ status: number; retryAfter?: number; code?: string }>;
 }
 
 export interface SyncResult {
@@ -32,7 +32,8 @@ export interface SyncResult {
 
 export const DEFAULT_RETRY_MS = 30_000;
 const MAX_RETRY_MS = 15 * 60_000;
-const LOST = new Set([401, 403]);
+// a 403 `csrf_failed` is a stale token, not a lost access: the position waits
+const isLost = (status: number, code?: string) => status === 401 || (status === 403 && code !== 'csrf_failed');
 const retryable = (status: number) => status === 429 || status >= 500;
 const delay = (seconds: number | undefined) =>
   seconds !== undefined && Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, MAX_RETRY_MS) : DEFAULT_RETRY_MS;
@@ -45,7 +46,7 @@ interface Options {
 
 async function flush({ store, profileId, api }: Options, result: SyncResult): Promise<void> {
   for (const waiting of await store.queued(profileId)) {
-    let answer: { status: number; retryAfter?: number };
+    let answer: { status: number; retryAfter?: number; code?: string };
     try {
       answer = await api.putPosition(waiting.body);
     } catch {
@@ -55,11 +56,11 @@ async function flush({ store, profileId, api }: Options, result: SyncResult): Pr
     if (answer.status >= 200 && answer.status < 300) {
       await store.dropPosition(profileId, waiting.key);
       result.sent += 1;
-    } else if (LOST.has(answer.status)) {
+    } else if (isLost(answer.status, answer.code)) {
       await store.wipe(profileId);
       result.wiped = true;
       return;
-    } else if (retryable(answer.status)) {
+    } else if (retryable(answer.status) || answer.status === 403) {
       result.retryAfterMs = delay(answer.retryAfter); // kept
       return;
     } else {
@@ -69,36 +70,44 @@ async function flush({ store, profileId, api }: Options, result: SyncResult): Pr
 }
 
 /** The removals since the token, or a resynchronisation. Never evicts on a failure it cannot read. */
-export async function syncSince({ store, profileId, api }: Options, result: Pick<SyncResult, 'evicted' | 'wiped'>): Promise<void> {
-  const lost = async () => {
+/** Resolves true when the token now stands for the present (nothing can leave the view unseen). */
+export async function syncSince({ store, profileId, api }: Options, result: Pick<SyncResult, 'evicted' | 'wiped'>): Promise<boolean> {
+  const lost = async (): Promise<false> => {
     await store.wipe(profileId);
     result.wiped = true;
+    return false;
   };
   try {
     const token = await store.since(profileId);
     const answer = await api.works(token);
-    if (LOST.has(answer.status)) return await lost();
+    if (answer.status === 401 || answer.status === 403) return await lost();
     if (answer.status === 200 && token !== null && answer.since) {
       result.evicted.push(...(await store.evictWorks(profileId, answer.removed ?? [])));
       await store.setSince(profileId, answer.since);
-      return;
+      return true;
     }
-    if (answer.status !== 410 && !(answer.status === 200 && token === null)) return; // not readable now: try again later
-    // a resynchronisation: take a token first, so that nothing that changes while the copies are asked again is missed
+    // 410 (too old, other scope) and 400 (a token this instance does not know) are a resynchronisation
+    if (answer.status !== 410 && answer.status !== 400 && !(answer.status === 200 && token === null)) return false;
+    // take a token first, so that nothing that changes while the copies are asked again is missed
     const fresh = token === null && answer.since ? answer : await api.works(null);
-    if (LOST.has(fresh.status)) return await lost();
-    if (fresh.status !== 200 || !fresh.since) return;
+    if (fresh.status === 401 || fresh.status === 403) return await lost();
+    if (fresh.status !== 200 || !fresh.since) return false;
+    let complete = true;
     for (const copy of await store.copies(profileId)) {
       const asked = await api.publication(copy.carrierType, copy.carrierId);
-      if (LOST.has(asked.status)) return await lost();
+      if (asked.status === 401 || asked.status === 403) return await lost();
       if (asked.status === 404) {
         await store.evictCarrier(profileId, copy.carrierType, copy.carrierId);
         if (!result.evicted.includes(copy.workId)) result.evicted.push(copy.workId);
+      } else if (asked.status !== 200) {
+        complete = false; // not asked for real (busy, error): the token must not move past it
       }
     }
+    if (!complete) return false;
     await store.setSince(profileId, fresh.since);
+    return true;
   } catch {
-    // offline: nothing is evicted and nothing is wiped; the next reconnection asks again
+    return false; // offline: nothing is evicted and nothing is wiped; the next reconnection asks again
   }
 }
 
@@ -115,12 +124,12 @@ export async function syncOffline(options: Options): Promise<SyncResult> {
 export function createQueueingPut(options: {
   store: OfflineStore;
   profileId: string;
-  put: (body: PositionIn) => Promise<{ status: number; retryAfter?: number }>;
+  put: (body: PositionIn) => Promise<{ status: number; retryAfter?: number; code?: string }>;
 }): (body: PositionIn) => Promise<void> {
   return async (body) => {
     try {
       const answer = await options.put(body);
-      if (retryable(answer.status)) await options.store.queuePosition(options.profileId, body);
+      if (retryable(answer.status) || answer.status === 403) await options.store.queuePosition(options.profileId, body);
     } catch {
       await options.store.queuePosition(options.profileId, body);
     }
