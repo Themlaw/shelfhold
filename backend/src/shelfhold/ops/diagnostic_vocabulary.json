@@ -358,6 +358,7 @@
   "RateLimited",
   "RatingRefusedError",
   "ReadOnlyConfigKey",
+  "ReadOnlyFsopsError",
   "ReadOnlyRootError",
   "RebaselineRefusedError",
   "ReceivedTooLargeError",

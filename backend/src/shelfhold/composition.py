@@ -262,8 +262,12 @@ class Composition:
                 or entry[1] != self._roots_epoch
             ):  # fmt: skip
                 epoch = self._roots_epoch
-                service = TombstoneService(self.engine, self.keyring(), fsops, self.bus)
-                away = self._replay(service, fsops, loaded)
+                # The service writes its own journal lines (replay, owed lines) on a disk of its
+                # own: a read view refuses every write, and a writer hands it its `Fsops` by
+                # `use_disk` below.
+                disk = self.open_fsops(loaded) if fsops.writes_refused else fsops
+                service = TombstoneService(self.engine, self.keyring(), disk, self.bus)
+                away = self._replay(service, disk, loaded)
                 entry = self._tombstones = (signature, epoch, service, away)
             service = entry[2]
         if not fsops.writes_refused:  # a read view never becomes the disk the service writes on
