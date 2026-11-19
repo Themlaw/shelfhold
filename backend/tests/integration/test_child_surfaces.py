@@ -122,6 +122,8 @@ OPDS = (
     "GET /opds/works",
     "GET /opds/works/{work_id}",
     "GET /opds/recent",
+    "GET /opds/selections",  # M5 L21: the profile's own selections, evaluated in her scope
+    "GET /opds/selections/{selection_id}",
     "GET /opds/search",
     "GET /opds/covers/{content_hash}/{size}",
     "GET /opds/editions/{edition_id}/complete",
@@ -161,6 +163,13 @@ OPEN = {
     "DELETE /api/v1/collections/{collection_id}": "collections",
     "POST /api/v1/collections/{collection_id}/items": "collections",
     "DELETE /api/v1/collections/{collection_id}/items/{item_id}": "collections",
+    # M5 L21: the saved selections: a stored query, evaluated in her scope at each read; another
+    # profile's selection is an absent one (`test_m5_l21_saved_selections.py`)
+    "GET /api/v1/selections": "selections",
+    "POST /api/v1/selections": "selections",
+    "GET /api/v1/selections/{selection_id}": "selections",
+    "PUT /api/v1/selections/{selection_id}": "selections",
+    "DELETE /api/v1/selections/{selection_id}": "selections",
     # M4 L19: the relations of a Work she may see, and of those the ones whose other end she may
     # see too (`test_m4_l19_relations.py`); making and removing one is the admin's (CLOSED)
     "GET /api/v1/works/{work_id}/relations": "relations",
@@ -440,6 +449,7 @@ SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
     "content", "reader", "work_redirect", "opds", "support_author", "collections", "relations",
+    "selections",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -964,6 +974,14 @@ def _surface_collections(world: World) -> None:
     """M4 L18a: the lists she is shown hold only Works she may see (the attacks are in
     `test_m4_l18a_collections`)."""
     from tests.integration.test_m4_l18a_collections import child_case
+
+    child_case(world)
+
+
+def _surface_selections(world: World) -> None:
+    """M5 L21: a selection is evaluated in her scope (the attacks are in
+    `test_m5_l21_saved_selections`)."""
+    from tests.integration.test_m5_l21_saved_selections import child_case
 
     child_case(world)
 

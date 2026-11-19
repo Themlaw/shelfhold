@@ -38,7 +38,7 @@ EXPORT_TABLES = {
     "export_assembly",  # migration 0089 (M4 L10, EF-EXP-019)
     "tree", "tree_indexer",  # migration 0064 (M4 L02, ADR-0052)
 }  # fmt: skip
-M5_TABLES = {"device"}  # migration 0100 (M5 L02, EF-USR-008)
+M5_TABLES = {"device", "saved_selection"}  # 0100 (M5 L02, EF-USR-008), 0105 (M5 L21, EF-BIB-017)
 READING_TABLES = {
     "reading_position", "progress_sync_cursor", "progress_sync_note", "read_state_push_note",
     "reading_conflict",
