@@ -3698,6 +3698,7 @@
   "series_split",
   "server",
   "service",
+  "service-worker.js",
   "service_paused",
   "session",
   "session.list_all",
