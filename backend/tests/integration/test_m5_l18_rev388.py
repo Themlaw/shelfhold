@@ -60,11 +60,6 @@ def slow(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[tuple[
 
 
 @pytest.mark.req("EF-INT-007")
-@pytest.mark.xfail(
-    strict=True,
-    reason="C1 (#388): a cached rendition needs no slot, a conversion waits for a thread: "
-    "200 against 429 tells what another profile read",
-)
 def test_rev388_a_profile_cannot_tell_which_pages_another_profile_read(
     slow: tuple[Pse, _Slow],
 ) -> None:

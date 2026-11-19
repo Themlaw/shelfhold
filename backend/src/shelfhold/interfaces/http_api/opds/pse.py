@@ -180,26 +180,28 @@ def _converted(
     become is 406 (a header the worker refuses, a file that does not decode); a source whose purge
     began, or that is gone, is an absent thing."""
     params = RenditionParams(kind=kind, entry=served.name[:512])
+    # The 429 is decided before the cache is looked at, so that a page another profile already
+    # converted answers like one nobody did when the threads are taken (#388, C1): a cached page
+    # takes a thread and a slot too. Accepted cost: a 429 is possible for a page in the cache.
+    busy = ProblemError("rendition_busy", headers={**_NO_STORE, "Retry-After": "1"})
+    if not held.acquire(blocking=False):
+        raise busy  # too many threads already wait: refused at once, no thread held
     try:
-        rendition = service.cached(served.content_id, params, served.body)  # no slot for a hit
-        if rendition is None:  # a conversion starts a worker: few at a time, few waiting
-            busy = ProblemError("rendition_busy", headers={**_NO_STORE, "Retry-After": "1"})
-            if not held.acquire(blocking=False):
-                raise busy  # too many threads already wait: refused at once, no thread held
-            try:
-                if not slots.acquire(timeout=_WAIT_S):
-                    raise busy
-                try:
-                    rendition = service.render(served.content_id, served.body, params)
-                finally:
-                    slots.release()
-            finally:
-                held.release()
-        data = service.read(rendition)
-    except (UnknownSourceError, TombstonedContentError):
-        raise absent() from None
-    except (ImageRejected, UnsupportedSourceError, RemoteProcessorRefusedError):
-        raise ProblemError("not_acceptable", headers=_NO_STORE) from None
+        if not slots.acquire(timeout=_WAIT_S):
+            raise busy
+        try:
+            rendition = service.cached(served.content_id, params, served.body)
+            if rendition is None:  # a conversion starts a worker
+                rendition = service.render(served.content_id, served.body, params)
+            data = service.read(rendition)
+        except (UnknownSourceError, TombstonedContentError):
+            raise absent() from None
+        except (ImageRejected, UnsupportedSourceError, RemoteProcessorRefusedError):
+            raise ProblemError("not_acceptable", headers=_NO_STORE) from None
+        finally:
+            slots.release()
+    finally:
+        held.release()
     if data is None:
         raise ProblemError("not_acceptable", headers=_NO_STORE)
     return content_response(data, media_type=rendition.media_type, filename=f"page.{kind}")
