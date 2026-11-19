@@ -1246,7 +1246,7 @@ export type ContinueItemOut = {
     /**
      * Target
      */
-    target: 'reader' | 'kavita';
+    target: 'kept_copy' | 'kavita';
     /**
      * Title
      */

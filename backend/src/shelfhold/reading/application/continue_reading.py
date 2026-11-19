@@ -11,7 +11,7 @@ copy): two sources that agree are one row per (profile, Unit), so a series is ne
   query that reads the progress: a series the profile may not see is not an entry, a count, or an
   error: the answer is the one of a profile with no progress. No new rule of visibility.
 * An excerpt (D-P1) writes no position (L07), so it never brings a series here.
-* `target`: `reader` when the profile reads the kept copy in full (ADR-0055 D-P1, the rule of the
+* `target`: `kept_copy` when the profile reads the kept copy in full (ADR-0055 D-P1, the rule of the
   publication), `kavita` when the Unit is read where it was sent (a written export on a destination
   where she has a live, verified account); a Unit with neither is dropped.
 * Bounded: `MAX_ENTRIES` at most, `MAX_WORKS_EXAMINED` series looked at (only those with something
@@ -38,7 +38,7 @@ MAX_WORKS_EXAMINED: Final = 120
 _BATCH: Final = 40
 MAX_CANDIDATES: Final = 8  # Units tried for one series before it waits
 
-Target = Literal["reader", "kavita"]
+Target = Literal["kept_copy", "kavita"]
 
 # The view `reading_progress` (frozen columns, `docs/reference/reading-progress.md`).
 _PROGRESS = sa.table(
@@ -59,7 +59,7 @@ class ContinueEntry:
     target: Target
     approximate: bool
     # what the reader opens, the very pair of the manifest of L06 (`/lire/<type>/<id>`); only when
-    # `target` is `reader`
+    # `target` is `kept_copy`
     carrier_type: Literal["content"] | None = None
     carrier_id: str | None = None
 
@@ -245,7 +245,7 @@ class ContinueReading:
         try:
             carrier = self._publication.choose(user_id, "unit", unit_id)
             if self._access.resolve(user_id, *carrier).full_allowed:
-                return "reader", carrier[1]  # a kept copy: the manifest's own `content` pair
+                return "kept_copy", carrier[1]  # a kept copy: the manifest's own `content` pair
         except (NoReadableCopyError, UnknownCarrierError):
             pass
         record, item, account = (

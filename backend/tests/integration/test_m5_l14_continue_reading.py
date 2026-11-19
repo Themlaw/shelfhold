@@ -117,7 +117,7 @@ def test_continue_reading_home(world: World) -> None:
     _third, u3 = kept(world)
     pulled(world, "admin", "content", first, done=True)  # read in the other reader, pulled
     got = items(world.admin.get(HOME))
-    assert [(i["unit_id"], i["state"], i["target"]) for i in got] == [(u2, "next", "reader")]
+    assert [(i["unit_id"], i["state"], i["target"]) for i in got] == [(u2, "next", "kept_copy")]
     assert got[0]["work_id"] == world.seed.works["ok"] and got[0]["title"]
     # the link is the pair the manifest of L06 names for this Unit, nothing else
     manifest = world.admin.get(f"/api/reader/unit/{u2}/publication").json()

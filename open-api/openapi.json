@@ -2086,7 +2086,7 @@
           },
           "target": {
             "enum": [
-              "reader",
+              "kept_copy",
               "kavita"
             ],
             "title": "Target",

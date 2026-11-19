@@ -103,9 +103,9 @@ class ContinueItemOut(BaseModel):
     number: str
     unit_title: str | None
     state: Literal["in_progress", "next"]  # the Unit being read, or the one after the last read
-    target: Literal["reader", "kavita"]  # the kept copy here, or the file read where it was sent
+    target: Literal["kept_copy", "kavita"]  # the kept copy here, or the file read where it was sent
     approximate: bool
-    # `target = reader`: the pair the reader route takes, `/lire/<carrier_type>/<carrier_id>`
+    # `target = kept_copy`: the pair the reader route takes, `/lire/<carrier_type>/<carrier_id>`
     carrier_type: Literal["content"] | None
     carrier_id: str | None
 

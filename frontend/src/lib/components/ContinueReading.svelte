@@ -17,7 +17,7 @@
     <h2 id="continue-title">{t('home.continue_reading')}</h2>
     <ul role="list">
       {#each items as item (item.work_id)}
-        {@const verb = item.target === 'reader' ? t('home.continue_read') : t('activity.open_in_kavita')}
+        {@const verb = item.target === 'kept_copy' ? t('home.continue_read') : t('activity.open_in_kavita')}
         {@const label = t('home.continue_open', { open: verb, title: item.title, number: item.number })}
         <li>
           <span class="title">{item.title}</span>
@@ -27,7 +27,7 @@
               ? t('home.continue_in_progress')
               : t('home.continue_next')}{item.approximate ? ` · ${t('home.continue_approximate')}` : ''}
           </span>
-          {#if item.target === 'reader' && item.carrier_type && item.carrier_id}
+          {#if item.target === 'kept_copy' && item.carrier_type && item.carrier_id}
             <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
             <a class="open" href={`/lire/${encodeURIComponent(item.carrier_type)}/${encodeURIComponent(item.carrier_id)}`} aria-label={label}>
               {t('home.continue_read')}

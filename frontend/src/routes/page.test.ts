@@ -146,7 +146,7 @@ describe('home page', () => {
   // req: EF-LEC-008
   it('test_continue_reading_home', async () => {
     resume = [
-      { work_id: 'w1', title: 'Série A', unit_id: 'u2', number: '2', unit_title: null, state: 'next', target: 'reader', approximate: true, carrier_type: 'content', carrier_id: 'c2' },
+      { work_id: 'w1', title: 'Série A', unit_id: 'u2', number: '2', unit_title: null, state: 'next', target: 'kept_copy', approximate: true, carrier_type: 'content', carrier_id: 'c2' },
       { work_id: 'w2', title: 'Série B', unit_id: 'u9', number: '9', unit_title: null, state: 'in_progress', target: 'kavita', approximate: false, carrier_type: null, carrier_id: null }
     ];
     render(Page);
