@@ -33,11 +33,6 @@ from tests.restore_env import restore_env
 pytestmark = pytest.mark.req("EF-INT-026", "EF-EXP-029")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="the jobs that open the lease directly never ask the guard: a matching root is "
-    "written on while another is ahead of the database",
-)
 def test_a_session_on_the_matching_root_writes_nothing_while_the_guard_says_behind() -> None:
     """A database put back under a running instance, the library one session ahead of it and
     the store still matching its row. The guard, asked now, already says `restored_behind`;
