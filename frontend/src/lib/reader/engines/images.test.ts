@@ -16,6 +16,8 @@ function publication(over: Partial<PublicationView> = {}, count = 10): Publicati
       href: `/content/TICKET/p${i + 1}.jpg`,
       mediaType: 'image/jpeg'
     })),
+    spine: [],
+    package: null,
     ...over
   };
 }
@@ -138,7 +140,7 @@ describe('the image engine', () => {
     expect(ended).not.toHaveBeenCalled();
     engine.next(); // past the last page of the extract
     expect(ended).toHaveBeenCalledTimes(1);
-    expect(seen.map((l) => l.index)).toEqual([1, 2]);
+    expect(seen.map((l) => (l.type === 'page' ? l.index : -1))).toEqual([1, 2]);
     expect(asked.length).toBeGreaterThan(0);
     expect(asked.every((url) => /\/p[123]\.jpg$/.test(url))).toBe(true);
     expect(asked.some((url) => /p4/.test(url))).toBe(false);

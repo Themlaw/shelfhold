@@ -1016,5 +1016,10 @@
   "reader.read": "Read",
   "reader.read_excerpt": "Read an excerpt",
   "reader.keys": "Arrow keys, Page Down or Space turn the page; Escape goes back to the controls.",
-  "reader.page_undisplayable": "This page could not be displayed."
+  "reader.page_undisplayable": "This page could not be displayed.",
+  "reader.status_epub": "{percent}% read",
+  "reader.browser_unsupported": "This browser is too old to read an EPUB here: open it in Kavita.",
+  "reader.csp_refused": "The reading page did not open under its own security policy: reload it from the library.",
+  "reader.external_confirm": "Open this link outside the reader?\n{href}",
+  "reader.epub_failed": "This chapter could not be displayed."
 }
