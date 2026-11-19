@@ -41,6 +41,8 @@ let works: unknown[] = [];
 let requests: unknown[] = [];
 let worksQuery: URLSearchParams | null = null;
 let requestCalls = 0;
+let resume: unknown[] = [];
+let resumeQuery: URLSearchParams | null = null;
 
 const request = (id: string, state: string, family: string, open: string | null = null) => ({
   id,
@@ -59,6 +61,10 @@ const server = setupServer(
     worksQuery = new URL(r.url).searchParams;
     return HttpResponse.json({ items: works, total: works.length, since: 't', removed: [] });
   }),
+  http.get(`${BASE}/api/reader/continue`, ({ request: r }) => {
+    resumeQuery = new URL(r.url).searchParams;
+    return HttpResponse.json({ items: resume, kavita_url: KAVITA });
+  }),
   http.get(`${BASE}/api/v1/requests`, () => {
     requestCalls += 1;
     return HttpResponse.json({ items: requests });
@@ -73,6 +79,8 @@ beforeEach(() => {
   requests = [];
   worksQuery = null;
   requestCalls = 0;
+  resume = [];
+  resumeQuery = null;
   FakeSource.all = [];
   vi.stubGlobal('EventSource', FakeSource);
 });
@@ -133,6 +141,48 @@ describe('home page', () => {
     expect(titles).toEqual(['Plus récent', 'Plus ancien']);
     expect(worksQuery?.get('sort')).toBe('recent');
     expect(screen.queryByRole('link', { name: 'Ajouter un premier livre' })).toBeNull();
+  });
+
+  // req: EF-LEC-008
+  it('test_continue_reading_home', async () => {
+    resume = [
+      { work_id: 'w1', title: 'Série A', unit_id: 'u2', number: '2', unit_title: null, state: 'next', target: 'kept_copy', approximate: true, carrier_type: 'content', carrier_id: 'c2' },
+      { work_id: 'w2', title: 'Série B', unit_id: 'u9', number: '9', unit_title: null, state: 'in_progress', target: 'kavita', approximate: false, carrier_type: null, carrier_id: null }
+    ];
+    render(Page);
+    const section = await screen.findByRole('region', { name: 'Reprendre la lecture' });
+    const rows = within(section).getAllByRole('listitem');
+    expect(rows.map((r) => r.textContent?.split(/\s+/).join(' ').trim())).toEqual([
+      'Série A N° 2 · prochaine à lire · environ Lire',
+      'Série B N° 9 · en cours Ouvrir dans Kavita'
+    ]);
+    expect(within(rows[0]!).getByRole('link', { name: 'Lire, Série A, n° 2' })).toHaveAttribute('href', '/lire/content/c2');
+    expect(within(rows[1]!).getByRole('link', { name: 'Ouvrir dans Kavita, Série B, n° 9' })).toHaveAttribute('href', KAVITA);
+    expect(resumeQuery?.get('limit')).toBe('6'); // a bounded list asked for
+  });
+
+  // req: EF-LEC-008
+  it('test_continue_reading_empty_leaves_no_trace_on_the_home', async () => {
+    // nothing under way, or a child with everything hidden: no section, no word, no empty state
+    render(Page);
+    await screen.findByRole('link', { name: 'Ajouter un premier livre' });
+    expect(screen.queryByRole('region', { name: 'Reprendre la lecture' })).toBeNull();
+    expect(document.body.textContent ?? '').not.toMatch(/Reprendre|Continue reading/);
+  });
+
+  // req: EF-LEC-008
+  it('test_continue_reading_refuses_a_link_that_is_not_a_web_address', async () => {
+    server.use(
+      http.get(`${BASE}/api/reader/continue`, () =>
+        HttpResponse.json({
+          items: [{ work_id: 'w2', title: 'Série B', unit_id: 'u9', number: '9', unit_title: null, state: 'in_progress', target: 'kavita', approximate: false, carrier_type: null, carrier_id: null }],
+          kavita_url: 'javascript:alert(1)'
+        })
+      )
+    );
+    render(Page);
+    const section = await screen.findByRole('region', { name: 'Reprendre la lecture' });
+    expect(within(section).queryByRole('link')).toBeNull();
   });
 
   // req: EF-UX-010
