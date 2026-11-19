@@ -27,6 +27,10 @@ from starlette.concurrency import iterate_in_threadpool
 
 from shelfhold.catalog.public import (
     ReaderScope,
+    SelectionNotFoundError,
+    Selections,
+    SelectionTooSlowError,
+    SelectionViewer,
     VisibleWork,
     count_visible_works,
     list_visible_series,
@@ -187,20 +191,28 @@ def build_opds_router(
         recent: bool = False,
         shelf_id: str | None = None,
         series_id: str | None = None,
+        evaluate: Callable[[Connection, ReaderScope], tuple[list[VisibleWork], int]] | None = None,
     ) -> Response:
+        """`evaluate`: a saved selection (M5 L21) asks the page and the total itself, from the same
+        one filter; nothing else changes."""
         paths = _paths(request)
         with get_engine().connect() as connection:
             scope = _scope(connection, principal)
-            page = list_visible_works(
-                connection,
-                scope,
-                limit=limit + 1,
-                offset=offset,
-                recent=recent,
-                shelf_id=shelf_id,
-                series_id=series_id,
-            )
-            total = count_visible_works(connection, scope, shelf_id=shelf_id, series_id=series_id)
+            if evaluate is not None:
+                page, total = evaluate(connection, scope)
+            else:
+                page = list_visible_works(
+                    connection,
+                    scope,
+                    limit=limit + 1,
+                    offset=offset,
+                    recent=recent,
+                    shelf_id=shelf_id,
+                    series_id=series_id,
+                )
+                total = count_visible_works(
+                    connection, scope, shelf_id=shelf_id, series_id=series_id
+                )
         shown = page[:limit]
         links = [*_Page(offset, limit, make).links(has_next=len(page) > limit), *_start(paths)]
         links.append(Link("up", paths.root(), feed_type("navigation")))
@@ -233,6 +245,7 @@ def build_opds_router(
             ("series", t_lang("opds.series", language=lang), paths.series_list(), nav),
             ("works", t_lang("opds.works", language=lang), paths.works(), acquisition),
             ("recent", t_lang("opds.recent", language=lang), paths.recent(), acquisition),
+            ("selections", t_lang("opds.selections", language=lang), paths.selections(), nav),
         ]
         entries = [
             Entry(f"urn:shelfhold:opds:{key}", label, _stamp(), [Link(_SUBSECTION, href, kind)])
@@ -405,6 +418,73 @@ def build_opds_router(
             limit=limit,
             recent=True,
         )
+
+    @router.get("/selections", operation_id="opds_selections", response_class=Response)
+    def selections_list(request: Request, principal: Device) -> Response:
+        """The saved selections of the profile of the token, and of nobody else (M5 L21): one
+        entry each, an acquisition feed evaluated in her scope when it is opened."""
+        paths = _paths(request)
+        with get_engine().connect() as connection:
+            viewer = SelectionViewer(principal.user_id, _scope(connection, principal))
+        found = Selections(get_engine(), now).list_for(viewer)
+        entries = [
+            Entry(
+                f"urn:shelfhold:selection:{record.id}",
+                record.name,
+                _stamp(),
+                [Link(_SUBSECTION, paths.selection(record.id), feed_type("acquisition"))],
+            )
+            for record in found
+        ]
+        body = build_feed(
+            feed_id="urn:shelfhold:opds:selections",
+            title=t_lang("opds.selections", language=_lang(request, principal)),
+            updated=_stamp(),
+            kind="navigation",
+            links=[Link("self", paths.selections(), feed_type("navigation")), *_start(paths)],
+            entries=entries,
+        )
+        return _atom(body, "navigation")
+
+    @router.get(
+        "/selections/{selection_id}", operation_id="opds_selection", response_class=Response
+    )
+    def selection(
+        selection_id: str,
+        request: Request,
+        principal: Device,
+        limit: Limit = PAGE,
+        offset: Offset = 0,
+    ) -> Response:
+        _ulid(selection_id)
+        service = Selections(get_engine(), now)
+        with get_engine().connect() as connection:
+            viewer = SelectionViewer(principal.user_id, _scope(connection, principal))
+        try:
+            record = service.get(viewer, selection_id)
+        except SelectionNotFoundError:  # another profile's selection is one that does not exist
+            raise _absent() from None
+
+        def evaluate(connection: Connection, scope: ReaderScope) -> tuple[list[VisibleWork], int]:
+            page = service.evaluate(
+                connection, SelectionViewer(principal.user_id, scope), record,
+                limit=limit + 1, offset=offset,
+            )  # fmt: skip
+            return page.works, page.total
+
+        try:
+            return _works_feed(
+                request,
+                principal,
+                feed_id=f"urn:shelfhold:selection:{selection_id}",
+                title=record.name,
+                make=lambda **q: _paths(request).selection(selection_id, **q),
+                offset=offset,
+                limit=limit,
+                evaluate=evaluate,
+            )
+        except SelectionTooSlowError:
+            raise ProblemError("selection.too_slow") from None
 
     @router.get("/works/{work_id}", operation_id="opds_work", response_class=Response)
     def work(work_id: str, request: Request, principal: Device) -> Response:

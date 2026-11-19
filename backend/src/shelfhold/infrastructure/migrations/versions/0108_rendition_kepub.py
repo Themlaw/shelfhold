@@ -7,14 +7,14 @@ Reversible: the way back keeps the image rows and drops the KEPUB ones (a regene
 files are swept by the orphan collection).
 
 Number: 0108 is the one the launch of L20b names (0105 to 0107 are reserved to other lots).
-`down_revision` is the head of main (0104, L20a).
+`down_revision` is the head of main (0105).
 """
 # ruff: noqa: E501  (the DDL is the one SQLAlchemy writes, kept as it is)
 
 from alembic import op
 
 revision = "0108"
-down_revision = "0104"
+down_revision = "0105"
 branch_labels = None
 depends_on = None
 

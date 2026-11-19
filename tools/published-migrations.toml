@@ -336,6 +336,21 @@ sha256 = "11897a28f7af6091440fed589bc88b8bf9adbd89358f7b08ff5474c56abc5ff6"
 since = "1.2"
 
 [[migration]]
+file = "0105_saved_selection.py"
+sha256 = "3c31d90d306b2f3fdae23f18463aa756ac486bb318dd65659c4b75870ffcc486"
+since = "1.2"
+
+[[migration]]
+file = "0106_progress_partial_extent.py"
+sha256 = "9fd8e2f488747c27495542c56fccc024e7bf7ed18ac1fc8b2c920f0955c4d1be"
+since = "1.2"
+
+[[migration]]
+file = "0107_session_proof.py"
+sha256 = "df6ebe1bba5633b15e5d6b318b7b0eb6c59759f33bfd0d2af61e20ede7e2515d"
+since = "1.2"
+
+[[migration]]
 file = "0108_rendition_kepub.py"
-sha256 = "64ea13dac556f37b559757fc70fbb1ad0ccab1c1fbcabbe01e5043660a36c19c"
+sha256 = "1fc1669fc8c7f2b160bd69ab55c69d9ba4b4c21a2319ead8575da76e88d73ef3"
 since = "1.2"

@@ -568,7 +568,7 @@ def reserved_action(
         if isinstance(verdict, CredentialNotAllowed):
             raise ProblemError("credential_not_allowed", extensions={"action": action.name})
         if isinstance(verdict, ReauthRequired):
-            methods = list(auth.reauth_method_names)
+            methods = auth.reauth_methods_for(principal, local_only=verdict.local_only)
             raise ProblemError(
                 "reauth_required",
                 extensions={

@@ -24,6 +24,10 @@ FRAME_ANCESTORS = "frame-ancestors 'none'"
 READER_FRAME_ANCESTORS = "frame-ancestors 'self'"
 DATA_CSP = "default-src 'none'"
 CSP_SANDBOX = "sandbox"
+MANIFEST_TYPE = "application/manifest+json"  # the PWA manifest (L16a): not a guess of the platform
+# The policy a worker script is served under is the one its global scope runs under: it may read its
+# own origin (the shell it keeps) and nothing else, whatever the code of the build says.
+WORKER_CSP = "default-src 'none'; connect-src 'self'"
 ROBOTS_TXT = "User-agent: *\nDisallow: /\n"
 BEARER_CHALLENGE = 'Bearer realm="api"'
 BASIC_CHALLENGE = 'Basic realm="Shelfhold", charset="UTF-8"'  # the e-reader's OPDS (L46)
@@ -138,7 +142,7 @@ def meta_csp(html: str) -> str | None:
 
 
 _LOOSE_SOURCES = ("'unsafe-inline'", "'unsafe-eval'", "*", "https:", "http:", "data:", "blob:")
-_GUARDED = ("default-src", "script-src", "style-src")
+_GUARDED = ("default-src", "script-src", "style-src", "worker-src", "manifest-src")  # L16a: the PWA
 _IMAGE_SOURCES = (
     "'self'",
 )  # the reader (own entry, own policy: `reader_csp`) draws the `blob:` ones

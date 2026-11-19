@@ -24,9 +24,9 @@ USER, OTHER = new_ulid(), new_ulid()
 ISSUER = "https://idp.example.test"
 
 
-def test_the_revision_is_0101_the_head_on_0100() -> None:
+def test_the_revision_is_0101_on_0100() -> None:  # the head is pinned by the newest (0107)
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_revision("0101") is not None  # the head is pinned by the newest, 0102
+    assert script.get_revision("0101") is not None  # the head is pinned by the newest, 0107
     assert script.get_revision("0101").down_revision == HEAD_BEFORE
 
 

@@ -20,9 +20,9 @@ SOURCE = "sha256:" + "a" * 64
 OUT = "sha256:" + "b" * 64
 
 
-def test_the_revision_is_0104_on_0102() -> None:
+def test_the_revision_is_0104_on_0102() -> None:  # the head is pinned by the newest (0107)
     script = ScriptDirectory(str(default_script_location()))
-    assert len(script.get_heads()) == 1  # the head is pinned by the newest migration test
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it (0106 pins it)
     assert script.get_revision("0104").down_revision == "0102"
 
 

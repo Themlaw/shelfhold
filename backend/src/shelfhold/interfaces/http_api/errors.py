@@ -22,6 +22,7 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("conflict_stale", 409, "user"),  # M5 L07: a later position overtook the proposal
     ErrorCode("bundle_busy", 429, "user"),  # M4 L49a: too many blocks at a time
     ErrorCode("rendition_busy", 429, "user"),  # M5 L20b: no thread free to make a KEPUB
+    ErrorCode("progress_busy", 503, "user"),  # M5 L22a: a job is rewriting the Work: retry
     ErrorCode("kosync_registration_disabled", 402, "user"),  # M4 L47: accounts are Shelfhold's
     ErrorCode("precondition_failed", 412, "user"),
     ErrorCode("precondition_required", 428, "user"),

@@ -33,6 +33,7 @@ class Principal:
     scopes: tuple[str, ...] = ()
     read_only: bool = False
     can_rate: bool = False  # the right to classify (EF-BIB-036); closed unless the user holds it
+    provider_proof: bool = False  # sessions: what proved it is the identity provider's sign-in
     via_forward: bool = (
         False  # named by a believed proxy: never fresh, no reserved action (EF-USR-024)
     )

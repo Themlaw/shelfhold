@@ -45,6 +45,9 @@ class Effect(StrEnum):
     # `oidc.link`, `oidc.link_account`: ties an account to a person of an identity provider, who
     # then signs in without any local secret. Like a passkey it outlives the session that added it
     LINKS_IDENTITY = "links_identity"
+    # `oidc.unlink_own`, `oidc.unlink_account` (M5 L04): removes a link, which closes the sessions
+    # the provider opened. It adds no way in, so a freshness proved by the provider is enough
+    UNLINKS_IDENTITY = "unlinks_identity"
     ACCEPTS_ADMIN_RISK = "accepts_admin_risk"  # `--accept-admin-risk`
     # `profile add|set|remove` and the per-source policy: who may sign in, with which role, ceiling
     # and right to classify. A stolen session must not make an admin or lift a child's ceiling, so
@@ -112,6 +115,28 @@ NO_REAUTH_EFFECTS = frozenset(
     }  # not ACCEPTS_ADMIN_RISK: it takes a third party's admin password (L38 review)
 )
 
+# M5 L04 (#362 review MAJ-1 and the second review): what adds a way in that outlives the session.
+# Whoever knows the account's credentials at the provider can open a session through it and sign in
+# there again to make it fresh, so for these a freshness proved by the provider alone is refused
+# when the account has a local factor to prove itself with. The rule hangs on the EFFECTS of the
+# catalogue, not on a list of actions to keep up to date:
+#   ENROLS_PASSKEY, LINKS_IDENTITY   a passkey, a link to the provider
+#   MANAGES_CREDENTIALS              keys, sessions of others, the recovery kit
+#   TOUCHES_SECRETS                  a secret shown once or pasted: device tokens (issue, rotate),
+#                                    a Kavita key, a notification destination
+#   MANAGES_PROFILES                 a new account, a role (an admin is a way in for good)
+# A new action that carries one of them is covered with no change here; a new effect that creates
+# an access has to be added, which `test_every_durable_action_refuses_a_provider_proof` pins.
+DURABLE_ACCESS_EFFECTS = frozenset(
+    {
+        Effect.ENROLS_PASSKEY,
+        Effect.MANAGES_CREDENTIALS,
+        Effect.LINKS_IDENTITY,
+        Effect.TOUCHES_SECRETS,
+        Effect.MANAGES_PROFILES,
+    }
+)
+
 DEFAULT_RESERVED_ROLES = frozenset({"admin"})
 
 # N2: closed list. Adding a name here is a security decision, reviewed as such.
@@ -161,6 +186,9 @@ class RoleNotAllowed:
 class ReauthRequired:
     auth_age_s: int
     max_age_s: int
+    # the proof must be given here (password or passkey): the provider's does not count for this
+    # action, whatever its age
+    local_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -181,6 +209,7 @@ def authorize_reserved(
     hardened: bool = False,
     allowed_roles: frozenset[str] = DEFAULT_RESERVED_ROLES,
     registry: Mapping[str, ReservedAction] | None = None,
+    has_local_factor: bool = True,
 ) -> Verdict:
     """`registry` is `RESERVED_ACTIONS` unless a test brings synthetic actions of its own."""
     if registry is None:
@@ -211,6 +240,13 @@ def authorize_reserved(
         principal.via_forward
     ):  # EF-USR-024 (5): a login by proxy is never enough, whatever the action
         return ReauthRequired(auth_age_s=-1, max_age_s=fresh_auth_s)
+    if principal.provider_proof and has_local_factor and action.effects & DURABLE_ACCESS_EFFECTS:
+        # an account that can prove itself here does so before it adds a way in: the provider's
+        # word is the only authority of an account with no local factor, which keeps it
+        age = int((now - principal.auth_time).total_seconds()) if principal.auth_time else -1
+        return ReauthRequired(
+            auth_age_s=age if age >= 0 else -1, max_age_s=fresh_auth_s, local_only=True
+        )
     if not action.needs_fresh_auth(
         restricted_profile_exists=restricted_profile_exists, hardened=hardened
     ):
