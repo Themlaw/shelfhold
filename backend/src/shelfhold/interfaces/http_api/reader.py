@@ -14,8 +14,8 @@ what to do. Nothing is written: no position, no history, no state.
 
 from collections.abc import Callable
 from datetime import datetime
-from urllib.parse import urlsplit, urlunsplit
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
@@ -247,7 +247,6 @@ def build_reader_router(
             items=[_item(e) for e in get_continue().entries(principal.user_id, limit)],
             kavita_url=web_address(kavita_url()),
         )
-
 
     @router.get(
         "/{carrier_type}/{carrier_id}/publication",

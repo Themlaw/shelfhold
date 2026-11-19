@@ -478,7 +478,8 @@ PENDING_SURFACES: dict[
 SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
-    "content", "reader", "continue_reading", "work_redirect", "opds", "support_author", "collections", "relations",
+    "content", "reader", "continue_reading", "work_redirect", "opds", "support_author",
+    "collections", "relations",
     "lite",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
