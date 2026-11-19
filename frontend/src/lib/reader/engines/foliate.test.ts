@@ -1,4 +1,4 @@
-// The EPUB adapter (ADR-0055, "Moteur EPUB", docs/dependencies.md, "consigne pour L12"): the one
+// The EPUB adapter (ADR-0055, "EPUB engine", docs/dependencies.md, "the L12 instruction"): the one
 // place foliate-js is imported. It builds the book object itself from the filtered route of the
 // content, installs the filter before anything is read, and never gives foliate a file.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

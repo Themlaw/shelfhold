@@ -1,4 +1,4 @@
-// The EPUB engine on foliate-js (ADR-0055, "Moteur EPUB", docs/dependencies.md, "consigne pour
+// The EPUB engine on foliate-js (ADR-0055, "EPUB engine", docs/dependencies.md, "consigne pour
 // L12"). This file is the only one that imports foliate (ESLint holds the line). What it does that
 // the library would not:
 // - it builds the book object itself, from the links of the publication, so that foliate never

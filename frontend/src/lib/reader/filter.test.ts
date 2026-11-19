@@ -104,7 +104,7 @@ describe('the whitelist corpus', () => {
     'url() distant': page('<p style="background:url(https://evil.example/p.png)">x</p>'),
     'url() vers l’instance': page('<p style="background:url(/api/v1/auth/session)">x</p>', '<style>p{background:url(//shelfhold.test/api/x)}</style>'),
     'url() échappé': page('<p style="background:u\\72l(https://evil.example/p.png)">x</p>'),
-    'url() sans guillemets, espaces': page('<style>p{background:url(  https://evil.example/p.png  )}</style>'),
+    'url() unquoted, with spaces': page('<style>p{background:url(  https://evil.example/p.png  )}</style>'),
     'image-set': page('<style>p{background:image-set("https://evil.example/p.png" 1x)}</style>'),
     expression: page('<p style="width:expression(alert(1))">x</p>'),
     behavior: page('<style>p{behavior:url(x.htc);-moz-binding:url(x.xml#a)}</style>'),

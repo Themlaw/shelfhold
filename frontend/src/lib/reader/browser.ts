@@ -1,4 +1,4 @@
-// The browsers the EPUB engine runs on (ADR-0055, "Navigateurs pris en charge"): it needs a
+// The browsers the EPUB engine runs on (ADR-0055, "supported browsers"): it needs a
 // `blob:` document that inherits the policy of the page that made it, and `'strict-dynamic'`, and
 // a build of zip.js that inflates with `DecompressionStream('deflate-raw')`. When in doubt, the
 // engine is refused and the reader proposes Kavita.

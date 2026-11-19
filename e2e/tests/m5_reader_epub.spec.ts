@@ -83,7 +83,7 @@ test('test_foliate_epub_reflow_and_fixed: both layouts are drawn, in a blob: doc
   await page.getByRole('button', { name: 'Page suivante' }).click();
   await expect.poll(() => page.locator('[role=status]').innerText()).not.toBe('');
 
-  const fixedPage = (n: number) => xhtml(`<p>Page fixe ${n}</p>`, '<meta name="viewport" content="width=400, height=600"/>');
+  const fixedPage = (n: number) => xhtml(`<p>Fixed page ${n}</p>`, '<meta name="viewport" content="width=400, height=600"/>');
   await serve(page, {
     fixed: true,
     files: {
@@ -94,7 +94,7 @@ test('test_foliate_epub_reflow_and_fixed: both layouts are drawn, in a blob: doc
     }
   });
   await page.goto('/lire/unit/U1');
-  await expect.poll(() => textOf(page)).toContain('Page fixe 1');
+  await expect.poll(() => textOf(page)).toContain('Fixed page 1');
 });
 
 // req: ENF-SEC-004
