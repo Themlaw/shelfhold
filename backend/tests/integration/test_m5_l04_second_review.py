@@ -24,9 +24,8 @@ trois effets, donc sur la seule preuve du fournisseur, même quand le compte a u
   alors que la même session, à la même seconde, se voit refuser `passkey.register` et
   `oidc.link_own`.
 
-Chaque PoC est `xfail(strict=True)` : rouge avec `--runxfail` (la preuve du fournisseur seule
-passe, pour la bonne raison), xfail sinon ; le jour où le trou est fermé, l'XPASS strict
-demandera d'ôter la marque.
+Les trous sont fermés (la règle suit les effets du catalogue, `domain/reserved.py`) : chaque PoC
+est un test ordinaire, qui échoue si la preuve du fournisseur seule repasse.
 """
 
 from __future__ import annotations
