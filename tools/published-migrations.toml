@@ -331,6 +331,11 @@ sha256 = "e5f3947eb9f4e355f8cc5667a3afdc5e78735b42f5817103d4d1a34cf2f9ce00"
 since = "1.2"
 
 [[migration]]
+file = "0104_rendition.py"
+sha256 = "11897a28f7af6091440fed589bc88b8bf9adbd89358f7b08ff5474c56abc5ff6"
+since = "1.2"
+
+[[migration]]
 file = "0107_session_proof.py"
-sha256 = "3516c9f17393afda7252daa7a13c32f346e5d45aba5974d04a1b93b557e0d7fc"
+sha256 = "6ca35de72808d3e70ea48e21b3f19380e1d5ec5f438784b861deac940f13f72f"
 since = "1.2"

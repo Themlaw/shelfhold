@@ -23,9 +23,8 @@ CARRIER = "01HZZZZZZZZZZZZZZZZZZZZZZC"
 WIN, LOSE = "01HZZZZZZZZZZZZZZZZZZZZZZD", "01HZZZZZZZZZZZZZZZZZZZZZZE"
 
 
-def test_the_revision_is_0102_on_0101() -> None:  # the head is pinned by the newest (0107)
+def test_the_revision_is_0102_on_0101() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     assert script.get_revision("0102").down_revision == "0101"
 
 

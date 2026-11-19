@@ -1558,3 +1558,13 @@ job_id = "The one job that applies it, once it is queued."
 summary = "Counts of what the job did, for the screen: no title."
 created_at = "When the selection was frozen (UTC); an order not applied within the hour is dropped."
 applied_at = "When the job applied it (UTC)."
+
+[tables.rendition]
+description = "A converted image for a client that lacks the format (AVIF, WebP to JPEG or PNG), kept by the hash of what was made (M5 L20a)."
+[tables.rendition.columns]
+source_content_hash = "Hash of the source content (`sha256:<hex>`); a purge of that content erases the rendition."
+kind = "What was made: `jpeg` or `png`."
+params = "What else was asked (the page of the archive, the JPEG quality), as canonical JSON."
+content_hash = "Hash of the converted bytes (`sha256:<hex>`); it names the file, so two sources may share one."
+size = "Size of the converted file in bytes."
+created_at = "When it was made (UTC)."

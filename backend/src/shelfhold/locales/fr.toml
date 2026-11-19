@@ -1970,6 +1970,16 @@ title = "Ce chapitre est irremplaçable : la suppression demande une confirmatio
 action = "Tapez l'identifiant du chapitre pour confirmer. Aucune copie ne sera supprimée sans cela."
 cause = "Ce chapitre n'existe plus nulle part ailleurs : le supprimer le perdrait pour toujours, donc Shelfhold exige une confirmation explicite."
 
+[errors."rendition.format_unsupported"]
+title = "Cette image ne peut pas être convertie."
+action = "Utilisez un fichier que le client lit tel quel, ou une image AVIF ou WebP."
+cause = "Seules les images AVIF et WebP sont converties pour un client qui n'a pas le format ; JPEG XL n'a pas de décodeur dans cette version."
+
+[errors."rendition.remote_refused_watermarked"]
+title = "Un fichier tatoué n'est jamais envoyé à un service extérieur."
+action = "Gardez la conversion locale, ou laissez ce fichier hors du service extérieur."
+cause = "Ce fichier porte la marque de son acheteur : un processeur qui envoie des octets hors de l'hôte ne le reçoit jamais."
+
 [errors."unit.safeguard_failed"]
 title = "La mise à l'abri d'un chapitre a échoué."
 action = "Consultez l'Activité et relancez la mise à l'abri du chapitre."

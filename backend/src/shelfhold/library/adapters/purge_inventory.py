@@ -52,7 +52,9 @@ __all__ = [
     "erase_work_rows",
     "leftover_tickets",
     "let_go_tickets",
+    "rendition_rels",
     "request_ids",
+    "take_renditions",
     "title_needles",
     "unresolved_bin_items",
     "upstream_tokens",
@@ -131,11 +133,87 @@ def content_hashes(
     return list(payload.values()), list(derived.values())
 
 
+def _source_hashes(connection: Connection, unit_ids: Collection[str]) -> list[str]:
+    """The hash of the file of each content of these Units: the key a rendition is made under."""
+    return sorted(
+        set(
+            connection.execute(
+                sa.select(_content.c.original_sha256).where(_content.c.unit_id.in_(unit_ids))
+            ).scalars()
+        )
+    )
+
+
+def rendition_rels(connection: Connection, unit_ids: Collection[str]) -> list[str]:
+    """The cache files (relative to `/data`) of the renditions made from the contents of these
+    Units, for a purge to erase before the rows go (ADR-0048, EF-BIB-015). A rendition follows its
+    source's *file*, whichever Unit holds it: a trace of what was purged is never kept, and the
+    survivor that holds the same bytes simply has it made again. A file named by its hash that a
+    rendition of another source still points at is left: it is that one's."""
+    r = storage.rendition
+    gone = _source_hashes(connection, unit_ids)
+    rels: set[str] = set()
+    for chunk in _chunks(gone):
+        mine = list(
+            connection.execute(
+                sa.select(r.c.content_hash, r.c.kind).where(r.c.source_content_hash.in_(chunk))
+            )
+        )
+        for row in mine:
+            shared = connection.execute(
+                sa.select(sa.func.count())
+                .select_from(r)
+                .where(
+                    r.c.content_hash == row.content_hash,
+                    r.c.kind == row.kind,
+                    r.c.source_content_hash.not_in(gone),
+                )
+            ).scalar_one()
+            if not shared:
+                digest = row.content_hash.removeprefix("sha256:")
+                rels.add(f"cache/renditions/{digest[:2]}/{digest}.{row.kind}")
+    return sorted(rels)
+
+
+def take_renditions(connection: Connection, unit_ids: Collection[str]) -> list[str]:
+    """Delete the `rendition` rows made from the contents of these Units and return the cache
+    files (relative to `/data`) that no remaining row names: the rows are listed and erased by the
+    same statements of one write transaction, so a render that recorded its row before this
+    transaction is in the list, and one after it is refused by its own transaction (the tombstone
+    is already recorded). The files go afterwards: a cache may lose its row before its file
+    (ADR-0048, EF-BIB-015)."""
+    r = storage.rendition
+    rels: set[str] = set()
+    for chunk in _chunks(_source_hashes(connection, unit_ids)):
+        taken = list(
+            connection.execute(
+                sa.delete(r)
+                .where(r.c.source_content_hash.in_(chunk))
+                .returning(r.c.content_hash, r.c.kind)
+            )
+        )
+        for row in taken:
+            still = connection.execute(
+                sa.select(sa.func.count()).where(
+                    r.c.content_hash == row.content_hash, r.c.kind == row.kind
+                )
+            ).scalar_one()
+            if not still:
+                digest = row.content_hash.removeprefix("sha256:")
+                rels.add(f"cache/renditions/{digest[:2]}/{digest}.{row.kind}")
+    return sorted(rels)
+
+
 def erase_content_rows(
     connection: Connection, unit_ids: Collection[str], export_item_ids: Collection[str]
 ) -> None:
-    """The storage rows of these Units: contents, copies, bin items. Run once the files are gone
-    (nothing cascades from `content`, so a file is never forgotten on disk)."""
+    """The storage rows of these Units: contents, copies, bin items, and the renditions made from
+    them. Run once the files are gone (nothing cascades from `content`, so a file is never
+    forgotten on disk)."""
+    for chunk in _chunks(_source_hashes(connection, unit_ids)):
+        connection.execute(
+            sa.delete(storage.rendition).where(storage.rendition.c.source_content_hash.in_(chunk))
+        )
     connection.execute(sa.delete(_content).where(_content.c.unit_id.in_(unit_ids)))
     erase_replicas(connection, unit_ids, export_item_ids)
     connection.execute(
