@@ -26,7 +26,7 @@ ISSUER = "https://idp.example.test"
 
 def test_the_revision_is_0101_the_head_on_0100() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0101"]  # the head is pinned here, by the newest
+    assert script.get_revision("0101") is not None  # the head is pinned by the newest, 0102
     assert script.get_revision("0101").down_revision == HEAD_BEFORE
 
 
@@ -45,7 +45,7 @@ def test_upgrade_adds_the_table_and_changes_nothing_else(settings: Settings) -> 
     assert "oidc_identity" not in before
     with closing(sqlite3.connect(database, isolation_level=None)) as conn:
         _users(conn)
-    assert "0101" in migrate(settings).applied
+    command.upgrade(alembic_config(database), "0101")  # not the head: 0102 follows
     assert tables(database) - before == {"oidc_identity"}
     with closing(sqlite3.connect(database)) as conn:
         assert conn.execute('SELECT count(*) FROM "user"').fetchone() == (2,)
