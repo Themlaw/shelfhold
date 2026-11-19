@@ -2049,6 +2049,29 @@
             "title": "Approximate",
             "type": "boolean"
           },
+          "carrier_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier Id"
+          },
+          "carrier_type": {
+            "anyOf": [
+              {
+                "const": "content",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier Type"
+          },
           "number": {
             "title": "Number",
             "type": "string"
@@ -2101,7 +2124,9 @@
           "unit_title",
           "state",
           "target",
-          "approximate"
+          "approximate",
+          "carrier_type",
+          "carrier_id"
         ],
         "title": "ContinueItemOut",
         "type": "object"

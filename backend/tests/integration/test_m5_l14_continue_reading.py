@@ -119,6 +119,13 @@ def test_continue_reading_home(world: World) -> None:
     got = items(world.admin.get(HOME))
     assert [(i["unit_id"], i["state"], i["target"]) for i in got] == [(u2, "next", "reader")]
     assert got[0]["work_id"] == world.seed.works["ok"] and got[0]["title"]
+    # the link is the pair the manifest of L06 names for this Unit, nothing else
+    manifest = world.admin.get(f"/api/reader/unit/{u2}/publication").json()
+    assert (got[0]["carrier_type"], got[0]["carrier_id"]) == (
+        manifest["carrier_type"],
+        manifest["carrier_id"],
+    )
+    assert got[0]["carrier_type"] == "content"
     assert got[0]["number"].isdigit()  # the number of the Unit, as the catalogue spells it
     put(world, world.admin, second, page(9), minutes=-2)  # then the integrated reader opens it
     got = items(world.admin.get(HOME))
@@ -203,6 +210,7 @@ def test_continue_reading_opens_kavita_for_an_exported_unit(world: World) -> Non
         (unit, "in_progress", "kavita")
     ]
     assert "kavita_url" in world.admin.get(HOME).json()
+    assert (got[0]["carrier_type"], got[0]["carrier_id"]) == (None, None)  # no reader to open
 
 
 def test_continue_reading_a_unit_with_no_file_is_not_offered(world: World) -> None:

@@ -25,11 +25,11 @@
             {t('home.continue_unit', { number: item.number })} ·
             {item.state === 'in_progress'
               ? t('home.continue_in_progress')
-              : t('home.continue_next')}
+              : t('home.continue_next')}{item.approximate ? ` · ${t('home.continue_approximate')}` : ''}
           </span>
-          {#if item.target === 'reader'}
+          {#if item.target === 'reader' && item.carrier_type && item.carrier_id}
             <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-            <a class="open" href={`/lire/unit/${item.unit_id}`} aria-label={label}>
+            <a class="open" href={`/lire/${encodeURIComponent(item.carrier_type)}/${encodeURIComponent(item.carrier_id)}`} aria-label={label}>
               {t('home.continue_read')}
             </a>
           {:else if kavita}

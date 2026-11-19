@@ -1228,6 +1228,14 @@ export type ContinueItemOut = {
      */
     approximate: boolean;
     /**
+     * Carrier Id
+     */
+    carrier_id: string | null;
+    /**
+     * Carrier Type
+     */
+    carrier_type: 'content' | null;
+    /**
      * Number
      */
     number: string;

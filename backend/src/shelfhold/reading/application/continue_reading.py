@@ -58,6 +58,10 @@ class ContinueEntry:
     state: Literal["in_progress", "next"]
     target: Target
     approximate: bool
+    # what the reader opens, the very pair of the manifest of L06 (`/lire/<type>/<id>`); only when
+    # `target` is `reader`
+    carrier_type: Literal["content"] | None = None
+    carrier_id: str | None = None
 
 
 def _order(row: Any) -> tuple[bool, float, int, int, str]:
@@ -210,9 +214,10 @@ class ContinueReading:
         self, connection: sa.Connection, user_id: str, unit_id: str,
         state: Literal["in_progress", "next"], approximate: bool,
     ) -> ContinueEntry | None:  # fmt: skip
-        target = self._target(connection, user_id, unit_id)
-        if target is None:
+        found = self._target(connection, user_id, unit_id)
+        if found is None:
             return None
+        target, carrier = found
         row = connection.execute(
             sa.select(
                 catalog.unit.c.number_raw,
@@ -231,13 +236,16 @@ class ContinueReading:
             work_id=str(row.id), title=str(row.work_title), unit_id=unit_id,
             number=str(row.number_raw), unit_title=row.title, state=state, target=target,
             approximate=approximate,
+            carrier_type="content" if carrier else None, carrier_id=carrier,
         )  # fmt: skip
 
-    def _target(self, connection: sa.Connection, user_id: str, unit_id: str) -> Target | None:
+    def _target(
+        self, connection: sa.Connection, user_id: str, unit_id: str
+    ) -> tuple[Target, str | None] | None:
         try:
             carrier = self._publication.choose(user_id, "unit", unit_id)
             if self._access.resolve(user_id, *carrier).full_allowed:
-                return "reader"
+                return "reader", carrier[1]  # a kept copy: the manifest's own `content` pair
         except (NoReadableCopyError, UnknownCarrierError):
             pass
         record, item, account = (
@@ -265,4 +273,4 @@ class ContinueReading:
             )
             .limit(1)
         ).first()
-        return "kavita" if held_elsewhere else None
+        return ("kavita", None) if held_elsewhere else None

@@ -15,6 +15,7 @@ what to do. Nothing is written: no position, no history, no state.
 from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
@@ -104,6 +105,9 @@ class ContinueItemOut(BaseModel):
     state: Literal["in_progress", "next"]  # the Unit being read, or the one after the last read
     target: Literal["reader", "kavita"]  # the kept copy here, or the file read where it was sent
     approximate: bool
+    # `target = reader`: the pair the reader route takes, `/lire/<carrier_type>/<carrier_id>`
+    carrier_type: Literal["content"] | None
+    carrier_id: str | None
 
 
 class ContinueOut(BaseModel):
@@ -115,8 +119,27 @@ def _item(found: ContinueEntry) -> ContinueItemOut:
     return ContinueItemOut(
         work_id=found.work_id, title=found.title, unit_id=found.unit_id, number=found.number,
         unit_title=found.unit_title, state=found.state, target=found.target,
-        approximate=found.approximate,
+        approximate=found.approximate, carrier_type=found.carrier_type,
+        carrier_id=found.carrier_id,
     )  # fmt: skip
+
+
+def web_address(value: str | None) -> str | None:
+    """An address the browser may be sent to: http or https, with no `user:pass@` part (a secret
+    is never given back to the browser), else None."""
+    if not value:
+        return None
+    try:
+        parts = urlsplit(value)
+        host = parts.hostname
+    except ValueError:
+        return None
+    if parts.scheme not in ("http", "https") or not host:
+        return None
+    netloc = f"[{host}]" if ":" in host else host
+    if parts.port is not None:
+        netloc += f":{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
 class PositionIn(BaseModel):
@@ -216,7 +239,7 @@ def build_reader_router(
         response.headers["Cache-Control"] = "no-store"
         return ContinueOut(
             items=[_item(e) for e in get_continue().entries(principal.user_id, limit)],
-            kavita_url=kavita_url(),
+            kavita_url=web_address(kavita_url()),
         )
 
     @router.get(
