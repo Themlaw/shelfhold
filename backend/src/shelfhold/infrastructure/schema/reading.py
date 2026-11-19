@@ -111,6 +111,44 @@ reading_conflict = sa.Table(
     ),
 )
 
+# The choices of one profile in the reader (M5 L13, EF-LEC-006): the direction of a series (or
+# the profile's own default) and the comfort of one device (or of every one of them). The
+# priority is per type, in the application (`reading.application.settings`): a series beats the
+# mode, a device beats the default. One row per profile and place (the unique index; a device
+# without a name is `everywhere`, hence the `ifnull`); a row goes with its profile and reveals
+# nothing: it never widens what parental control hides, the doors that serve bytes keep checking.
+SETTING_SCOPES = ("device", "everywhere")  # the portée the reader was asked for
+SETTING_KINDS = ("direction", "comfort")  # the type of a setting picks its priority rule
+reader_setting = sa.Table(
+    "reader_settings",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("scope", sa.String(), nullable=False),
+    sa.Column("device_id", sa.String(), nullable=True),  # the portée « pour cet appareil »
+    sa.Column("kind", sa.String(), nullable=False),
+    sa.Column("key", sa.String(), nullable=False),  # a series, or `default`, or a comfort's name
+    sa.Column("value", sa.String(), nullable=False),
+    now_column("updated_at"),
+    ulid_check("id"),
+    in_check("scope", SETTING_SCOPES),
+    in_check("kind", SETTING_KINDS),
+    sa.CheckConstraint('("scope" = \'device\') = ("device_id" IS NOT NULL)', name="device_named"),
+    sa.CheckConstraint('length("key") BETWEEN 1 AND 64', name="key_length"),
+    sa.CheckConstraint('length("value") BETWEEN 1 AND 64', name="value_length"),
+    sa.Index(
+        "ux_reader_settings_place",
+        "user_id",
+        "kind",
+        "key",
+        "scope",
+        sa.text("ifnull(device_id, '')"),
+        unique=True,
+    ),
+)
+
 # What a reader got to in a Unit, merged over every position that reaches it (EF-LEC-014,
 # EF-LEC-007). `reading.domain` states the rule and `test_the_view_is_the_domain_rule` proves the
 # view equal to it. Columns (frozen since 1.1, `docs/reference/reading-progress.md`): `user_id`,

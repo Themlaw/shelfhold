@@ -45,8 +45,8 @@ M5_TABLES = {
 }
 READING_TABLES = {
     "reading_position", "progress_sync_cursor", "progress_sync_note", "read_state_push_note",
-    "reading_conflict",
-}  # 0064, 0078, 0080, 0102  # fmt: skip
+    "reading_conflict", "reader_settings",
+}  # 0064, 0078, 0080, 0102, 0103  # fmt: skip
 M4_TABLES = {
     "destination_account",
     "device_token",

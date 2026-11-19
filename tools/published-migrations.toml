@@ -331,6 +331,11 @@ sha256 = "e5f3947eb9f4e355f8cc5667a3afdc5e78735b42f5817103d4d1a34cf2f9ce00"
 since = "1.2"
 
 [[migration]]
+file = "0103_reader_settings.py"
+sha256 = "5e3722311a13172671ed5b66af208f41c85330755449c6d2518ffc12cb03470d"
+since = "1.2"
+
+[[migration]]
 file = "0104_rendition.py"
 sha256 = "11897a28f7af6091440fed589bc88b8bf9adbd89358f7b08ff5474c56abc5ff6"
 since = "1.2"
