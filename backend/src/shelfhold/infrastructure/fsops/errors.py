@@ -68,6 +68,11 @@ class ReadOnlyRootError(FsopsError):
     """An `adopt_ro` root is never a write target (EF-EXP-060, I24)."""
 
 
+class ReadOnlyFsopsError(FsopsError):
+    """This `Fsops` is a read view (`Composition.read_context()`): it writes nothing. A write goes
+    through a write session, which holds the lease and looks at the whole instance (ADR-0044)."""
+
+
 class CrossRootError(FsopsError):
     """A rename between two physical roots would be a copy: it is never a `rename` (I24)."""
 

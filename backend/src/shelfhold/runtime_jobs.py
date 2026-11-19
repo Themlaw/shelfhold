@@ -590,7 +590,7 @@ class ScanRelay:
 def build_pipeline(
     comp: Composition, scans: ScanRelay | None = None
 ) -> tuple[ExportPipeline, Reconciler, Any]:
-    fsops, loaded, _tombstones = comp.read_context()
+    fsops, loaded, _tombstones = comp.lease_context()  # `session_opener` below binds the lease
     reconciler = Reconciler(comp.engine, fsops, clock=comp.clock, bus=comp.bus)
     renderer = cbz_renderer(
         fsops,
@@ -1357,7 +1357,10 @@ def reconcile_handler(comp: Composition, *, in_window: bool) -> Callable[[JobCon
             reconciler.reconcile(destination.id, in_window=in_window)
             if in_window:  # the full pass reads the hashes: only where files may be hashed
                 inventory.scan(destination.id, in_window=True, should_stop=out_of_time)
-                pipeline.heal_mirror(destination.id)
+                try:
+                    pipeline.heal_mirror(destination.id)
+                except RestoredBehindError:
+                    return  # read only until the adoption: nothing more is written this window
 
     return run
 
