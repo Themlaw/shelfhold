@@ -68,7 +68,7 @@ Sur une **PR**, chaque job ne tourne que si ce qu'il teste a pu changer (job `ch
 | `backend/tests/bench/**` | `backend-bench` |
 | `compose*.yaml`, `.env.example`, `.dockerignore` | `backend-unit` (tests statiques du compose), build de l'image et le seul scénario `smoke-install` |
 | `.github/workflows/**` autres que `ci.yml` | `backend-unit` (tests du workflow) ; l'image et tous ses scénarios si `image*.yml` |
-| `e2e/**` | e2e front, image et tous ses scénarios |
+| `e2e/**` | e2e front, image et tous ses scénarios, `reader-bench` (rapport seul, jamais bloquant) |
 | `*.md`, `docs/**` seuls | aucun test lourd |
 
 `coverage` n'a lieu que lorsque le code de production change : il combine les données de toutes les suites, et une combinaison partielle échouerait le seuil global. Une PR de tests seuls n'a donc pas de rapport de couverture. La règle est figée par `backend/tests/unit/test_ci_workflows.py`.

@@ -31,3 +31,12 @@ differs from `baseURL` is aborted and counted by `refuseOutsideBaseUrl`
 `test_spa_requests_outside_base_url_are_refused_and_counted` is the proof that a third-party
 image injected on purpose is refused and counted. WebSockets do not go through `route()`, so the
 fence does not cover them.
+
+## Bench du lecteur (ENF-PERF-006)
+
+`bench/bench_reader_page_turn.spec.ts` mesure le tour de page du lecteur d'images (p95 ≤ 150 ms
+depuis le cache) dans un projet Playwright à part : `npm run test:bench`
+(`playwright.bench.config.ts`, port 8793). Il n'entre jamais dans les e2e habituels ni dans la
+nightly ; la CI le publie en rapport seul (job `reader-bench`). Le seuil, la règle des 20 % et la
+porte de release : [`docs/governance/benchmarks.md`](../docs/governance/benchmarks.md).
+

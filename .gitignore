@@ -39,6 +39,7 @@ spikes/**/*.err
 spikes/**/err.txt
 docs/traceability/
 e2e/.tmp-workshop/
+e2e/.tmp-bench/
 
 # Documentation site build (docs/mkdocs.yml)
 docs/_site/
