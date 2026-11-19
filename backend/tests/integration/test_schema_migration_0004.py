@@ -42,7 +42,6 @@ EXPORT_TABLES = {
 M5_TABLES = {
     "device",  # migration 0100 (M5 L02, EF-USR-008)
     "oidc_identity",  # migration 0101 (M5 L03, EF-USR-004)
-    "saved_selection",  # migration 0105 (M5 L21, EF-BIB-017)
 }
 READING_TABLES = {
     "reading_position", "progress_sync_cursor", "progress_sync_note", "read_state_push_note",
