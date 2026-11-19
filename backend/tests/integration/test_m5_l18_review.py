@@ -1,7 +1,7 @@
 """M5 L18, relecture adverse (contradicteur): PoC des trous trouvés dans OPDS-PSE.
 
-Chaque test était rouge sur le commit relu ; seul R3 (décision du porteur, D-P1) reste en
-`xfail(strict=True)`, les autres passent. Les helpers sont ceux de `test_m5_l18_pse.py`.
+Each test was red on the reviewed commit; only R3 (the owner's decision, D-P1) stays
+`xfail(strict=True)`, the others pass. The helpers are those of `test_m5_l18_pse.py`.
 """
 
 from __future__ import annotations

@@ -24,11 +24,11 @@ from tests.integration.test_m5_l18_pse import Pse, png_pages
 pytestmark = pytest.mark.req("EF-INT-007")
 
 
-# -- S1: les conversions en attente ne sont pas bornées en nombre de fils ----------------------
+# -- S1: the conversions that wait are not bounded in number of threads -----------------
 
 
 class _Watch:
-    """Compte les fils de requête qui attendent en même temps un créneau de conversion."""
+    """Counts the request threads that wait at the same time for a conversion slot."""
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
