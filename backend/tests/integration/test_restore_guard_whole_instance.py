@@ -39,6 +39,7 @@ def sessions_of(env: RestoreEnv, behind: list[bool]) -> WriteSessions:
         clock=env.ex.clock,
         generations=GenerationCounter(env.engine),
         on_behind=lambda: behind.append(env.guard().enter_restored_behind().behind),
+        monotonic=lambda: env.ex.clock.now().timestamp(),  # moves with the test clock, forward
     )
     sessions.enforce()
     return sessions

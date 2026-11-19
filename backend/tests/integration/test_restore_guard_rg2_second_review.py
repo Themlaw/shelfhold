@@ -69,7 +69,19 @@ def _put_ahead(root: Path) -> None:
     path.write_text(json.dumps(document), "utf-8")
 
 
-def _sessions_of(env: RestoreEnv, behind: list[bool]) -> WriteSessions:
+class _Monotonic:
+    """A monotonic clock moved by hand: the wall clock of the test can step back, this cannot."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def _sessions_of(
+    env: RestoreEnv, behind: list[bool], monotonic: _Monotonic | None = None
+) -> WriteSessions:
     """What `Composition.sessions_for` wires: the guard is asked when a root is ahead."""
     sessions = WriteSessions(
         env.fsops,
@@ -77,6 +89,7 @@ def _sessions_of(env: RestoreEnv, behind: list[bool]) -> WriteSessions:
         clock=env.ex.clock,
         generations=GenerationCounter(env.engine),
         on_behind=lambda: behind.append(env.guard().enter_restored_behind().behind),
+        monotonic=monotonic or _Monotonic(),
     )
     sessions.enforce()
     return sessions
@@ -89,6 +102,7 @@ def _remover_of(env: RestoreEnv) -> RemoveDestination:
     fsops = open_fsops(
         env.loaded, umask=0o022, generation_source=GenerationCounter(env.engine).read
     )
+    fsops.refuse_writes()  # what `Composition.read_context()` does: the view writes nothing
     journal = IntentJournal(env.engine, fsops, clock=env.ex.clock)
     rows = {r.root_id: r for r in env.loaded.roots}
 
@@ -104,9 +118,7 @@ def _remover_of(env: RestoreEnv) -> RemoveDestination:
 
 def _count(env: RestoreEnv, table: sa.Table) -> int:
     with env.engine.connect() as connection:
-        return int(
-            connection.execute(sa.select(sa.func.count()).select_from(table)).scalar_one()
-        )
+        return int(connection.execute(sa.select(sa.func.count()).select_from(table)).scalar_one())
 
 
 # -- the control: the door the branch already closes ------------------------------------------
@@ -130,10 +142,6 @@ def test_control_a_session_writer_is_refused_once_the_store_is_ahead() -> None:
 # -- the removal: a writer with no session, no lease and no look ------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="target remove writes through the read context: no session, no lease, no look",
-)
 def test_the_removal_of_a_destination_deletes_while_the_store_is_ahead() -> None:
     """The same scenario through `target remove --delete-files`: the files live on the library,
     which still matches, while the store is ahead of the database. The removal builds its own
@@ -147,22 +155,21 @@ def test_the_removal_of_a_destination_deletes_while_the_store_is_ahead() -> None
         assert env.guard().assess().behind
         before = env.files()
         rows = _count(env, export.export_record)
+        # the view refuses each deletion (`ReadOnlyFsopsError`): the removal leaves every file
         report = _remover_of(env).apply(
-            dest, RemovalMode.DELETE_FILES, principal=HOST,
+            dest,
+            RemovalMode.DELETE_FILES,
+            principal=HOST,
             typed=removal_phrase(dest, RemovalMode.DELETE_FILES),
         )
         assert report.deleted == 0, report.left  # read only as a whole: nothing may leave
-        assert env.files() == before  # the exported files are gone on the current code
-        assert _count(env, export.export_record) == rows  # and the manifest was forgotten
+        assert env.files() == before  # read only as a whole: nothing leaves the disk
+        assert _count(env, export.export_record) == rows  # and the manifest is kept
 
 
 # -- the heartbeat: a verdict dated on a clock that can step back -----------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="the verdict cache is dated on the wall clock: a step back keeps it for minutes",
-)
 def test_a_heartbeat_elapsed_after_a_clock_step_back_looks_again() -> None:
     """A held session, the library comes back ahead, and the clock steps back four minutes —
     inside the `DEFAULT_SKEW` the lease machinery itself tolerates (`Lease.expired` calls a
@@ -173,12 +180,14 @@ def test_a_heartbeat_elapsed_after_a_clock_step_back_looks_again() -> None:
     of the last look."""
     with restore_env() as env:
         behind: list[bool] = []
+        mono = _Monotonic()
         kept = env.ex.lib.store / "kept.bin"
-        with _sessions_of(env, behind).open(str(env.ex.lib.store)) as session:
+        with _sessions_of(env, behind, mono).open(str(env.ex.lib.store)) as session:
             session.write_atomic(str(kept), b"first", parents=True)
             _put_ahead(env.library)  # the library comes back ahead of the database
             env.ex.clock.advance(seconds=-4 * 60)  # the correction, inside the lease skew
             env.ex.clock.advance(seconds=HEARTBEAT_INTERVAL.total_seconds() + 1)
+            mono.now += HEARTBEAT_INTERVAL.total_seconds() + 1  # the real time that went by
             with pytest.raises(RootBlockedError):  # a heartbeat has gone by: look again
                 session.write_atomic(str(kept), b"second", parents=True)
         assert behind == [True]

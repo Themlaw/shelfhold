@@ -19,6 +19,7 @@ further in the future than the allowed clock drift counts as run out and is logg
 import json
 import re
 import threading
+import time
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager, suppress
@@ -133,11 +134,16 @@ class WriteSessions:
         generations: GenerationCounter | None = None,
         on_behind: Callable[[], None] | None = None,
         pay_owed: Callable[[], None] | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._generations = generations
+        # The verdict of the whole-instance look is dated on a monotonic clock, never on the wall
+        # clock the leases use: a step back of the latter (inside `DEFAULT_SKEW`, which
+        # `Lease.expired` tolerates) must not keep a verdict past one heartbeat.
+        self._monotonic = monotonic
         self._live = 0  # write sessions open now: the look of `check` happens only while > 0
         self._live_lock = threading.Lock()
-        self._looked_at: datetime | None = None  # the last whole-instance look that passed
+        self._looked_at: float | None = None  # the last whole-instance look that passed
         self._pay_owed = pay_owed  # the tombstone lines owed, written under the lease just taken
         self._on_behind = on_behind  # a root remounted ahead of the database (EF-INT-026)
         self._fsops = fsops
@@ -314,8 +320,12 @@ class WriteSessions:
         none is)."""
         if self._generations is None:
             return
-        now = self._clock.now()
-        if cached and self._looked_at is not None and now - self._looked_at < HEARTBEAT_INTERVAL:
+        now = self._monotonic()
+        if (
+            cached
+            and self._looked_at is not None
+            and 0 <= now - self._looked_at < HEARTBEAT_INTERVAL.total_seconds()
+        ):
             return
         self._looked_at = now
         read = {}

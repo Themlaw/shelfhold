@@ -589,7 +589,7 @@ class ScanRelay:
 def build_pipeline(
     comp: Composition, scans: ScanRelay | None = None
 ) -> tuple[ExportPipeline, Reconciler, Any]:
-    fsops, loaded, _tombstones = comp.read_context()
+    fsops, loaded, _tombstones = comp.lease_context()  # `session_opener` below binds the lease
     reconciler = Reconciler(comp.engine, fsops, clock=comp.clock, bus=comp.bus)
     renderer = cbz_renderer(
         fsops,

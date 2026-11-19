@@ -266,7 +266,8 @@ class Composition:
                 away = self._replay(service, fsops, loaded)
                 entry = self._tombstones = (signature, epoch, service, away)
             service = entry[2]
-        service.use_disk(fsops)
+        if not fsops.writes_refused:  # a read view never becomes the disk the service writes on
+            service.use_disk(fsops)
         fsops.enforce_tombstone_flush(
             lambda path: any(
                 r.path == path and service.has_pending(r.root_id) for r in loaded.roots
@@ -324,7 +325,7 @@ class Composition:
         under the lease taken for the purpose (the session pays them before the generation
         moves)."""
         try:
-            fsops, loaded, service = self.read_context()
+            fsops, loaded, service = self._context()
             if loaded.restore_pending or not service.owed_roots():
                 return  # frozen: nothing is written; nothing owed: nothing to take a lease for
             with self._hold(fsops, loaded):  # the lease pays them (`_pay_owed`)
@@ -354,8 +355,22 @@ class Composition:
         return tuple(away)
 
     def read_context(self) -> tuple[Fsops, LoadedRoots, TombstoneService]:
-        """Everything that reads the library or the tombstones, and writes nothing
-        (the lines owed to a root are paid by `write_context` and `flush_owed_tombstones`)."""
+        """Everything that reads the library or the tombstones, and writes nothing: the `Fsops` is
+        a view that refuses every write (`Fsops.refuse_writes`), so a deletion or a write cannot
+        slip past the lease and the look at the whole instance by this door. What writes goes
+        through `write_context`, which pays the lines owed to a root
+        (`flush_owed_tombstones` pays them too)."""
+        fsops, loaded, tombstones = self._context()
+        fsops.refuse_writes()
+        return fsops, loaded, tombstones
+
+    def lease_context(self) -> tuple[Fsops, LoadedRoots, TombstoneService]:
+        """The `Fsops` of a caller that hands it to `session_opener` (which binds the lease
+        verifier on it): its writes then need a write session open on the root. Not for a caller
+        that never opens one: that is `read_context`."""
+        return self._context()
+
+    def _context(self) -> tuple[Fsops, LoadedRoots, TombstoneService]:
         loaded = self.load_roots()
         if loaded is None:
             raise NoLibraryError("no physical root is registered")
@@ -423,7 +438,7 @@ class Composition:
     @contextmanager
     def write_context(self) -> Iterator[WriteContext]:
         """The lease for the time of the block; `Fsops` refuses a write without it (ENF-OPS-015)."""
-        fsops, loaded, tombstones = self.read_context()
+        fsops, loaded, tombstones = self._context()
         with self._hold(fsops, loaded) as (sessions, mounted):
             self.sessions_for(fsops).enforce()
             yield WriteContext(fsops, loaded, WriteSession(sessions, mounted), tombstones, self.bus)

@@ -9,6 +9,7 @@ Nothing here ever reads a path that was checked by a separate call.
 
 import contextlib
 import errno
+import functools
 import hashlib
 import os
 import re
@@ -75,6 +76,7 @@ from shelfhold.infrastructure.fsops.errors import (
     NotRegularFileError,
     OutsidePathMapError,
     PathEscapeError,
+    ReadOnlyFsopsError,
     ReadOnlyRootError,
     ReservedPathError,
     RootBlockedError,
@@ -120,6 +122,25 @@ log = structlog.get_logger(__name__)
 # of the process does it (it never goes back). One lock per root path, shared by the process.
 _STAMP_LOCKS: dict[str, threading.RLock] = {}
 _STAMP_LOCKS_GUARD = threading.Lock()
+
+
+def _writes[**P, R](method: Callable[P, R]) -> Callable[P, R]:
+    """A method that writes on a disk: refused first, whatever its arguments, on an `Fsops` that
+    is only a view (`refuse_writes`). The structural guard of `Composition.read_context()`: every
+    write goes through a write session (ADR-0044), and `tests/unit/test_fsops_read_view.py` tries
+    each of these methods."""
+
+    @functools.wraps(method)
+    def guarded(*args: P.args, **kwargs: P.kwargs) -> R:
+        owner = args[0]
+        if isinstance(owner, Fsops) and owner._writes_refused:
+            raise ReadOnlyFsopsError(
+                f"{method.__name__}: this Fsops is a read view, it writes nothing"
+            )
+        return method(*args, **kwargs)
+
+    guarded.__writes__ = True  # type: ignore[attr-defined]
+    return guarded
 
 
 def _stamp_lock_of(path: str) -> threading.RLock:
@@ -261,6 +282,7 @@ class Fsops:
         self._umask = umask
         self._strategy = strategy
         self._lease_verifier: Callable[[str, bytes | None], None] | None = None
+        self._writes_refused = False
         self._tombstones_owed: Callable[[str], bool] | None = None
         self._freeze = freeze if freeze is not None else FreezeState(process=frozen)
         self._behind_hook: Callable[[], None] | None = None
@@ -359,6 +381,15 @@ class Fsops:
     def on_disk_pressure(self, hook: Callable[[str], bool] | None) -> None:
         """The disk guard's answer for a root path: without one, `disk_guard_purge` never runs."""
         self._pressure = hook
+
+    def refuse_writes(self) -> None:
+        """This `Fsops` is a read view from now on: every method that writes raises
+        `ReadOnlyFsopsError`. One way, no way back: a writer opens its own (`write_context`)."""
+        self._writes_refused = True
+
+    @property
+    def writes_refused(self) -> bool:
+        return self._writes_refused
 
     def enforce_lease(self, verify: Callable[[str, bytes | None], None] | None) -> None:
         """From now on every write passes `verify(root_path, raw_lease)`, which raises when the
@@ -586,6 +617,7 @@ class Fsops:
         owed = self._tombstones_owed
         return owed is not None and owed(root_path)
 
+    @_writes
     def boot(self) -> BootReport:
         """Per root: judge the sentinel, re-stamp a database one ahead, purge orphan staging."""
         report = BootReport()
@@ -626,6 +658,7 @@ class Fsops:
         if self._owes(key):
             raise TombstonePendingError(key)
 
+    @_writes
     def stamp_sentinel(self, root_path: str, *, generation: int) -> None:
         """After the database commit: rewrite the sentinel with the new generation (I39)."""
         if self._frozen_for(clean_absolute(root_path)):
@@ -675,6 +708,7 @@ class Fsops:
                 raise
             return None
 
+    @_writes
     def restamp_after_restore(self, root_path: str, *, generation: int, restore_epoch: int) -> None:
         """The one write allowed while the instance is `restored_behind`: the sentinel of a root
         whose files were just re-adopted takes the database's new generation and epoch
@@ -713,6 +747,7 @@ class Fsops:
         except Exception:  # a record of the state must never turn a refusal into another error
             log.warning("fsops.blocked_hook_failed", root=root_path)
 
+    @_writes
     def takeover_sentinel(
         self,
         root_path: str,
@@ -886,6 +921,7 @@ class Fsops:
         except RootBlockedError:
             return None
 
+    @_writes
     def update_lease(
         self,
         root_path: str,
@@ -931,6 +967,7 @@ class Fsops:
         if self._write_gate is not None:
             self._write_gate()
 
+    @_writes
     def write_mirror(self, root_path: str, name: str, data: bytes) -> FileIdentity:
         """Write one mirror file (`<dest>/<series>.jsonl`) atomically: the root is judged (sentinel,
         generation, lease) like for any write, and an `adopt_ro` root is refused."""
@@ -955,12 +992,14 @@ class Fsops:
             raise OutsidePathMapError(f"{root_path!r} is not a writable physical root")
         return _Located(key, ".", False)
 
+    @_writes
     def append_tombstone_line(self, root_path: str, line: bytes, *, header: bytes) -> bool:
         """Append one line to the root's journal: a write like any other (sentinel, lease).
         True when this line created the file."""
         with self._gated(self._host_root(root_path), tombstone=True) as root:
             return append_line(root, line, header=header)
 
+    @_writes
     def replace_tombstone_journal(self, root_path: str, new: bytes, expected: bytes) -> bool:
         """`tombstone rekey`: `new` takes the place of the journal, which must still be
         `expected`; False, nothing replaced, when it is not (written meanwhile). A write like any
@@ -972,6 +1011,7 @@ class Fsops:
                 return False
         return True
 
+    @_writes
     def record_tombstone_chain(self, root_path: str, chain: dict[str, Any]) -> bool:
         """The chained label of the journal, copied into the root's sentinel (authenticated)."""
         gated = self._gated(self._host_root(root_path), tombstone=True)
@@ -996,6 +1036,7 @@ class Fsops:
             except (SentinelFormatError, OSError):
                 return False
 
+    @_writes
     def record_tombstone_kid(self, root_path: str, kid: str, tags: dict[str, str]) -> None:
         """Add `kid` and its tags to the registry of the root's sentinel, before any line."""
         gated = self._gated(self._host_root(root_path), tombstone=True)
@@ -1008,6 +1049,7 @@ class Fsops:
         with self._root(self._host_root(root_path).root_path) as root:
             return read_journal(root, max_bytes)
 
+    @_writes
     def set_aside_tombstone_journal(self, root_path: str, stamp: str) -> str | None:
         """Rename an unreadable journal to `tombstones.aside-<stamp>` (nothing is deleted). Allowed
         while the instance is `restored_behind` (it is how a restore leaves that state when a
@@ -1035,6 +1077,7 @@ class Fsops:
 
     # -- writes -----------------------------------------------------------------------------
 
+    @_writes
     def write_atomic(
         self,
         local: str,
@@ -1056,6 +1099,7 @@ class Fsops:
                 verify_digest=verify_digest,
             )  # fmt: skip
 
+    @_writes
     def probe_capabilities(
         self, root_path: str, *, store_path: str | None = None
     ) -> RootCapabilities:
@@ -1097,6 +1141,7 @@ class Fsops:
                     store_reason="/store is not writable now",
                 )  # fmt: skip
 
+    @_writes
     def mkdir(self, local: str, *, parents: bool = True, exist_ok: bool = True) -> None:
         log.debug("fsops.mkdir", **self._where(local))
         located = self._locate(local)
@@ -1104,6 +1149,7 @@ class Fsops:
         with self._gated(located) as root:
             root.mkdir(located.rel, parents=parents, exist_ok=exist_ok)
 
+    @_writes
     def utime(self, local: str, *, mtime_ns: int) -> None:
         """Set the modification time of a regular file, in place (M4 L04, `touch_mtime`): the
         inode, its hard links, its owner and its mode stay as they are, nothing is rewritten.
@@ -1118,12 +1164,14 @@ class Fsops:
             atime_ns = root.stat(located.rel).st_atime_ns
             root.utime(located.rel, (atime_ns, mtime_ns))
 
+    @_writes
     def unlink(self, local: str) -> None:
         log.debug("fsops.unlink", **self._where(local))
         located = self._locate(local)
         with self._gated(located) as root:
             root.unlink(located.rel)
 
+    @_writes
     def purge_unlink(
         self,
         local: str,
@@ -1172,6 +1220,7 @@ class Fsops:
         if root.stat(rel).st_ino != opened.st_ino:  # swapped while it was read
             raise FileChangedSinceLookError("the file was replaced while it was read")
 
+    @_writes
     def purge_remove_tree(self, local: str) -> None:
         """The same for one entry of a root's bin (`.shelfhold/recycle/<id>`) and what it holds,
         the only folder a purge removes."""
@@ -1184,6 +1233,7 @@ class Fsops:
                 raise NotRegularFileError(f"{local!r} is not a bin entry")
             root.remove_tree(located.rel)
 
+    @_writes
     def erase_host_area(self, root_path: str, *, attested: bool = False) -> None:
         """The full detachment's one erasure of a root (EF-EXP-031): the reserved folder
         (`.shelfhold/`, with what it holds), the sentinel and the probe files that stayed, all at
@@ -1229,6 +1279,7 @@ class Fsops:
         ):
             raise ReservedPathError(f"{rel!r} belongs to the host: a purge never deletes it")
 
+    @_writes
     def system_unlink(self, emitter: str, local: str) -> None:
         """A system emitter deletes one file or link, inside its own perimeter and only while its
         condition holds (N2). `emitter` is a string literal at every call site (an architecture
@@ -1257,6 +1308,7 @@ class Fsops:
             except FileNotFoundError:
                 return False
 
+    @_writes
     def system_remove_tree(self, emitter: str, local: str) -> None:
         """A system emitter deletes a folder and what it holds, same rules as `system_unlink`;
         never for the probe emitter, which removes single files only."""
@@ -1306,12 +1358,14 @@ class Fsops:
         require_content_inside(emitter, rel)
         return root.empty_dir(rel)
 
+    @_writes
     def rmdir(self, local: str) -> None:
         log.debug("fsops.rmdir", **self._where(local))
         located = self._locate(local)
         with self._gated(located) as root:
             root.rmdir(located.rel)
 
+    @_writes
     def rename(self, src: str, dst: str, *, replace: bool = False) -> None:
         """Within one physical root only; between two roots it would be a copy (I24).
 
@@ -1330,6 +1384,7 @@ class Fsops:
         with self._gated(a) as root:
             root.rename(a.rel, b.rel, replace=replace)
 
+    @_writes
     def relocate_inbox(
         self, root_path: str, old_rel: str, new_rel: str
     ) -> tuple[list[str], list[str]]:
@@ -1362,6 +1417,7 @@ class Fsops:
                 root.rmdir(old_rel)
             return moved, left
 
+    @_writes
     def recycle(self, local: str, *, entry: str | None = None) -> str:
         """Move into the same root's `.shelfhold/recycle`; returns where it went. `entry` names the
         bin folder (32 hexadecimal digits) when the caller recorded it before the move (a deletion
@@ -1381,6 +1437,7 @@ class Fsops:
                 raise
             return f"{root.path}/{target}"
 
+    @_writes
     def restore_from_bin(self, local: str, path: str) -> None:
         """Put a file of the bin back at `local` (the way it left: one rename inside its root, the
         same inode). `path` is the one the bin index recorded (`<entry>/<rel at the time>`). An
@@ -1434,6 +1491,7 @@ class Fsops:
                 _digest_at(root, located.rel), _digest_at(root, staged), _digest_at(root, recycled)
             )
 
+    @_writes
     def same_path_stage(
         self, target: str, token: str, data: bytes | Readable, *, verify_digest: Callable[[], str]
     ) -> FileIdentity:
@@ -1450,6 +1508,7 @@ class Fsops:
                 file_mode=0o666,  # a library file (umask applies), not a host-only one
             )  # fmt: skip
 
+    @_writes
     def same_path_swap(self, target: str, token: str) -> None:
         """Step 2: the staged version takes the path in one step; the old one is then staged
         (`RENAME_EXCHANGE`) or already in the bin (copy, then the replacing `rename`)."""
@@ -1481,6 +1540,7 @@ class Fsops:
         finally:
             os.close(fd)
 
+    @_writes
     def same_path_recycle_old(self, target: str, token: str) -> str:
         """Step 3: the old version, staged by the swap, into the root's bin under the token
         (never replacing). Returns where it is; a no-op when it is there already."""
@@ -1492,6 +1552,7 @@ class Fsops:
                 root.rename(staged, recycled, replace=False)
             return f"{root.path}/{recycled}"
 
+    @_writes
     def same_path_discard(self, target: str, token: str) -> None:
         """A replacement given up before its swap: the staged new version goes, nothing else
         (the path is the token's own)."""
@@ -1513,6 +1574,7 @@ class Fsops:
             with os.fdopen(fd, "rb") as stream:
                 yield stream
 
+    @_writes
     def copy_across(
         self,
         src: str,
@@ -1548,6 +1610,7 @@ class Fsops:
                 )
                 return reader.digest.hexdigest()
 
+    @_writes
     def copy_independent(
         self,
         src: str,
@@ -1580,6 +1643,7 @@ class Fsops:
                 os.close(fd)
         return IndependentCopy(sha256=expected, reflinked=cloned, identity=identity)
 
+    @_writes
     def link_replaceable(
         self,
         src: str,
