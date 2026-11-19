@@ -8,6 +8,7 @@ extend-exclude = ["*.md", "frontend/vendor/", "e2e/tests/references/key-screens.
 cours = "cours"
 sur = "sur"
 opf = "opf"
+appareil = "appareil"
 
 # Exact identifiers: a pydantic setting and the in-toto provenance file name.
 [default.extend-identifiers]
