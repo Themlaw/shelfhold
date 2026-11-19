@@ -11,30 +11,36 @@ Une release est une action manuelle du mainteneur, en quatre étapes. Aucun jeto
    - la version dans `backend/pyproject.toml` et `backend/src/shelfhold/__init__.py` (`__version__`) ;
    - le champ `info.version` de `open-api/openapi.json` (sinon le job `openapi` échoue).
 2. **Fusionner la PR** : `ci-success` doit être vert sur le commit fusionné, l'image `sha-<commit>` est alors publiée sur GHCR.
-3. **Créer la release** (le tag `vX.Y.Z` est créé sur `main`) :
+3. **Benchmarks de release** (ENF-PERF-006, [03 §4](spec/03-roadmap-tdd.md) ; le détail : [governance/benchmarks.md](governance/benchmarks.md)) :
+   sur le lanceur qui mesure les releases, `cd e2e && npm run test:bench` puis
+   `python3 bench/compare.py test-results/bench_reader_page_turn.json` : la porte échoue si le p95 du tour de page
+   dépasse 150 ms ou régresse de plus de 20 % du dernier résultat enregistré (`e2e/bench/reference.json`) — la
+   régression bloque la release. Une amélioration, ou un environnement de mesure changé, se réenregistre à dessein
+   dans la PR de release ; la référence ne se régénère jamais automatiquement. Les benchmarks ne tournent jamais en nightly.
+4. **Créer la release** (le tag `vX.Y.Z` est créé sur `main`) :
    ```sh
    gh release create vX.Y.Z --target main --title vX.Y.Z --notes-file <(extrait de la section du CHANGELOG)
    ```
    ou `--notes-from-tag` avec un tag annoté porteur des notes.
-4. **Le workflow `release.yml`** se déclenche sur `release: published` et, dans un seul job `packages: write` :
+5. **Le workflow `release.yml`** se déclenche sur `release: published` et, dans un seul job `packages: write` :
    vérifie que le tag est `vX.Y.Z`, résout son commit, attend (borné) un `ci-success` vert sur ce commit, puis ajoute les tags
    `X.Y.Z`, `X.Y` et `latest` au **digest déjà publié** (`sha-<commit>`) : jamais de reconstruction.
    `X.Y.Z` est immuable (refus s'il existe avec un autre digest) ; `X.Y` et `latest` ne reculent jamais : un correctif d'une
    ancienne mineure, publié après une version plus récente, ne les déplace pas. `latest` n'est posé que par une release finale
    (décision du porteur du 15/11, [docs/decisions/M4.md](decisions/M4.md)).
-5. **Assets de release** (EF-INT-027) : un second job de `release.yml` (`schema-assets`, `contents: write`) génère `schema.sql` et
+6. **Assets de release** (EF-INT-027) : un second job de `release.yml` (`schema-assets`, `contents: write`) génère `schema.sql` et
    `data-dictionary.md` avec `.github/scripts/release-assets.sh` et les attache à la release (`gh release upload --clobber`).
    `schema.sql` vient des migrations Alembic appliquées à une base vide ; le dictionnaire ajoute une description par table et par colonne
    (`backend/src/shelfhold/docgen/schema_descriptions.toml`) : un test échoue si l'une manque. Ni l'un ni l'autre ne s'écrit à la main.
-6. **Preuves de release** (ENF-SEC-007, ENF-QUAL-007) : `release.yml` exécute la suite unitaire du tag (`test-report`, sans jeton d'écriture),
+7. **Preuves de release** (ENF-SEC-007, ENF-QUAL-007) : `release.yml` exécute la suite unitaire du tag (`test-report`, sans jeton d'écriture),
    puis `release-proofs` (`contents: write`) vérifie les attestations des digests publiés et attache `sbom.spdx.json` (amd64),
    `sbom-arm64.spdx.json`, `provenance.intoto.jsonl`, `test-report.xml` et `bench-reference.json` (la référence versionnée dans
    `.github/bench-reference.json`, car les artefacts expirent). Vérification à la main : `gh attestation verify oci://ghcr.io/themlaw/shelfhold@<digest> --repo Themlaw/shelfhold`.
-7. **Signatures et second registre** (ENF-SEC-007, ENF-GOV-004) : les images sont signées par cosign à la publication sur `main`
+8. **Signatures et second registre** (ENF-SEC-007, ENF-GOV-004) : les images sont signées par cosign à la publication sur `main`
    (`image-publish.yml`), pas par `release.yml`. Le job `second-registry` de `release.yml` ajoute les tags de version (et `latest`, quand il suit GHCR) sur le second registre
    si `CODEBERG_TOKEN` existe et si le digest y est déjà signé, sinon il l'indique dans son résumé et réussit. Vérification, réglages
    et limites : [docs/admin/verifier-les-images.md](admin/verifier-les-images.md).
-8. **Site de documentation** (D17) : `docs.yml` construit le site du tag avec Zensical (mode strict) et le publie sur GitHub Pages.
+9. **Site de documentation** (D17) : `docs.yml` construit le site du tag avec Zensical (mode strict) et le publie sur GitHub Pages.
    Activer Pages (source : GitHub Actions) est un réglage du dépôt, à faire une fois par le propriétaire.
 
 **Reprise** : si le job a échoué (CI encore rouge, image absente, erreur du registre), relancer le workflow `release` depuis l'onglet

@@ -655,6 +655,58 @@ jobs:
           SHARD: ${{ matrix.shard }}/${{ needs.changes.outputs.e2e_shard_total }}
         run: npx playwright test --shard="$SHARD"
 
+  # The reader page-turn bench (M5 L15, ENF-PERF-006): a report here, never a gate. The budget
+  # (p95 <= 150 ms over 30 turns) is enforced before a release, against the recorded reference
+  # (e2e/bench/reference.json, docs/governance/benchmarks.md); in CI the numbers are only
+  # published, so a noisy runner never blocks a PR. Never in the nightly either: a perf budget
+  # is measured before a release (03 §4), not on the pushes of the night.
+  reader-bench:
+    name: reader-bench (report only)
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - run: uv sync --project backend --locked
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm ci
+        working-directory: e2e
+      - name: Playwright browser
+        working-directory: e2e
+        run: |
+          timeout 180 npx playwright install --with-deps chromium && exit 0
+          echo "::warning::playwright --with-deps failed; installing the browser alone"
+          npx playwright install chromium
+      - name: Reader page-turn bench
+        working-directory: e2e
+        run: npm run test:bench
+      - name: Report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reader-bench
+          path: e2e/test-results/bench_reader_page_turn.json
+          if-no-files-found: warn
+
   # The typed client is regenerated and must not differ from what is committed (EF-INT-001).
   client-drift:
     needs: changes
@@ -809,7 +861,7 @@ jobs:
 
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, frontend-e2e, client-drift, image-pr, image-main, image-publish, scan]
+    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, frontend-e2e, reader-bench, client-drift, image-pr, image-main, image-publish, scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions: {}
@@ -847,12 +899,13 @@ jobs:
           E2E: ${{ needs.e2e-front.result }}
           E2E_CHANGED: ${{ needs.changes.outputs.e2e }}
           FRONTEND_E2E: ${{ needs.frontend-e2e.result }}
+          READER_BENCH: ${{ needs.reader-bench.result }}
           CLIENT_DRIFT: ${{ needs.client-drift.result }}
         run: |
           echo "dco=${DCO} conventional-title=${TITLE} traceability=${TRACEABILITY} (image changed=${IMAGE_CHANGED})"
           echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES} (changed=${FIXTURES_CHANGED}) image-pr=${IMAGE_PR} image-main=${IMAGE_MAIN} image-publish=${IMAGE_PUBLISH} scan=${SCAN} (informational)"
           echo "backend-unit=${BACKEND_UNIT} (changed=${UNIT_CHANGED}) backend-integration=${BACKEND_INTEGRATION} (changed=${INTEGRATION_CHANGED}) backend-suites=${BACKEND_SUITES} (changed=${SUITES_CHANGED}) backend-bench=${BACKEND_BENCH} (changed=${BENCH_CHANGED}) coverage=${COVERAGE} (changed=${BACKEND_CHANGED}) frontend=${FRONTEND} (changed=${FRONTEND_CHANGED})"
-          echo "openapi=${OPENAPI} (changed=${OPENAPI_CHANGED}) e2e-front=${E2E} (changed=${E2E_CHANGED})"
+          echo "openapi=${OPENAPI} (changed=${OPENAPI_CHANGED}) e2e-front=${E2E} (changed=${E2E_CHANGED}) reader-bench=${READER_BENCH} (report only)"
           ok=1
           for r in "$CHANGES" "$LINT" "$DENYLIST" "$TRACEABILITY"; do
             [ "$r" = "success" ] || ok=0

@@ -16,6 +16,12 @@ const PAGES = 40; // 30 measured turns, 3 pages of preload ahead, room to spare
 const WIDTH = 1600;
 const HEIGHT = 2400;
 const TURNS = 30;
+/** The engine's preload window (frontend/src/lib/reader/engines/images.ts, PRELOAD_PAGES): the
+ * pages ahead of the one on screen that must be in hand before a turn is measured. */
+const PRELOAD_AHEAD = 3;
+/** A page seen by the route is not yet a blob in hand: the body must land and the object URL be
+ * made. The body is a few KiB; this covers it with room to spare on a loaded runner. */
+const SETTLE_MS = 100;
 const BUDGET_MS = 150;
 const REPORT = 'test-results/bench_reader_page_turn.json';
 
@@ -124,8 +130,25 @@ async function armTurn(page: Page): Promise<void> {
   });
 }
 
-const turnMs = (page: Page) =>
-  page.evaluate(() => (window as unknown as { __turn?: Promise<number> }).__turn);
+const turnMs = (page: Page): Promise<number> =>
+  page.evaluate(
+    () => (window as unknown as { __turn?: Promise<number> }).__turn ?? Promise.resolve(-1)
+  );
+
+/** Leaves the preload time to fill the cache: the engine asks for the pages ahead of the one on
+ * screen one after another; the turn is measured only once the whole window has been asked for
+ * and the last body has had time to land in hand. ENF-PERF-006 budgets the turn *from the
+ * cache* — a turn that waits on the network is a defect, not a measure. */
+async function waitForCache(page: Page, asked: Set<number>, next: number): Promise<void> {
+  const windowEnd = Math.min(next + PRELOAD_AHEAD - 1, PAGES);
+  await expect
+    .poll(
+      () => [...asked].filter((n) => n >= next && n <= windowEnd).length,
+      { timeout: 10_000 }
+    )
+    .toBe(windowEnd - next + 1);
+  await page.waitForTimeout(SETTLE_MS);
+}
 
 // req: ENF-PERF-006
 test('bench_reader_page_turn', async ({ page }) => {
@@ -138,6 +161,7 @@ test('bench_reader_page_turn', async ({ page }) => {
 
   const samples: number[] = [];
   for (let turn = 1; turn <= TURNS; turn += 1) {
+    await waitForCache(page, asked, turn + 1); // the turn goes to page turn+1 (numbered from 1)
     await armTurn(page);
     await page.keyboard.press('ArrowRight');
     const ms = await turnMs(page);
@@ -152,6 +176,7 @@ test('bench_reader_page_turn', async ({ page }) => {
     requirement: 'ENF-PERF-006',
     bench: 'bench_reader_page_turn',
     fixture: `synthetic paged book, ${PAGES} pages of ${WIDTH}x${HEIGHT}, solid shade (ADR-0004 reference dimensions)`,
+    measure: 'keydown (capture, in the page) to the next page decoded; the preload window is waited before each turn',
     turns: TURNS,
     p50_ms: p50,
     p95_ms: p95,
