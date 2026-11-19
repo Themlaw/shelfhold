@@ -166,6 +166,17 @@ describe('the worker with the offline store', () => {
   });
 
   // req: EF-LEC-012
+  it('answers the reader\'s own read of its page (the guard of its policy) from the kept page with no network', async () => {
+    const w = worker();
+    await w.store.activate('P1');
+    await (await w.ask('/lire/unit/U1'))!;
+    w.net.offline = true;
+    const guard = await (await w.ask('/lire/unit/U1', 'same-origin'))!;
+    expect(guard.headers.get('content-security-policy')).toBe(CSP);
+    expect(await w.ask('/lire/unit/U1', 'no-cors')).toBeUndefined();
+  });
+
+  // req: EF-LEC-012
   it('keeps the reader when the page asks for it (message)', async () => {
     const w = worker();
     await w.store.activate('P1');

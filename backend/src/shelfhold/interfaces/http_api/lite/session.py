@@ -159,8 +159,10 @@ def same_origin(request: Request) -> None:
     if headers.get("sec-fetch-site", "").lower() == "cross-site":
         raise csrf_refused(request)
     origin, host = headers.get("origin"), headers.get("host", "")
-    if origin is not None and origin != "null" and (
-        not host or origin.split("://", 1)[-1].casefold() != host.casefold()
+    if (
+        origin is not None
+        and origin != "null"
+        and (not host or origin.split("://", 1)[-1].casefold() != host.casefold())
     ):
         raise csrf_refused(request)
 
