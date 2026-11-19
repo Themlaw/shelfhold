@@ -135,6 +135,16 @@ OPDS = (
     "GET /opds/editions/{edition_id}/complete",
     "GET /opds/bundles/{version_id}",
     "GET /opds/pse/{item_id}/{page}",  # M5 L18: OPDS-PSE, a page of an exported volume
+    # M5 L19: the OPDS 2.0 JSON feed, the same queries as the 1.2 one (the crawl below walks both)
+    "GET /opds/v2",
+    "GET /opds/v2/shelves",
+    "GET /opds/v2/shelves/{shelf_id}",
+    "GET /opds/v2/series",
+    "GET /opds/v2/series/{series_id}",
+    "GET /opds/v2/works",
+    "GET /opds/v2/works/{work_id}",
+    "GET /opds/v2/recent",
+    "GET /opds/v2/search",
 )
 # LITE (M5 L17a): the pages of `/lite`, behind a cookie that a device token's secret opened. Every
 # route is hers when it shows catalogue data, and answers like OPDS: a hidden thing is an absent
@@ -1368,6 +1378,44 @@ def _surface_opds(world: World) -> None:
     paged = client.get("/opds/works", params={"limit": 1, "offset": 3}, headers=headers)
     assert paged.status_code == 200 and "<entry" not in paged.text  # the visible ones are three
     _opds_pse(world, client, headers)
+    _opds2(world, client, headers)
+
+
+def _opds2(world: World, client: Any, headers: dict[str, str]) -> None:
+    """M5 L19: the JSON feed is the same projection: the whole graph holds only what her ceiling
+    lets through, and a hidden identifier is one 404, the one of the 1.2 feed."""
+    import json
+
+    seen_titles: set[str] = set()
+    todo, done = ["/opds/v2"], set()
+    while todo:
+        path = todo.pop()
+        if path in done:
+            continue
+        done.add(path)
+        got = client.get(path, headers=headers)
+        assert got.status_code == 200, (path, got.status_code)
+        world.clean(got.text)
+        feed = json.loads(got.content)
+        seen_titles |= {p["metadata"]["title"] for p in feed.get("publications", [])}
+        seen_titles |= {n["title"] for n in feed.get("navigation", [])}
+        found = list(feed.get("links", [])) + feed.get("navigation", [])
+        for pub in feed.get("publications", []):
+            found += pub.get("links", [])
+        todo += [
+            x["href"]
+            for x in found
+            if x.get("type", "").startswith("application/opds+json") and not x.get("templated")
+        ]
+    for key in VISIBLE_FOR_CEILING_10:
+        assert world.seed.title_of(key) in seen_titles, key
+    for key in HIDDEN_FROM_CEILING_10:
+        assert world.seed.title_of(key) not in seen_titles, key
+        absent = client.get(f"/opds/v2/works/{ULID}", headers=headers)
+        hidden = client.get(f"/opds/v2/works/{world.seed.works[key]}", headers=headers)
+        assert _shape(hidden) == _shape(absent), key
+        found_hit = client.get("/opds/v2/search", params={"q": world.seed.title_of(key)}, headers=headers)
+        assert json.loads(found_hit.content).get("publications", []) == []
 
 
 def _opds_pse(world: World, client: Any, headers: dict[str, str]) -> None:
