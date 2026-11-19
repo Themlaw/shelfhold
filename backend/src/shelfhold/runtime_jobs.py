@@ -191,6 +191,7 @@ from shelfhold.ops.lazy_headless import LazyHeadless
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.notifications import LazyNotificationSweep
 from shelfhold.ops.webhooks import LazyWebhookSweep
+from shelfhold.progress_lease import build_progress_lease
 from shelfhold.reading.application.sync import (
     DEFAULT_MAX_SESSION_HOURS,
     ProgressRemote,
@@ -1511,6 +1512,7 @@ def progress_sync_handler(
                     should_stop=lambda: bool(context.stop_requested),
                     page_map_keyring=page_map_keyring,
                     max_session_hours=max_session_hours,
+                    hold_work=build_progress_lease(engine, clock),  # M5 L22a: the Work's lease
                 ).values():
                     if outcome.code == "ok":
                         context.add(synchronised=1, pulled=outcome.pulled, pushed=outcome.pushed)

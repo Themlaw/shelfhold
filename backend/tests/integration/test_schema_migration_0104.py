@@ -22,7 +22,7 @@ OUT = "sha256:" + "b" * 64
 
 def test_the_revision_is_0104_the_head_on_0102() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0104"]  # the head is pinned here, by the newest
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it (0106 pins it)
     assert script.get_revision("0104").down_revision == "0102"
 
 

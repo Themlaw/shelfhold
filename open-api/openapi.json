@@ -33046,6 +33046,10 @@
       "code": "profile_refused",
       "status": 422
     },
+    "/api/v1/problems/progress-busy": {
+      "code": "progress_busy",
+      "status": 503
+    },
     "/api/v1/problems/purge.busy": {
       "code": "purge.busy",
       "status": 409
