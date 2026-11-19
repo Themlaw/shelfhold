@@ -407,7 +407,7 @@ def build_reader_router(
         operation_id="reader_put_settings",
         response_model=ReaderSettingsOut,
         responses={
-            422: {"description": "unknown-choice, settings-limit-reached"},
+            422: {"description": "unknown-choice|settings-limit-reached"},
         },
     )
     def put_settings(body: SettingIn, response: Response, principal: Session) -> ReaderSettingsOut:
