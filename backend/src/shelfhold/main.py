@@ -91,6 +91,7 @@ from shelfhold.interfaces.http_api.ops import build_ops_router
 from shelfhold.interfaces.http_api.ops_dashboard import build_ops_dashboard_router
 from shelfhold.interfaces.http_api.plans import build_plans_router
 from shelfhold.interfaces.http_api.plugins import build_plugins_router
+from shelfhold.interfaces.http_api.reader import build_reader_router
 from shelfhold.interfaces.http_api.relations import build_relations_router
 from shelfhold.interfaces.http_api.request_lists import build_request_lists_router
 from shelfhold.interfaces.http_api.requests import build_requests_router
@@ -132,6 +133,7 @@ from shelfhold.reading.application.content_access import (
     ContentKey,
     NoReadableCopyError,
 )
+from shelfhold.reading.application.publication import PublicationService
 from shelfhold.reading.bundle import SeriesBundles
 from shelfhold.reading.public import Kosync
 from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
@@ -469,6 +471,9 @@ def create_app(
         build_content_router(  # M5 L05a: the bytes of a book, by ticket, sandboxed (EF-LEC-005)
             content_access,
             allowed_origin=_origin_of(resolved.public_url) if resolved.content_origin else None,
+        ),
+        build_reader_router(  # M5 L06: what the reader opens: pages or spine, links by ticket
+            lambda: PublicationService(engine, content_access())
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
             lambda: engine, thumbnails, bundles, clock.now
