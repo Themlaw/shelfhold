@@ -432,6 +432,7 @@ help_restore = "Après une restauration : les identifiants révoqués."
 help_restore_acknowledge = "Confirme que les passkeys et les mots de passe changés depuis la sauvegarde ont été revérifiés (action réservée) ; ôte l'avertissement de « status »."
 restore_acknowledged = "Noté : l'avertissement de restauration est levé, la connexion par clé d'accès est rétablie."
 restore_passkey_change = "Clé d'accès modifiée depuis la sauvegarde : {change}"
+restore_oidc_link = "Lien du fournisseur d'identité à vérifier (un lien retiré depuis la sauvegarde revient) : {link}"
 help_store_reinit = "Estampille /store ; les chapitres dont la copie conservée y était passent en « store_missing » (action réservée)."
 root_done = "{command} : racine {root} ({path}), état quitté : {previous}. Aucun fichier n'a été supprimé."
 root_predecessors = "{count, plural, one {# identité précédente conservée} other {# identités précédentes conservées}} (les pierres tombales restent lisibles)."
@@ -703,6 +704,8 @@ gap_ack_needs_number = "Indiquez le numéro : shelfhold follow gap-ack <édition
 follow_extra_argument = "Un numéro n'a de sens qu'avec « follow gap-ack »."
 follow_needs_remote_id = "Indiquez l'identifiant de la série : shelfhold follow <source> <série>."
 help_export_format = "Avec « export » : le format de sortie, opml ou csv (opml par défaut)."
+help_export_user = "Avec « export » : le profil dont on écrit le dernier chapitre lu (le premier administrateur par défaut)."
+follow_export_unknown_user = "profil inconnu : rien n'est exporté."
 follow_check_recent = "Source interrogée il y a moins d'une heure : demande ignorée, rien n'a été enfilé."
 follow_check_always_on = "Mode « toujours actif » : aucune source n'est interrogée par Shelfhold, le suivi relira seulement ce que le service connaît."
 follow_check_queued = "Vérification demandée : la série sera regardée au prochain passage, au rythme permis par sa source."
@@ -1389,6 +1392,11 @@ title = "Cette liaison n'attend plus de confirmation."
 action = "Recommencez la liaison depuis votre compte."
 cause = "La liaison a déjà été confirmée ou refusée, elle a expiré, ou la confirmation ne vient pas de la session qui l'a demandée."
 
+[errors."oidc_not_linked"]
+title = "Ce compte n'est lié à aucun fournisseur d'identité."
+action = "Liez-le d'abord depuis les réglages de votre compte."
+cause = "Il n'y a aucun lien à retirer ni à prouver de nouveau : il n'a jamais été fait, ou il a été retiré."
+
 [errors."device_token_not_found"]
 title = "Ce jeton d'appareil n'existe pas pour vous."
 action = "Actualisez la liste de vos appareils."
@@ -1513,6 +1521,11 @@ cause = "Une position plus récente a remplacé celle dont parlait la question :
 title = "Trop de blocs sont servis en ce moment."
 action = "Patientez quelques instants, puis relancez le téléchargement."
 cause = "Votre appareil, ou l'ensemble de l'instance, a atteint le nombre de téléchargements de blocs simultanés autorisé."
+
+[errors."progress_busy"]
+title = "Cette œuvre est en cours de mise à jour : la position n'a pas été enregistrée."
+action = "Continuez la lecture : l'appareil réessaiera, ou rouvrez le livre dans quelques instants."
+cause = "Une tâche remplace des fichiers de cette œuvre (mise à niveau, changement d'équipe, assemblage d'un tome) et garde le verrou le temps de l'échange ; enregistrer la position maintenant pourrait marquer lu un chapitre sur le point d'être remplacé."
 
 [errors."too_many_streams"]
 title = "Trop de flux d'événements ouverts pour ce profil."

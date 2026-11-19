@@ -34,6 +34,7 @@ ADR-0055, on a kept copy (`content`: a Work that is not exported) or on an expor
 """
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final, Literal
@@ -45,6 +46,7 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, reading
 from shelfhold.reading.application.content_access import ContentAccess, NoReadableCopyError
+from shelfhold.reading.application.lease import ProgressLease, progress_leased
 from shelfhold.reading.application.progress import (
     HISTORY_LIMIT,
     _current_hash,
@@ -135,9 +137,14 @@ def _utc(value: datetime) -> datetime:
 
 class ReaderPositions:
     def __init__(
-        self, engine: sa.Engine, access: ContentAccess, now: Callable[[], datetime]
+        self,
+        engine: sa.Engine,
+        access: ContentAccess,
+        now: Callable[[], datetime],
+        hold_work: ProgressLease | None = None,
     ) -> None:
         self._engine, self._access, self._now = engine, access, now
+        self._hold_work = hold_work  # the lease of the Work of a write (M5 L22a)
 
     # -- writing ---------------------------------------------------------------------------
 
@@ -179,7 +186,12 @@ class ReaderPositions:
         if scope == "excerpt" or ticket_scope == "excerpt":
             self._access.resolve(user_id, carrier_type, carrier_id)  # absent = hidden, first
             raise ExcerptWritesNoPositionError
-        with write_transaction(self._engine) as connection:
+        if self._hold_work is not None:
+            self._access.resolve(user_id, carrier_type, carrier_id)  # absent = hidden: no lease
+        # the lease of the Work a job may be rewriting (M5 L22a), taken outside the transaction:
+        # what is read in the write below is read after the job let go
+        with progress_leased(self._engine, self._hold_work, carrier_type, carrier_id), \
+                write_transaction(self._engine) as connection:  # fmt: skip
             # « full or excerpt » is read here, in the write itself: what was checked is what is
             # written under (a Work sent elsewhere a moment ago is an excerpt now)
             resolved = self._access.resolve_in(connection, user_id, carrier_type, carrier_id)
@@ -428,7 +440,25 @@ class ReaderPositions:
         than the current one."""
         table = reading.reading_conflict
         now = self._now()
-        with write_transaction(self._engine) as connection:
+        carrier: tuple[str, str] | None = None
+        if self._hold_work is not None:
+            # settling writes a position: the same lease as the other writers, taken once the
+            # profile is known to see the carrier (absent = hidden: no lease, no `busy`)
+            with self._engine.connect() as peek:
+                found = peek.execute(
+                    sa.select(table.c.carrier_type, table.c.carrier_id).where(
+                        table.c.id == conflict_id, table.c.user_id == user_id
+                    )
+                ).first()
+            if found is not None:
+                carrier = (str(found.carrier_type), str(found.carrier_id))
+                self._access.resolve(user_id, *carrier)
+        leased = (
+            progress_leased(self._engine, self._hold_work, *carrier)
+            if carrier is not None
+            else nullcontext()
+        )
+        with leased, write_transaction(self._engine) as connection:
             row = connection.execute(
                 sa.select(table).where(table.c.id == conflict_id, table.c.user_id == user_id)
             ).first()

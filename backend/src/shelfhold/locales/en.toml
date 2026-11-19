@@ -435,6 +435,7 @@
   help_restore_acknowledge = "Confirms that passkeys and passwords changed since backup have been rechecked (action reserved); remove the status warning."
   restore_acknowledged = "Noted: the restore warning is lifted, the passkey connection is reestablished."
   restore_passkey_change = "Passkey changed since the backup: {change}"
+  restore_oidc_link = "Identity-provider link to check (a link removed since the backup comes back): {link}"
   help_store_reinit = "Stamp /store; the chapters whose copy was kept there go to “store_missing” (reserved action)."
   root_done = "{command}: root {root} ({path}), left state: {previous}. No files have been deleted."
   root_predecessors = "{count, plural, one {# previous identity retained} other {# previous identities retained}} (the tombstones remain legible)."
@@ -694,6 +695,8 @@
   follow_extra_argument = "A number only makes sense with “follow gap-ack”."
   follow_needs_remote_id = "Specify the series ID: shelfhold follow <source> <series>."
   help_export_format = "With “export”: the output format, opml or csv (opml by default)."
+  help_export_user = "With “export”: the profile whose last read chapter is written (the first administrator by default)."
+  follow_export_unknown_user = "unknown profile: nothing is exported."
   follow_check_recent = "Source interviewed less than an hour ago: request ignored, nothing was provided."
   follow_check_always_on = "“Always active” mode: no source is queried by Shelfhold, monitoring will only read back what the service knows."
   follow_check_queued = "Verification requested: the series will be watched on the next pass, at the pace permitted by its source."
@@ -1420,6 +1423,11 @@
     action = "Start the link again from your account."
     cause = "The link was already confirmed or declined, it expired, or the confirmation does not come from the session that asked for it."
 
+  [errors.oidc_not_linked]
+    title = "This account is not linked to an identity provider."
+    action = "Link it from the settings of your account first."
+    cause = "There is no link to remove or to prove again: it was never made, or it was removed."
+
   [errors.device_token_not_found]
     title = "This device token does not exist for you."
     action = "Refresh the list of your devices."
@@ -1544,6 +1552,11 @@
     title = "Too many blocks are being served right now."
     action = "Wait a few moments, then start the download again."
     cause = "Your device, or the whole instance, has reached the number of simultaneous block downloads allowed."
+
+  [errors.progress_busy]
+    title = "This work is being updated: the position was not saved."
+    action = "Keep reading: the device will try again, or reopen the book in a few moments."
+    cause = "A job is replacing files of this work (an upgrade, a team switch, a volume assembly) and holds its lock for the swap; saving the position now could mark read a chapter that is about to be replaced."
 
   [errors.too_many_streams]
     title = "Too many event streams open for this profile."

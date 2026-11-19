@@ -7,14 +7,14 @@ A selection belongs to one profile, read by her alone, and goes with her (`ON DE
 Work or a shelf that leaves the catalogue changes nothing in it. Nothing existing is touched;
 reversible.
 
-Number: 0105 is the one PLAN-M5 reserved for this lot. `down_revision` is 0104, the head of main when it was merged (the rendition of L20a).
+Number: 0105 is the one PLAN-M5 reserved for this lot. `down_revision` is 0107, the head of main when it was merged.
 """
 # ruff: noqa: E501  (the DDL is the one SQLAlchemy writes, kept as it is)
 
 from alembic import op
 
 revision = "0105"
-down_revision = "0104"
+down_revision = "0107"
 branch_labels = None
 depends_on = None
 

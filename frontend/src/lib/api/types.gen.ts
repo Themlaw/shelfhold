@@ -3460,9 +3460,31 @@ export type OidcIdentityItem = {
  */
 export type OidcIdentityList = {
     /**
+     * Configured Issuer
+     */
+    configured_issuer: string | null;
+    /**
      * Items
      */
     items: Array<OidcIdentityItem>;
+    last_unlinked?: OidcLastUnlink | null;
+};
+
+/**
+ * OidcLastUnlink
+ *
+ * The last removal of a link of this account: the trace for a person whose notice had no
+ * destination to go to (it is never told in the shared channels).
+ */
+export type OidcLastUnlink = {
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * By Other
+     */
+    by_other: boolean;
 };
 
 /**
@@ -9356,6 +9378,39 @@ export type LogoutResponses = {
 
 export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
 
+export type OidcUnlinkData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/oidc/identities';
+};
+
+export type OidcUnlinkErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OidcUnlinkError = OidcUnlinkErrors[keyof OidcUnlinkErrors];
+
+export type OidcUnlinkResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type OidcUnlinkResponse = OidcUnlinkResponses[keyof OidcUnlinkResponses];
+
 export type OidcIdentitiesData = {
     body?: never;
     path?: never;
@@ -9454,6 +9509,39 @@ export type OidcConfirmResponses = {
 };
 
 export type OidcConfirmResponse = OidcConfirmResponses[keyof OidcConfirmResponses];
+
+export type OidcReauthData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/oidc/reauth';
+};
+
+export type OidcReauthErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OidcReauthError = OidcReauthErrors[keyof OidcReauthErrors];
+
+export type OidcReauthResponses = {
+    /**
+     * Successful Response
+     */
+    200: OidcLinkStart;
+};
+
+export type OidcReauthResponse = OidcReauthResponses[keyof OidcReauthResponses];
 
 export type PasskeysListData = {
     body?: never;
@@ -14331,6 +14419,44 @@ export type SetKavitaAccountResponses = {
 };
 
 export type SetKavitaAccountResponse = SetKavitaAccountResponses[keyof SetKavitaAccountResponses];
+
+export type OidcUnlinkAccountData = {
+    body?: never;
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{profile_id}/oidc';
+};
+
+export type OidcUnlinkAccountErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OidcUnlinkAccountError = OidcUnlinkAccountErrors[keyof OidcUnlinkAccountErrors];
+
+export type OidcUnlinkAccountResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type OidcUnlinkAccountResponse = OidcUnlinkAccountResponses[keyof OidcUnlinkAccountResponses];
 
 export type LinkAccountData = {
     body: OidcSubject;

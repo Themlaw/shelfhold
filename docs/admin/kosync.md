@@ -49,6 +49,14 @@ Shelfhold.
 - Une page lue ne marque un chapitre « lu » que si la lecture l'a traversé à une vitesse plausible
   (`docs/reference/reading-progress.md`) ; l'heure d'une position est toujours celle du serveur.
 
+## Quand une tâche remplace les fichiers de l'œuvre
+
+Une mise à niveau, un changement d'équipe ou l'assemblage d'un tome tient un verrou sur l'œuvre pendant
+l'échange des fichiers. Une position envoyée à ce moment attend ce verrou quelques secondes, puis reçoit
+`503` (`progress_busy`, `Retry-After: 2`) et n'est pas enregistrée : la liseuse garde sa place et la
+renverra. C'est la seule réponse de cette route qui ne soit pas un `200` ; elle n'est donnée que pour un
+document que le profil voit.
+
 ## Ce que la liseuse reçoit
 
 La position **la plus avancée** du profil, avec la date de cet enregistrement (jamais « maintenant »).

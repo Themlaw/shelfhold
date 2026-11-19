@@ -27,6 +27,7 @@ Déclarez chez le fournisseur un client « code d'autorisation » dont l'adresse
 | `SHELFHOLD_OIDC_ISSUER` | adresse https du fournisseur (sans paramètre ni identifiant) |
 | `SHELFHOLD_OIDC_CLIENT_ID` | identifiant du client |
 | `SHELFHOLD_OIDC_CLIENT_SECRET` | secret du client, facultatif (PKCE suffit à un client public) |
+| `SHELFHOLD_OIDC_MAX_AGE_S` | âge maximal, en secondes, de la connexion chez le fournisseur qui rend une session fraîche (300 par défaut ; entre 30 et 900, et jamais plus que `SHELFHOLD_FRESH_AUTH_S`) |
 
 Sans l'émetteur et l'identifiant, rien n'existe : aucune route ne répond, la page de connexion ne
 montre aucun lien.
@@ -64,13 +65,35 @@ https, et une redirection n'est jamais suivie.
 
 Chaque liaison est inscrite à l'audit (le compte, jamais le `sub`), et le titulaire du compte voit
 ses liens (`GET /api/v1/auth/oidc/identities` : le fournisseur, la date, et si un administrateur les
-a faits). Une notification de sécurité au titulaire, et la déliaison, arrivent avec le lot suivant.
+a faits). Le retour d'une liaison, d'une preuve ou d'un refus arrive sur l'écran des réglages
+(`/reglages/compte/oidc`), qui montre l'émetteur, les liens du compte et permet de lier ou de délier.
+
+## Délier
+
+`DELETE /api/v1/auth/oidc/identities` (soi-même, action réservée `oidc.unlink_own`) ou
+`DELETE /api/v1/profiles/{id}/oidc` (un administrateur, `oidc.unlink_account`, pour son compte ou
+celui d'un membre adulte, jamais un autre administrateur). Ce sont des actions réservées, **fraîches
+dans tous les profils** : jamais une clé d'API ni un jeton d'appareil. La déliaison ferme les
+sessions que le fournisseur avait ouvertes pour ce compte, est inscrite à l'audit
+(`oidc.unlinked`) et **le titulaire est prévenu** : liaison faite par un administrateur,
+déliaison (par lui ou par un administrateur), par le canal qui prévient déjà les personnes
+(le condensé de notification, sans identifiant ni nom de l'auteur ; les heures calmes ne le
+retiennent pas). **Il part à la destination de notification du titulaire** (réglages de
+notification, un compte Apprise à lui) **et à elle seule** : jamais dans les canaux partagés, que
+lit tout le foyer (un enfant, l'administrateur qui l'aurait fait). Sans destination à lui, rien ne
+part, et la trace reste sur l'écran `/reglages/compte/oidc` (« dernier lien retiré le… »). Invitez
+chaque adulte à régler la sienne. Une liaison au mauvais `sub` se corrige en déliant, puis en liant
+de nouveau.
 
 ## Après une restauration
 
 Tant que l'avis de restauration est actif (`shelfhold status`), la connexion par le fournisseur est
 **suspendue**, comme celle par clé d'accès : un lien retiré depuis la sauvegarde est de nouveau
-vivant. Vérifiez les comptes, puis `shelfhold restore acknowledge`. Lier un compte reste possible.
+vivant. Vérifiez les comptes, puis `shelfhold restore acknowledge` : la commande **liste les liens**
+du fournisseur tels qu'ils sont dans la base (le compte et l'émetteur, jamais le `sub`) en plus des
+clés d'accès modifiées (`shelfhold status` les montre déjà avant l'acquittement, qui est ce qui
+rouvre la connexion). Lier un compte reste possible. Le début d'une connexion chez le fournisseur
+a son propre plafond (30 par minute et par adresse), distinct de celui des options de clé d'accès.
 
 ## Rotation des clés du fournisseur
 
@@ -81,8 +104,39 @@ qui omet le `kid` ne fonctionne que lorsqu'une seule clé est publiée.
 ## Fraîcheur d'une session ouverte par OIDC
 
 Aucun mot de passe local n'a été saisi : une session ouverte par le fournisseur n'est **jamais**
-« fraîche ». Toute action réservée qui demande une preuve récente (enregistrer une clé d'accès,
-exporter le trousseau, lier un compte…) redemande un mot de passe ou une clé d'accès. Le renvoi au
-fournisseur avec `prompt=login` et `max_age`, qui permettra de s'appuyer sur son `auth_time`,
-arrive avec le lot suivant. Un compte qui n'a ni mot de passe ni clé d'accès ne peut donc pas, en
-attendant, faire ces actions : gardez le mot de passe de l'administrateur.
+« fraîche » d'elle-même, et ce que le fournisseur dit de `auth_time` à la connexion n'est pas cru
+(rien ne lui avait demandé de reconnecter la personne). Pour une action réservée qui demande une
+preuve récente, le 401 `reauth-required` propose, en premier, la méthode `oidc` (sauf pour une action qui l'écarte, voir plus bas ; puis le mot de
+passe et la clé d'accès, qui restent possibles). `POST /api/v1/auth/oidc/reauth` renvoie alors la
+personne au fournisseur avec `prompt=login` et `max_age` (`SHELFHOLD_OIDC_MAX_AGE_S`). Au retour, la
+session redevient fraîche **seulement si** :
+
+- le jeton est valide (mêmes vérifications que la connexion) ;
+- c'est **la même identité** que celle qui lie le compte (une autre personne du fournisseur est
+  refusée) ;
+- le claim `auth_time` est **présent** et date de moins de `max_age` secondes (une minute d'avance
+  d'horloge est tolérée) : absent, trop ancien ou dans le futur, c'est un refus, et rien n'est cru ;
+- la session vit encore et aucun avis de restauration n'est actif.
+
+La session est alors aussi fraîche que la connexion chez le fournisseur, pas davantage, et reçoit un
+nouveau jeton. Le retour se fait sur l'écran des réglages d'identité (`?oidc=reauth`) ; l'action
+demandée y est reprise. Un fournisseur qui ignore `prompt=login` et répond depuis sa propre session
+donne un `auth_time` ancien : il est refusé, et le mot de passe reste la voie de secours. Le
+contrat est celui de `max_age` : si la session du fournisseur date de moins de `max_age` secondes,
+son `auth_time` est accepté même s'il n'a pas redemandé le mot de passe. Chez un fournisseur
+conforme, `prompt=login` le force toujours.
+
+**Ce que la preuve du fournisseur ne fait pas.** `prompt=login` protège d'une session restée
+ouverte chez le fournisseur, pas d'un compte du fournisseur compromis : qui connaît les identifiants
+de la personne chez lui ouvre une session et la rend fraîche. Shelfhold garde donc la preuve qui a
+rendu la session fraîche (`session.proof`, `local` ou `provider`). Ce qui ajoute un accès qui
+survit à la session (enregistrer une clé d'accès, créer une clé d'API ou un jeton, **appairer ou changer le secret d'une liseuse**, lier une identité, gérer les identifiants, **créer un profil ou changer un rôle**, coller un secret comme une clé Kavita) **refuse** une fraîcheur prouvée par le fournisseur seul quand le
+compte a un **mot de passe ou une clé d'accès** : la personne les redonne ici (le 401 ne propose plus
+`oidc`). La règle suit les effets des actions (secrets, comptes, identifiants), pas une liste de noms : une action nouvelle du même genre la suit. Délier, en revanche, n'ajoute aucun accès et se contente de la preuve du fournisseur.
+
+**Compte sans mot de passe ni clé d'accès.** Le fournisseur est sa seule autorité : sa preuve est
+acceptée pour ces actions (sinon le compte ne pourrait jamais ajouter de clé d'accès). Qui compromet
+ce compte chez le fournisseur peut donc y ajouter une clé. Pour ces comptes, imposez une double
+authentification chez le fournisseur, et ajoutez une clé d'accès dès que possible : le compte
+repasse alors sous la règle ci-dessus. L'enregistrement d'une clé d'accès est à l'audit
+(`passkey.register`).
