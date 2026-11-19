@@ -374,7 +374,8 @@ class ThumbnailService:
         closing: Callable[[], bool],
     ) -> int:
         """Files of the folder with no row, older than the grace; interrupted writes too. A grey
-        thumbnail has no row: one whose cover no Edition points at goes at once, like a colour one."""
+        thumbnail has no row: one whose cover no Edition points at goes at once, as a colour
+        one does."""
         cutoff = (self._clock.now() - STRAY_GRACE).timestamp()
         removed = 0
         try:
