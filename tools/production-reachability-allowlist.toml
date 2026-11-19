@@ -43,9 +43,9 @@ reason = "2026-11-14 (M3 L56, D9): `content_response` serves untrusted content u
 until = "M5"  # settled by M5 (reader content route)
 # 2026-11-18 (M5 L05b): `CONTENT_FILTER` (`content-filter@2`, the `filter` field of a stored locator)
 # is written by the neutralizer; its first reader is the locator of L07 (reading positions).
+# 2026-11-19 (M5 L12): `content_response` left this entry: the content route serves it (L05a).
 symbols = [
   "shelfhold.infrastructure.content_trust.xhtml_neutralizer:CONTENT_FILTER",
-  "shelfhold.interfaces.http_api.content:content_response",
 ]
 
 [[allow]]

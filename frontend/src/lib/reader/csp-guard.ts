@@ -1,14 +1,16 @@
 // The reader refuses to mount under a policy that is not its own (ADR-0055, "CSP du lecteur"). The
 // entry of `/lire` carries no `<meta>` policy; a page that does, or that is a page of the SPA, or
 // whose effective policy blocks what the reader's allows (an inline style) or allows what it
-// forbids (a `data:` image), is not the page that was audited: nothing is mounted.
+// forbids (the header of the page lets a `data:` image through), is not the page that was audited:
+// nothing is mounted. The second is read from the header itself: a probe that provokes a refusal
+// would put a policy violation in the console of every reading.
 
 export type GuardVerdict = 'ok' | 'refused';
 
 export interface GuardProbes {
   /** An inline `<style>` is applied: the reader's `style-src` admits `'unsafe-inline'`, the SPA's does not. */
   inlineStyleAllowed(): Promise<boolean>;
-  /** A `data:` image is blocked: neither policy admits it, and none at all would. */
+  /** The policy the server sent for this page exists and admits no `data:` image nor wildcard. */
   forbiddenImageBlocked(): Promise<boolean>;
 }
 
@@ -54,14 +56,21 @@ export function browserProbes(doc: Document = document): GuardProbes {
       return !violated && applied;
     },
     async forbiddenImageBlocked() {
-      const img = doc.createElement('img');
-      let loaded = false;
-      img.addEventListener('load', () => (loaded = true));
-      const violated = await violationWithin(doc, /^img-src/, () => {
-        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-      }, 500);
-      img.remove();
-      return violated && !loaded;
+      const view = doc.defaultView;
+      if (!view?.fetch) return false;
+      const response = await view.fetch(view.location.href, {
+        credentials: 'same-origin',
+        referrerPolicy: 'no-referrer',
+        redirect: 'error'
+      });
+      void response.body?.cancel();
+      const policy = response.headers.get('content-security-policy') ?? '';
+      const images = policy
+        .split(';')
+        .map((part) => part.trim().split(/\s+/))
+        .find(([name]) => name === 'img-src');
+      if (!images) return false; // `default-src 'none'` alone is not what the reader sends
+      return !images.slice(1).some((source) => source === '*' || source.startsWith('data:'));
     }
   };
 }

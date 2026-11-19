@@ -69,11 +69,39 @@ describe('the probes of the browser', () => {
     expect(await browserProbes(document).inlineStyleAllowed()).toBe(true);
   });
 
+  const served = (policy: string | null) => {
+    const view = document.implementation.createHTMLDocument('p');
+    const headers = new Headers();
+    if (policy !== null) headers.set('content-security-policy', policy);
+    Object.defineProperty(view, 'defaultView', {
+      value: {
+        location: { href: 'https://shelf.example/lire' },
+        fetch: async () => new Response('x', { headers })
+      }
+    });
+    return view;
+  };
+
   // req: ENF-SEC-004
-  it('sees a data: image refused, and one that is not (no violation, nothing said)', async () => {
-    const refused = document.implementation.createHTMLDocument('p');
-    violation(refused, 'img-src');
-    expect(await browserProbes(refused).forbiddenImageBlocked()).toBe(true);
-    expect(await browserProbes(document.implementation.createHTMLDocument('q')).forbiddenImageBlocked()).toBe(false);
+  it('accepts the policy of the reader and refuses one that lets a data: image through', async () => {
+    const ok = "default-src 'none'; img-src 'self' blob:";
+    expect(await browserProbes(served(ok)).forbiddenImageBlocked()).toBe(true);
+    expect(await browserProbes(served("img-src 'self' data:")).forbiddenImageBlocked()).toBe(false);
+    expect(await browserProbes(served('img-src *')).forbiddenImageBlocked()).toBe(false);
+    expect(await browserProbes(served("default-src 'none'")).forbiddenImageBlocked()).toBe(false);
+    expect(await browserProbes(served(null)).forbiddenImageBlocked()).toBe(false);
+  });
+
+  // req: ENF-SEC-004
+  it('provokes no refusal of its own: nothing for the console or the listeners of the page', async () => {
+    const seen: string[] = [];
+    const listener = (event: Event) => seen.push(event.type);
+    document.addEventListener('securitypolicyviolation', listener);
+    try {
+      await browserProbes(served("img-src 'self' blob:")).forbiddenImageBlocked();
+      expect(seen).toEqual([]);
+    } finally {
+      document.removeEventListener('securitypolicyviolation', listener);
+    }
   });
 });
