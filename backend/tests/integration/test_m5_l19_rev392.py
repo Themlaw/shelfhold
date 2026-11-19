@@ -207,8 +207,8 @@ def spa_world(
 
 
 def test_rev392_an_unknown_opds_path_tells_nothing_of_what_is_hidden(spa_world: World) -> None:
-    """`spa.py` answers an unknown path under `/opds` with `index.html` (200). It is no oracle as
-    long as the answer is the same for a visible, a hidden and an absent identifier, with or
+    """An unknown path under `/opds` is a 404 problem (#394: no more `index.html`). It is no oracle
+    as long as the answer is the same for a visible, a hidden and an absent identifier, with or
     without a token: these paths are decided by their shape, never by the catalogue."""
     w = spa_world
     anonymous = w.env.other_client("198.51.100.50")
@@ -231,10 +231,17 @@ def test_rev392_an_unknown_opds_path_tells_nothing_of_what_is_hidden(spa_world: 
                 path = shape.format(feed=feed, id=raw)
                 for client in (w.kid, w.mum, anonymous):
                     got = client.get(path)
-                    answers.add((got.status_code, got.headers.get("content-type"), got.text))
+                    body = json.loads(got.text)
+                    body.pop("request_id", None)  # the one thing that is made for each request
+                    answers.add(
+                        (got.status_code, got.headers.get("content-type"), json.dumps(body))
+                    )
             assert len(answers) == 1, (feed, shape, answers)
             ((status, _type, text),) = answers
-            assert status == 200 and text == INDEX, (feed, shape)  # the fallback, as reported
+            assert status == 404 and text != INDEX, (
+                feed,
+                shape,
+            )  # a problem, not the page of the SPA
             for raw in ids.values():
                 assert raw not in text
             for key in HIDDEN_KID:
