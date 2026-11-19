@@ -405,6 +405,28 @@ def test_lite_forms_carry_a_csrf_token_and_refuse_a_foreign_one(world: World) ->
     )
 
 
+def test_lite_sign_in_accepts_the_null_origin_of_a_no_referrer_page(world: World) -> None:
+    """Chrome posts a form of a `no-referrer` page with `Origin: null`: that is no foreign origin
+    (found by the M5 journey of `/lite`, where no Chrome could sign in). A real foreign origin, or
+    a cross-site request, stays refused."""
+    client = browser(world, "10.0.1.30")
+    token = CSRF_FIELD.search(client.get("/lite/sign-in").text)
+    assert token
+    good = {"identifier": world.mum.public_id, "secret": world.mum.secret, "csrf": token.group(1)}
+    posted = client.post(
+        "/lite/sign-in", data=good, headers={"Origin": "null"}, follow_redirects=False
+    )
+    assert posted.status_code == 303
+    again = browser(world, "10.0.1.31")
+    token = CSRF_FIELD.search(again.get("/lite/sign-in").text)
+    assert token
+    cross = again.post(
+        "/lite/sign-in", data={**good, "csrf": token.group(1)},
+        headers={"Origin": "null", "Sec-Fetch-Site": "cross-site"}, follow_redirects=False,
+    )  # fmt: skip
+    assert cross.status_code == 403
+
+
 def test_lite_sign_out_is_a_post_with_its_own_token(world: World) -> None:
     client = signed_in(world, world.mum, "10.0.1.17")
     home = client.get("/lite")
