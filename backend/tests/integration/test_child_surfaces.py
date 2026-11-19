@@ -133,6 +133,7 @@ OPDS = (
     "GET /opds/search",
     "GET /opds/covers/{content_hash}/{size}",
     "GET /opds/editions/{edition_id}/complete",
+    "GET /opds/kepub/{item_id}",
     "GET /opds/bundles/{version_id}",
 )
 # LITE (M5 L17a): the pages of `/lite`, behind a cookie that a device token's secret opened. Every
@@ -154,6 +155,7 @@ LITE = (
     "GET /lite/search",
     "GET /lite/covers/{content_hash}/{size}",
     "GET /lite/editions/{edition_id}/complete",
+    "GET /lite/kepub/{item_id}",
     "GET /lite/{rest:path}",
 )
 DEVICE = (*KOSYNC, *OPDS)

@@ -1514,6 +1514,11 @@ title = "Trop de blocs sont servis en ce moment."
 action = "Patientez quelques instants, puis relancez le téléchargement."
 cause = "Votre appareil, ou l'ensemble de l'instance, a atteint le nombre de téléchargements de blocs simultanés autorisé."
 
+[errors."rendition_busy"]
+title = "Trop de fichiers sont préparés en ce moment."
+action = "Patientez quelques instants, puis relancez le téléchargement."
+cause = "Votre appareil, ou l'ensemble de l'instance, a atteint le nombre de préparations simultanées autorisé."
+
 [errors."too_many_streams"]
 title = "Trop de flux d'événements ouverts pour ce profil."
 action = "Fermez un onglet ou une application qui suit les événements, puis réessayez."
@@ -2948,6 +2953,7 @@ results = "Résultats de la recherche"
 search_description = "Chercher dans la bibliothèque"
 complete = "{title} — Série complète"
 complete_in = "{title} — Série complète ({lang})"
+kepub = "{title} {number} — KEPUB (Kobo)"
 excluded = "{count, plural, one {# chapitre exclu} other {# chapitres exclus}} : format non lisible sur liseuse ou fichier indisponible."
 
 [lite]
@@ -2987,6 +2993,7 @@ edition_in = "Édition ({lang})"
 excluded = "{count, plural, one {# chapitre exclu} other {# chapitres exclus}} : format non lisible sur liseuse ou fichier indisponible."
 download_sized = "Télécharger ({mb} Mo)"
 download = "Télécharger"
+kepub = "KEPUB pour Kobo : {number}"
 no_download = "Aucun fichier à télécharger pour cette œuvre."
 
 [errors."source_migration.collision"]

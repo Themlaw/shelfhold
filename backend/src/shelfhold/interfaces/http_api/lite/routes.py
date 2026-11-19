@@ -38,6 +38,7 @@ from shelfhold.export.application.shelves import list_shelves_open_to
 from shelfhold.identity.public import ThrottledError, reader_scope
 from shelfhold.infrastructure.http_headers import CSP_SANDBOX, attachment_disposition
 from shelfhold.interfaces.http_api.auth import gate_of
+from shelfhold.interfaces.http_api.kepub_download import kepub_response
 from shelfhold.interfaces.http_api.lite.render import (
     HEADERS,
     Page,
@@ -64,7 +65,8 @@ from shelfhold.interfaces.http_api.path_safety import safe_filename
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.ratelimit import client_ip_of
 from shelfhold.interfaces.http_api.thumbnails import thumbnail_response
-from shelfhold.library.public import ThumbnailService, cover_hash
+from shelfhold.library.public import RenditionBusyError, ThumbnailService, cover_hash
+from shelfhold.reading.application.kepub_delivery import KepubDelivery, KepubNotFoundError
 from shelfhold.reading.bundle import (
     BundleBusyError,
     BundleDownload,
@@ -124,6 +126,7 @@ def build_lite_router(
     get_engine: Callable[[], Engine],
     get_thumbnails: Callable[[], ThumbnailService],
     get_bundles: Callable[[], LiteBundles | None],
+    get_kepubs: Callable[[], KepubDelivery] | None = None,
 ) -> APIRouter:
     router = APIRouter(
         prefix="/lite", tags=["lite"], route_class=LiteRoute, include_in_schema=False
@@ -422,6 +425,15 @@ def build_lite_router(
                 block += fragment("note", text=notice) if notice else ""
                 block += fragment("offer", href=href, label=label)
             sections.append(block)
+        kepubs = (  # M5 L20b: a KEPUB for a Kobo, of the volumes this profile may be given
+            get_kepubs().offers(who.principal.user_id, [e.edition_id for e in editions])
+            if get_kepubs is not None
+            else []
+        )
+        for kepub in kepubs:
+            offered = True
+            label = t("lite.kepub", page, number=kepub.number)
+            sections.append(fragment("offer", href=paths.kepub(kepub.item_id), label=label))
         none = "" if offered else fragment("paragraph", text=t("lite.no_download", page))
         body = render_fragment("work", html_editions="".join(sections), html_none=none)
         return page_response(page, title=title, body=body)
@@ -503,6 +515,30 @@ def build_lite_router(
                 label=t("lite.home", page),
                 headers={"Retry-After": str(busy.retry_after_s)},
             )
+
+    @router.get("/kepub/{item_id}")
+    def kepub(item_id: str, who: Who) -> Response:
+        """The KEPUB of an exported EPUB volume (the one of `/opds/kepub`, the same judgement now).
+        Everything refused is the absent page; a busy cache is a page that says to come back."""
+        _ulid(who, item_id)
+        if get_kepubs is None:
+            raise absent(who)
+        page = who.page
+        try:
+            found = get_kepubs().fetch(who.principal.user_id, item_id)
+        except KepubNotFoundError:
+            raise absent(who) from None
+        except RenditionBusyError as busy:
+            return message(
+                page,
+                title=t("lite.busy_title", page),
+                text=t("lite.busy_text", page),
+                status=429,
+                href=page.paths.home(),
+                label=t("lite.home", page),
+                headers={"Retry-After": str(busy.retry_after_s)},
+            )
+        return kepub_response(found, HEADERS)
 
     @router.get("/{rest:path}", response_class=HTMLResponse)
     def anything_else(rest: str, request: Request, who: Who) -> Response:

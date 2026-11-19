@@ -1,4 +1,5 @@
-"""M5 L20b (EF-BIB-015, volet KEPUB, ADR-0048): the KEPUB rendition of an EPUB, in the cache of L20a.
+"""M5 L20b (EF-BIB-015, KEPUB volet, ADR-0048): the KEPUB rendition of an EPUB, in the cache of
+L20a.
 
 The EPUB is the neutralized derivative the caller read for a content it has already judged visible
 (rule X4 of the renditions). The conversion is `kepubify`, pure Python, run at most a few at a time;
@@ -50,7 +51,7 @@ def _service(
     convert: Any = None,
     clock: Clock | None = None,
     tombstones: SourceTombstones | None = None,
-    **limits: int,
+    **limits: Any,
 ) -> RenditionService:
     return RenditionService(
         env.engine,
@@ -64,9 +65,11 @@ def _service(
 
 def _content(env: ExportEnv, unit: str) -> str:
     with env.engine.connect() as connection:
-        return connection.execute(
-            sa.select(storage.content.c.id).where(storage.content.c.unit_id == unit)
-        ).scalar_one()
+        return str(
+            connection.execute(
+                sa.select(storage.content.c.id).where(storage.content.c.unit_id == unit)
+            ).scalar_one()
+        )
 
 
 def _rows(env: ExportEnv) -> list[sa.Row[tuple[str, ...]]]:
@@ -225,15 +228,13 @@ def test_the_orphan_sweep_knows_a_kepub_file_by_its_name() -> None:
 def test_the_slots_are_bounded_in_all_and_per_profile_and_given_back() -> None:
     with export_env() as env:
         service = _service(env, max_held=3, max_per_owner=2)
-        with service.slot("mum"):
-            with service.slot("mum"):
-                with pytest.raises(RenditionBusyError) as busy:
-                    with service.slot("mum"):  # a third for one profile: refused at once
-                        raise AssertionError("unreachable")
-                assert busy.value.retry_after_s >= 1
-                with service.slot("kid"):  # another profile is served: the bound is per profile
-                    with pytest.raises(RenditionBusyError), service.slot("dad"):  # all: 3 held
-                        raise AssertionError("unreachable")
+        with service.slot("mum"), service.slot("mum"):
+            with pytest.raises(RenditionBusyError) as busy, service.slot("mum"):
+                raise AssertionError("a third for one profile is refused at once")
+            assert busy.value.retry_after_s >= 1
+            with service.slot("kid"):  # noqa: SIM117  (another profile: the bound is per profile)
+                with pytest.raises(RenditionBusyError), service.slot("dad"):  # all: 3 held
+                    raise AssertionError("unreachable")
         with service.slot("mum"), service.slot("mum"), service.slot("kid"):
             pass  # everything was given back
 
@@ -275,3 +276,27 @@ def test_conversions_run_two_at_a_time_and_the_waiter_is_told_to_come_back() -> 
         release.set()
         first.join(5)
         assert len(_rows(env)) == 1
+
+
+@pytest.mark.req("EF-BIB-015", "EF-BIB-051")
+def test_the_whole_file_a_kepub_is_made_from_is_the_neutralized_derivative() -> None:
+    """The port gives the file itself for a full read: the derivative, never the original kept in
+    /store; bounded; and never for an excerpt."""
+    from shelfhold.library.public import ReadableCopies
+    from tests.integration.test_untrusted_epub_pipeline import TRAPPED, content_row, ingest
+    from tests.library_env import lib_env
+
+    with lib_env() as env:
+        ingest(env)
+        row = content_row(env)
+        copies = ReadableCopies(env.engine, lambda: env.fsops)
+        archive = copies.open("content", row.id)
+        try:
+            whole = archive.whole(10_000_000)
+            with pytest.raises(ValueError):
+                archive.whole(10)  # larger than the bound asked
+        finally:
+            archive.close()
+        assert whole != TRAPPED and b"<script" not in whole and b"alert(1)" not in whole
+        assert zipfile.is_zipfile(io.BytesIO(whole))
+        assert zipfile.ZipFile(io.BytesIO(whole)).namelist()[0] == "mimetype"

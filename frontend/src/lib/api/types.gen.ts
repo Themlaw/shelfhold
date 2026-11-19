@@ -18812,6 +18812,42 @@ export type OpdsCompleteResponses = {
     200: unknown;
 };
 
+export type OpdsKepubData = {
+    body?: never;
+    path: {
+        /**
+         * Item Id
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/opds/kepub/{item_id}';
+};
+
+export type OpdsKepubErrors = {
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * rendition-busy
+     */
+    429: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsKepubError = OpdsKepubErrors[keyof OpdsKepubErrors];
+
+export type OpdsKepubResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type OpdsOpensearchData = {
     body?: never;
     path?: never;

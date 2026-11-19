@@ -135,25 +135,14 @@ symbols = [
 [[allow]]
 category = "unwired-m5-renditions"
 reason = "2026-11-18 (M5 L20a): the conversion of an image for a client that lacks its format (`RenditionService`, bounded by header, decoded only in the network-less worker, cached by hash, erased by `purge --now`) and the pure rules around it are written and tested, and the purge already reaches the rows and files. No route serves a page yet: the callers are the page-by-page stream of L18 (`pse:stream`, format chosen by `Accept`) and the KEPUB link of L20b, which share this table and this cache."
-until = "M5"  # settled by L18 (page stream) and L20b part 2, which call the service
+until = "M5"  # settled by L18 (page stream: the image conversion); L20b serves the KEPUB through the service
 symbols = [
-  "shelfhold.library.application.renditions:Rendition",
-  "shelfhold.library.application.renditions:RenditionService",
-  "shelfhold.library.application.renditions:UnknownSourceError",
+  "shelfhold.library.application.renditions:RenditionService.cached",
+  "shelfhold.library.application.renditions:RenditionService.collect_orphans",
   "shelfhold.library.domain.rendition:LOCAL_PROCESSOR",
   "shelfhold.library.domain.rendition:RemoteProcessorRefusedError",
   "shelfhold.library.domain.rendition:UnsupportedSourceError",
   "shelfhold.library.domain.rendition:avif_announced_size",
   "shelfhold.library.domain.rendition:ensure_processor_allowed",
   "shelfhold.library.domain.rendition:webp_announced_size",
-]
-
-[[allow]]
-category = "m5-l20b-kepub-core"
-reason = "2026-11-18 (M5 L20b, part 1): the pure-Python KEPUB transform is delivered before its callers; the OPDS acquisition link, /lite and the rendition cache that call it come with L20a and L17a (docs/decisions/M5.md, L20b)."
-until = "M5"  # settled by L20b part 2, once L20a and L17a are merged
-symbols = [
-  "shelfhold.library.application.kepub:KepubError",
-  "shelfhold.library.application.kepub:_Serializer",
-  "shelfhold.library.application.kepub:kepubify",
 ]

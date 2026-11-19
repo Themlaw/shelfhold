@@ -11,6 +11,8 @@ from typing import Final
 SOURCE_MEDIA: Final = {"avif": "image/avif", "jxl": "image/jxl", "webp": "image/webp"}
 DECODABLE_SOURCES: Final = frozenset({"avif", "webp"})  # what the worker's Pillow reads
 KIND_MEDIA: Final = {"jpeg": "image/jpeg", "png": "image/png"}
+KEPUB_KIND: Final = "kepub"  # a book made from an EPUB (L20b), never planned for a page
+ALL_KIND_MEDIA: Final = {**KIND_MEDIA, KEPUB_KIND: "application/kepub+zip"}
 _ALIASES: Final = {"jpg": "jpeg", "image/jpg": "jpeg", **{m: k for k, m in KIND_MEDIA.items()}}
 
 

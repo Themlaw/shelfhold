@@ -30,7 +30,7 @@ TRASH_LEVELS = ("unfollow", "remove_destinations", "delete_content")
 THUMBNAIL_SIZES = (160, 320, 640)
 WATERMARK_ORIGINS = ("none", "heuristic", "user")
 IMPORT_STATES = ("seen", "stored", "refused", "removed")
-RENDITION_KINDS = ("jpeg", "png")  # what a conversion makes (EF-BIB-015)
+RENDITION_KINDS = ("jpeg", "png", "kepub")  # what a conversion makes (EF-BIB-015, L20b)
 
 
 def processor_check(column: str) -> sa.CheckConstraint:

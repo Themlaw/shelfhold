@@ -334,3 +334,8 @@ since = "1.2"
 file = "0104_rendition.py"
 sha256 = "11897a28f7af6091440fed589bc88b8bf9adbd89358f7b08ff5474c56abc5ff6"
 since = "1.2"
+
+[[migration]]
+file = "0108_rendition_kepub.py"
+sha256 = "64ea13dac556f37b559757fc70fbb1ad0ccab1c1fbcabbe01e5043660a36c19c"
+since = "1.2"

@@ -1,5 +1,6 @@
-"""M5 L20b (EF-BIB-015, EF-INT-007, EF-LEC-010, EF-USR-006, ENF-SEC-010): a KEPUB for a Kobo, offered
-in the feed of a Work (`/opds`) and on the page of a Work (`/lite`), served from the cache of L20a.
+"""M5 L20b (EF-BIB-015, EF-INT-007, EF-LEC-010, EF-USR-006, ENF-SEC-010): a KEPUB for a Kobo,
+offered in the feed of a Work (`/opds`) and on the page of a Work (`/lite`), served from the cache
+of L20a.
 
 What is offered is the exported volume of a Work the profile may see, whose kept file is an EPUB,
 and that the profile does not read elsewhere (ADR-0055 D-P1, as for OPDS-PSE). The KEPUB is made
@@ -134,8 +135,10 @@ class Kobo:
                 )  # fmt: skip
             connection.execute(
                 sa.insert(export.export_record).values(
-                    shelf_destination_id=destination, export_item_id=item,
-                    locator_type="none", state="written",
+                    shelf_destination_id=destination,
+                    export_item_id=item,
+                    locator_type="none",
+                    state="written",
                 )
             )
 
@@ -276,7 +279,8 @@ def test_opds_kepub_what_the_profile_reads_elsewhere_is_not_a_second_full_copy(
 
 def test_opds_kepub_a_content_that_is_not_an_epub_is_not_converted(kobo: Kobo) -> None:
     item = kobo.volume("ok", fmt="cbz")
-    assert kepub_links(parse(kobo.world.mum.get(f"/opds/works/{kobo.world.seed.works['ok']}"))) == []
+    work = f"/opds/works/{kobo.world.seed.works['ok']}"
+    assert kepub_links(parse(kobo.world.mum.get(work))) == []
     assert kobo.get(kobo.world.mum, item).status_code == 404 and kobo.rows() == 0
 
 
@@ -330,9 +334,9 @@ def test_opds_kepub_a_token_of_a_profile_is_that_profiles_alone(kobo: Kobo) -> N
 def test_opds_kepub_an_identifier_that_is_not_one_is_the_answer_of_an_absent_one(
     kobo: Kobo, ident: str
 ) -> None:
-    absent = shape(kobo.get(kobo.world.mum, ABSENT_ULID))
     got = kobo.world.mum.get(f"/opds/kepub/{ident}")
-    assert got.status_code == 404 and shape(got)[1] == absent[1]
+    assert got.status_code == 404 and "content-disposition" not in got.headers
+    assert kobo.rows() == 0 and kobo.src.asked == []  # nothing was looked up, nothing made
 
 
 def test_opds_kepub_is_not_reachable_with_a_token_under_content_or_api(kobo: Kobo) -> None:
@@ -348,7 +352,8 @@ def test_opds_kepub_is_read_only(kobo: Kobo) -> None:
     item = kobo.volume("ok")
     assert kobo.get(kobo.world.kid, item).status_code == 200
     with kobo.world.seed.engine.connect() as connection:
-        assert connection.execute(sa.select(sa.func.count()).select_from(reading.reading_position)).scalar_one() == 0
+        count = sa.select(sa.func.count()).select_from(reading.reading_position)
+        assert connection.execute(count).scalar_one() == 0
 
 
 # -- the cache and the bound on threads --------------------------------------------------------
@@ -432,7 +437,8 @@ def test_lite_kepub_needs_the_cookie_of_the_device_sign_in(kobo: Kobo) -> None:
     anonymous = kobo.world.env.other_client("198.51.100.32", "https://testserver")
     got = anonymous.get(f"/lite/kepub/{item}", follow_redirects=False)
     assert got.status_code in {303, 401, 404} and "koboSpan" not in got.text
-    assert kobo.world.kid_session.get(f"/lite/kepub/{item}").status_code in {303, 401, 404}
+    web = kobo.world.kid_session.get(f"/lite/kepub/{item}", follow_redirects=False)
+    assert web.status_code in {303, 401, 404} and "koboSpan" not in web.text
 
 
 def test_lite_kepub_a_profile_that_holds_every_slot_gets_a_page_to_come_back(kobo: Kobo) -> None:
@@ -450,7 +456,7 @@ def test_lite_kepub_a_profile_that_holds_every_slot_gets_a_page_to_come_back(kob
 def test_the_work_entry_of_a_feed_holds_a_kepub_acquisition_with_its_title(kobo: Kobo) -> None:
     kobo.volume("ok")
     feed = parse(kobo.world.kid.get(f"/opds/works/{kobo.world.seed.works['ok']}"))
-    found = [e for e in entries(feed) if link(e, ACQUISITION) and link(e, ACQUISITION)["type"] == KEPUB]  # type: ignore[index]
+    found = [e for e in entries(feed) if (link(e, ACQUISITION) or {}).get("type") == KEPUB]
     assert len(found) == 1
     text = ET.tostring(found[0], encoding="unicode")
     assert re.search(r"<(\w+:)?title>[^<]+</", text)

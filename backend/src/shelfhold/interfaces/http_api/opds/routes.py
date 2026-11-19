@@ -43,6 +43,7 @@ from shelfhold.i18n import t_lang
 from shelfhold.identity.public import Principal, reader_scope
 from shelfhold.infrastructure.http_headers import CSP_SANDBOX, attachment_disposition
 from shelfhold.interfaces.http_api.device_auth import require_device_basic
+from shelfhold.interfaces.http_api.kepub_download import KEPUB_MEDIA, kepub_response
 from shelfhold.interfaces.http_api.opds.bundle import (
     BundleBusyError,
     BundleDownload,
@@ -62,7 +63,8 @@ from shelfhold.interfaces.http_api.opds.feed import (
 from shelfhold.interfaces.http_api.opds.links import Paths, mount_prefix, safe_filename
 from shelfhold.interfaces.http_api.problems import ProblemError, language_from_headers
 from shelfhold.interfaces.http_api.thumbnails import thumbnail_response
-from shelfhold.library.public import ThumbnailService, cover_hash
+from shelfhold.library.public import RenditionBusyError, ThumbnailService, cover_hash
+from shelfhold.reading.application.kepub_delivery import KepubDelivery, KepubNotFoundError
 
 __all__ = ["build_opds_router"]
 
@@ -133,6 +135,7 @@ def build_opds_router(
     get_thumbnails: Callable[[], ThumbnailService],
     get_bundles: Callable[[], SeriesBundleProvider | None],
     now: Callable[[], datetime],
+    get_kepubs: Callable[[], KepubDelivery] | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/opds", tags=["opds"])
 
@@ -470,6 +473,20 @@ def build_opds_router(
                         summary=notice,
                     )
                 )
+        offered = (  # M5 L20b: a KEPUB for a Kobo, of the volumes this profile may be given
+            get_kepubs().offers(principal.user_id, [e.edition_id for e in editions])
+            if get_kepubs is not None
+            else []
+        )
+        for kepub in offered:
+            entries.append(
+                Entry(
+                    f"urn:shelfhold:kepub:{kepub.item_id}",
+                    t_lang("opds.kepub", language=lang, title=title, number=kepub.number),
+                    _stamp(),
+                    [Link(_ACQUISITION, paths.kepub(kepub.item_id), KEPUB_MEDIA)],
+                )
+            )
         body = build_feed(
             feed_id=f"urn:shelfhold:work:{work_id}",
             title=title,
@@ -587,6 +604,35 @@ def build_opds_router(
                 token_id=principal.key_id,
             )
         )
+
+    @router.get(
+        "/kepub/{item_id}",
+        operation_id="opds_kepub",
+        response_class=Response,
+        responses={
+            200: {"content": {KEPUB_MEDIA: {}}},
+            404: {"description": "not-found"},
+            429: {"description": "rendition-busy"},
+        },
+    )
+    def kepub(item_id: str, principal: Device) -> Response:
+        """The KEPUB of an exported EPUB volume: judged for this profile now (Edition and content,
+        the whole copy only for a profile that does not read it elsewhere), made from the
+        neutralized EPUB and kept in the cache of renditions. Everything refused is the 404 of an
+        absent item; a busy cache is 429, said after the profile is judged."""
+        _ulid(item_id)
+        if get_kepubs is None:
+            raise _absent()
+        try:
+            found = get_kepubs().fetch(principal.user_id, item_id)
+        except KepubNotFoundError:
+            raise _absent() from None
+        except RenditionBusyError as busy:
+            raise ProblemError(
+                "rendition_busy",
+                headers={"Retry-After": str(busy.retry_after_s), "Cache-Control": "no-store"},
+            ) from None
+        return kepub_response(found, _HEADERS)
 
     @router.get(
         "/bundles/{version_id}",

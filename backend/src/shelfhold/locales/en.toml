@@ -1545,6 +1545,11 @@
     action = "Wait a few moments, then start the download again."
     cause = "Your device, or the whole instance, has reached the number of simultaneous block downloads allowed."
 
+  [errors.rendition_busy]
+    title = "Too many files are being prepared right now."
+    action = "Wait a few moments, then start the download again."
+    cause = "Your device, or the whole instance, has reached the number of simultaneous preparations allowed."
+
   [errors.too_many_streams]
     title = "Too many event streams open for this profile."
     action = "Close a tab or app that's tracking events, and then try again."
@@ -2950,6 +2955,7 @@
   search_description = "Search the library"
   complete = "{title} — Complete series"
   complete_in = "{title} — Complete series ({lang})"
+  kepub = "{title} {number} — KEPUB (Kobo)"
   excluded = "{count, plural, one {# chapter left out} other {# chapters left out}}: format not readable on an e-reader, or file unavailable."
 
 [lite]
@@ -2989,6 +2995,7 @@
   excluded = "{count, plural, one {# chapter left out} other {# chapters left out}}: format not readable on an e-reader, or file unavailable."
   download_sized = "Download ({mb} MB)"
   download = "Download"
+  kepub = "KEPUB for Kobo: {number}"
   no_download = "No file to download for this work."
 
   [errors."source_migration.collision"]

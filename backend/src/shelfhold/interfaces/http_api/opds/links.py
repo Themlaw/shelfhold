@@ -63,6 +63,9 @@ class Paths:
     def complete(self, edition_id: str, part: int = 1) -> str:
         return self._with(f"/editions/{edition_id}/complete", part=part if part > 1 else None)
 
+    def kepub(self, item_id: str) -> str:
+        return self._with(f"/kepub/{item_id}")
+
     def bundle(self, version_id: str) -> str:
         return self._with(f"/bundles/{version_id}")
 

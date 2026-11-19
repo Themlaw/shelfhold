@@ -31740,6 +31740,51 @@
         ]
       }
     },
+    "/opds/kepub/{item_id}": {
+      "get": {
+        "description": "The KEPUB of an exported EPUB volume: judged for this profile now (Edition and content,\nthe whole copy only for a profile that does not read it elsewhere), made from the\nneutralized EPUB and kept in the cache of renditions. Everything refused is the 404 of an\nabsent item; a busy cache is 429, said after the profile is judged.",
+        "operationId": "opds_kepub",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/kepub+zip": {}
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "429": {
+            "description": "rendition-busy"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Kepub",
+        "tags": [
+          "opds"
+        ]
+      }
+    },
     "/opds/opensearch.xml": {
       "get": {
         "operationId": "opds_opensearch",
@@ -33053,6 +33098,10 @@
     "/api/v1/problems/rename.refused": {
       "code": "rename.refused",
       "status": 409
+    },
+    "/api/v1/problems/rendition-busy": {
+      "code": "rendition_busy",
+      "status": 429
     },
     "/api/v1/problems/rendition.format-unsupported": {
       "code": "rendition.format_unsupported",

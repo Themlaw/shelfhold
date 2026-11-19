@@ -166,6 +166,7 @@ from shelfhold.library.application.import_match import (
     isbns_in,
     open_request_matches,
 )
+from shelfhold.library.application.kepub import KepubError
 from shelfhold.library.application.reclaim import (
     EARLY_PURGE_BATCH,
     EMPTY_TRASH_PHRASE,
@@ -173,6 +174,11 @@ from shelfhold.library.application.reclaim import (
     TrashConfirmationError,
     oldest_first,
     require_empty_phrase,
+)
+from shelfhold.library.application.renditions import (
+    RenditionBusyError,
+    RenditionService,
+    UnknownSourceError,
 )
 from shelfhold.library.application.renditions import (
     collect_orphans as collect_rendition_orphans,
@@ -417,6 +423,7 @@ __all__ = [
     "Irreplaceability",
     "KeepCopier",
     "Kept",
+    "KepubError",
     "LibraryCopy",
     "LibraryPageNormalizer",
     "LinkPolicy",
@@ -450,6 +457,8 @@ __all__ = [
     "Regenerated",
     "RegenerationBlockedError",
     "ReleaseOutcome",
+    "RenditionBusyError",
+    "RenditionService",
     "ReneutralizePlan",
     "ReneutralizeReport",
     "Reneutralizer",
@@ -488,6 +497,7 @@ __all__ = [
     "UnitImpact",
     "UnitJson",
     "UnitJsonCorruptError",
+    "UnknownSourceError",
     "UntrustedEntryError",
     "UntrustedEpubStore",
     "UpstreamPurge",
