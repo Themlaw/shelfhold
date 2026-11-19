@@ -1,7 +1,8 @@
 // The CSP of the SPA (ENF-SEC-004): by hash, never `unsafe-inline`, never a random nonce (the SPA
-// is static, so the hash is fixed when it is built). The one inline script is the boot script of
-// `src/app.html`, which sets the theme attributes before the first render; its hash is computed
-// here from the very bytes of the page, so the CSP cannot drift from the script that is served.
+// is static, so the hash is fixed when it is built). The inline scripts are the boot script of
+// `src/app.html` (it sets the theme attributes before the first render) and the `nomodule` redirect
+// to `/lite`; their hashes are computed here from the very bytes of the page, so the CSP cannot
+// drift from the scripts that are served.
 import { createHash } from 'node:crypto';
 import { parse } from 'parse5';
 
@@ -21,14 +22,21 @@ export function inlineScripts(html: string): string[] {
   return found;
 }
 
-/** The text of the single inline script of `app.html`. */
+/** The text of the boot script of `app.html`: its first inline script. The page holds one more,
+ * the `nomodule` redirect to `/lite` (EF-LEC-010); `kitCsp` hashes both and no other. */
 export function bootScript(html: string): string {
+  const [first] = inlineScripts(html);
+  if (first === undefined) throw new Error('app.html holds no inline script');
+  return first;
+}
+
+/** Every inline script of `app.html`: the boot script and the legacy redirect, and nothing else. */
+export function pageScripts(html: string): string[] {
   const scripts = inlineScripts(html);
-  const [only] = scripts;
-  if (scripts.length !== 1 || only === undefined) {
-    throw new Error(`app.html must hold exactly one inline script, not ${scripts.length}`);
+  if (scripts.length !== 2) {
+    throw new Error(`app.html must hold exactly two inline scripts, not ${scripts.length}`);
   }
-  return only;
+  return scripts;
 }
 
 /** A CSP source expression for `text`: `'sha256-<base64>'`. */
@@ -43,7 +51,7 @@ const ANNOUNCER_STYLE = "'sha256-S8qMpvofolR8Mpjy4kQvEm7m1q8clzU4dfDH0AmvZjo='";
 export function kitCsp(html: string): Record<string, string[]> {
   return {
     'default-src': ["'self'"],
-    'script-src': ["'self'", scriptHash(bootScript(html))],
+    'script-src': ["'self'", ...pageScripts(html).map(scriptHash)],
     'style-src': ["'self'"],
     // the reader (`/lire`) is its own entry with its own policy (L12): nothing of the SPA draws a
     // `blob:` image, no `data:`, no host.

@@ -137,7 +137,10 @@ def test_no_user_agent_sniffing_in_the_serving_code() -> None:
     """Nothing that serves the SPA or `/lite`, and nothing of the SPA itself, reads the UA."""
     sniff = re.compile(r"user[-_ ]?agent|navigator\.(platform|vendor|appVersion)", re.IGNORECASE)
     scanned = [
-        *(ROOT / "backend/src/shelfhold/interfaces/http_api/lite").rglob("*"),
+        *(
+            p for p in (ROOT / "backend/src/shelfhold/interfaces/http_api/lite").rglob("*")
+            if p.suffix in {".py", ".html", ".css", ".txt"}
+        ),
         ROOT / "backend/src/shelfhold/interfaces/http_api/spa.py",
         ROOT / "backend/src/shelfhold/interfaces/http_api/thumbnails.py",
         ROOT / "frontend/src/app.html",

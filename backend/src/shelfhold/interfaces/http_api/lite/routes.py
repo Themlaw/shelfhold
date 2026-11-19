@@ -449,6 +449,7 @@ def build_lite_router(
                 size=size,
                 if_none_match=request.headers.get("if-none-match"),
                 vary="Cookie",
+                grey=True,  # e-ink and greyscale screens: one channel, a third of the bytes
             )
         except ProblemError as problem:
             if problem.args[0] == "not_found":

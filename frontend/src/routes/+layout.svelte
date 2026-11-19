@@ -7,6 +7,7 @@
   import { detectLanguage, setUiLanguage } from '#lib/i18n/index.ts';
   import '#lib/themes/base.css';
   import '#lib/themes/themes.css';
+  import '#lib/themes/eink.css';
   import './global.css';
 
   let { children, data } = $props();

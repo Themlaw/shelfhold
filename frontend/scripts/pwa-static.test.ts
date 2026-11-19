@@ -43,10 +43,10 @@ describe('the manifest', () => {
   });
 
   // req: EF-LEC-012, ENF-SEC-004
-  it('is linked from the page of the SPA, which keeps its one hashed inline script', () => {
+  it('is linked from the page of the SPA, which keeps its two hashed inline scripts (boot, nomodule redirect)', () => {
     const html = read('src/app.html');
     expect(html).toMatch(/<link rel="manifest" href="\/manifest\.webmanifest"\s*\/?>/);
-    expect(inlineScripts(html)).toHaveLength(1);
+    expect(inlineScripts(html)).toHaveLength(2);
     expect(() => bootScript(html)).not.toThrow();
   });
 });
@@ -64,7 +64,11 @@ describe('the policy of the SPA', () => {
       expect(sources, name).not.toContain("'unsafe-inline'");
       expect(sources, name).not.toContain('*');
     }
-    expect(csp['script-src']).toEqual(["'self'", expect.stringMatching(/^'sha256-/)]);
+    expect(csp['script-src']).toEqual([
+      "'self'",
+      expect.stringMatching(/^'sha256-/),
+      expect.stringMatching(/^'sha256-/)
+    ]);
   });
 });
 

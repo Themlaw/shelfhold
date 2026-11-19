@@ -70,10 +70,12 @@ def thumbnail_response(
     size: str,
     if_none_match: str | None,
     vary: str,
+    grey: bool = False,
 ) -> Response:
     """The checks of the module docstring, in that order, for whoever has already authenticated
     `user_id` (a session for the web route, a device token for the OPDS one): the reader's own
-    scope first, the tag and the disk only after."""
+    scope first, the tag and the disk only after. `grey` is the greyscale variant of `/lite` (L17b):
+    the same checks, its own tag, its own bytes."""
     headers = {**_HEADERS, "Vary": vary}
     width = _size_of(size)
     if width is None or len(content_hash) != 64 or not set(content_hash) <= _HEX:
@@ -83,11 +85,11 @@ def thumbnail_response(
         visible = cover_ref_visible(connection, scope, f"covers/{content_hash}.webp")
     if not visible:  # before the tag, before the disk, before the worker
         raise _absent()
-    tag = etag_of(content_hash, width)
+    tag = etag_of(content_hash, width, grey=grey)
     if _matches(if_none_match, tag):
         return Response(status_code=304, headers={**headers, "ETag": tag})
     try:
-        made = service.get(content_hash, width)
+        made = service.get(content_hash, width, grey=grey)
     except Pending:  # being made: no thread is held for it. The cover itself, never cached
         shown = service.fallback(content_hash)
         if shown is None:

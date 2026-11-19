@@ -356,7 +356,9 @@ def _thumbnail(data: bytes, args: dict[str, Any]) -> tuple[dict[str, Any], bytes
     image = _guarded(ImageOps.exif_transpose, image)  # orientation applied here, nowhere else
     image.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
     has_alpha = "A" in image.getbands() or "transparency" in image.info
-    if fmt == "JPEG":
+    if args.get("grey"):  # the greyscale variant of `/lite`: one channel, alpha kept for WebP
+        image = image.convert("LA" if has_alpha and fmt != "JPEG" else "L")
+    elif fmt == "JPEG":
         image = image.convert("RGB")
     elif has_alpha and image.mode not in {"RGBA", "LA"}:
         image = image.convert("RGBA")
