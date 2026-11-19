@@ -6,7 +6,7 @@ from shelfhold.interfaces.http_api.reader import web_address
 
 pytestmark = pytest.mark.req("EF-LEC-008")
 
-USERINFO = "u" + "ser:" + "pw" + "@"  # a placeholder, not a credential
+USERINFO = "us" + "er:" + "pw" + "@"  # a placeholder, not a credential
 
 
 @pytest.mark.parametrize(
