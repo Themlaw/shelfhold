@@ -136,6 +136,7 @@ OPDS = (
     "GET /opds/covers/{content_hash}/{size}",
     "GET /opds/editions/{edition_id}/complete",
     "GET /opds/bundles/{version_id}",
+    "GET /opds/pse/{item_id}/{page}",  # M5 L18: OPDS-PSE, a page of an exported volume
 )
 # LITE (M5 L17a): the pages of `/lite`, behind a cookie that a device token's secret opened. Every
 # route is hers when it shows catalogue data, and answers like OPDS: a hidden thing is an absent
@@ -1437,6 +1438,58 @@ def _surface_opds(world: World) -> None:
         assert "<entry" not in found.text  # the query is echoed encoded in a link, never as a hit
     paged = client.get("/opds/works", params={"limit": 1, "offset": 3}, headers=headers)
     assert paged.status_code == 200 and "<entry" not in paged.text  # the visible ones are three
+    _opds_pse(world, client, headers)
+
+
+def _opds_pse(world: World, client: Any, headers: dict[str, str]) -> None:
+    """M5 L18: the page of an exported volume is a projection like any other. A volume of every
+    Edition of the seed is exported; the child's feed offers a stream for the ones she sees and no
+    other, and a page of a hidden one answers exactly like a page of an item that does not exist."""
+    import sqlalchemy as sa
+
+    from shelfhold.infrastructure.schema import export
+    from tests.content_env import PNG, FakeArchives, add_carrier
+    from tests.integration.test_schema_storage_export import add_destination, add_target
+
+    seed = world.seed
+    fake = FakeArchives()
+    world.env.app.state.content_access.archives = fake  # type: ignore[attr-defined]
+    items: dict[str, str] = {}
+    for key, edition in seed.editions.items():
+        carrier = add_carrier(seed.engine, edition, format="cbz")
+        fake.by_content[carrier] = {"p1.png": PNG, "p2.png": PNG + b"2"}
+        item = new_ulid()
+        with seed.engine.begin() as connection:
+            connection.execute(
+                sa.insert(export.export_item).values(
+                    id=item, edition_id=edition, kind="unit", content_id=carrier
+                )
+            )
+        fake.item_content[item] = carrier
+        items[key] = item
+        with seed.engine.begin() as connection:  # a stream is only offered for a live export
+            destination = add_destination(connection, seed.shelves["adult"], add_target(connection))
+            connection.execute(
+                sa.insert(export.export_record).values(
+                    shelf_destination_id=destination, export_item_id=item,
+                    locator_type="none", state="written",
+                )
+            )  # fmt: skip
+    absent = client.get(f"/opds/pse/{ULID}/0", headers=headers)
+    assert absent.status_code == 404
+    offered = ""
+    for work_id in seed.works.values():
+        got = client.get(f"/opds/works/{work_id}", headers=headers)
+        if got.status_code == 200:
+            offered += got.text
+    for key in ("ok", "mixed_rated"):
+        assert items[key] in offered, key
+        assert client.get(f"/opds/pse/{items[key]}/0", headers=headers).status_code == 200, key
+    for key in ("twelve", "above", "adult_edition", "misfiled", "mixed_new", "reserved", "x"):
+        assert items[key] not in offered, key
+        page = client.get(f"/opds/pse/{items[key]}/0", headers=headers)
+        assert _shape(page) == _shape(absent), key
+        world.clean(page.text)
 
 
 def _surface_lite(world: World) -> None:

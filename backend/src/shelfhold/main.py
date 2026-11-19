@@ -17,7 +17,7 @@ from sqlalchemy import Engine
 from shelfhold import __version__
 from shelfhold.acquisition.public import RootGuard
 from shelfhold.catalog.public import ensure_search_tables, sync_search_index
-from shelfhold.composition import Composition, Network
+from shelfhold.composition import Composition, LazyTombstones, Network
 from shelfhold.config import Settings, load_settings
 from shelfhold.events.bus import EventBus
 from shelfhold.events.since_key import SinceKey
@@ -119,7 +119,7 @@ from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.http_api.webhooks import build_webhooks_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.jobs.mode import MaintenanceMode
-from shelfhold.library.public import ReadableCopies, ThumbnailService
+from shelfhold.library.public import ReadableCopies, RenditionService, ThumbnailService
 from shelfhold.ops import OpsServices
 from shelfhold.ops.activity_feed import kavita_open_url_of
 from shelfhold.ops.health import OpsHealth
@@ -137,6 +137,7 @@ from shelfhold.reading.application.content_access import (
 )
 from shelfhold.reading.application.continue_reading import ContinueReading
 from shelfhold.reading.application.lease import ProgressLease
+from shelfhold.reading.application.page_stream import PageStream
 from shelfhold.reading.application.positions import ReaderPositions
 from shelfhold.reading.application.publication import PublicationService, epub_spine_of
 from shelfhold.reading.bundle import SeriesBundles
@@ -363,6 +364,16 @@ def create_app(
         )  # fmt: skip
 
     @cache
+    def page_stream() -> PageStream:  # M5 L18: the pages of an exported volume, by device token
+        return PageStream(engine, content_access())
+
+    @cache
+    def renditions() -> RenditionService:  # M5 L18: an image for a client that lacks its format
+        return RenditionService(
+            engine, resolved.data_dir, clock, tombstones=LazyTombstones(composition)
+        )
+
+    @cache
     def thumbnails() -> ThumbnailService:  # the session route and the OPDS one share it
         return ThumbnailService(engine, resolved.data_dir, clock)
 
@@ -492,7 +503,12 @@ def create_app(
             lambda: kavita_open_url_of(engine),
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
-            lambda: engine, thumbnails, bundles, clock.now
+            lambda: engine,
+            thumbnails,
+            bundles,
+            clock.now,
+            page_stream,  # M5 L18: OPDS-PSE, a page at a time
+            renditions,
         ),
         build_lite_router(  # M5 L17a: pages with no script, behind a cookie a token's secret opened
             lambda: engine, thumbnails, bundles
