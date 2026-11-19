@@ -5926,6 +5926,10 @@ export type SheetOut = {
      */
     fields: Array<SheetFieldOut>;
     /**
+     * First Unit Id
+     */
+    first_unit_id: string | null;
+    /**
      * Followed
      */
     followed: boolean;
