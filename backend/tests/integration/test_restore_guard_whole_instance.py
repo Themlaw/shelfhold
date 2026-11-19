@@ -30,13 +30,15 @@ pytestmark = pytest.mark.req("EF-INT-026", "EF-EXP-029")
 
 def sessions_of(env: RestoreEnv, behind: list[bool]) -> WriteSessions:
     """What `Composition.sessions_for` wires: the guard is asked when a root is ahead."""
-    return WriteSessions(
+    sessions = WriteSessions(
         env.fsops,
         instance_id=str(env.sentinel()["instance_id"]),
         clock=env.ex.clock,
         generations=GenerationCounter(env.engine),
         on_behind=lambda: behind.append(env.guard().enter_restored_behind().behind),
     )
+    sessions.enforce()
+    return sessions
 
 
 def counters(env: RestoreEnv, root: Path) -> tuple[int, int]:
@@ -169,7 +171,10 @@ def test_two_concurrent_entries_count_the_restore_once() -> None:
             other.append(env.guard().enter_restored_behind())
 
         first = RestoreGuard(
-            env.engine, Gated(env.fsops, after=second), clock=env.ex.clock, bus=env.bus  # type: ignore[arg-type]
+            env.engine,
+            Gated(env.fsops, after=second),
+            clock=env.ex.clock,
+            bus=env.bus,  # type: ignore[arg-type]
         ).enter_restored_behind()
         assert other and first.behind
         assert epoch(env) == before + 1

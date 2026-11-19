@@ -13,6 +13,7 @@ import hashlib
 import os
 import re
 import stat
+import threading
 import time
 import uuid
 from collections.abc import Callable, Iterator, Sequence
@@ -245,6 +246,8 @@ class Fsops:
         self._now = now
         self._path_map = path_map
         self._expected = {clean_absolute(root.path): root for root in expected}
+        # the stamp of a sentinel reads, compares and replaces: one at a time (it never goes back)
+        self._stamp_lock = threading.RLock()
         self._read_only = {e.local for e in path_map.entries if e.mode is PathMode.ADOPT_RO}
         self._umask = umask
         self._strategy = strategy
@@ -621,23 +624,32 @@ class Fsops:
                 clean_absolute(root_path), self._freeze_state_of(clean_absolute(root_path))
             )
         key = clean_absolute(root_path)
-        expected = self._expected[key]
         if self._owes(key):
             raise TombstonePendingError(key)
-        with self._root(key) as root:
-            self._stamp(root, generation)
-        self._expected[key] = replace(expected, generation=generation)
+        with self._stamp_lock:
+            with self._root(key) as root:
+                self._stamp(root, generation)
+            expected = self._expected[key]  # read under the lock: the highest stamp stays
+            self._expected[key] = replace(expected, generation=max(expected.generation, generation))
 
     def _stamp(
         self, root: ConfinedRoot, generation: int, *, restore_epoch: int | None = None
     ) -> None:
-        current = read_sentinel(root)
-        if current is None:
-            raise RootBlockedError(root.path, RootState.MISSING)
-        expected = self._expected[root.path]
-        if (current.root_id, current.instance_id) != (expected.root_id, expected.instance_id):
-            raise RootBlockedError(root.path, RootState.MISMATCH)  # never overwrite a foreign one
-        write_sentinel(root, current.restamped(generation, restore_epoch=restore_epoch))
+        with self._stamp_lock:  # read, compare, replace by rename: atomic among the stamps
+            current = read_sentinel(root)
+            if current is None:
+                raise RootBlockedError(root.path, RootState.MISSING)
+            expected = self._expected[root.path]
+            if (current.root_id, current.instance_id) != (expected.root_id, expected.instance_id):
+                raise RootBlockedError(
+                    root.path, RootState.MISMATCH
+                )  # never overwrite a foreign one
+            # A sentinel never goes back: sessions that stamp out of order (the database committed
+            # their generations in order) leave the highest, never a root that reads as stale.
+            write_sentinel(
+                root,
+                current.restamped(max(generation, current.generation), restore_epoch=restore_epoch),
+            )
 
     def sentinel_of(self, root_path: str, *, strict: bool = False) -> SentinelDocument | None:
         """The sentinel as it is on disk, for the restore check: read only, never gated, never

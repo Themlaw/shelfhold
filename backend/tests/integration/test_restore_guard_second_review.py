@@ -25,6 +25,7 @@ import pytest
 import sqlalchemy as sa
 
 from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.infrastructure.fsops.errors import RootBlockedError
 from shelfhold.infrastructure.instance import WriteSessions
 from shelfhold.infrastructure.instance.generation import GenerationCounter
 from shelfhold.infrastructure.schema import platform
@@ -68,12 +69,12 @@ def test_a_session_on_the_matching_root_writes_nothing_while_the_guard_says_behi
 
         # what `Composition._hold` opens (composition.py:396-402): the ahead root is not mounted
         mounted = tuple(
-            e.path for e in env.loaded.expected
-            if env.fsops.root_state(e.path) is RootState.OK
+            e.path for e in env.loaded.expected if env.fsops.root_state(e.path) is RootState.OK
         )
         assert mounted == (str(env.ex.lib.store),)
         kept = env.ex.lib.store / "kept.bin"
-        with sessions.open(*mounted):
+        with pytest.raises(RootBlockedError), sessions.open(*mounted):  # the look is the session's
             env.fsops.write_atomic(str(kept), b"kept", parents=True)
+        assert behind == [True]
         assert not kept.exists()  # written on a database the guard already calls older
         assert store_counters() == before  # the counter moved on the restored database

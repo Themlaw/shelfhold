@@ -28,12 +28,13 @@ from typing import Any, BinaryIO, Final, Literal
 
 import structlog
 
-from shelfhold.export.domain.physical_roots import RootState
+from shelfhold.export.domain.physical_roots import RootState, judge_sentinel
 from shelfhold.infrastructure.clock import DEFAULT_SKEW, Clock
 from shelfhold.infrastructure.fsops import (
     Fsops,
     FsopsError,
     LeaseRaceError,
+    OutsidePathMapError,
     ReadOnlyRootError,
     RootBlockedError,
 )
@@ -291,19 +292,50 @@ class WriteSessions:
         with suppress(FsopsError, OSError):  # a root that went away: the lease simply runs out
             self._fsops.update_lease(root_path, decide)
 
-    def _advance_generations(self, roots: list[str]) -> None:
-        """Once per session and root: the database first, the sentinel after (I39)."""
+    def _require_whole_instance(self) -> None:
+        """Before any lease is taken: no root of the instance is ahead of the database. One root
+        that is ahead makes every write refuse, the roots that match included (ADR-0044, I39):
+        the database was put back, and a job that mounts only the roots whose own sentinel
+        matches would write on it before any look said so. Read like `RestoreGuard.assess`
+        reads: the sentinels first, then the counters, so a session that overlaps the look can
+        never pass for a restore. Asks the guard (`on_behind`), which counts the restore and
+        freezes the instance."""
         if self._generations is None:
             return
+        read = {}
+        for root in self._generations.expected():
+            try:
+                read[root.path] = self._fsops.sentinel_of(root.path)
+            except OutsidePathMapError:
+                continue  # not a root this process writes
+        for root in self._generations.expected():
+            doc = read.get(root.path)
+            if doc is None or judge_sentinel(doc, root).state is not RootState.RESTORED_BEHIND:
+                continue
+            if self._on_behind is not None:
+                self._on_behind()
+            raise RootBlockedError(root.path, RootState.RESTORED_BEHIND)
+
+    def _advance_generations(self, roots: list[str]) -> None:
+        """Once per session and root: the database first, the sentinel after (I39). No counter
+        moves under a sentinel that is ahead of it: that is a database put back, and advancing
+        it would make the restore look like a consistent root."""
+        if self._generations is None:
+            return
+        plan: list[tuple[str, int, bool]] = []
         for root in roots:
             self._fsops.require_stampable(root)  # a refusal here must not move the database
             seen = self._fsops.sentinel_of(root)
             current = self._generations.current(root)
             if current is None:
                 continue
-            if seen is not None and current == seen.generation + 1:
-                moved = current  # one ahead already (an earlier stop): re-stamp, do not advance
-            else:
+            if seen is not None and seen.generation > current:
+                raise RootBlockedError(root, RootState.RESTORED_BEHIND)
+            # one ahead already (an earlier stop): re-stamp, do not advance
+            plan.append((root, current, seen is not None and current == seen.generation + 1))
+        for root, current, stamped_late in plan:  # no refusal can come after the first move
+            moved = current
+            if not stamped_late:
                 advanced = self._generations.advance(root)
                 if advanced is None:
                     continue
@@ -317,6 +349,7 @@ class WriteSessions:
         roots = sorted({self._root_of(path) for path in paths})
         taken: list[str] = []
         try:
+            self._require_whole_instance()
             for root in roots:
                 try:
                     self._follow_freeze(root)

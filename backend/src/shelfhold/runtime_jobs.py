@@ -1356,7 +1356,10 @@ def reconcile_handler(comp: Composition, *, in_window: bool) -> Callable[[JobCon
             reconciler.reconcile(destination.id, in_window=in_window)
             if in_window:  # the full pass reads the hashes: only where files may be hashed
                 inventory.scan(destination.id, in_window=True, should_stop=out_of_time)
-                pipeline.heal_mirror(destination.id)
+                try:
+                    pipeline.heal_mirror(destination.id)
+                except RestoredBehindError:
+                    return  # read only until the adoption: nothing more is written this window
 
     return run
 
