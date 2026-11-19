@@ -998,7 +998,7 @@
   "lists.state.to_buy": "To buy",
   "lists.state.borrow_elsewhere": "To borrow elsewhere",
   "approve.import_list": "Import a list",
-  "oidc.title": "Identity provider links",
+  "oidc.title": "Identity provider",
   "oidc.none": "No identity linked. Your password and passkeys remain your ways in.",
   "oidc.linked_since": "Linked on {date}",
   "oidc.by_admin": "Linked by an administrator",
@@ -1028,5 +1028,17 @@
   "reader.browser_unsupported": "This browser is too old to read an EPUB here: open it in Kavita.",
   "reader.csp_refused": "The reading page did not open under its own security policy: reload it from the library.",
   "reader.external_confirm": "Open this link outside the reader?\n{href}",
-  "reader.epub_failed": "This chapter could not be displayed."
+  "reader.epub_failed": "This chapter could not be displayed.",
+  "reauth.provider": "Confirm with the identity provider",
+  "oidc.issuer": "Provider: {issuer}",
+  "oidc.not_configured": "No identity provider is configured on this instance: there is nothing to link.",
+  "oidc.unlink": "Unlink",
+  "oidc.unlinked": "Identity unlinked. You will be told through your notification channels.",
+  "oidc.unlink_error": "Unlinking failed.",
+  "oidc.reauth_done": "Identity confirmed with the provider.",
+  "oidc.back": "Settings",
+  "oidc.resume_unlink": "Identity confirmed. Do you want to unlink your account from the provider?",
+  "oidc.resume_link": "Identity confirmed. Do you want to link your account to the provider?",
+  "oidc.last_unlinked": "Last link removed on {date}",
+  "oidc.by_admin_removed": "by an administrator"
 }

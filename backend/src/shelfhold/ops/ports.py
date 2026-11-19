@@ -13,6 +13,10 @@ from typing import Any, Protocol
 
 from shelfhold.identity.public import Principal
 
+# What tells a line of `restore acknowledge` that it is a link of the identity provider to check
+# and not a passkey (the CLI words each differently)
+OIDC_LINK_PREFIX = "oidc: "
+
 
 @dataclass(frozen=True)
 class WaitingItem:
