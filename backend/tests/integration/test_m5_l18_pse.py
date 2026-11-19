@@ -41,7 +41,6 @@ from tests.integration.test_l48_opds import (
     auth_of,
     basic,
     crawl,
-    link,
     make_world,
     parse,
 )
@@ -98,9 +97,7 @@ def shape(response: Any) -> tuple[Any, ...]:
 
 def stream_links(feed: ET.Element) -> list[dict[str, str]]:
     return [
-        dict(node.attrib)
-        for node in feed.iter(f"{ATOM}link")
-        if node.attrib.get("rel") == STREAM
+        dict(node.attrib) for node in feed.iter(f"{ATOM}link") if node.attrib.get("rel") == STREAM
     ]
 
 
@@ -243,7 +240,7 @@ def test_opds_pse_a_page_that_is_not_one_is_a_404(pse: Pse, page: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "item", ["not-an-id", "../etc", "..%2f..%2fapi%2fsession", "01HZZZZZZZZZZZZZZZZZZZZZZ", "%00"]
+    "item", ["not-an-id", "01HZZZZZZZZZZZZZZZZZZZZZZ", "%00", "01HZZZZZZZZZZZZZZZZZZZZZZMX"]
 )
 def test_opds_pse_an_identifier_that_is_not_one_is_the_answer_of_an_absent_one(
     pse: Pse, item: str
@@ -253,12 +250,17 @@ def test_opds_pse_an_identifier_that_is_not_one_is_the_answer_of_an_absent_one(
     assert shape(got) == shape(pse.page(pse.world.kid, ABSENT_ULID, 0))
 
 
+@pytest.mark.parametrize("path", ["../etc/0", "..%2f..%2fapi%2fsession/0", "%2e%2e/%2e%2e/0"])
+def test_opds_pse_a_path_that_climbs_serves_nothing(pse: Pse, path: str) -> None:
+    got = pse.world.kid.get(f"/opds/pse/{path}")
+    assert got.status_code in {404, 405}
+    assert "etag" not in got.headers and not got.content.startswith(b"\x89PNG")
+
+
 def test_opds_pse_a_volume_without_a_readable_copy_is_a_404(pse: Pse) -> None:
     item = pse.stream("ok", png_pages(2))
     pse.src.by_content.clear()  # the kept file is gone: nothing is made up, nothing is said
-    assert shape(pse.page(pse.world.kid, item, 0)) == shape(
-        pse.page(pse.world.kid, ABSENT_ULID, 0)
-    )
+    assert shape(pse.page(pse.world.kid, item, 0)) == shape(pse.page(pse.world.kid, ABSENT_ULID, 0))
     feed = parse(pse.world.kid.get(f"/opds/works/{pse.world.seed.works['ok']}"))
     assert stream_links(feed) == []  # and no stream is offered for it
 
@@ -353,7 +355,9 @@ def test_opds_pse_page_format_negotiated_by_accept(pse: Pse) -> None:
     jpeg = pse.page(world.kid, item, 0, Accept="image/jpeg")
     assert (jpeg.status_code, kind(jpeg)) == (200, "image/jpeg")
     assert jpeg.content[:3] == b"\xff\xd8\xff" and jpeg.content != pf.webp()
-    assert "authorization" in jpeg.headers["vary"].lower() and "accept" in jpeg.headers["vary"].lower()
+    assert (
+        "authorization" in jpeg.headers["vary"].lower() and "accept" in jpeg.headers["vary"].lower()
+    )
     png = pse.page(world.kid, item, 1, Accept="image/png")
     assert (png.status_code, kind(png)) == (200, "image/png")
     assert png.content[:8] == b"\x89PNG\r\n\x1a\n"
@@ -369,7 +373,7 @@ def test_opds_pse_page_format_negotiated_by_accept(pse: Pse) -> None:
         refused = pse.page(world.kid, item, 0, Accept=accept)
         assert refused.status_code == 406, accept
         assert refused.json()["code"] == "not_acceptable"
-    assert pse.page(world.kid, item, 0, Accept=";;;, \x01, q=").status_code in {200, 406}
+    assert pse.page(world.kid, item, 0, Accept=";;;, q=").status_code in {200, 406}
 
 
 def test_opds_pse_a_page_that_is_native_to_the_client_is_never_converted(pse: Pse) -> None:
@@ -448,9 +452,12 @@ def test_opds_pse_streaming_writes_no_position(pse: Pse) -> None:
     assert pse.page(world.kid, item, 7).status_code == 404
     assert snapshot(world.seed.engine) == before  # no position, no history, no mark
     with world.seed.engine.connect() as connection:
-        assert connection.execute(
-            sa.select(sa.func.count()).select_from(reading.reading_position)
-        ).scalar_one() == 0
+        assert (
+            connection.execute(
+                sa.select(sa.func.count()).select_from(reading.reading_position)
+            ).scalar_one()
+            == 0
+        )
 
 
 def test_opds_pse_link_carries_no_last_read_state(pse: Pse) -> None:

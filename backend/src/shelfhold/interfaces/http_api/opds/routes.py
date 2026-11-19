@@ -60,9 +60,11 @@ from shelfhold.interfaces.http_api.opds.feed import (
     opensearch_description,
 )
 from shelfhold.interfaces.http_api.opds.links import Paths, mount_prefix, safe_filename
+from shelfhold.interfaces.http_api.opds.pse import STREAM_REL, STREAM_TYPE, add_pse_routes
 from shelfhold.interfaces.http_api.problems import ProblemError, language_from_headers
 from shelfhold.interfaces.http_api.thumbnails import thumbnail_response
-from shelfhold.library.public import ThumbnailService, cover_hash
+from shelfhold.library.public import RenditionService, ThumbnailService, cover_hash
+from shelfhold.reading.application.page_stream import PageStream
 
 __all__ = ["build_opds_router"]
 
@@ -133,8 +135,11 @@ def build_opds_router(
     get_thumbnails: Callable[[], ThumbnailService],
     get_bundles: Callable[[], SeriesBundleProvider | None],
     now: Callable[[], datetime],
+    get_streams: Callable[[], PageStream],
+    get_renditions: Callable[[], RenditionService],
 ) -> APIRouter:
     router = APIRouter(prefix="/opds", tags=["opds"])
+    add_pse_routes(router, get_streams=get_streams, get_renditions=get_renditions)
 
     def _stamp() -> str:
         return now().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -468,6 +473,27 @@ def build_opds_router(
                             ),
                         ],
                         summary=notice,
+                    )
+                )
+        for edition in editions:  # a stream is offered for what the profile sees now, nothing else
+            for stream in get_streams().offers(principal.user_id, edition.edition_id):
+                entries.append(
+                    Entry(
+                        f"urn:shelfhold:stream:{stream.item_id}",
+                        t_lang(
+                            "opds.stream",
+                            language=lang,
+                            title=f"{title} {stream.number or ''}".strip(),
+                        ),
+                        _stamp(),
+                        [
+                            Link(
+                                STREAM_REL,
+                                paths.pse(stream.item_id),
+                                STREAM_TYPE,
+                                pse_count=stream.count,
+                            )
+                        ],
                     )
                 )
         body = build_feed(

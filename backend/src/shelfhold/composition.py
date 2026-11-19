@@ -18,7 +18,7 @@ import math
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,7 +56,13 @@ from shelfhold.infrastructure.secrets.errors import SecretsError
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.wake import Wakes
 from shelfhold.integrations.apprise import operating_bus
-from shelfhold.library.public import Normalizers, TombstoneRoot, TombstoneService
+from shelfhold.library.public import (
+    ContentHash,
+    Normalizers,
+    PlaceRef,
+    TombstoneRoot,
+    TombstoneService,
+)
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
 from shelfhold.plugin_host.refs_guard import screened, secret_of, values_of
@@ -137,6 +143,23 @@ class WriteContext:
 
 
 PROBE_INTERVAL_S = 30.0  # a root that is not MISSING but is not right is looked at this often
+
+
+class LazyTombstones:
+    """The part of the tombstone service a rendition asks (`SourceTombstones`), looked up at each
+    question: the service depends on the roots, which can change while the process runs."""
+
+    def __init__(self, composition: Composition) -> None:
+        self._composition = composition
+
+    def _service(self) -> TombstoneService:
+        return self._composition.read_context()[2]
+
+    def has_values(self, candidate: PlaceRef) -> bool:
+        return self._service().has_values(candidate)
+
+    def check_content(self, hashes: Iterable[ContentHash] = ()) -> bool:
+        return self._service().check_content(hashes)
 
 
 class Composition:

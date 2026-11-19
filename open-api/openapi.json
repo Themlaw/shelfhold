@@ -31755,6 +31755,62 @@
         ]
       }
     },
+    "/opds/pse/{item_id}/{page}": {
+      "get": {
+        "operationId": "opds_pse_page",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "page",
+            "required": true,
+            "schema": {
+              "title": "Page",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/avif": {},
+              "image/jpeg": {},
+              "image/png": {},
+              "image/webp": {}
+            },
+            "description": "page"
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "406": {
+            "description": "not-acceptable"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Pse Page",
+        "tags": [
+          "opds"
+        ]
+      }
+    },
     "/opds/recent": {
       "get": {
         "operationId": "opds_recent",
@@ -32793,6 +32849,10 @@
     "/api/v1/problems/no-readable-copy": {
       "code": "no_readable_copy",
       "status": 409
+    },
+    "/api/v1/problems/not-acceptable": {
+      "code": "not_acceptable",
+      "status": 406
     },
     "/api/v1/problems/not-found": {
       "code": "not_found",

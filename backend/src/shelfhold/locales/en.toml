@@ -1490,6 +1490,11 @@
     action = "Open the series page again on your e-reader: an up-to-date version is offered there."
     cause = "A file changed since this version was made, the version was purged, or your access ended."
 
+  [errors.not_acceptable]
+    title = "This page exists in no format your app accepts."
+    action = "Allow JPEG or PNG in the Accept header of your reading app (image/jpeg, image/png or image/*)."
+    cause = "The page is in a format your app cannot read, and Shelfhold cannot convert it to one it accepts."
+
   [errors.kosync_registration_disabled]
     title = "An e-reader does not create accounts."
     action = "Ask the Shelfhold administrator for a device token, then enter it in the e-reader's sync settings."
@@ -2950,6 +2955,7 @@
   search_description = "Search the library"
   complete = "{title} — Complete series"
   complete_in = "{title} — Complete series ({lang})"
+  stream = "{title} — page by page"
   excluded = "{count, plural, one {# chapter left out} other {# chapters left out}}: format not readable on an e-reader, or file unavailable."
 
 [lite]
