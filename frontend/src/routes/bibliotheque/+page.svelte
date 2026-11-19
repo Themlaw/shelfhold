@@ -3,6 +3,7 @@
   // and by shelf. The server decides all of it: the list is already her view (a child gets no
   // hidden Work, no hidden series, no count that includes one), the shelf filter exists only for
   // whoever the server lets read the shelves, and the link to a series sheet only for the admin.
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { listWorks, me as loadMe, shelves as loadShelves } from '#lib/api/index.ts';
   import type { SeriesChoiceOut, ShelfItemOut, WorkItemOut } from '#lib/api/types.gen.ts';
@@ -71,7 +72,7 @@
 <main>
   <h1>{t('library.title')}</h1>
   <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-  <p><a href="/bibliotheque/selections">{t('library.selections')}</a></p>
+  <p><a href="{page.url.pathname}/selections">{t('library.selections')}</a></p>
 
   <div class="filters">
     {#if series.length > 0}
