@@ -299,12 +299,13 @@ def test_every_job_has_a_timeout_of_at_most_15_minutes() -> None:
 # --- self-hosted runners (docs/ci-runners.md) --------------------------------------------------
 
 SELF_HOSTED_JOBS = {"lint", "backend-unit", "backend-integration", "backend-suites", "coverage"}
-SELF_HOSTED_LABELS = ["self-hosted", "linux", "x64", "shelfhold-ci"]
-_TOKEN = re.compile(r"\s*(\|\||&&|==|!=|\(|\)|'(?:[^']|'')*'|[A-Za-z_][\w.\-\[\]]*)")
+RUN_ID = 4242
+SELF_HOSTED_LABEL = f"run-{RUN_ID}"  # the only label: one runner per checked run
+_TOKEN = re.compile(r"\s*(\|\||&&|==|!=|\(|\)|,|'(?:[^']|'')*'|[A-Za-z_][\w.\-\[\]]*)")
 
 
 def _evaluate(expression: str, context: dict[str, Any]) -> Any:
-    """GitHub expression subset of the `runner` output: ( ) || && == != 'literals' and paths.
+    """GitHub expression subset of the `runner` output: ( ) || && == != 'literals', paths, format().
 
     As on GitHub: `a && b` gives b when a is truthy, `a || b` the first truthy operand, and string
     comparison ignores case; a missing property is null.
@@ -331,11 +332,22 @@ def _evaluate(expression: str, context: dict[str, Any]) -> Any:
     def primary() -> Any:
         item = take()
         if item == "(":
-            value = either()
+            inner = either()
             assert take() == ")"
-            return value
+            return inner
         if item.startswith("'"):
             return item[1:-1].replace("''", "'")
+        if item == "format" and peek() == "(":
+            take()
+            args = [either()]
+            while peek() == ",":
+                take()
+                args.append(either())
+            assert take() == ")"
+            text = str(args[0]).replace("{{", "\0").replace("}}", "\1")
+            for index, arg in enumerate(args[1:]):
+                text = text.replace(f"{{{index}}}", str(arg))
+            return text.replace("\0", "{").replace("\1", "}")
         value: Any = context
         for part in item.split("."):
             value = value.get(part) if isinstance(value, dict) else None
@@ -384,6 +396,7 @@ def _runner(
     github: dict[str, Any] = {
         "event_name": event,
         "repository": "Themlaw/shelfhold",
+        "run_id": RUN_ID,
         "actor": actor,
         "triggering_actor": triggering_actor or actor,
         "event": {},
@@ -398,8 +411,8 @@ def _runner(
 
 @pytest.mark.req("ENF-SEC-007")
 def test_self_hosted_runners_only_for_code_of_this_repository_when_switched_on() -> None:
-    assert _runner() == SELF_HOSTED_LABELS
-    assert _runner(event="push") == SELF_HOSTED_LABELS
+    assert _runner() == SELF_HOSTED_LABEL
+    assert _runner(event="push") == SELF_HOSTED_LABEL
     # the switch: off or unset, everything stays on GitHub
     assert _runner(variable="off") == "ubuntu-24.04"
     assert _runner(variable=None) == "ubuntu-24.04"
@@ -434,9 +447,25 @@ def test_only_the_heavy_jobs_may_go_self_hosted_and_they_get_no_secret() -> None
             assert "secrets." not in yaml.safe_dump(job), name
         else:
             assert job["runs-on"] == "ubuntu-24.04", name
-    # the label of these runners appears nowhere else, and never next to pull_request_target
+    # no generic self-hosted label anywhere, and no pull_request_target at all
     for workflow in CI.parent.glob("*.yml"):
         text = workflow.read_text(encoding="utf-8")
         if workflow != CI:
-            assert "self-hosted" not in text and "shelfhold-ci" not in text, workflow.name
+            assert "self-hosted" not in text, workflow.name
+        assert "shelfhold-ci" not in text, workflow.name
         assert "pull_request_target" not in text, workflow.name
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_self_hosted_runs_on_is_only_the_label_of_its_own_run() -> None:
+    # No runner waits registered under a generic label: the controller creates one per queued job
+    # whose run it has checked, with this single label. A rewritten runs-on matches no runner.
+    ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))
+    expression = ci["jobs"]["changes"]["outputs"]["runner"]
+    assert "github.run_id" in expression
+    for label in ("self-hosted", "shelfhold-ci", "linux", "x64"):
+        assert f'"{label}"' not in expression, label
+    for event in ("pull_request", "push"):
+        value = _runner(event=event)
+        assert isinstance(value, str), value
+        assert value == f"run-{RUN_ID}", value
