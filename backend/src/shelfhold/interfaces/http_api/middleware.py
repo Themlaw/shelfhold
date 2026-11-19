@@ -51,11 +51,17 @@ class RequestContextMiddleware:
             structlog.get_logger().info(
                 "http_request",
                 method=scope["method"],
-                path=scope["path"],
+                path=_logged_path(str(scope["path"])),
                 status=status,
                 duration_ms=round((time.perf_counter() - started) * 1000, 2),
             )
             structlog.contextvars.unbind_contextvars("request_id")
+
+
+def _logged_path(path: str) -> str:
+    """The path of the access line. The ticket of `/content` is a bearer word in the path
+    (ADR-0055): it, and the name of the entry after it, never reach a log."""
+    return "/content/***" if path.startswith("/content/") else path
 
 
 class SecurityHeadersMiddleware:
