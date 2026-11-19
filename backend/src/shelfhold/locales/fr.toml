@@ -190,6 +190,10 @@ admin_device_profile_help = "Profil lecteur dont le jeton porte les droits et le
 admin_device_name_help = "Nom de l'appareil (par exemple « Liseuse du salon »)."
 admin_device_expires_help = "Durée de validité en jours (facultative)."
 admin_device_id_help = "Identifiant public du jeton (8 caractères)."
+admin_device_kind_help = "Type d'appareil (koreader, kobo, opds, browser, other ; défaut : other)."
+admin_devices_rotate_help = "Met un nouveau secret sur un appareil : l'ancien est refusé aussitôt, rien n'est à réappairer (le secret n'est affiché qu'une fois)."
+admin_devices_remove_help = "Retire un appareil : tous ses jetons sont révoqués à l'instant."
+admin_device_registry_id_help = "Identifiant de l'appareil (première colonne de la liste)."
 
 [migrate]
 up_to_date = "La base est déjà à jour."
@@ -815,7 +819,12 @@ device_never_expires = "Sans expiration."
 device_revoked = "Jeton {public_id} révoqué."
 device_unknown = "Aucun jeton actif avec l'identifiant {public_id}."
 no_devices = "Aucun jeton d'appareil."
-device_line = "{public_id}  {profile}  {name}  {state}"
+device_line = "{device_id}  {public_id}  {profile}  {name}  {state}"
+device_rotated = "Nouveau secret pour l'appareil d'identifiant {public_id} ; l'ancien est refusé dès maintenant. À saisir tel quel, sans espace ni tiret :"
+device_removed = "Appareil {device_id} retiré ; ses jetons sont révoqués."
+device_registry_unknown = "Aucun appareil actif d'identifiant {device_id}."
+device_expiry_required = "Ce jeton a expiré : donnez --expires-days pour le nouveau secret."
+device_rotated_meanwhile = "Le secret de cet appareil a été changé entre-temps : rien n'a été fait ici. Listez les appareils et recommencez."
 database_missing = "Base absente ou pas à jour : lancez d'abord « shelfhold migrate »."
 socket_refused = "Le serveur en marche a refusé cette commande : {detail}."
 socket_untrusted = "Socket locale non fiable, rien n'a été envoyé : {detail}."
@@ -1348,6 +1357,11 @@ title = "Ce jeton d'appareil n'existe pas pour vous."
 action = "Actualisez la liste de vos appareils."
 cause = "Le jeton est inconnu, déjà révoqué, ou n'est pas le vôtre."
 
+[errors."device_rotation_conflict"]
+title = "Le secret de cet appareil a été changé entre-temps."
+action = "Actualisez la liste de vos appareils, puis recommencez la rotation si le secret affiché ailleurs n'est pas celui que vous voulez."
+cause = "Une autre rotation du même appareil a été écrite la première : seul son secret est valable."
+
 [errors."destination_account_not_found"]
 title = "Ce compte Kavita n'existe pas pour vous."
 action = "Actualisez la liste de vos comptes."
@@ -1792,6 +1806,11 @@ cause = "Shelfhold relirait ses propres exports comme une source amont et les ac
 title = "Cette destination ne se lie pas ainsi."
 action = "Une boîte de dépôt CWA se lie comme boîte de dépôt (transport « dropbox ») : choisissez ce transport."
 cause = "Une boîte de dépôt n'a ni arbre à indexer ni serveur à lire : un autre transport n'écrirait pas là où il faut."
+
+[errors."binding.komga_primary_unsupported"]
+title = "Komga ne peut pas être la destination principale d'une étagère."
+action = "Liez d'abord l'étagère à une destination qui écrit son arbre (Kavita ou un dossier natif), puis liez Komga à cet arbre : une destination secondaire qui l'indexe. Jusqu'à M5, Komga ne reçoit aucun fichier à lui."
+cause = "L'exécuteur n'écrit pas de plan pour un arbre appartenant à Komga : une étagère dont Komga serait la destination principale ne recevrait jamais ses fichiers."
 
 [errors."target.folder_outside_root"]
 title = "Ce dossier n'est pas dans le dossier de la destination."

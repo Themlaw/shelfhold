@@ -955,6 +955,7 @@ class FanOut:
             return BindingOutcome(destination_id, "failed", error.code)
         except (FsopsError, OSError) as error:
             log.warning("fan_out.disk", destination_id=destination_id, reason=type(error).__name__)
+            self._note_failure(view.target_id, destination_id, "export.write_failed")
             return BindingOutcome(destination_id, "failed", "export.write_failed")
 
     def _note_failure(self, target_id: str, destination_id: str, code: str | None) -> None:

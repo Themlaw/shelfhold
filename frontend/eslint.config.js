@@ -4,7 +4,17 @@ import globals from 'globals';
 import ts from 'typescript-eslint';
 
 export default ts.config(
-  { ignores: ['build/', '.svelte-kit/', 'node_modules/', 'coverage/', 'src/lib/api/', 'src/lib/themes/themes.css'] },
+  {
+    ignores: [
+      'build/',
+      '.svelte-kit/',
+      'node_modules/',
+      'coverage/',
+      'vendor/', // git submodules (foliate-js): third-party code, never linted nor built here
+      'src/lib/api/',
+      'src/lib/themes/themes.css'
+    ]
+  },
   js.configs.recommended,
   ...ts.configs.recommended,
   ...svelte.configs.recommended,
@@ -43,5 +53,16 @@ export default ts.config(
   {
     files: ['src/lib/themes/**', 'src/routes/+layout.ts', 'src/routes/+layout.svelte', 'src/**/*.test.ts'],
     rules: { 'no-restricted-syntax': 'off' }
+  },
+  // M5: foliate-js is imported by the reader engine alone (ENF-SEC-004 volet lecteur).
+  {
+    files: ['src/**/*.{ts,svelte}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: ['foliate-js', 'foliate-js/*'] }]
+    }
+  },
+  {
+    files: ['src/lib/reader/engines/foliate.ts'],
+    rules: { 'no-restricted-imports': 'off' }
   }
 );

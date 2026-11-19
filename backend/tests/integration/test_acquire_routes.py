@@ -15,6 +15,7 @@ import pytest
 import sqlalchemy as sa
 
 import shelfhold.main as main_module
+from shelfhold.acquisition.public import ACQUIRE_JOB_KIND
 from shelfhold.config import Settings
 from shelfhold.plugin_host import attestation
 from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
@@ -165,6 +166,13 @@ def test_source_commands_search_filters_and_acquire(
         assert "source.filter_invalid" in capsys.readouterr().err
         assert run_cli(monkeypatch, settings, "acquire", PAGE) == 0
         assert "Demande enregistrée" in capsys.readouterr().out
+        # the queued download is still writing: its session commits the database's generation
+        # first and restamps the sentinel after (I39), and the guard of the next command reads
+        # the database then the sentinels — taken mid-session, a sentinel looks ahead and the
+        # command is refused as `restored_behind` (ADR-0044). An operator waits for the file;
+        # the test waits for the job before it asks for anything else.
+        (job,) = rows(api, "SELECT id FROM job_view WHERE kind = :k", k=ACQUIRE_JOB_KIND)
+        assert api.wait_job(job["id"])["status"] == "succeeded"
         assert run_cli(monkeypatch, settings, "acquire", "https://elsewhere.example/book/1") == 1
         assert "source.no_match" in capsys.readouterr().err
         assert api is not None

@@ -81,6 +81,10 @@ jobs:
               - '.github/workflows/ci.yml'
             unit_tests:
               - 'backend/tests/unit/**'
+              - 'tools/check_submodule_pin.py'
+              - '.gitmodules'
+              - 'THIRD_PARTY_NOTICES'
+              - 'docs/dependencies.md'
             integration_tests:
               - 'backend/tests/integration/**'
             golden_tests:
@@ -100,6 +104,8 @@ jobs:
             frontend:
               - 'frontend/**'
               - 'open-api/**'
+              - 'tools/check_submodule_pin.py'
+              - '.gitmodules'
               - '.github/workflows/ci.yml'
             openapi:
               - 'backend/**'
@@ -197,6 +203,8 @@ jobs:
         run: uv run --locked python ../tools/i18n_parity.py
       - name: published migrations frozen (a new migration is frozen by its own PR, ENF-OPS-002)
         run: python3 tools/check_patch_migrations.py
+      - name: foliate-js submodule pinned to the commit of docs/dependencies.md (EF-LEC-003, R13)
+        run: python3 tools/check_submodule_pin.py pin
       - name: typos
         id: typos-first
         continue-on-error: true  # the action downloads its binary from a release: one more try below
@@ -508,12 +516,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true  # frontend/vendor/foliate-js, the commit of the gitlink (never recursive)
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - name: no reader asset from a third-party origin, vendored code included (EF-LEC-003)
+        working-directory: .
+        run: python3 tools/check_submodule_pin.py assets --require-checkout
+      - name: pinned foliate-js commit is at least 14 days old (EF-LEC-003, update rule)
+        working-directory: .
+        run: python3 tools/check_submodule_pin.py pin --min-age 14
       - name: eslint
         run: npm run lint
       - name: svelte-check (TypeScript strict)
@@ -571,6 +586,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true  # frontend/vendor/foliate-js, the commit of the gitlink (never recursive)
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.x"
@@ -623,6 +639,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true  # frontend/vendor/foliate-js, the commit of the gitlink (never recursive)
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.x"
@@ -762,7 +779,7 @@ jobs:
           category: grype
 
   traceability:
-    # Blocking for every delivered milestone (M0, M1a, M1b, M2, M3, M4): every requirement of the milestone has a test, every test has a marker.
+    # Blocking for every delivered milestone (M0, M1a, M1b, M2, M3, M4), report only for M5: every requirement of the milestone has a test, every test has a marker.
     # The matrix is not committed: it is an artifact and the job summary.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -772,15 +789,23 @@ jobs:
           persist-credentials: false
       # Every delivered milestone blocks (M2 and M3 since the closure of M3, L58). A requirement
       # moved to a later milestone by the maintainer (ENF-GOV-004, M4) leaves the matrix of the
-      # milestone it left, in 01 and 03: it is never hidden here. M4 blocks since its closure (L45 of M4); M5 and later are not built yet.
+      # milestone it left, in 01 and 03: it is never hidden here. M4 blocks since its closure (L45
+      # of M4); M5 is reported without blocking (L25 of M5 makes it blocking at the closure); M6
+      # and later are not built yet.
       - name: Build the traceability matrix of every delivered milestone
         run: |
           set +e
           status=0
-          for ms in M0 M1a M1b M2 M3 M4; do
+          # M5 is built: it is reported in the summary and never fails the job (L25 of M5 makes it
+          # blocking at the closure).
+          for ms in M0 M1a M1b M2 M3 M4 M5; do
             python3 tools/traceability.py --milestone "$ms" --output "$RUNNER_TEMP/$ms.md" 2> "$RUNNER_TEMP/errors-$ms.txt"
             code=$?
-            [ $code -eq 0 ] || status=1
+            if [ "$ms" = M5 ]; then
+              [ $code -eq 0 ] || echo "::warning::traceability M5 (non-blocking report): exit $code"
+            else
+              [ $code -eq 0 ] || status=1
+            fi
             {
               cat "$RUNNER_TEMP/$ms.md"
               echo

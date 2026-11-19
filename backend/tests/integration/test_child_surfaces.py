@@ -206,6 +206,10 @@ CLOSED = (
     "POST /api/v1/device-tokens",
     "GET /api/v1/device-tokens/setup",
     "DELETE /api/v1/device-tokens/{public_id}",
+    # M5 L02: the registry of devices, its rotation and its removal: the same rule
+    "GET /api/v1/devices",
+    "POST /api/v1/devices/{device_id}/rotate",
+    "DELETE /api/v1/devices/{device_id}",
     "GET /api/v1/diagnostic/bundle",  # M3 L46: the bundle is the admin's alone
     "GET /api/v1/editions",
     "POST /api/v1/editions/{edition_id}/add-directly",
