@@ -45,10 +45,6 @@ def world(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World
 
 
 @pytest.mark.req("EF-LEC-008", "ENF-SEC-004")
-@pytest.mark.xfail(
-    strict=True,
-    reason="web_address lit parts.port hors de sa garde : une adresse inouvrable casse l'accueil",
-)
 def test_the_kavita_address_never_breaks_the_home_of_every_profile(world: World) -> None:
     """L'adresse de « Ouvrir dans Kavita » est relue dans la base à chaque réponse, comme une
     valeur dont on ne se souvient pas qu'elle fut validée (`kavita_open_url` ne regarde que le

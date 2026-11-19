@@ -132,13 +132,14 @@ def web_address(value: str | None) -> str | None:
     try:
         parts = urlsplit(value)
         host = parts.hostname
+        port = parts.port  # raises for a port that is not a number from 0 to 65535
     except ValueError:
-        return None
-    if parts.scheme not in ("http", "https") or not host:
+        return None  # an address nobody can open is no link: the home is never an error
+    if parts.scheme not in ("http", "https") or not host or port == 0:
         return None
     netloc = f"[{host}]" if ":" in host else host
-    if parts.port is not None:
-        netloc += f":{parts.port}"
+    if port is not None:
+        netloc += f":{port}"
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
