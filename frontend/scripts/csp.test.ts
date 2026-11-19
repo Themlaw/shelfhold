@@ -26,6 +26,23 @@ function cspOfMeta(html: string): string | null {
 }
 
 describe('SPA CSP', () => {
+  // req: EF-LEC-010, ENF-SEC-004
+  it('hashes every inline script, the nomodule redirect to /lite included, and nothing else', () => {
+    const scripts = inlineScripts(appHtml);
+    expect(scripts.length).toBe(2);
+    const allowed = kitCsp(appHtml)['script-src']!;
+    for (const script of scripts) expect(allowed).toContain(`'${sha(script)}'`);
+    expect(allowed).not.toContain("'unsafe-inline'");
+    expect(scripts.some((s) => s.includes('/lite'))).toBe(true);
+  });
+
+  // req: EF-LEC-010, ENF-COMP-002
+  it('redirects by capability: a nomodule script and a noscript refresh, no User-Agent', () => {
+    expect(appHtml).toMatch(/<script\s+nomodule[^>]*>[^<]*\/lite/);
+    expect(appHtml).toMatch(/<noscript>\s*<meta\s+http-equiv="refresh"\s+content="0;\s*url=\/lite"/);
+    expect(appHtml).not.toMatch(/user.?agent|navigator\.(platform|vendor|appVersion)/i);
+  });
+
   // req: ENF-SEC-004
   it('hashes the boot script of app.html, byte for byte', () => {
     const script = bootScript(appHtml);
@@ -64,8 +81,8 @@ describe('SPA CSP', () => {
   });
 
   // req: ENF-SEC-004
-  it('app.html has exactly one inline script, and no inline style or handler', () => {
-    expect(appHtml.match(/<script\b/g)?.length).toBe(1);
+  it('app.html has two inline scripts (boot, legacy redirect), and no inline style or handler', () => {
+    expect(appHtml.match(/<script\b/g)?.length).toBe(2);
     expect(appHtml).not.toMatch(/<style\b/);
     expect(appHtml).not.toMatch(/\son[a-z]+\s*=/i);
     expect(appHtml).not.toMatch(/\sstyle\s*=/i);
