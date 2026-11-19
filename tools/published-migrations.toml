@@ -336,6 +336,11 @@ sha256 = "11897a28f7af6091440fed589bc88b8bf9adbd89358f7b08ff5474c56abc5ff6"
 since = "1.2"
 
 [[migration]]
+file = "0105_saved_selection.py"
+sha256 = "3c31d90d306b2f3fdae23f18463aa756ac486bb318dd65659c4b75870ffcc486"
+since = "1.2"
+
+[[migration]]
 file = "0106_progress_partial_extent.py"
 sha256 = "9fd8e2f488747c27495542c56fccc024e7bf7ed18ac1fc8b2c920f0955c4d1be"
 since = "1.2"

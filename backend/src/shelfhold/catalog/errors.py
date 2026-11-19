@@ -25,6 +25,11 @@ CODES: tuple[ErrorCode, ...] = (
     # M4 L18a (EF-BIB-016): a reading-list file that is refused (never cut), a list that is full
     ErrorCode("collection.cbl_refused", 422, "user"),
     ErrorCode("collection.full", 409, "user"),
+    # M5 L21 (EF-BIB-017): a stored query that is not the closed grammar, too many selections, an
+    # evaluation that ran out of time
+    ErrorCode("selection.query_refused", 422, "user"),
+    ErrorCode("selection.full", 409, "user"),
+    ErrorCode("selection.too_slow", 503, "user"),
     # M4 L18b (EF-EXP-025): a household collection has no private list to approve for Kavita
     ErrorCode("collection.not_private", 409, "admin"),
     # M4 L19 (EF-BIB-039): a relation that cannot exist, and one that would close a loop

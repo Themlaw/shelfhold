@@ -77,6 +77,7 @@ laisse de côté (pierres tombales, secrets, jetons, destinations) : les listes 
 | Étagères | `shelf` |
 | Blocs de série | `bundle_partition`, `bundle_version`, `bundle_setting`, `document_alias` |
 | Listes | `collection`, `collection_item` |
+| Sélections enregistrées | `saved_selection` |
 | Migrations de source | `source_migration`, `source_migration_row` |
 | Chapitres bloqués | `activity_block` |
 | Profils | `user`, `user_state`, `reading_position`, `request`, `profile_source_policy` |

@@ -16,9 +16,9 @@ from shelfhold.infrastructure.http_headers import (
     spa_csp,
 )
 from shelfhold.interfaces.http_api.catalog import error_code
-from shelfhold.interfaces.http_api.problems import build_problem_response
+from shelfhold.interfaces.http_api.problems import build_problem_response, language_of
 
-API_SEGMENTS = frozenset({"api", "healthz", "readyz", "openapi.json"})
+API_SEGMENTS = frozenset({"api", "healthz", "readyz", "openapi.json", "opds", "kosync"})
 IMMUTABLE_PREFIXES = ("_app/immutable/", "reader-entry/assets/")
 READER_SEGMENT = "lire"  # the reader is its own page, under its own policy (ADR-0055)
 READER_DIR = "reader-entry"
@@ -65,8 +65,19 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
         raw_path = raw.decode("latin-1").split("?", 1)[0] if isinstance(raw, bytes) else "/" + path
         if "\0" in path or odd_path(raw_path, "/" + path):
             return Response(status_code=404)  # neutral: not a page, whatever its first segment says
-        if path.split("/", 1)[0] in API_SEGMENTS:  # an API client expects a problem, not a blank
+        segment = path.split("/", 1)[0]
+        if segment in API_SEGMENTS:  # an API client expects a problem, not a blank
             request_id = getattr(request.state, "request_id", None)
+            # The feeds (OPDS, kosync) carry their own absent-resource answer: a problem with
+            # `no-store`, in the language of the request. Mirror it so an unknown path under
+            # them is indistinguishable from an absent identifier (no oracle).
+            if segment in {"opds", "kosync"}:
+                return build_problem_response(
+                    error_code("not_found"),
+                    request_id=request_id,
+                    headers={"Cache-Control": "no-store"},
+                    language=language_of(request),
+                )
             return build_problem_response(error_code("not_found"), request_id=request_id)
         if path.split("/", 1)[0] == READER_SEGMENT:
             # a full navigation to the reader: its own page and policy, never the shell of the SPA

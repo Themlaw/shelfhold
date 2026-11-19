@@ -97,6 +97,7 @@ from shelfhold.interfaces.http_api.request_lists import build_request_lists_rout
 from shelfhold.interfaces.http_api.requests import build_requests_router
 from shelfhold.interfaces.http_api.revisions import build_revisions_router
 from shelfhold.interfaces.http_api.search import build_search_router
+from shelfhold.interfaces.http_api.selections import build_selections_router
 from shelfhold.interfaces.http_api.series_sheet import build_series_sheet_router
 from shelfhold.interfaces.http_api.setup import build_setup_router
 from shelfhold.interfaces.http_api.shelves import (
@@ -468,6 +469,7 @@ def create_app(
         build_collections_router(
             lambda: engine, relations_after_audience_change
         ),  # M4 L18a: collections and reading lists
+        build_selections_router(lambda: engine, clock.now),  # M5 L21: saved selections
         build_relations_router(lambda: engine, clock.now),  # M4 L19: related Works
         build_stream_router(
             lambda: engine,
