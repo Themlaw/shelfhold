@@ -68,6 +68,13 @@ PUBLIC = (
     "POST /api/v1/setup/admin",  # ...and makes it, behind the secret of the compose
     "POST /api/v1/auth/passkeys/login",
     "POST /api/v1/auth/passkeys/login/options",
+    # M5 L03: the OpenID Connect sign-in is anonymous by nature (a browser sent to the provider and
+    # back); absent (404) unless configured, never a catalogue datum
+    "GET /api/v1/auth/oidc/login",
+    "GET /api/v1/auth/oidc/callback",
+    # ...and its confirmation page is the same-site page the callback sends the browser to, whose
+    # `Strict` session cookie did not come along: bound to the flow cookie, it writes nothing
+    "GET /api/v1/auth/oidc/link/confirm",
     "GET /healthz",
     "GET /readyz",
 )
@@ -76,6 +83,7 @@ OWN = (
     "GET /api/v1/about",
     "POST /api/v1/auth/logout",
     "GET /api/v1/auth/passkeys",
+    "GET /api/v1/auth/oidc/identities",  # M5 L03: the links of her own account, never a `sub`
     "POST /api/v1/auth/passkeys",
     "POST /api/v1/auth/passkeys/options",
     "POST /api/v1/auth/passkeys/reauth/options",
@@ -127,9 +135,31 @@ OPDS = (
     "GET /opds/editions/{edition_id}/complete",
     "GET /opds/bundles/{version_id}",
 )
+# LITE (M5 L17a): the pages of `/lite`, behind a cookie that a device token's secret opened. Every
+# route is hers when it shows catalogue data, and answers like OPDS: a hidden thing is an absent
+# one. The two forms (sign-in, sign-out) hold no catalogue data. The attacks:
+# `tests/integration/test_m5_l17a_lite.py`.
+LITE = (
+    "GET /lite",
+    "GET /lite/sign-in",
+    "POST /lite/sign-in",
+    "POST /lite/sign-out",
+    "GET /lite/shelves",
+    "GET /lite/shelves/{shelf_id}",
+    "GET /lite/series",
+    "GET /lite/series/{series_id}",
+    "GET /lite/works",
+    "GET /lite/works/{work_id}",
+    "GET /lite/recent",
+    "GET /lite/search",
+    "GET /lite/covers/{content_hash}/{size}",
+    "GET /lite/editions/{edition_id}/complete",
+    "GET /lite/{rest:path}",
+)
 DEVICE = (*KOSYNC, *OPDS)
 DEVICE_ALL = (*DEVICE, *KOSYNC_WRITE)
 OPEN = {
+    **{route: "lite" for route in LITE},  # M5 L17a
     "GET /api/v1/activity": "activity",
     "GET /api/v1/events": "sse",
     "GET /api/v1/me/state": "me_state_list",
@@ -212,6 +242,11 @@ CLOSED = (
     "POST /api/v1/device-tokens",
     "GET /api/v1/device-tokens/setup",
     "DELETE /api/v1/device-tokens/{public_id}",
+    # M5 L03: linking an identity provider to an account is an adult's reserved action (the
+    # admin's for another account): a child is refused by session and by key
+    "POST /api/v1/auth/oidc/link",
+    "POST /api/v1/auth/oidc/link/confirm",
+    "PUT /api/v1/profiles/{profile_id}/oidc",
     # M5 L02: the registry of devices, its rotation and its removal: the same rule
     "GET /api/v1/devices",
     "POST /api/v1/devices/{device_id}/rotate",
@@ -440,6 +475,7 @@ SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
     "content", "reader", "work_redirect", "opds", "support_author", "collections", "relations",
+    "lite",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
 HIDDEN_FROM_CEILING_10 = {*HIDDEN_TITLES, "twelve"}
@@ -1330,6 +1366,55 @@ def _surface_opds(world: World) -> None:
         assert "<entry" not in found.text  # the query is echoed encoded in a link, never as a hit
     paged = client.get("/opds/works", params={"limit": 1, "offset": 3}, headers=headers)
     assert paged.status_code == 200 and "<entry" not in paged.text  # the visible ones are three
+
+
+def _surface_lite(world: World) -> None:
+    """L17a: `/lite` is a projection like any other. Every page of the graph reached by links,
+    every search, and a hidden identifier is one 404 with an absent one (the attacks:
+    `tests/integration/test_m5_l17a_lite.py`)."""
+    from html.parser import HTMLParser
+
+    class Hrefs(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__()
+            self.found: list[str] = []
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            self.found += [v for k, v in attrs if k == "href" and v]
+
+    token = world.env.app.state.auth_gate.auth.create_device_token(subject_username="kid")  # type: ignore[attr-defined]
+    client = world.env.other_client("10.0.0.62")
+    form = client.get("/lite/sign-in")
+    csrf = form.text.split('name="csrf" value="', 1)[1].split('"', 1)[0]
+    done = client.post(
+        "/lite/sign-in",
+        data={"identifier": token.public_id, "secret": token.secret, "csrf": csrf},
+        follow_redirects=False,
+    )
+    assert done.status_code == 303
+    seen_text, todo, done_paths = "", ["/lite"], set()
+    while todo:
+        path = todo.pop()
+        if path in done_paths:
+            continue
+        done_paths.add(path)
+        got = client.get(path)
+        assert got.status_code == 200, (path, got.status_code)
+        world.clean(got.text)
+        seen_text += got.text
+        parser = Hrefs()
+        parser.feed(got.text)
+        todo += [h for h in parser.found if h.startswith("/lite") and "/complete" not in h]
+    for key in VISIBLE_FOR_CEILING_10:
+        assert world.seed.title_of(key) in seen_text, key
+    for key in HIDDEN_FROM_CEILING_10:
+        assert world.seed.title_of(key) not in seen_text, key
+        absent = client.get(f"/lite/works/{ULID}")
+        hidden = client.get(f"/lite/works/{world.seed.works[key]}")
+        assert (hidden.status_code, hidden.text) == (absent.status_code, absent.text), key
+        found = client.get("/lite/search", params={"q": world.seed.title_of(key)})
+        # the query is echoed in the box she typed it in, never as a hit
+        assert "/lite/works/" not in found.text, key
 
 
 def _surface_notification(world: World) -> None:

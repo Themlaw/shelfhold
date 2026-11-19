@@ -34,6 +34,7 @@ ADR-0055, on a kept copy (`content`: a Work that is not exported) or on an expor
 """
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final, Literal
@@ -439,7 +440,25 @@ class ReaderPositions:
         than the current one."""
         table = reading.reading_conflict
         now = self._now()
-        with write_transaction(self._engine) as connection:
+        carrier: tuple[str, str] | None = None
+        if self._hold_work is not None:
+            # settling writes a position: the same lease as the other writers, taken once the
+            # profile is known to see the carrier (absent = hidden: no lease, no `busy`)
+            with self._engine.connect() as peek:
+                found = peek.execute(
+                    sa.select(table.c.carrier_type, table.c.carrier_id).where(
+                        table.c.id == conflict_id, table.c.user_id == user_id
+                    )
+                ).first()
+            if found is not None:
+                carrier = (str(found.carrier_type), str(found.carrier_id))
+                self._access.resolve(user_id, *carrier)
+        leased = (
+            progress_leased(self._engine, self._hold_work, *carrier)
+            if carrier is not None
+            else nullcontext()
+        )
+        with leased, write_transaction(self._engine) as connection:
             row = connection.execute(
                 sa.select(table).where(table.c.id == conflict_id, table.c.user_id == user_id)
             ).first()

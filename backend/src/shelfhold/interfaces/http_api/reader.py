@@ -207,11 +207,11 @@ def build_reader_router(
         except UnknownCarrierError:
             raise ProblemError("not_found", headers=_ABSENT) from None
         except FullReadNotAllowedError:
-            raise ProblemError("full_read_not_allowed") from None
+            raise ProblemError("full_read_not_allowed", headers=_ABSENT) from None
         except ExcerptUnavailableError:  # before its parent: a typed refusal of its own
-            raise ProblemError("excerpt_unavailable") from None
+            raise ProblemError("excerpt_unavailable", headers=_ABSENT) from None
         except NoReadableCopyError:
-            raise ProblemError("no_readable_copy") from None
+            raise ProblemError("no_readable_copy", headers=_ABSENT) from None
         response.headers["Cache-Control"] = "no-store"  # it holds tickets: kept nowhere
         return _out(found)
 
@@ -331,6 +331,8 @@ def build_reader_router(
             )
         except (UnknownConflictError, UnknownCarrierError):
             raise ProblemError("not_found", headers=_ABSENT) from None
+        except ProgressBusyError:  # settling writes a position: the lease of the other writers
+            raise ProblemError("progress_busy", headers=_BUSY) from None
         except StaleConflictError:
             raise ProblemError("conflict_stale") from None
         except ExcerptWritesNoPositionError:

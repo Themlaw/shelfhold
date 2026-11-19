@@ -19,11 +19,11 @@ from tests.integration.test_schema_migration_0002 import alembic_config
 pytestmark = pytest.mark.req("ENF-OPS-002", "EF-LEC-014")
 
 
-def test_the_revision_is_0106_the_head_on_0102() -> None:
+def test_the_revision_is_0106_the_head_on_0104() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0106"]  # the head is pinned here, by the newest
-    # chained on 0102 until the lots that hold 0103 to 0105 land; re-chained then
-    assert script.get_revision("0106").down_revision == "0102"
+    # 0105 is L21's: chained on 0104, re-chained if another lot lands first
+    assert script.get_revision("0106").down_revision == "0104"
 
 
 def _views(settings: Settings) -> dict[str, tuple[str, list[str]]]:
@@ -37,7 +37,7 @@ def _views(settings: Settings) -> dict[str, tuple[str, list[str]]]:
 
 def test_both_views_change_their_rule_and_not_their_columns_both_ways(settings: Settings) -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(settings.database_path), "0102")
+    command.upgrade(alembic_config(settings.database_path), "0104")
     before = _views(settings)
     assert all("extent" not in sql for sql, _ in before.values())
     assert "0106" in migrate(settings).applied
@@ -45,7 +45,7 @@ def test_both_views_change_their_rule_and_not_their_columns_both_ways(settings: 
     for name, (sql, columns) in after.items():
         assert "uc.extent <> 'full'" in sql and "o.extent = 'full'" in sql, name
         assert columns == before[name][1], name  # frozen since 1.1
-    command.downgrade(alembic_config(settings.database_path), "0102")
+    command.downgrade(alembic_config(settings.database_path), "0104")
     assert _views(settings) == before
 
 

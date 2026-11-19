@@ -860,10 +860,11 @@ class IntentJournal:
 
         Everything is looked at first and nothing is moved unless every chapter is one of two
         things: still served as the intent describes it (left alone), or in its bin entry with its
-        path free. A path another file has taken, or a chapter that is nowhere, is drift: nothing is
+        path free and whose bytes are the chapter's (its sha256 is in the intent). A path another
+        file has taken, bytes that are not the chapter's, or a chapter nowhere, is drift: nothing is
         overwritten, the intent stays open, an admin decides."""
         disk = self._disk
-        back: list[tuple[str, str]] = []
+        back: list[tuple[str, str, str]] = []
         for old in olds:
             local, sha, entry = old.get("local"), old.get("sha256"), old.get("entry")
             root_rel = old.get("root_rel")
@@ -876,10 +877,14 @@ class IntentJournal:
                 return self._drift(intent, report, "a chapter file is not the one replaced")
             if not isinstance(root_rel, str) or not self._binned(local, old):
                 return self._drift(intent, report, "a chapter is neither served nor binned")
-            back.append((local, f"{entry}/{root_rel}"))
+            back.append((local, f"{entry}/{root_rel}", sha))
         if back and not isinstance(disk, BinDisk):
             return self._drift(intent, report, "this disk cannot read a bin")
-        for local, path in back:
+        for local, path, sha in back:
+            # the entry holds the chapter the intent took, byte for byte, or nothing is moved
+            if self._bin_digest(disk, local, path) != sha:  # type: ignore[arg-type]
+                return self._drift(intent, report, "assembly.binned_file_is_not_the_chapter")
+        for local, path, _sha in back:
             disk.restore_from_bin(local, path)  # type: ignore[attr-defined]
         self._close(intent.id, "cancelled")
         report.abandoned.append(intent.id)

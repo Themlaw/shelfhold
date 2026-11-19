@@ -297,8 +297,20 @@ password = "Mot de passe"
 remember = "Se souvenir de moi"
 submit = "Se connecter"
 passkey = "Se connecter avec une clé d'accès"
+oidc = "Se connecter avec un fournisseur d'identité"
+oidc_error = "La connexion par le fournisseur d'identité n'a pas abouti."
 error = "Connexion impossible."
 source = "Code source"
+
+[oidc_confirm]
+title = "Lier une identité à ce compte ?"
+question = "Le fournisseur d'identité vient de confirmer qui vous êtes. Une fois la liaison faite, cette personne pourra se connecter à ce compte."
+identity = "Identité"
+provider = "Fournisseur d'identité"
+account = "Compte Shelfhold"
+yes = "Lier"
+no = "Annuler"
+error = "La liaison n'a pas pu être confirmée. Reconnectez-vous puis recommencez."
 
 [passkeys.unavailable]
 restore_pending = "Une restauration vient d'avoir lieu : la connexion par clé d'accès est suspendue pour tous les comptes. Connectez-vous avec un mot de passe, revoyez les clés d'accès, puis l'administrateur lance « shelfhold restore acknowledge »."
@@ -1354,6 +1366,31 @@ title = "Ce profil ne respecte pas les règles du foyer."
 action = "Un enfant a toujours un âge maximal et jamais le droit de classer ; un adulte n'a pas d'âge maximal ; un enfant ne peut ajouter ou demander que sur une source « famille »."
 cause = "Les réglages demandés enfreignent une règle des profils : un enfant a un âge maximal et ne classe pas, un adulte n'a pas d'âge maximal."
 
+[errors."oidc_unavailable"]
+title = "Le fournisseur d'identité est injoignable."
+action = "Connectez-vous avec votre mot de passe ou une clé d'accès, et demandez à l'administrateur de vérifier l'adresse du fournisseur et que Shelfhold peut le joindre."
+cause = "Le fournisseur n'a pas répondu, a répondu quelque chose d'inutilisable, ou son adresse est refusée par la garde des requêtes sortantes."
+
+[errors."oidc_conflict"]
+title = "Cette identité ne peut pas être liée à ce compte."
+action = "Chaque personne du fournisseur appartient à un seul compte, et un compte porte une seule identité par fournisseur. Vérifiez quel compte la porte."
+cause = "La personne est déjà liée à un autre compte, ou ce compte est déjà lié à une autre personne du même fournisseur."
+
+[errors."oidc_child_profile"]
+title = "Un profil enfant n'est jamais lié à un fournisseur d'identité."
+action = "Un enfant se connecte sur l'appareil partagé avec l'aide des parents ; liez plutôt un compte adulte."
+cause = "Le compte est un profil enfant : Shelfhold refuse toute entrée qui ne passe pas par le foyer."
+
+[errors."oidc_admin_target"]
+title = "Un administrateur ne lie pas le compte d'un autre administrateur."
+action = "Chaque administrateur lie son propre compte depuis sa session. Un administrateur peut lier son compte ou celui d'un membre adulte."
+cause = "Lier une identité du fournisseur à un autre administrateur lui donnerait l'accès à ce compte sans qu'il le sache."
+
+[errors."oidc_link_expired"]
+title = "Cette liaison n'attend plus de confirmation."
+action = "Recommencez la liaison depuis votre compte."
+cause = "La liaison a déjà été confirmée ou refusée, elle a expiré, ou la confirmation ne vient pas de la session qui l'a demandée."
+
 [errors."device_token_not_found"]
 title = "Ce jeton d'appareil n'existe pas pour vous."
 action = "Actualisez la liste de vos appareils."
@@ -1438,6 +1475,11 @@ cause = "Aucun fichier de ce volume n'est conservé sous une forme que le lecteu
 title = "Aucun extrait n'est disponible pour ce livre."
 action = "Lisez-le dans l'application où il a été envoyé, ou demandez à un administrateur de conserver une copie."
 cause = "Le livre ne peut pas être coupé dans la limite d'un extrait (un seul fichier, ou un premier chapitre trop long) : le fichier entier n'est jamais servi."
+
+[errors."content_changed"]
+title = "Le livre a changé pendant la lecture."
+action = "Rechargez le livre : le lecteur reprend depuis un manifeste à jour."
+cause = "Le fichier lu a été remplacé depuis l'ouverture du livre."
 
 [errors."full_read_not_allowed"]
 title = "Ce livre ne se lit pas en entier ici."
@@ -1928,6 +1970,16 @@ cause = "Vider la corbeille efface pour de bon des fichiers que l'on pouvait enc
 title = "Ce chapitre est irremplaçable : la suppression demande une confirmation."
 action = "Tapez l'identifiant du chapitre pour confirmer. Aucune copie ne sera supprimée sans cela."
 cause = "Ce chapitre n'existe plus nulle part ailleurs : le supprimer le perdrait pour toujours, donc Shelfhold exige une confirmation explicite."
+
+[errors."rendition.format_unsupported"]
+title = "Cette image ne peut pas être convertie."
+action = "Utilisez un fichier que le client lit tel quel, ou une image AVIF ou WebP."
+cause = "Seules les images AVIF et WebP sont converties pour un client qui n'a pas le format ; JPEG XL n'a pas de décodeur dans cette version."
+
+[errors."rendition.remote_refused_watermarked"]
+title = "Un fichier tatoué n'est jamais envoyé à un service extérieur."
+action = "Gardez la conversion locale, ou laissez ce fichier hors du service extérieur."
+cause = "Ce fichier porte la marque de son acheteur : un processeur qui envoie des octets hors de l'hôte ne le reçoit jamais."
 
 [errors."unit.safeguard_failed"]
 title = "La mise à l'abri d'un chapitre a échoué."
@@ -2904,6 +2956,45 @@ search_description = "Chercher dans la bibliothèque"
 complete = "{title} — Série complète"
 complete_in = "{title} — Série complète ({lang})"
 excluded = "{count, plural, one {# chapitre exclu} other {# chapitres exclus}} : format non lisible sur liseuse ou fichier indisponible."
+
+[lite]
+root_title = "Shelfhold"
+home = "Accueil"
+shelves = "Étagères"
+series = "Séries"
+works = "Toutes les œuvres"
+recent = "Nouveautés"
+results = "Résultats de la recherche"
+search_label = "Chercher"
+search_button = "Chercher"
+sign_out = "Se déconnecter"
+empty = "Rien à afficher ici."
+previous = "Page précédente"
+next = "Page suivante"
+sign_in_title = "Connexion"
+sign_in_lead = "Saisissez l'identifiant et le secret de cette liseuse, tels qu'ils ont été affichés à l'appairage."
+sign_in_failed = "Connexion refusée. Vérifiez l'identifiant et le secret."
+identifier = "Identifiant"
+secret = "Secret"
+sign_in_submit = "Se connecter"
+retry = "Revenir à la connexion"
+not_found_title = "Introuvable"
+not_found_text = "Cette page n'existe pas."
+tls_title = "Connexion non sécurisée"
+tls_text = "Cette page ne s'ouvre qu'en HTTPS : le secret de la liseuse ne doit pas circuler en clair."
+csrf_title = "Formulaire expiré"
+csrf_text = "Le formulaire n'a pas été accepté. Rouvrez la page de connexion et recommencez."
+throttled_title = "Trop d'essais"
+throttled_text = "Trop de tentatives de connexion. Patientez un instant avant de recommencer."
+gone_title = "Fichier indisponible"
+gone_text = "Ce fichier n'est plus disponible."
+busy_title = "Trop de téléchargements"
+busy_text = "Trop de téléchargements en cours. Réessayez dans un instant."
+edition_in = "Édition ({lang})"
+excluded = "{count, plural, one {# chapitre exclu} other {# chapitres exclus}} : format non lisible sur liseuse ou fichier indisponible."
+download_sized = "Télécharger ({mb} Mo)"
+download = "Télécharger"
+no_download = "Aucun fichier à télécharger pour cette œuvre."
 
 [errors."source_migration.collision"]
 title = "Deux numéros de la nouvelle source tomberaient sur la même place."

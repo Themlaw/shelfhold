@@ -75,7 +75,7 @@ Un fichier qui ne couvre une Unité qu'en partie (`unit_coverage.extent <> 'full
 d'un chapitre en fin de tome) ne la lit jamais en entier : depuis ce fichier, l'Unité est au plus
 `in_progress`, que le serveur dise le fichier lu (`source = server`) ou qu'un parcours en ait traversé
 les pages (`read_units`, jamais écrit pour une telle Unité). Un autre fichier qui la couvre en entier
-la lit. Les deux vues (`reading_progress` et `reading_progress_proven`) disent la même chose (0106) ;
+la lit. La fraction d'une telle Unité est celle de l'Unité (les pages tenues sur l'étendue d'un fichier qui la couvre en entier ; sans lui, aucune fraction), jamais celle de la partie couverte. Les deux vues (`reading_progress` et `reading_progress_proven`) disent la même chose (0106) ;
 une marque déjà journalisée par un parcours d'une Unité partielle n'est plus lue, une marque
 `transposed` reste.
 

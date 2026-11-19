@@ -57,7 +57,6 @@ def world(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World
     yield from _world(monkeypatch, settings)
 
 
-@pytest.mark.xfail(strict=True)
 @pytest.mark.req("EF-LEC-014")
 def test_a_whole_file_read_further_stays_the_furthest_position_of_a_partly_covered_unit(
     tmp_path: Path,
@@ -85,7 +84,6 @@ def test_a_whole_file_read_further_stays_the_furthest_position_of_a_partly_cover
         assert row.last_position_id == read_whole  # the fraction of the Unit, not of the cover
 
 
-@pytest.mark.xfail(strict=True)
 @pytest.mark.req("EF-EXP-019", "EF-BIB-044")
 def test_a_cancelled_assembly_never_serves_what_sits_in_the_chapters_bin_entry(
     monkeypatch: pytest.MonkeyPatch,
@@ -109,7 +107,6 @@ def test_a_cancelled_assembly_never_serves_what_sits_in_the_chapters_bin_entry(
         assert bin_files(env) == [binned]  # and the entry is left exactly as it was
 
 
-@pytest.mark.xfail(strict=True)
 @pytest.mark.req("EF-LEC-007", "EF-LEC-014")
 def test_settling_a_conflict_writes_no_position_while_a_job_holds_the_work(
     world: World,

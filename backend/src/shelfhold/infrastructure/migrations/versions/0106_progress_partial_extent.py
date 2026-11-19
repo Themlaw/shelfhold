@@ -3,21 +3,22 @@
 A file that covers a Unit only in part (`extent <> 'full'`: the first half of a chapter at the end
 of a volume) says nothing of the rest of it. The view gave `read` to such a Unit when a server said
 the file read, and a plausible walk through its pages journaled the Unit read (`read_units`): both
-are now `in_progress`, unless another file covers the Unit whole. The mark a walk already journaled
-for a partial Unit (written by an earlier version) is not read either; a carried-over mark
-(`transposed`) is not about a file and is kept.
+are now `in_progress`, unless another file covers the Unit whole. Its fraction is the one of the
+Unit (the pages the file holds over the span of a file that covers it whole), never of the covered
+part alone. The mark a walk already journaled for a partial Unit (written by an earlier version)
+is not read either; a carried-over mark (`transposed`) is not about a file and is kept.
 
 The view holds no data and its columns do not change (frozen since 1.1); `reading_progress_proven`
 (the one criterion of what leaves for Suwayomi and Kavita) is the same rule over the positions that
 are not transposed. Reversible: the downgrade restores the two views of 0084.
 
-Number: the first free one when this lot froze (0103 to 0105 are taken by L13, L20a and L21).
+Number: 0105 is L21's; chained on 0104, the head of main when this lot was merged.
 """
 
 from alembic import op
 
 revision = "0106"
-down_revision = "0102"
+down_revision = "0104"
 branch_labels = None
 depends_on = None
 
@@ -40,6 +41,9 @@ FROM (
     SELECT o.user_id AS user_id, o.unit_id AS unit_id, o.position_id AS position_id,
       min(o.client_ts, o.server_ts) AS ts,
       CASE
+        WHEN o.extent <> 'full' THEN CASE
+          WHEN o.exact AND o.end_page > o.start_page AND o.unit_span > 0
+          THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0 / o.unit_span)) END
         WHEN o.exact THEN CASE WHEN o.end_page > o.start_page
           THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0 / (o.end_page - o.start_page)))
           WHEN o.page >= o.end_page THEN 1.0 ELSE 0.0 END
@@ -67,7 +71,8 @@ FROM (
           q.percent AS percent, q.client_ts AS client_ts, q.server_ts AS server_ts,
           q.source AS source, q.page AS page, q.replaced AS replaced,
           c.rank0 AS rank0, c.n AS n, c.start_page AS start_page, c.end_page AS end_page,
-          q.undone_units AS undone_units, q.transposed AS transposed, c.extent AS extent
+          q.undone_units AS undone_units, q.transposed AS transposed, c.extent AS extent,
+          c.unit_span AS unit_span
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
             covered_units, undone_units,
@@ -87,6 +92,10 @@ FROM (
         ) AS q
         JOIN (
           SELECT carrier_type, carrier_id, unit_id, extent,
+            (SELECT max(json_extract(u2.end_locator, '$.page')
+                        - json_extract(u2.start_locator, '$.page'))
+               FROM unit_coverage AS u2
+              WHERE u2.unit_id = unit_coverage.unit_id AND u2.extent = 'full') AS unit_span,
             json_extract(start_locator, '$.page') AS start_page,
             json_extract(end_locator, '$.page') AS end_page,
             ROW_NUMBER() OVER (PARTITION BY carrier_type, carrier_id ORDER BY position) - 1
@@ -98,7 +107,7 @@ FROM (
         UNION ALL
         SELECT q.id, q.user_id, u.id, q.percent, q.client_ts, q.server_ts, q.source, q.page,
           1, CAST(j.key AS INTEGER), json_array_length(q.covered_units), NULL, NULL,
-          q.undone_units, q.transposed, 'full'
+          q.undone_units, q.transposed, 'full', NULL
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
             covered_units, undone_units, NULL AS page,
@@ -152,6 +161,9 @@ FROM (
     SELECT o.user_id AS user_id, o.unit_id AS unit_id, o.position_id AS position_id,
       min(o.client_ts, o.server_ts) AS ts,
       CASE
+        WHEN o.extent <> 'full' THEN CASE
+          WHEN o.exact AND o.end_page > o.start_page AND o.unit_span > 0
+          THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0 / o.unit_span)) END
         WHEN o.exact THEN CASE WHEN o.end_page > o.start_page
           THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0 / (o.end_page - o.start_page)))
           WHEN o.page >= o.end_page THEN 1.0 ELSE 0.0 END
@@ -179,7 +191,8 @@ FROM (
           q.percent AS percent, q.client_ts AS client_ts, q.server_ts AS server_ts,
           q.source AS source, q.page AS page, q.replaced AS replaced,
           c.rank0 AS rank0, c.n AS n, c.start_page AS start_page, c.end_page AS end_page,
-          q.undone_units AS undone_units, q.transposed AS transposed, c.extent AS extent
+          q.undone_units AS undone_units, q.transposed AS transposed, c.extent AS extent,
+          c.unit_span AS unit_span
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
             covered_units, undone_units,
@@ -200,6 +213,10 @@ FROM (
         ) AS q
         JOIN (
           SELECT carrier_type, carrier_id, unit_id, extent,
+            (SELECT max(json_extract(u2.end_locator, '$.page')
+                        - json_extract(u2.start_locator, '$.page'))
+               FROM unit_coverage AS u2
+              WHERE u2.unit_id = unit_coverage.unit_id AND u2.extent = 'full') AS unit_span,
             json_extract(start_locator, '$.page') AS start_page,
             json_extract(end_locator, '$.page') AS end_page,
             ROW_NUMBER() OVER (PARTITION BY carrier_type, carrier_id ORDER BY position) - 1
@@ -211,7 +228,7 @@ FROM (
         UNION ALL
         SELECT q.id, q.user_id, u.id, q.percent, q.client_ts, q.server_ts, q.source, q.page,
           1, CAST(j.key AS INTEGER), json_array_length(q.covered_units), NULL, NULL,
-          q.undone_units, q.transposed, 'full'
+          q.undone_units, q.transposed, 'full', NULL
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
             covered_units, undone_units, NULL AS page,
