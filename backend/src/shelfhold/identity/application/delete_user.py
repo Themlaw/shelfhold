@@ -36,6 +36,8 @@ SECTIONS = (
     # M5 L13: the choices of the reader (a series is named by its identifier, a device by its
     # label: no title, and nothing that opens or proves anything)
     "reader_settings",
+    # M5 L21: her saved selections (a name and a stored query, no result)
+    "saved_selections",
 )  # fmt: skip
 
 

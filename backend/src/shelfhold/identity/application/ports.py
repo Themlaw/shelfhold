@@ -63,6 +63,7 @@ class SessionRecord:
     absolute_expiry: datetime
     remember: bool
     revoked_at: datetime | None
+    proof: str = "local"  # `local` or `provider`: what proved the session (M5 L04)
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,7 @@ class NewSession:
     # (issuer, sub) of an OpenID Connect sign-in: the link and the role are read again under the
     # write lock, as a password hash or a passkey is (a link removed or a child since: refused)
     oidc: tuple[str, str] | None = None
+    proof: str = "local"  # `provider` for a session opened by the provider's sign-in (M5 L04)
 
 
 @dataclass(frozen=True)
@@ -232,6 +234,13 @@ class OidcLink(StrEnum):
     ADMIN_TARGET = "admin_target"  # an admin links her own account or an adult member's, no other
 
 
+class OidcUnlink(StrEnum):
+    UNLINKED = "unlinked"
+    NOT_LINKED = "not_linked"  # the account holds no link
+    NO_ACCOUNT = "no_account"
+    ADMIN_TARGET = "admin_target"  # an admin unlinks her own account or an adult member's only
+
+
 @dataclass(frozen=True)
 class OidcIdentityView:
     """What the holder of an account is shown of a link: the provider and since when, never the
@@ -240,6 +249,15 @@ class OidcIdentityView:
     issuer: str
     linked_at: datetime
     linked_by_other: bool | None
+
+
+@dataclass(frozen=True)
+class OidcLastUnlink:
+    """The last time a link of the account was removed, and whether someone else did it: the trace
+    the settings screen keeps for a person whose notice had nowhere to go."""
+
+    at: datetime
+    by_other: bool
 
 
 class ProofWithdrawnError(Exception):
@@ -271,6 +289,16 @@ class IdentityStore(Protocol):
         audit: AuditEntry,
         admin_actor: str | None = None,
     ) -> OidcLink: ...
+    def unlink_oidc_identity(
+        self,
+        *,
+        user_id: str,
+        issuer: str,
+        now: datetime,
+        audit: AuditEntry,
+        by_user_id: str,
+    ) -> OidcUnlink: ...
+    def oidc_last_unlink(self, user_id: str) -> OidcLastUnlink | None: ...
     def session_is_live(self, session_id: str, *, now: datetime) -> bool: ...
     def admins(self) -> Sequence[UserRecord]: ...
     def has_role(self, role: str) -> bool: ...
@@ -429,8 +457,15 @@ class IdentityStore(Protocol):
         self, session_id: str, *, now: datetime, absolute_expiry: datetime
     ) -> None: ...
     def rotate_session(
-        self, session_id: str, *, token_hash: str, csrf_secret: str, now: datetime
-    ) -> None: ...
+        self,
+        session_id: str,
+        *,
+        token_hash: str,
+        csrf_secret: str,
+        now: datetime,
+        auth_time: datetime | None = None,
+        proof: str = "local",
+    ) -> bool: ...
     def revoke_session_by_token_hash(self, token_hash: str, *, now: datetime) -> None: ...
     def revoke_sessions(
         self, *, now: datetime, user_id: str | None = None, session_id: str | None = None

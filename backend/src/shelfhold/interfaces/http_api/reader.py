@@ -29,6 +29,7 @@ from shelfhold.reading.application.content_access import (
     FullReadNotAllowedError,
     NoReadableCopyError,
 )
+from shelfhold.reading.application.lease import ProgressBusyError
 from shelfhold.reading.application.positions import (
     ClientTsInFutureError,
     ClientTsOutOfRangeError,
@@ -58,6 +59,7 @@ __all__ = ["build_reader_router"]
 
 Session = Annotated[Principal, Depends(require_session)]
 _ABSENT = {"Cache-Control": "no-store"}
+_BUSY = {"Cache-Control": "no-store", "Retry-After": "2"}  # a job holds the Work (M5 L22a)
 
 
 class EntryOut(BaseModel):
@@ -278,6 +280,8 @@ def build_reader_router(
             )  # fmt: skip
         except InvalidLocatorV1Error:
             raise ProblemError("invalid_locator") from None
+        except ProgressBusyError:
+            raise ProblemError("progress_busy", headers=_BUSY) from None
         except ClientTsInFutureError:
             raise ProblemError("client_ts_in_future") from None
         except ClientTsOutOfRangeError:
@@ -368,6 +372,8 @@ def build_reader_router(
             )
         except (UnknownConflictError, UnknownCarrierError):
             raise ProblemError("not_found", headers=_ABSENT) from None
+        except ProgressBusyError:  # settling writes a position: the lease of the other writers
+            raise ProblemError("progress_busy", headers=_BUSY) from None
         except StaleConflictError:
             raise ProblemError("conflict_stale") from None
         except ExcerptWritesNoPositionError:

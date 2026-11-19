@@ -332,10 +332,25 @@ since = "1.2"
 
 [[migration]]
 file = "0103_reader_settings.py"
-sha256 = "f75e697b781608b774d1c39e80c6735c6f0339ce3e6d5d9b501ecb0ab6cfda7f"
+sha256 = "5e3722311a13172671ed5b66af208f41c85330755449c6d2518ffc12cb03470d"
 since = "1.2"
 
 [[migration]]
 file = "0104_rendition.py"
 sha256 = "11897a28f7af6091440fed589bc88b8bf9adbd89358f7b08ff5474c56abc5ff6"
+since = "1.2"
+
+[[migration]]
+file = "0105_saved_selection.py"
+sha256 = "3c31d90d306b2f3fdae23f18463aa756ac486bb318dd65659c4b75870ffcc486"
+since = "1.2"
+
+[[migration]]
+file = "0106_progress_partial_extent.py"
+sha256 = "9fd8e2f488747c27495542c56fccc024e7bf7ed18ac1fc8b2c920f0955c4d1be"
+since = "1.2"
+
+[[migration]]
+file = "0107_session_proof.py"
+sha256 = "df6ebe1bba5633b15e5d6b318b7b0eb6c59759f33bfd0d2af61e20ede7e2515d"
 since = "1.2"

@@ -121,6 +121,7 @@ FIRST_PARTY_PLUGINS: Final = frozenset({"suwayomi", "lncrawl"})  # named as is; 
 # -- the settings, each in one class: a new setting is in none, and the test of the classes fails
 _AS_IS = (
     "port", "log_level", "log_format", "received_cbz_max_bytes", "auth_hardened", "fresh_auth_s",
+    "oidc_max_age_s",
     "metrics_enabled", "revision_min_page_ratio", "follow_fallback_return",
     "page_target_format", "page_target_quality",
     "follow_check_min_s", "follow_check_max_s", "follow_check_finished_s",

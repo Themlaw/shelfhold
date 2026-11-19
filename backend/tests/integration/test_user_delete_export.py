@@ -38,7 +38,7 @@ EXPORT_KEYS = {
     "download_requests", "notification_digests", "truncated", "device_tokens", "devices",
     "collections", "collection_items", "destination_accounts", "notify_destinations",
     "read_markers", "tracker_hints", "request_list_imports", "source_accounts", "tachibk_imports",
-    "reading_conflicts", "reader_settings",
+    "reading_conflicts", "reader_settings", "saved_selections",
 }  # fmt: skip
 
 
@@ -111,6 +111,14 @@ def _seed(env: AuthEnv, username: str, role: str = "member", **kw: Any) -> str:
         "requester_user_id) VALUES (?, 'source-a', ?, 'approved', 'private', ?)",
         new_ulid(), f"series-{username}", user_id,
     )  # fmt: skip
+    _sql(
+        env,
+        "INSERT INTO saved_selection (id, owner_user_id, name, query_json) VALUES (?, ?, ?, ?)",
+        new_ulid(),
+        user_id,
+        f"Unread of {username}",
+        '{"reading_state":["unread"]}',
+    )  # fmt: skip  (M5 L21: a stored query, no result)
     if role != "child":  # a child has no policy off a family source
         _auth(env).profile_policy_set(user_id, "source-a", "request")
     return user_id
@@ -163,6 +171,9 @@ def test_delete_user_cascade_and_export_json(api: AuthEnv) -> None:
         r[0] for r in db_rows(api.settings, "SELECT prefix FROM api_key WHERE user_id = ?", mum)
     ]
     assert document["sessions"]
+    assert [(q["name"], q["query"]) for q in document["saved_selections"]] == [
+        ("Unread of mum", {"reading_state": ["unread"]})
+    ]  # M5 L21: her own stored queries, in a section of their own
     # what proves or opens something never leaves, nor the titles that she may not see
     text = exported.text
     for secret in (SECRET_HASH, KEY_HASH, TOKEN_HASH, HIDDEN_TITLE):

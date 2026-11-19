@@ -168,7 +168,15 @@ reader_setting = sa.Table(
 #     `client_ts`, then the id. A Unit that was read never goes back to unread, unless the member
 #     undoes the mark (`undone_units`);
 #   * a `transposed` position (the neutral position carried over by a change of preferred Edition,
-#     0084) is always `approximate`, and so is the mark it journals.
+#     0084) is always `approximate`, and so is the mark it journals;
+#   * a Unit that a file covers only in part (`unit_coverage.extent <> 'full'`) is at most
+#     `in_progress` from that file, whatever a server says of the file and whatever walk crossed
+#     its pages (M5 L22a, 0106): the rest of the Unit is in no file's pages. Another file that
+#     covers it whole reads it. Its fraction is the one of the UNIT, not of the covered part: the
+#     pages it holds over the span of a file that covers the Unit whole (`unit_span`, or the
+#     cover's own span when it is the larger: finer paging never reaches 1.0 by itself), so a
+#     quarter
+#     read to its end is a quarter of the Unit, never 1.0; with no such file, no fraction (NULL).
 READING_PROGRESS_SELECT = """
 SELECT user_id, unit_id,
   CASE WHEN srank = 2 THEN 'read' WHEN srank = 1 THEN 'in_progress' ELSE 'unread' END AS state,
@@ -188,12 +196,16 @@ FROM (
     SELECT o.user_id AS user_id, o.unit_id AS unit_id, o.position_id AS position_id,
       min(o.client_ts, o.server_ts) AS ts,
       CASE
+        WHEN o.extent <> 'full' THEN CASE
+          WHEN o.exact AND o.end_page > o.start_page AND o.unit_span > 0
+          THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0
+            / max(o.unit_span, o.end_page - o.start_page))) END
         WHEN o.exact THEN CASE WHEN o.end_page > o.start_page
           THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0 / (o.end_page - o.start_page)))
           WHEN o.page >= o.end_page THEN 1.0 ELSE 0.0 END
         WHEN o.percent IS NULL THEN NULL
         ELSE min(1.0, max(0.0, o.percent * o.n - o.rank0)) END AS within,
-      CASE WHEN o.done AND o.source = 'server'
+      CASE WHEN o.done AND o.source = 'server' AND o.extent = 'full'
           AND json_type(o.undone_units, '$."' || o.unit_id || '"') IS NULL THEN 2
         WHEN o.done OR o.started THEN 1
         ELSE 0 END AS srank,
@@ -215,7 +227,8 @@ FROM (
           q.percent AS percent, q.client_ts AS client_ts, q.server_ts AS server_ts,
           q.source AS source, q.page AS page, q.replaced AS replaced,
           c.rank0 AS rank0, c.n AS n, c.start_page AS start_page, c.end_page AS end_page,
-          q.undone_units AS undone_units, q.transposed AS transposed
+          q.undone_units AS undone_units, q.transposed AS transposed, c.extent AS extent,
+          c.unit_span AS unit_span
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
             covered_units, undone_units,
@@ -234,7 +247,11 @@ FROM (
           FROM reading_position
         ) AS q
         JOIN (
-          SELECT carrier_type, carrier_id, unit_id,
+          SELECT carrier_type, carrier_id, unit_id, extent,
+            (SELECT max(json_extract(u2.end_locator, '$.page')
+                        - json_extract(u2.start_locator, '$.page'))
+               FROM unit_coverage AS u2
+              WHERE u2.unit_id = unit_coverage.unit_id AND u2.extent = 'full') AS unit_span,
             json_extract(start_locator, '$.page') AS start_page,
             json_extract(end_locator, '$.page') AS end_page,
             ROW_NUMBER() OVER (PARTITION BY carrier_type, carrier_id ORDER BY position) - 1
@@ -246,7 +263,7 @@ FROM (
         UNION ALL
         SELECT q.id, q.user_id, u.id, q.percent, q.client_ts, q.server_ts, q.source, q.page,
           1, CAST(j.key AS INTEGER), json_array_length(q.covered_units), NULL, NULL,
-          q.undone_units, q.transposed
+          q.undone_units, q.transposed, 'full', NULL
         FROM (
           SELECT id, user_id, carrier_type, carrier_id, percent, client_ts, server_ts, source,
             covered_units, undone_units, NULL AS page,
@@ -272,6 +289,11 @@ FROM (
     FROM reading_position AS p, json_each(p.read_units) AS j
     JOIN unit AS u ON u.id = j.value
     WHERE json_type(p.undone_units, '$."' || j.value || '"') IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM unit_coverage AS uc
+        WHERE uc.carrier_type = p.carrier_type AND uc.carrier_id = p.carrier_id
+          AND uc.unit_id = j.value AND uc.extent <> 'full'
+          AND coalesce(json_extract(p.locator, '$.transposed'), 0) = 0)
   )
 ) WHERE rn = 1
 """

@@ -29,6 +29,7 @@ EXPORTED: dict[str, str] = {
     "reading_position": "reading_positions",
     "reading_conflict": "reading_conflicts",
     "reader_settings": "reader_settings",  # M5 L13: her choices of the reader, place by place
+    "saved_selection": "saved_selections",  # M5 L21: a name and a stored query, no result
     "session": "sessions",
     "api_key": "api_keys",
     "webauthn_credential": "passkeys",  # the list of keys, never the key material

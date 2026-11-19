@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -105,6 +106,14 @@ class DetachOps:
     def _context(self) -> tuple[Fsops, LoadedRoots, IntentJournal]:
         fsops, loaded, _tombstones = self._comp.read_context()
         return fsops, loaded, IntentJournal(self._comp.engine, fsops, clock=self._comp.clock)
+
+    @contextmanager
+    def _writing(self) -> Iterator[tuple[Fsops, LoadedRoots, IntentJournal]]:
+        """What deletes or writes on a disk: a write session (the lease, and the look at the whole
+        instance of ADR-0044), never the read context, whose `Fsops` refuses every write."""
+        with self._comp.write_context() as work:
+            journal = IntentJournal(self._comp.engine, work.fsops, clock=self._comp.clock)
+            yield work.fsops, work.loaded, journal
 
     @staticmethod
     def _root_directory(loaded: LoadedRoots) -> Callable[[str], RootRef | None]:
@@ -246,18 +255,18 @@ class DetachOps:
         self, *, destination_id: str, mode: str, typed: str | None, give_up: bool,
         principal: Principal,
     ) -> dict[str, Any]:  # fmt: skip
-        fsops, loaded, journal = self._context()
-        service = self._remover(fsops, loaded, journal, self._scan_of(destination_id))
-        try:
-            if give_up:
-                report = service.settle(destination_id, resume=False, principal=principal)
-            else:
-                report = service.apply(
-                    destination_id, _mode(mode), principal=principal, typed=typed
-                )
-        except RemovalRefusedError as error:
-            raise _removal(error) from None
-        return _removal_report(report)
+        with self._writing() as (fsops, loaded, journal):
+            service = self._remover(fsops, loaded, journal, self._scan_of(destination_id))
+            try:
+                if give_up:
+                    report = service.settle(destination_id, resume=False, principal=principal)
+                else:
+                    report = service.apply(
+                        destination_id, _mode(mode), principal=principal, typed=typed
+                    )
+            except RemovalRefusedError as error:
+                raise _removal(error) from None
+            return _removal_report(report)
 
     def remove_queue(
         self, *, destination_id: str, mode: str, typed: str | None, principal: Principal
@@ -295,20 +304,20 @@ class DetachOps:
             order = removal_order_of(context.dedupe_key)
         except ValueError:
             raise JobFailedError("job.failed") from None
-        fsops, loaded, journal = self._context()
-        service = self._remover(fsops, loaded, journal, self._scan_of(order.destination_id))
-        try:
-            report = service.execute(order, job_id=context.job_id)
-        except RemovalRefusedError as error:
-            if error.reason in _TRANSIENT:
-                raise _Busy(error.reason) from None
-            raise JobFailedError("removal.refused") from None
-        context.record(
-            deleted=report.deleted, forgotten=report.forgotten, left=len(report.left),
-            complete=int(report.complete),
-        )  # fmt: skip
-        if not report.complete:
-            raise JobFailedError("removal.incomplete")
+        with self._writing() as (fsops, loaded, journal):
+            service = self._remover(fsops, loaded, journal, self._scan_of(order.destination_id))
+            try:
+                report = service.execute(order, job_id=context.job_id)
+            except RemovalRefusedError as error:
+                if error.reason in _TRANSIENT:
+                    raise _Busy(error.reason) from None
+                raise JobFailedError("removal.refused") from None
+            context.record(
+                deleted=report.deleted, forgotten=report.forgotten, left=len(report.left),
+                complete=int(report.complete),
+            )  # fmt: skip
+            if not report.complete:
+                raise JobFailedError("removal.incomplete")
 
     # -- detach a target ------------------------------------------------------------------------
 
@@ -423,75 +432,77 @@ class DetachOps:
             raise JobFailedError("job.failed") from None
         handoff = self._comp.credential_handoff
         credential = handoff.take(context.dedupe_key)
-        fsops, loaded, journal = self._context()
-        detacher = self._full_detacher(fsops, loaded, journal)
-        target_id = order.target_id
-        known = target_id in self._comp.kavita_targets()
-        client = self._comp.kavita_client(target_id) if known else None
-        account = self._account_session(target_id, credential) if order.key_gone and known else None
-        try:
-            report = detacher.execute(
-                order, client=client, revoker=_Revoker(self._headless), credential=credential,
-                account=account, job_id=context.job_id,
-                before_restore=(
-                    None if client is None else lambda: self._withdraw_pushed(target_id, client)
-                ),
+        with self._writing() as (fsops, loaded, journal):
+            detacher = self._full_detacher(fsops, loaded, journal)
+            target_id = order.target_id
+            known = target_id in self._comp.kavita_targets()
+            client = self._comp.kavita_client(target_id) if known else None
+            account = (
+                self._account_session(target_id, credential) if order.key_gone and known else None
+            )
+            try:
+                report = detacher.execute(
+                    order, client=client, revoker=_Revoker(self._headless), credential=credential,
+                    account=account, job_id=context.job_id,
+                    before_restore=(
+                        None if client is None else lambda: self._withdraw_pushed(target_id, client)
+                    ),
+                )  # fmt: skip
+            except DetachRefusedError as error:
+                if error.reason in _TRANSIENT and credential and _attempts_left(context):
+                    handoff.put(context.dedupe_key, credential)  # the next attempt needs it again
+                if error.reason in _TRANSIENT:
+                    raise _Busy(error.reason) from None
+                if error.reason == "credential_required":
+                    raise JobFailedError("detach.incomplete") from None
+                raise JobFailedError("detach.refused") from None
+            finally:
+                if account is not None:
+                    with contextlib.suppress(Exception):  # the connection is best-effort closed
+                        self._comp.run(account.aclose())
+            self._comp.roots_changed()  # the roots demoted are no longer expected stamped
+            context.record(
+                complete=int(report.complete), hidden_removed=len(report.hidden_removed),
+                key_revoked=int(report.key_revoked), forgotten=report.forgotten,
             )  # fmt: skip
-        except DetachRefusedError as error:
-            if error.reason in _TRANSIENT and credential and _attempts_left(context):
-                handoff.put(context.dedupe_key, credential)  # the next attempt needs it again
-            if error.reason in _TRANSIENT:
-                raise _Busy(error.reason) from None
-            if error.reason == "credential_required":
-                raise JobFailedError("detach.incomplete") from None
-            raise JobFailedError("detach.refused") from None
-        finally:
-            if account is not None:
-                with contextlib.suppress(Exception):  # the connection is best-effort closed
-                    self._comp.run(account.aclose())
-        self._comp.roots_changed()  # the roots demoted are no longer expected stamped
-        context.record(
-            complete=int(report.complete), hidden_removed=len(report.hidden_removed),
-            key_revoked=int(report.key_revoked), forgotten=report.forgotten,
-        )  # fmt: skip
-        if not report.complete:
-            raise JobFailedError("detach.incomplete")
+            if not report.complete:
+                raise JobFailedError("detach.incomplete")
 
     def full(
         self, *, target_id: str, typed: str | None, credential: str | None,
         discard_hidden_data: bool, discard_tombstone_journal: bool, key_gone: bool = False,
         give_up: bool, principal: Principal,
     ) -> dict[str, Any]:  # fmt: skip
-        fsops, loaded, journal = self._context()
-        detacher = self._full_detacher(fsops, loaded, journal)
-        known = target_id in self._comp.kavita_targets()
-        client = self._comp.kavita_client(target_id) if known else None
-        account = self._account_session(target_id, credential) if key_gone and known else None
-        try:
-            if give_up:
-                report = detacher.settle(target_id, resume=False, principal=principal)
-            else:
-                report = detacher.apply(
-                    target_id, principal=principal, typed=typed, client=client,
-                    revoker=_Revoker(self._headless), credential=credential,
-                    discard_hidden_data=discard_hidden_data,
-                    discard_tombstone_journal=discard_tombstone_journal,
-                    key_gone=key_gone, account=account,
-                    before_restore=(
-                        None if client is None
-                        else lambda: self._withdraw_pushed(target_id, client)
-                    ),
-                )  # fmt: skip
-        except DetachRefusedError as error:
-            raise _full_refusal(error) from None
-        finally:
-            if account is not None:
-                with contextlib.suppress(Exception):  # the connection is best-effort closed
-                    self._comp.run(account.aclose())
-        if report.past_no_return:  # nothing was undone, and the report must not say it was
-            raise CodedRefusal("detach.refused", "past_no_return")
-        self._comp.roots_changed()  # the roots demoted are no longer expected stamped
-        return _full_report(report)
+        with self._writing() as (fsops, loaded, journal):
+            detacher = self._full_detacher(fsops, loaded, journal)
+            known = target_id in self._comp.kavita_targets()
+            client = self._comp.kavita_client(target_id) if known else None
+            account = self._account_session(target_id, credential) if key_gone and known else None
+            try:
+                if give_up:
+                    report = detacher.settle(target_id, resume=False, principal=principal)
+                else:
+                    report = detacher.apply(
+                        target_id, principal=principal, typed=typed, client=client,
+                        revoker=_Revoker(self._headless), credential=credential,
+                        discard_hidden_data=discard_hidden_data,
+                        discard_tombstone_journal=discard_tombstone_journal,
+                        key_gone=key_gone, account=account,
+                        before_restore=(
+                            None if client is None
+                            else lambda: self._withdraw_pushed(target_id, client)
+                        ),
+                    )  # fmt: skip
+            except DetachRefusedError as error:
+                raise _full_refusal(error) from None
+            finally:
+                if account is not None:
+                    with contextlib.suppress(Exception):  # the connection is best-effort closed
+                        self._comp.run(account.aclose())
+            if report.past_no_return:  # nothing was undone, and the report must not say it was
+                raise CodedRefusal("detach.refused", "past_no_return")
+            self._comp.roots_changed()  # the roots demoted are no longer expected stamped
+            return _full_report(report)
 
 
 _TRANSIENT = frozenset({"busy", "intent_open"})  # another job holds it, or an operation is open

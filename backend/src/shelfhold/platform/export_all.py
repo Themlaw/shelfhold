@@ -73,6 +73,8 @@ EXPORTED_TABLES: Final = frozenset(
         "bundle_setting",
         # the lists people made (L18a): a household collection and a profile's own reading list
         "collection", "collection_item",
+        # the saved selections (M5 L21): a profile's stored queries, a choice and no result
+        "saved_selection",
         # the numbering correspondence of a migrated series (L27): without it a restored instance
         # would read the new source's numbers as numbers the library lacks and fetch them again
         "source_migration", "source_migration_row",

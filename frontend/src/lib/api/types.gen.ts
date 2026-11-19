@@ -3460,9 +3460,31 @@ export type OidcIdentityItem = {
  */
 export type OidcIdentityList = {
     /**
+     * Configured Issuer
+     */
+    configured_issuer: string | null;
+    /**
      * Items
      */
     items: Array<OidcIdentityItem>;
+    last_unlinked?: OidcLastUnlink | null;
+};
+
+/**
+ * OidcLastUnlink
+ *
+ * The last removal of a link of this account: the trace for a person whose notice had no
+ * destination to go to (it is never told in the shared channels).
+ */
+export type OidcLastUnlink = {
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * By Other
+     */
+    by_other: boolean;
 };
 
 /**
@@ -4326,6 +4348,34 @@ export type PurgeIn = {
      * Typed
      */
     typed: string;
+};
+
+/**
+ * QueryIn
+ *
+ * The grammar, as the API document says it. The domain checks every value again.
+ */
+export type QueryIn = {
+    /**
+     * Added Within Days
+     */
+    added_within_days?: number | null;
+    /**
+     * Kind
+     */
+    kind?: Array<string> | null;
+    /**
+     * Lang
+     */
+    lang?: Array<string> | null;
+    /**
+     * Reading State
+     */
+    reading_state?: Array<string> | null;
+    /**
+     * Shelf
+     */
+    shelf?: Array<string> | null;
 };
 
 /**
@@ -5281,6 +5331,140 @@ export type SecretsImportOut = {
      * Replayed
      */
     replayed: number;
+};
+
+/**
+ * SelectionChange
+ */
+export type SelectionChange = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    query?: QueryIn | null;
+};
+
+/**
+ * SelectionDetailOut
+ */
+export type SelectionDetailOut = {
+    /**
+     * Capped
+     */
+    capped: boolean;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Items
+     */
+    items: Array<SelectionWorkOut>;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Query
+     */
+    query: {
+        [key: string]: unknown;
+    };
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+    /**
+     * Valid
+     */
+    valid: boolean;
+};
+
+/**
+ * SelectionIn
+ */
+export type SelectionIn = {
+    /**
+     * Name
+     */
+    name: string;
+    query: QueryIn;
+};
+
+/**
+ * SelectionOut
+ */
+export type SelectionOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Query
+     */
+    query: {
+        [key: string]: unknown;
+    };
+    /**
+     * Updated At
+     */
+    updated_at: string;
+    /**
+     * Valid
+     */
+    valid: boolean;
+};
+
+/**
+ * SelectionWorkOut
+ */
+export type SelectionWorkOut = {
+    /**
+     * Cover Hash
+     */
+    cover_hash: string | null;
+    /**
+     * Edition Id
+     */
+    edition_id: string | null;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
+};
+
+/**
+ * SelectionsOut
+ */
+export type SelectionsOut = {
+    /**
+     * Items
+     */
+    items: Array<SelectionOut>;
 };
 
 /**
@@ -9322,6 +9506,39 @@ export type LogoutResponses = {
 
 export type LogoutResponse = LogoutResponses[keyof LogoutResponses];
 
+export type OidcUnlinkData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/oidc/identities';
+};
+
+export type OidcUnlinkErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OidcUnlinkError = OidcUnlinkErrors[keyof OidcUnlinkErrors];
+
+export type OidcUnlinkResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type OidcUnlinkResponse = OidcUnlinkResponses[keyof OidcUnlinkResponses];
+
 export type OidcIdentitiesData = {
     body?: never;
     path?: never;
@@ -9420,6 +9637,39 @@ export type OidcConfirmResponses = {
 };
 
 export type OidcConfirmResponse = OidcConfirmResponses[keyof OidcConfirmResponses];
+
+export type OidcReauthData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/oidc/reauth';
+};
+
+export type OidcReauthErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OidcReauthError = OidcReauthErrors[keyof OidcReauthErrors];
+
+export type OidcReauthResponses = {
+    /**
+     * Successful Response
+     */
+    200: OidcLinkStart;
+};
+
+export type OidcReauthResponse = OidcReauthResponses[keyof OidcReauthResponses];
 
 export type PasskeysListData = {
     body?: never;
@@ -14298,6 +14548,44 @@ export type SetKavitaAccountResponses = {
 
 export type SetKavitaAccountResponse = SetKavitaAccountResponses[keyof SetKavitaAccountResponses];
 
+export type OidcUnlinkAccountData = {
+    body?: never;
+    path: {
+        /**
+         * Profile Id
+         */
+        profile_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{profile_id}/oidc';
+};
+
+export type OidcUnlinkAccountErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OidcUnlinkAccountError = OidcUnlinkAccountErrors[keyof OidcUnlinkAccountErrors];
+
+export type OidcUnlinkAccountResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type OidcUnlinkAccountResponse = OidcUnlinkAccountResponses[keyof OidcUnlinkAccountResponses];
+
 export type LinkAccountData = {
     body: OidcSubject;
     path: {
@@ -15719,6 +16007,199 @@ export type SecretsImportResponses = {
 };
 
 export type SecretsImportResponse = SecretsImportResponses[keyof SecretsImportResponses];
+
+export type ListSelectionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/selections';
+};
+
+export type ListSelectionsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListSelectionsError = ListSelectionsErrors[keyof ListSelectionsErrors];
+
+export type ListSelectionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: SelectionsOut;
+};
+
+export type ListSelectionsResponse = ListSelectionsResponses[keyof ListSelectionsResponses];
+
+export type CreateSelectionData = {
+    body: SelectionIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/selections';
+};
+
+export type CreateSelectionErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type CreateSelectionError = CreateSelectionErrors[keyof CreateSelectionErrors];
+
+export type CreateSelectionResponses = {
+    /**
+     * Response Create Selection
+     *
+     * Successful Response
+     */
+    201: {
+        [key: string]: string;
+    };
+};
+
+export type CreateSelectionResponse = CreateSelectionResponses[keyof CreateSelectionResponses];
+
+export type DeleteSelectionData = {
+    body?: never;
+    path: {
+        /**
+         * Selection Id
+         */
+        selection_id: string;
+    };
+    query?: never;
+    url: '/api/v1/selections/{selection_id}';
+};
+
+export type DeleteSelectionErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DeleteSelectionError = DeleteSelectionErrors[keyof DeleteSelectionErrors];
+
+export type DeleteSelectionResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteSelectionResponse = DeleteSelectionResponses[keyof DeleteSelectionResponses];
+
+export type ReadSelectionData = {
+    body?: never;
+    path: {
+        /**
+         * Selection Id
+         */
+        selection_id: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/api/v1/selections/{selection_id}';
+};
+
+export type ReadSelectionErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadSelectionError = ReadSelectionErrors[keyof ReadSelectionErrors];
+
+export type ReadSelectionResponses = {
+    /**
+     * Successful Response
+     */
+    200: SelectionDetailOut;
+};
+
+export type ReadSelectionResponse = ReadSelectionResponses[keyof ReadSelectionResponses];
+
+export type UpdateSelectionData = {
+    body: SelectionChange;
+    path: {
+        /**
+         * Selection Id
+         */
+        selection_id: string;
+    };
+    query?: never;
+    url: '/api/v1/selections/{selection_id}';
+};
+
+export type UpdateSelectionErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type UpdateSelectionError = UpdateSelectionErrors[keyof UpdateSelectionErrors];
+
+export type UpdateSelectionResponses = {
+    /**
+     * Successful Response
+     */
+    200: SelectionOut;
+};
+
+export type UpdateSelectionResponse = UpdateSelectionResponses[keyof UpdateSelectionResponses];
 
 export type SeriesReassignmentsData = {
     body: SeriesReassignIn;
@@ -19025,6 +19506,66 @@ export type OpdsSearchErrors = {
 export type OpdsSearchError = OpdsSearchErrors[keyof OpdsSearchErrors];
 
 export type OpdsSearchResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type OpdsSelectionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/opds/selections';
+};
+
+export type OpdsSelectionsErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsSelectionsError = OpdsSelectionsErrors[keyof OpdsSelectionsErrors];
+
+export type OpdsSelectionsResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type OpdsSelectionData = {
+    body?: never;
+    path: {
+        /**
+         * Selection Id
+         */
+        selection_id: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/opds/selections/{selection_id}';
+};
+
+export type OpdsSelectionErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type OpdsSelectionError = OpdsSelectionErrors[keyof OpdsSelectionErrors];
+
+export type OpdsSelectionResponses = {
     /**
      * Successful Response
      */
