@@ -51,7 +51,6 @@ class _Scripts(HTMLParser):
             self._open = None
 
 
-@pytest.mark.xfail(strict=True, reason="R1 #399: the legacy redirect is inline, hash-only")
 def test_rev399_legacy_redirect_runs_under_csp_level_1() -> None:
     parser = _Scripts()
     parser.feed((ROOT / "frontend" / "src" / "app.html").read_text(encoding="utf-8"))
@@ -68,7 +67,6 @@ def rig(settings: Settings) -> Iterator[Rig]:
     made.engine.dispose()
 
 
-@pytest.mark.xfail(strict=True, reason="R2 #399: a grey thumbnail outlives its cover by a day")
 def test_rev399_grey_thumbnail_goes_with_its_cover(rig: Rig) -> None:
     gone = rig.cover("twelve", (0, 60, 0))
     made = rig.service.get(gone, 160, grey=True)  # what `/lite` asks, before any catch-up

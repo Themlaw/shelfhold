@@ -27,18 +27,17 @@ function cspOfMeta(html: string): string | null {
 
 describe('SPA CSP', () => {
   // req: EF-LEC-010, ENF-SEC-004
-  it('hashes every inline script, the nomodule redirect to /lite included, and nothing else', () => {
-    const scripts = inlineScripts(appHtml);
-    expect(scripts.length).toBe(2);
+  it('the legacy redirect is a file of the origin, not an inline script: no hash, no unsafe-inline', () => {
+    expect(inlineScripts(appHtml)).toHaveLength(1);
+    expect(appHtml).toMatch(/<script\s+nomodule\s+src="\/lite-redirect\.js"\s*><\/script>/);
     const allowed = kitCsp(appHtml)['script-src']!;
-    for (const script of scripts) expect(allowed).toContain(`'${sha(script)}'`);
+    expect(allowed).toContain("'self'");
     expect(allowed).not.toContain("'unsafe-inline'");
-    expect(scripts.some((s) => s.includes('/lite'))).toBe(true);
+    expect(readFileSync(join(root, 'static', 'lite-redirect.js'), 'utf8')).toContain("location.replace('/lite')");
   });
 
   // req: EF-LEC-010, ENF-COMP-002
-  it('redirects by capability: a nomodule script and a noscript refresh, no User-Agent', () => {
-    expect(appHtml).toMatch(/<script\s+nomodule[^>]*>[^<]*\/lite/);
+  it('redirects by capability: a nomodule script file and a noscript refresh, no User-Agent', () => {
     expect(appHtml).toMatch(/<noscript>\s*<meta\s+http-equiv="refresh"\s+content="0;\s*url=\/lite"/);
     expect(appHtml).not.toMatch(/user.?agent|navigator\.(platform|vendor|appVersion)/i);
   });
@@ -81,8 +80,8 @@ describe('SPA CSP', () => {
   });
 
   // req: ENF-SEC-004
-  it('app.html has two inline scripts (boot, legacy redirect), and no inline style or handler', () => {
-    expect(appHtml.match(/<script\b/g)?.length).toBe(2);
+  it('app.html has one inline script, and no inline style or handler', () => {
+    expect(appHtml.match(/<script\b/g)?.length).toBe(2); // the boot script and the nomodule file
     expect(appHtml).not.toMatch(/<style\b/);
     expect(appHtml).not.toMatch(/\son[a-z]+\s*=/i);
     expect(appHtml).not.toMatch(/\sstyle\s*=/i);

@@ -335,7 +335,7 @@ class ThumbnailService:
                 continue
             self._forget(digest, size)
             rows += 1
-        files += self._sweep(known, closing)
+        files += self._sweep(known, referenced, closing)
         return Collected(files, rows)
 
     def _have_file(self, digest: str, size: int) -> bool:
@@ -367,8 +367,14 @@ class ThumbnailService:
         except (OSError, ValueError):
             return 0  # a linked shard, a folder in the way: left as it is
 
-    def _sweep(self, known: set[tuple[str, int]], closing: Callable[[], bool]) -> int:
-        """Files of the folder with no row, older than the grace; interrupted writes too."""
+    def _sweep(
+        self,
+        known: set[tuple[str, int]],
+        referenced: Collection[str],
+        closing: Callable[[], bool],
+    ) -> int:
+        """Files of the folder with no row, older than the grace; interrupted writes too. A grey
+        thumbnail has no row: one whose cover no Edition points at goes at once, like a colour one."""
         cutoff = (self._clock.now() - STRAY_GRACE).timestamp()
         removed = 0
         try:
@@ -390,6 +396,11 @@ class ThumbnailService:
                     (named is not None and (named.group(1), int(named.group(2))) not in known)
                     or _SCRATCH.fullmatch(name) is not None
                 )  # fmt: skip
-                if ours and info is not None and info.st_mtime < cutoff:
+                orphan_grey = (
+                    named is not None
+                    and named.group(3) is not None
+                    and named.group(1) not in referenced
+                )
+                if orphan_grey or (ours and info is not None and info.st_mtime < cutoff):
                     removed += self._remove(shard, name)
         return removed

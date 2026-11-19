@@ -178,6 +178,16 @@ def test_lite_page_says_what_does_not_exist_yet() -> None:
     assert "pas encore disponible" in text
     # the offline copy of a book is L16b, not delivered: the shell alone opens with no network
     assert "coquille" in text.lower()
+    # the greyscale covers are delivered (L17b): they are no longer listed among what is missing
+    missing = text.split("## Ce qui n'existe pas encore", 1)[1].split("\n## ", 1)[0]
+    assert "niveaux de gris" not in missing and "vignettes" not in missing
+
+
+@pytest.mark.req("EF-LEC-010", "EF-BIB-020", "ENF-COMP-002")
+def test_lite_page_says_the_covers_are_grey_and_the_redirect_is_by_capability() -> None:
+    text = _text(ADMIN / "lite.md")
+    assert "en niveaux de gris" in text and "en couleur" in text
+    assert "jamais sur le nom" in text and "User-Agent" in text
 
 
 # --------------------------------------------------------------------------- `/content`
