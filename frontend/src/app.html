@@ -6,6 +6,12 @@
     <meta name="robots" content="noindex" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <script>(function(){try{var d=document.documentElement,a=JSON.parse(localStorage.getItem('shelfhold.appearance')||'null');if(a&&['bibliotheque','console','galerie','calme'].indexOf(a.theme)>=0)d.dataset.theme=a.theme;if(a&&(a.colorScheme==='light'||a.colorScheme==='dark'))d.dataset.colorScheme=a.colorScheme}catch(e){}})();</script>
+    <!-- Capability, never the browser's name (EF-LEC-010): a browser that does not know module scripts
+         runs this file (a file of the origin, so `'self'` allows it under every level of CSP, the
+         first included, which has no hash sources); one without JavaScript follows the refresh. Both go
+         to the server-rendered pages. -->
+    <script nomodule src="/lite-redirect.js"></script>
+    <noscript><meta http-equiv="refresh" content="0;url=/lite" /></noscript>
     %sveltekit.head%
   </head>
   <body>

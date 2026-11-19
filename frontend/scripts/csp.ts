@@ -21,7 +21,9 @@ export function inlineScripts(html: string): string[] {
   return found;
 }
 
-/** The text of the single inline script of `app.html`. */
+/** The text of the single inline script of `app.html`. The legacy redirect to `/lite`
+ * (EF-LEC-010) is a file of the origin (`static/lite-redirect.js`): `'self'` allows it under every
+ * level of CSP, where a hash is unknown to the first. */
 export function bootScript(html: string): string {
   const scripts = inlineScripts(html);
   const [only] = scripts;

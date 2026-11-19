@@ -235,6 +235,7 @@ def make_thumbnail(
     *,
     max_edge: int,
     fmt: str = "webp",
+    grey: bool = False,
     caps: ImageCaps | None = None,
     limits: WorkerLimits | None = None,
 ) -> Thumbnail:
@@ -247,7 +248,7 @@ def make_thumbnail(
     _check_input(data, caps)
     result, payload = run_worker(
         "thumbnail",
-        {"caps": _caps_args(caps), "max_edge": max_edge, "fmt": fmt},
+        {"caps": _caps_args(caps), "max_edge": max_edge, "fmt": fmt, "grey": grey},
         data,
         limits=limits or WorkerLimits.for_caps(caps),
     )

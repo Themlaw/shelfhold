@@ -11,6 +11,18 @@ le vérifie — et une politique de sécurité qui n'autorise que la feuille de 
 par son empreinte (`default-src 'none'`, `img-src 'self'`, `form-action 'self'`, `base-uri 'none'`).
 Une page qui contiendrait malgré tout une balise ne lancerait donc rien.
 
+## Couvertures en niveaux de gris et redirection
+
+Les couvertures de `/lite` sont servies **en niveaux de gris** (un canal, WebP, 160, 320 ou 640 px),
+sous les mêmes contrôles que les vignettes en couleur : une couverture que le profil ne peut pas
+voir est introuvable, comme une couverture absente. L'application web garde ses vignettes en couleur.
+
+Un navigateur qui ne sait pas lire les modules JavaScript, ou dont JavaScript est coupé, est envoyé
+par l'application web elle-même vers `/lite`. Le choix se fait sur ce que le navigateur sait faire,
+jamais sur le nom qu'il se donne (aucune lecture du `User-Agent`). Un navigateur très ancien qui
+exécute pourtant les scripts `nomodule` mais lit les modules peut être envoyé ici sans en avoir
+besoin : revenez alors à l'application par son adresse.
+
 ## Se connecter
 
 L'unique identifiant de `/lite` est le **secret d'un jeton d'appareil** ([jetons-appareil.md](jetons-appareil.md)),
@@ -87,8 +99,6 @@ voisin.
 - **La copie hors ligne d'un livre.** Elle se fait dans l'application web (PWA), pas dans `/lite` :
   voir [copies hors ligne](../famille/copies-hors-ligne.md). Ce que vous téléchargez par `/lite`
   ou par l'OPDS reste sur la liseuse, hors de portée de Shelfhold (voir plus bas).
-- **Les vignettes en niveaux de gris** pour un écran e-ink : pas encore disponibles ; les
-  couvertures sont servies en couleur.
 - **La lecture à l'écran dans `/lite`** : elle n'est pas prévue. Pour lire, utilisez KOReader
   (OPDS et kosync) ou Kavita.
 

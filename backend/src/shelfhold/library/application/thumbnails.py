@@ -6,6 +6,11 @@ this process (ENF-SEC-003), and kept under `/data/thumbnails/<aa>/<sha256>-<size
 is computed from the hash and the size and from nothing else: the `thumbnail` row is a ledger of
 what exists (for the catch-up and the collection), never a path that is trusted.
 
+The greyscale variant of `/lite` (L17b) is the same thumbnail in one channel, kept next to the
+colour one as `<sha256>-<size>-grey.webp`. It has no ledger row (no migration): it is made on first
+use, dropped with its colour thumbnail by the collection, and swept after the grace when no colour
+thumbnail of that name exists.
+
 Nothing here knows who may see a cover: that is the caller's decision, taken before anything of
 this module runs (the route asks the one reader filter; the jobs work on every referenced cover).
 
@@ -68,7 +73,7 @@ CACHE_CONTROL: Final = ", ".join(("private", f"max-age={MAX_AGE}", "immutable"))
 _COVER_REF = re.compile(r"covers/([0-9a-f]{64})\.webp")
 _HEX = re.compile(r"[0-9a-f]{64}")
 _SHARD = re.compile(r"[0-9a-f]{2}")
-_NAME = re.compile(r"([0-9a-f]{64})-(160|320|640)\.webp")
+_NAME = re.compile(r"([0-9a-f]{64})-(160|320|640)(-grey)?\.webp")
 _SCRATCH = re.compile(r"\.[^/]*\.tmp")  # what `write_private` leaves when a run is cut
 
 
@@ -79,10 +84,11 @@ def cover_hash(ref: str) -> str | None:
     return found.group(1) if found else None
 
 
-def etag_of(digest: str, size: int) -> str:
+def etag_of(digest: str, size: int, *, grey: bool = False) -> str:
     """The tag of one thumbnail: the same cover and size are the same bytes, for ever. It needs
-    neither the file nor the worker, so a conditional request is answered without either."""
-    return f'"{digest}-{size}"'
+    neither the file nor the worker, so a conditional request is answered without either. The grey
+    variant is other bytes: its own tag."""
+    return f'"{digest}-{size}-grey"' if grey else f'"{digest}-{size}"'
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,12 +137,12 @@ class ThumbnailService:
         self._workers = threading.BoundedSemaphore(CONCURRENT_WORKERS)
         self._held = threading.BoundedSemaphore(MAX_HELD)
         self._lock = threading.Lock()
-        self._flights: dict[tuple[str, int], _Flight] = {}
+        self._flights: dict[tuple[str, int, bool], _Flight] = {}
 
     # -- names -----------------------------------------------------------------------------
     @staticmethod
-    def _rel(digest: str, size: int) -> str:
-        return f"{digest[:2]}/{digest}-{size}.webp"
+    def _rel(digest: str, size: int, grey: bool = False) -> str:
+        return f"{digest[:2]}/{digest}-{size}{'-grey' if grey else ''}.webp"
 
     @staticmethod
     def valid(digest: str, size: int) -> bool:
@@ -153,30 +159,34 @@ class ThumbnailService:
             return None
         return data if len(data) <= limit else None
 
-    def _read_thumb(self, digest: str, size: int) -> bytes | None:
-        name = f"{digest}-{size}.webp"
+    def _read_thumb(self, digest: str, size: int, grey: bool = False) -> bytes | None:
+        name = f"{digest}-{size}{'-grey' if grey else ''}.webp"
         return self._read(f"thumbnails/{digest[:2]}", name, MAX_THUMBNAIL_BYTES)
 
     # -- reading, lazily making ----------------------------------------------------------------
-    def get(self, digest: str, size: int) -> Thumb | None:
+    def get(self, digest: str, size: int, *, grey: bool = False) -> Thumb | None:
         """The thumbnail, made now when it does not exist yet (once, however many ask; `Pending`
         when the wait for the one in progress is over); None when the cover is not there, is not
         the one its name says, or is refused by the worker. Never a partial answer."""
         if not self.valid(digest, size):
             return None
-        if self._known(digest, size):
+        if grey:  # no ledger row: the file at its computed name is the whole record
+            data = self._read_thumb(digest, size, True)
+            if data is not None:
+                return Thumb(data, etag_of(digest, size, grey=True), size)
+        elif self._known(digest, size):
             data = self._read_thumb(digest, size)
             if data is not None:
                 self._touch(digest, size)
                 return Thumb(data, etag_of(digest, size), size)
-        return self._single_flight(digest, size)
+        return self._single_flight(digest, size, grey)
 
     def fallback(self, digest: str) -> bytes | None:
         """What a request that gave up waiting is sent: the cover itself, already reduced (the
         host stores it at 1200 pixels at most) and verified, to be shown and never cached."""
         return self._source(digest)
 
-    def _single_flight(self, digest: str, size: int) -> Thumb | None:
+    def _single_flight(self, digest: str, size: int, grey: bool = False) -> Thumb | None:
         """At most `MAX_HELD` threads wait here at once, whatever the number of covers or sizes:
         the others are told `Pending` without waiting, so the pool the synchronous routes share
         is never kept full by decodes (a flood of sixty requests would otherwise refill it from
@@ -184,12 +194,12 @@ class ThumbnailService:
         if not self._held.acquire(blocking=False):
             raise Pending
         try:
-            return self._fly(digest, size)
+            return self._fly(digest, size, grey)
         finally:
             self._held.release()
 
-    def _fly(self, digest: str, size: int) -> Thumb | None:
-        key = (digest, size)
+    def _fly(self, digest: str, size: int, grey: bool = False) -> Thumb | None:
+        key = (digest, size, grey)
         with self._lock:
             flight = self._flights.get(key)
             leader = flight is None
@@ -204,7 +214,7 @@ class ThumbnailService:
                 raise Pending
             return flight.result
         try:
-            flight.result = self._make(digest, size, wait=self._wait)
+            flight.result = self._make(digest, size, wait=self._wait, grey=grey)
         except Pending:
             flight.pending = True
             raise
@@ -245,7 +255,9 @@ class ThumbnailService:
             return None  # gone, a link, or not the bytes the name promises: never decoded
         return data
 
-    def _make(self, digest: str, size: int, *, wait: float | None = None) -> Thumb | None:
+    def _make(
+        self, digest: str, size: int, *, wait: float | None = None, grey: bool = False
+    ) -> Thumb | None:
         """Decode in the worker and keep the result. `wait` bounds the queue for a worker slot
         (`Pending` past it); None is the job's: as long as it takes. What is on disk at the name
         is replaced, never served: only the bytes made here leave."""
@@ -256,18 +268,21 @@ class ThumbnailService:
             raise Pending
         try:
             made = make_thumbnail(
-                source, ImageKind.COVER, max_edge=size, fmt="webp", limits=self._limits
-            )
+                source, ImageKind.COVER, max_edge=size, fmt="webp", grey=grey,
+                limits=self._limits,
+            )  # fmt: skip
         except ImageRejected as refused:
             log.info("thumbnail.refused", reason=refused.code)
             return None
         finally:
             self._workers.release()
         try:
-            write_data_file(self._data, f"thumbnails/{self._rel(digest, size)}", made.data)
+            write_data_file(self._data, f"thumbnails/{self._rel(digest, size, grey)}", made.data)
         except (OSError, ValueError):  # a link on the way, or the disk: nothing is kept
             log.info("thumbnail.not_kept")
             return None
+        if grey:  # the file is the record
+            return Thumb(made.data, etag_of(digest, size, grey=True), size)
         now = self._clock.now()
         with write_transaction(self._engine) as connection:
             connection.execute(
@@ -315,11 +330,12 @@ class ThumbnailService:
                 return Collected(files, rows)
             if digest not in referenced:
                 files += self._remove(digest[:2], f"{digest}-{size}.webp")
+                files += self._remove(digest[:2], f"{digest}-{size}-grey.webp")
             elif self._have_file(digest, size):
                 continue
             self._forget(digest, size)
             rows += 1
-        files += self._sweep(known, closing)
+        files += self._sweep(known, referenced, closing)
         return Collected(files, rows)
 
     def _have_file(self, digest: str, size: int) -> bool:
@@ -351,8 +367,15 @@ class ThumbnailService:
         except (OSError, ValueError):
             return 0  # a linked shard, a folder in the way: left as it is
 
-    def _sweep(self, known: set[tuple[str, int]], closing: Callable[[], bool]) -> int:
-        """Files of the folder with no row, older than the grace; interrupted writes too."""
+    def _sweep(
+        self,
+        known: set[tuple[str, int]],
+        referenced: Collection[str],
+        closing: Callable[[], bool],
+    ) -> int:
+        """Files of the folder with no row, older than the grace; interrupted writes too. A grey
+        thumbnail has no row: one whose cover no Edition points at goes at once, as a colour
+        one does."""
         cutoff = (self._clock.now() - STRAY_GRACE).timestamp()
         removed = 0
         try:
@@ -374,6 +397,11 @@ class ThumbnailService:
                     (named is not None and (named.group(1), int(named.group(2))) not in known)
                     or _SCRATCH.fullmatch(name) is not None
                 )  # fmt: skip
-                if ours and info is not None and info.st_mtime < cutoff:
+                orphan_grey = (
+                    named is not None
+                    and named.group(3) is not None
+                    and named.group(1) not in referenced
+                )
+                if orphan_grey or (ours and info is not None and info.st_mtime < cutoff):
                     removed += self._remove(shard, name)
         return removed
