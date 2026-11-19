@@ -17,7 +17,7 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "shelfhold"
 
 # What writes a row of `reading_position` or journals `read_units`: the call that does it.
 WRITES = re.compile(
-    r"insert_position\(|sa\.insert\(reading\.reading_position\)|sa\.insert\(position\)"
+    r"insert_position\(|record_server_state\(|sa\.insert\(reading\.reading_position\)|sa\.insert\(position\)"
     r"|\.values\(read_units=|mark_traversed_in_frame\(|_mark_traversed\("
 )
 
@@ -71,7 +71,7 @@ def test_the_callers_of_the_library_writers_take_the_lease(caller: str) -> None:
 def test_no_surface_calls_a_library_writer_directly() -> None:
     """An HTTP route or a CLI command reaches a position only through a service that is listed."""
     direct = re.compile(r"insert_position\(|record_server_state\(|carry_over\(|prefer_edition\(")
-    allowed = {"ops/sheet.py"}  # leased: `CALLERS`
+    allowed = {"ops/sheet.py", "interfaces/http_api/series_sheet.py"}  # the route -> SheetOps
     offenders = [
         p.relative_to(SRC).as_posix()
         for sub in ("interfaces", "ops", "headless")
