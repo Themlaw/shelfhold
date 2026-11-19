@@ -12,7 +12,7 @@ const CARRIER = '01JCARRIER000000000000000C';
 const WORK = '01JWORK00000000000000000W';
 
 const out = (over: Partial<PublicationOut> = {}): PublicationOut => ({
-  carrier_type: 'content', carrier_id: CARRIER, work_id: WORK, scope: 'full', kind: 'pages', title: 'Tale', number: '1', language: 'en',
+  carrier_type: 'content', carrier_id: CARRIER, work_id: WORK, series_id: WORK, scope: 'full', kind: 'pages', title: 'Tale', number: '1', language: 'en',
   reading_direction: 'rtl', expires_at: '2026-11-19T10:10:00Z',
   pages: [
     { index: 1, href: '/content/TICKET/p1.png', media_type: 'image/png' },

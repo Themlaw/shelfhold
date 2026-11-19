@@ -24,7 +24,7 @@ const position = (carrier: string, ts: string, index = 3): PositionIn => ({
 
 function publicationOf(carrier: string, work: string): PublicationOut {
   return {
-    carrier_type: 'content', carrier_id: carrier, work_id: work, scope: 'full', kind: 'pages', title: carrier,
+    carrier_type: 'content', carrier_id: carrier, work_id: work, series_id: work, scope: 'full', kind: 'pages', title: carrier,
     number: null, language: null, reading_direction: 'ltr', expires_at: '2026-11-19T10:10:00Z', pages: [], spine: [], package: null
   };
 }
