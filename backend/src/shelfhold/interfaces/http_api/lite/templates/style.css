@@ -1,0 +1,16 @@
+body { font-family: serif; font-size: 1.15rem; line-height: 1.5; margin: 0 auto; padding: .75rem; max-width: 42rem; background: #fff; color: #000; }
+header { border-bottom: 2px solid #000; padding-bottom: .5rem; margin-bottom: 1rem; }
+header form, header a { display: inline-block; margin: .25rem .5rem .25rem 0; }
+h1 { font-size: 1.5rem; margin: .5rem 0 1rem; }
+h2 { font-size: 1.2rem; margin: 1.25rem 0 .25rem; }
+a { color: #000; }
+ul.rows { list-style: none; margin: 0; padding: 0; }
+ul.rows li { border-bottom: 1px solid #000; }
+ul.rows a { display: block; padding: .8rem .25rem; text-decoration: none; }
+ul.rows img { vertical-align: middle; margin-right: .75rem; width: 3.5rem; height: auto; }
+a.button, button { display: inline-block; font: inherit; color: #000; background: #fff; border: 2px solid #000; padding: .6rem 1rem; margin: .25rem 0; text-decoration: none; cursor: pointer; }
+input[type=text], input[type=password], input[type=search] { font: inherit; border: 2px solid #000; padding: .5rem; width: 100%; box-sizing: border-box; }
+label { display: block; margin-top: 1rem; }
+.pager a { display: inline-block; border: 2px solid #000; padding: .6rem 1rem; margin: 1rem .5rem 0 0; text-decoration: none; }
+.note { border-left: 4px solid #000; padding-left: .75rem; }
+.cover { max-width: 10rem; height: auto; }

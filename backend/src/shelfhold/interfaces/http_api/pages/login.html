@@ -17,6 +17,9 @@ input[type=text], input[type=password] { width: 100%; box-sizing: border-box; pa
 .remember { display: flex; gap: .5rem; align-items: center; }
 button { margin-top: 1.25rem; width: 100%; padding: .6rem; font: inherit; }
 #message { min-height: 1.5rem; margin-top: 1rem; }
+.oidc { margin-top: 1.25rem; }
+.oidc a { display: block; padding: .6rem; text-align: center; border: 1px solid currentColor;
+  color: inherit; }
 footer { margin-top: 2rem; font-size: .875rem; }
 </style>
 </head>
@@ -30,9 +33,10 @@ footer { margin-top: 2rem; font-size: .875rem; }
 <input id="password" name="password" type="password" autocomplete="current-password" maxlength="$max_password" required>
 <label class="remember"><input name="remember" type="checkbox" checked> $remember</label>
 <button type="submit">$submit</button>
-<p id="message" role="alert"></p>
+<p id="message" role="alert">$notice</p>
 </form>
 $passkey_button
+$oidc_button
 <footer><a href="$source_url" rel="noopener noreferrer">$source</a></footer>
 </main>
 <script>

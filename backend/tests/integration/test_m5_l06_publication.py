@@ -99,7 +99,7 @@ class ServerCutArchives(FakeArchives):
             if kept is None:
                 raise ExcerptUnavailableError
             entries = {n: b for n, b in entries.items() if n in kept}
-        return FakeArchive(entries, self.asked)
+        return FakeArchive(entries, self.asked, self.pins.get(content_id, "fake"))
 
 
 @pytest.fixture
@@ -521,3 +521,20 @@ def test_publication_links_cannot_climb_out_of_the_ticket_path(world: World) -> 
     # a name `/content` would refuse is no page of the manifest: it could never be served
     bad = book(world, {"p1.png": PNG, "../x.png": PNG, "a\\b.png": PNG, "ok/p2.png": PNG})
     assert entries_of(publication(world.admin, "content", bad).json()) == ["ok/p2.png", "p1.png"]
+
+
+@pytest.mark.req("EF-LEC-005", "EF-LEC-014", "ENF-SEC-004")
+def test_full_ticket_pins_the_file_and_a_replaced_file_is_typed(world: World) -> None:
+    """R3: a full ticket carries the identity of the file it was made for. A file replaced between
+    two pages is `content_changed` (the reader loads the manifest again), never a page of the new
+    file under the old manifest; an excerpt keeps its own pin (the list)."""
+    content = book(world, pages_of(30))
+    manifest = publication(world.admin, "content", content).json()
+    first, second = manifest["pages"][0]["href"], manifest["pages"][1]["href"]
+    assert fetch(world, world.admin, first).status_code == 200
+    world.src.pins[content] = "the file was replaced"
+    changed = fetch(world, world.admin, second)
+    assert changed.status_code == 409 and changed.json()["code"] == "content_changed"
+    assert changed.json().get("action") and "etag" not in changed.headers
+    again = publication(world.admin, "content", content).json()  # the manifest, loaded again
+    assert fetch(world, world.admin, again["pages"][1]["href"]).status_code == 200
