@@ -43,6 +43,8 @@ export interface PublicationView {
   readingDirection: ReadingDirection;
   title: string;
   language: string | null;
+  /** The Œuvre: the anchor of a setting pinned to this series (L13). */
+  seriesId: string;
   pages: PublicationEntry[];
   /** The reading order of an EPUB, in the same shape as `pages`. */
   spine: PublicationEntry[];
@@ -84,6 +86,7 @@ export function toView(out: PublicationOut): PublicationView {
     readingDirection: out.reading_direction,
     title: out.title,
     language: out.language,
+    seriesId: out.series_id,
     pages: toEntries(out.pages),
     spine: toEntries(out.spine),
     package: out.package ?? null,
