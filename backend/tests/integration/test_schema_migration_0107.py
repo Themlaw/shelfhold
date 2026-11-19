@@ -30,7 +30,7 @@ EPOCH = datetime(1970, 1, 1, tzinfo=UTC).isoformat(sep=" ")
 
 def test_the_revision_is_0107_the_head_on_0106() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0107"]  # the head is pinned here, by the newest
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     assert script.get_revision("0107").down_revision == HEAD_BEFORE
 
 

@@ -92,7 +92,8 @@ describe('Library screen', () => {
     expect(screen.queryByLabelText('Étagère')).toBeNull();
     expect(screen.getByLabelText('Série')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(screen.queryAllByRole('link')).toHaveLength(0);
+    // the only link is her own saved selections (M5 L21); none goes to a sheet
+    expect(screen.queryAllByRole('link').map((l) => l.getAttribute('href')?.endsWith('/selections'))).toEqual([true]);
     expect(screen.getByText('Titre 1')).toBeInTheDocument();
     expect(screen.getByText('Titre 2')).toBeInTheDocument();
     expect(screen.queryByText('Titre 3')).toBeNull();

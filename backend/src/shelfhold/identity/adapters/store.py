@@ -1,5 +1,6 @@
 """SQL storage of users, sessions, API keys and audit entries (tables of migration 0002)."""
 
+import json
 import secrets
 import time
 from collections.abc import Callable, Iterator, Sequence
@@ -304,6 +305,18 @@ def _passkey_of(row: Any) -> PasskeyRecord:
         last_used_at=row.last_used_at,
         revoked_at=row.revoked_at,
     )
+
+
+def _selection_documents(found: list[Any]) -> list[Any]:
+    """The query of a saved selection is a document of its own in the export, not a text in a text;
+    one that is not valid JSON (the table checks it is) would be kept as it is."""
+    for item in found:
+        text = item.pop("query_json")
+        try:
+            item["query"] = json.loads(text)
+        except ValueError:
+            item["query"] = text
+    return found
 
 
 def _words_of(raw: object) -> tuple[str, ...]:
@@ -703,6 +716,7 @@ class SqlIdentityStore:
             token, account = identity.device_token, identity.destination_account
             notify, listing = identity.notify_destination, identity.request_list_import
             collection, item = catalog.collection, catalog.collection_item
+            saved = catalog.saved_selection
             marker, hint = acquisition.read_marker, acquisition.tracker_hint
             src_account, backup = acquisition.source_account, acquisition.tachibk_import
             # a key issued FOR her (a device token), or one of hers that is for nobody else: the
@@ -748,6 +762,13 @@ class SqlIdentityStore:
                     conn, "reading_conflicts", conflict, conflict.c.user_id == user_id,
                     "id", "carrier_type", "carrier_id", "winner_position_id",
                     "loser_position_id", "choice", "created_at", "resolved_at",
+                ),
+                # M5 L21: her stored queries (a name and the closed grammar; no Work, no result)
+                "saved_selections": _selection_documents(
+                    rows(
+                        conn, "saved_selections", saved, saved.c.owner_user_id == user_id,
+                        "id", "name", "query_json", "created_at", "updated_at",
+                    )
                 ),
                 "sessions": rows(
                     conn, "sessions", _session, _session.c.user_id == user_id,

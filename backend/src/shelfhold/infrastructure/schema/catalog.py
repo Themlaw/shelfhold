@@ -970,3 +970,34 @@ bulk_order = sa.Table(
     json_shape_check("summary", "object"),
     sa.Index("ix_bulk_order_actor", "actor_id"),
 )
+
+# A saved selection (M5 L21, EF-BIB-017): a name and a stored query, nothing else. The query is one
+# JSON object of the closed grammar of `catalog.domain.selection_query` (checked by the application;
+# here only its shape and its size are held, so nothing odd can sit in a row). It holds no Work and
+# no result: it is evaluated each time it is read, in the scope of the profile that reads it. It
+# belongs to one profile, read by her alone (no sharing in M5), and goes with her.
+MAX_SELECTION_NAME = 200
+MAX_SELECTION_QUERY_BYTES = 2048  # `selection_query.MAX_QUERY_BYTES`
+saved_selection = sa.Table(
+    "saved_selection",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "owner_user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("name", sa.String(), nullable=False),
+    sa.Column("query_json", sa.Text(), nullable=False),
+    now_column(),
+    now_column("updated_at"),
+    ulid_check("id"),
+    ulid_check("owner_user_id"),
+    sa.CheckConstraint(f'length("name") BETWEEN 1 AND {MAX_SELECTION_NAME}', name="name_length"),
+    sa.CheckConstraint(
+        'CASE WHEN json_valid("query_json") THEN json_type("query_json") = \'object\' ELSE 0 END',
+        name="query_object",
+    ),
+    sa.CheckConstraint(
+        f'length(CAST("query_json" AS BLOB)) <= {MAX_SELECTION_QUERY_BYTES}', name="query_size"
+    ),
+    sa.Index("ix_saved_selection_owner", "owner_user_id"),
+)

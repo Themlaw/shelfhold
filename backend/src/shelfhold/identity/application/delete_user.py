@@ -33,6 +33,8 @@ SECTIONS = (
     "source_accounts", "tachibk_imports",
     # M5 L07: the questions put to the reader (identifiers, choice, dates: no locator)
     "reading_conflicts",
+    # M5 L21: her saved selections (a name and a stored query, no result)
+    "saved_selections",
 )  # fmt: skip
 
 

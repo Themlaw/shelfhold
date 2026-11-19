@@ -28,6 +28,7 @@ CATALOG_TABLES = {
     "external_link",  # migration 0079 (M4 L23)
     "collection", "collection_item", "collection_remote",  # migration 0086 (M4 L18a)
     "bulk_order",  # migration 0098 (M4 L28)
+    "saved_selection",  # migration 0105 (M5 L21)
 }  # fmt: skip
 ACQUISITION_TABLES = {
     "follow_notice",
