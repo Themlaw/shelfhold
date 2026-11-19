@@ -32,6 +32,58 @@ Déclarez chez le fournisseur un client « code d'autorisation » dont l'adresse
 Sans l'émetteur et l'identifiant, rien n'existe : aucune route ne répond, la page de connexion ne
 montre aucun lien.
 
+### Les étapes, avec Compose
+
+1. **L'adresse publique d'abord.** `SHELFHOLD_PUBLIC_URL` doit être l'adresse exacte que le
+   navigateur utilise, en `https://` : c'est elle qui construit l'adresse de retour, et un
+   `http://` ou un nom interne fait refuser la connexion par le fournisseur.
+2. **Le client chez le fournisseur.** Type « code d'autorisation », PKCE activé, adresse de retour
+   `<SHELFHOLD_PUBLIC_URL>/api/v1/auth/oidc/callback`. Notez l'identifiant et, si le fournisseur en
+   donne un, le secret.
+3. **Les variables dans Compose.** Décommentez et complétez le bloc `environment:` du service
+   `shelfhold` (ou mettez-les dans le `.env` que lit `env_file:`) :
+
+   ```yaml
+   environment:
+     SHELFHOLD_PUBLIC_URL: "https://shelfhold.example.org"
+     SHELFHOLD_OIDC_ISSUER: "https://id.example.org"
+     SHELFHOLD_OIDC_CLIENT_ID: "shelfhold"
+     # SHELFHOLD_OIDC_CLIENT_SECRET: "…"   # seulement pour un client confidentiel
+     # SHELFHOLD_OIDC_MAX_AGE_S: "300"
+   ```
+
+   Le secret, s'il y en a un, se met dans un fichier et se lit par
+   `SHELFHOLD_OIDC_CLIENT_SECRET_FILE` : il ne s'écrit pas en clair dans un fichier versionné.
+4. **Redémarrer** (`docker compose up -d`). `shelfhold status` et la page de connexion disent si le
+   fournisseur est configuré ; la découverte est lue au premier usage, pas au démarrage.
+5. **Lier un compte** (voir plus bas) : la connexion par le fournisseur ne crée jamais de compte.
+
+### L'origine séparée du contenu (facultative)
+
+`SHELFHOLD_CONTENT_ORIGIN` place les octets des livres sur une autre origine que l'application
+([contenu.md](contenu.md)). Elle est indépendante d'OIDC, mais les deux se règlent au même endroit :
+si vous l'activez, le fournisseur doit accepter une adresse de retour sur l'origine de
+`SHELFHOLD_PUBLIC_URL` (celle de l'application), jamais sur celle du contenu.
+
+### Derrière un mandataire
+
+Déclarez le mandataire inverse dans `SHELFHOLD_HTTP_TRUSTED_PROXIES` : sans cela, Shelfhold voit
+toutes les requêtes en clair et refuse la connexion par le fournisseur comme les routes des
+liseuses. `X-Forwarded-Proto` et `X-Forwarded-Prefix` ne sont lus que de lui.
+
+## Les refus, et ce qu'ils veulent dire
+
+| Code | Ce qui s'est passé | Ce qu'il faut faire |
+|---|---|---|
+| `oidc_unavailable` | le fournisseur ne répond pas, ou sa découverte est illisible | vérifiez `SHELFHOLD_OIDC_ISSUER` et que le fournisseur est joignable depuis le conteneur |
+| `oidc_conflict` | cette identité est déjà liée à un autre compte | déliez-la de l'autre compte, puis reliez |
+| `oidc_child_profile` | un profil enfant ne s'ouvre jamais par le fournisseur | utilisez le mot de passe du profil, ou un compte adulte |
+| `oidc_admin_target` | un administrateur ne lie pas le compte d'un autre administrateur | chacun lie le sien depuis sa session |
+| `oidc_link_expired` | la liaison a été commencée il y a trop longtemps | recommencez la liaison |
+| `oidc_not_linked` | aucune identité n'est liée à ce compte | liez-la depuis les réglages du compte |
+| `reauth_required` | la session n'est pas assez récente pour cette action | confirmez auprès du fournisseur, ou redonnez le mot de passe |
+| `credential_not_allowed` | une clé d'API ou un jeton d'appareil a tenté une action réservée | refaites-la depuis une session |
+
 ## Ce qui est vérifié
 
 PKCE (S256), `state` et `nonce`, à usage unique et liés au navigateur qui a commencé. Le jeton

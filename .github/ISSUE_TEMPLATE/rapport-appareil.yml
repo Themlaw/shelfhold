@@ -5,12 +5,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Rappel : pas de nom de site, pas de lien vers du contenu non autorisé, pas de clé OPDS.** Ce rapport alimente la matrice de `docs/admin/clients.md`. Une case n'y passe de « non vérifié » à un fait que si vous donnez les éléments ci-dessous.
+        **Rappel : pas de nom de site, pas de lien vers du contenu non autorisé, pas de clé OPDS, pas de secret de jeton d'appareil.** Ce rapport alimente la matrice de `docs/admin/clients.md`. Une case n'y passe de « non vérifié » à un fait que si vous donnez les éléments ci-dessous.
   - type: input
     id: appareil
     attributes:
       label: Appareil et version du système
-      description: Modèle de la liseuse, du téléphone ou de la tablette.
+      description: Modèle de la liseuse, du téléphone ou de la tablette, et la version du firmware.
     validations:
       required: true
   - type: input
@@ -26,9 +26,43 @@ body:
       label: User-Agent relevé
       description: Pour information seulement ; l'interface n'en tient pas compte.
   - type: dropdown
+    id: tls
+    attributes:
+      label: Connexion en HTTPS (TLS)
+      description: La page s'ouvre-t-elle, ou l'appareil refuse-t-il le certificat ? Voir `docs/admin/liseuses-tls.md`.
+      options:
+        - La page s'ouvre en HTTPS
+        - Le certificat est refusé
+        - Non essayé
+    validations:
+      required: true
+  - type: dropdown
+    id: lite
+    attributes:
+      label: Page `/lite` (HTML sans JavaScript)
+      description: Parcourir, se connecter avec un jeton d'appareil, télécharger.
+      options:
+        - Fonctionne
+        - Ne fonctionne pas
+        - Non essayé
+    validations:
+      required: true
+  - type: dropdown
+    id: kepub
+    attributes:
+      label: KEPUB pour Kobo
+      description: Le tome proposé en KEPUB s'ouvre-t-il et se pagine-t-il correctement ?
+      options:
+        - Fonctionne
+        - Ne fonctionne pas
+        - Non essayé
+    validations:
+      required: true
+  - type: dropdown
     id: hors-ligne
     attributes:
-      label: Téléchargement depuis Kavita pour lire sans réseau
+      label: Lecture hors ligne — téléchargement depuis Kavita
+      description: Le fichier téléchargé se lit-il sans réseau, et où reste-t-il ?
       options: [Fonctionne, Ne fonctionne pas, Non essayé]
     validations:
       required: true
@@ -41,3 +75,4 @@ body:
     id: details
     attributes:
       label: Formats d'image et remarques
+      description: "JPEG, PNG, WebP, AVIF : ce qui s'affiche et ce qui ne s'affiche pas."
