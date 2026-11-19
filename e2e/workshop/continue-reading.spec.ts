@@ -34,5 +34,5 @@ test('test_continue_reading_home_axe', async ({ page }) => {
       expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
     }
   }
-  await expect(page.getByRole('link', { name: 'Série A, unité 2' })).toHaveAttribute('href', '/lire/unit/u2');
+  await expect(page.getByRole('link', { name: 'Lire, Série A, n° 2' })).toHaveAttribute('href', '/lire/unit/u2');
 });

@@ -153,11 +153,11 @@ describe('home page', () => {
     const section = await screen.findByRole('region', { name: 'Reprendre la lecture' });
     const rows = within(section).getAllByRole('listitem');
     expect(rows.map((r) => r.textContent?.split(/\s+/).join(' ').trim())).toEqual([
-      'Série A Unité 2 · prochaine à lire Lire',
-      'Série B Unité 9 · en cours Ouvrir dans Kavita'
+      'Série A N° 2 · prochaine à lire Lire',
+      'Série B N° 9 · en cours Ouvrir dans Kavita'
     ]);
-    expect(within(rows[0]!).getByRole('link', { name: 'Série A, unité 2' })).toHaveAttribute('href', '/lire/unit/u2');
-    expect(within(rows[1]!).getByRole('link', { name: 'Série B, unité 9' })).toHaveAttribute('href', KAVITA);
+    expect(within(rows[0]!).getByRole('link', { name: 'Lire, Série A, n° 2' })).toHaveAttribute('href', '/lire/unit/u2');
+    expect(within(rows[1]!).getByRole('link', { name: 'Ouvrir dans Kavita, Série B, n° 9' })).toHaveAttribute('href', KAVITA);
     expect(resumeQuery?.get('limit')).toBe('6'); // a bounded list asked for
   });
 

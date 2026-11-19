@@ -74,6 +74,40 @@ def exported(world: World, edition: str = "ok") -> tuple[str, str]:
     return item, unit
 
 
+def read_there(world: World, who: str, item: str) -> None:
+    """The profile has a live, verified account on a destination that holds `item`, written."""
+    import os
+    from datetime import UTC, datetime
+
+    from shelfhold.infrastructure.schema import identity
+    from tests.integration.test_schema_storage_export import add_destination, add_target
+
+    with write_transaction(world.seed.engine) as connection:
+        destination = add_destination(
+            connection, world.seed.shelves["adult"], add_target(connection)
+        )
+        connection.execute(
+            sa.insert(export.export_record).values(
+                shelf_destination_id=destination, export_item_id=item, locator_type="path",
+                rel_path="a/b.cbz", state="written",
+            )
+        )  # fmt: skip
+        if not connection.execute(sa.text("SELECT 1 FROM secret_key WHERE kid = 'k1'")).first():
+            connection.execute(
+                sa.text("INSERT INTO secret_key (kid, state) VALUES ('k1', 'active')")
+            )
+        account = new_ulid()
+        connection.execute(
+            sa.insert(identity.destination_account).values(
+                id=account, user_id=user_id_of(world.seed.engine, who),
+                shelf_destination_id=destination, remote_user=f"remote-{account[-6:]}",
+                secret_v=1, secret_kid="k1",  # noqa: S106 (a key id)
+                secret_nonce=os.urandom(12), secret_ct=os.urandom(32),
+                token_fingerprint=account[-12:], verified_at=datetime.now(UTC),
+            )
+        )  # fmt: skip
+
+
 def test_continue_reading_home(world: World) -> None:
     """The next Unit of a series under way: the one after the last read, the one being read when
     there is one; one entry per series, whoever said it (the pull, the reader, or both)."""
@@ -162,6 +196,8 @@ def test_continue_reading_opens_kavita_for_an_exported_unit(world: World) -> Non
     """A Unit read where it was sent opens there; the kept copy opens the reader."""
     item, unit = exported(world)
     pulled(world, "admin", "export_item", item, done=False)
+    assert items(world.admin.get(HOME)) == []  # no account of hers there: nothing to open
+    read_there(world, "admin", item)
     got = items(world.admin.get(HOME))
     assert [(i["unit_id"], i["state"], i["target"]) for i in got] == [
         (unit, "in_progress", "kavita")
@@ -229,3 +265,39 @@ def test_continue_reading_refuses_a_key_and_a_device_token(world: World) -> None
     assert keyed.status_code in (401, 403)
     anonymous = world.env.other_client("10.0.0.72").get(HOME)
     assert anonymous.status_code in (401, 403)
+
+
+def test_continue_reading_finished_series_do_not_eat_the_budget(world: World) -> None:
+    """Many series read to the end, then one under way, older: it is still offered."""
+    content, unit = kept(world, edition="twelve")
+    put(world, world.admin, content, page(5), minutes=-30)
+    for key in ("ok", "adult_shelf", "mixed_rated"):
+        for _ in range(3):
+            done, _u = kept(world, edition=key)
+            pulled(world, "admin", "content", done, done=True)
+    shown = {i["unit_id"] for i in items(world.admin.get(HOME, params={"limit": 24}))}
+    assert unit in shown
+
+
+def test_continue_reading_a_unit_under_way_with_no_file_falls_through(world: World) -> None:
+    """The Unit being read can no longer be opened (read elsewhere, no account of hers there): the
+    series is not hidden for it, the next Unit that can be opened is offered."""
+    item, started = exported(world)  # number 500, read where it was sent
+    pulled(world, "admin", "export_item", item, done=False)
+    _later, after = kept(world)
+    with write_transaction(world.seed.engine) as connection:
+        connection.execute(
+            sa.update(catalog.unit).where(catalog.unit.c.id == after).values(number_sort=600.0)
+        )
+    got = items(world.admin.get(HOME))
+    assert [(i["unit_id"], i["state"]) for i in got] == [(after, "next")]
+    assert started != after
+
+
+def test_continue_reading_hidden_edition_of_a_visible_work_gives_nothing_to_the_child(
+    world: World,
+) -> None:
+    hidden, _u = kept(world, edition="adult_edition")
+    pulled(world, "kid", "content", hidden, done=False)
+    nothing = world.mum.get(HOME)
+    assert world.kid.get(HOME).json() == nothing.json()

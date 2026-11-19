@@ -15,9 +15,10 @@
 {#if items.length > 0}
   <section class="continue-reading" aria-labelledby="continue-title">
     <h2 id="continue-title">{t('home.continue_reading')}</h2>
-    <ul>
+    <ul role="list">
       {#each items as item (item.work_id)}
-        {@const label = t('home.continue_open', { title: item.title, number: item.number })}
+        {@const verb = item.target === 'reader' ? t('home.continue_read') : t('activity.open_in_kavita')}
+        {@const label = t('home.continue_open', { open: verb, title: item.title, number: item.number })}
         <li>
           <span class="title">{item.title}</span>
           <span class="unit">

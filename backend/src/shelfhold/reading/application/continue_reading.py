@@ -12,8 +12,10 @@ copy): two sources that agree are one row per (profile, Unit), so a series is ne
   error: the answer is the one of a profile with no progress. No new rule of visibility.
 * An excerpt (D-P1) writes no position (L07), so it never brings a series here.
 * `target`: `reader` when the profile reads the kept copy in full (ADR-0055 D-P1, the rule of the
-  publication), `kavita` when the Unit is read where it was sent; a Unit with neither is dropped.
-* Bounded: `MAX_ENTRIES` at most, and `MAX_WORKS_EXAMINED` series looked at, whatever the library.
+  publication), `kavita` when the Unit is read where it was sent (a written export on a destination
+  where she has a live, verified account); a Unit with neither is dropped.
+* Bounded: `MAX_ENTRIES` at most, `MAX_WORKS_EXAMINED` series looked at (only those with something
+  to offer), `MAX_CANDIDATES` Units tried per series, whatever the library.
 """
 
 from dataclasses import dataclass
@@ -23,7 +25,7 @@ import sqlalchemy as sa
 
 from shelfhold.catalog.public import visible_editions_clause
 from shelfhold.identity.public import reader_scope
-from shelfhold.infrastructure.schema import catalog, export, reading
+from shelfhold.infrastructure.schema import catalog, export, identity, reading
 from shelfhold.reading.application.content_access import ContentAccess, NoReadableCopyError
 from shelfhold.reading.application.progress import UnknownCarrierError
 from shelfhold.reading.application.publication import PublicationService
@@ -34,6 +36,7 @@ DEFAULT_ENTRIES: Final = 12
 MAX_ENTRIES: Final = 24
 MAX_WORKS_EXAMINED: Final = 120
 _BATCH: Final = 40
+MAX_CANDIDATES: Final = 8  # Units tried for one series before it waits
 
 Target = Literal["reader", "kavita"]
 
@@ -105,6 +108,8 @@ class ContinueReading:
         progress, unit, edition = _PROGRESS, catalog.unit, catalog.edition
         position = reading.reading_position
         touched = sa.func.min(position.c.client_ts, position.c.server_ts)
+        sibling = catalog.unit.alias("sibling")
+        done = _PROGRESS.alias("done")  # not the outer row: the subquery must not correlate to it
         rows = connection.execute(
             sa.select(edition.c.work_id, sa.func.max(touched).label("ts"))
             .select_from(
@@ -116,6 +121,18 @@ class ContinueReading:
                 progress.c.user_id == user_id,
                 progress.c.state.in_(("in_progress", "read")),
                 visible_editions_clause(scope),  # type: ignore[arg-type]
+                sa.or_(
+                    progress.c.state == "in_progress",
+                    sa.exists().where(  # a later Unit that is not read yet: something to offer
+                        sibling.c.edition_id == unit.c.edition_id,
+                        sibling.c.track == "main",
+                        sibling.c.id.not_in(
+                            sa.select(done.c.unit_id).where(
+                                done.c.user_id == user_id, done.c.state == "read"
+                            )
+                        ),
+                    ),
+                ),
             )
             .group_by(edition.c.work_id)
             .order_by(sa.desc("ts"), edition.c.work_id)
@@ -160,10 +177,12 @@ class ContinueReading:
             return None
         under_way = [r for r in rows if r.state == "in_progress"]
         if under_way:
-            current = max(under_way, key=lambda r: (str(r.ts), _order(r)))
-            return self._described(
-                connection, user_id, str(current.id), "in_progress", bool(current.approximate)
-            )
+            for current in sorted(under_way, key=lambda r: (str(r.ts), _order(r)), reverse=True):
+                made = self._described(
+                    connection, user_id, str(current.id), "in_progress", bool(current.approximate)
+                )
+                if made is not None:
+                    return made  # the latest one that can still be opened
         latest = max(rows, key=lambda r: (str(r.ts), _order(r)))
         edition_id = str(latest.edition_id)
         furthest = max(_order(r) for r in rows if str(r.edition_id) == edition_id)
@@ -180,7 +199,8 @@ class ContinueReading:
                 ),
             )
         ).all()
-        for candidate in sorted((r for r in later if _order(r) > furthest), key=_order):
+        ahead = sorted((r for r in later if _order(r) > furthest), key=_order)
+        for candidate in ahead[:MAX_CANDIDATES]:
             made = self._described(connection, user_id, str(candidate.id), "next", False)
             if made is not None:
                 return made  # the first Unit after the furthest that can be opened
@@ -220,10 +240,29 @@ class ContinueReading:
                 return "reader"
         except (NoReadableCopyError, UnknownCarrierError):
             pass
+        record, item, account = (
+            export.export_record, export.export_item, identity.destination_account,
+        )  # fmt: skip
         held_elsewhere = connection.execute(
-            sa.select(export.unit_coverage.c.unit_id).where(
-                export.unit_coverage.c.carrier_type == "export_item",
-                export.unit_coverage.c.unit_id == unit_id,
+            sa.select(sa.literal(1))
+            .select_from(
+                export.unit_coverage.join(
+                    item,
+                    sa.and_(
+                        export.unit_coverage.c.carrier_type == "export_item",
+                        export.unit_coverage.c.carrier_id == item.c.id,
+                    ),
+                )
+                .join(record, record.c.export_item_id == item.c.id)
+                .join(account, account.c.shelf_destination_id == record.c.shelf_destination_id)
             )
+            .where(
+                export.unit_coverage.c.unit_id == unit_id,
+                record.c.state == "written",
+                account.c.user_id == user_id,
+                account.c.revoked_at.is_(None),
+                account.c.verified_at.is_not(None),
+            )
+            .limit(1)
         ).first()
         return "kavita" if held_elsewhere else None
