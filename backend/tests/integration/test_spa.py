@@ -148,3 +148,28 @@ def test_openapi_describes_healthz_response(settings: Settings) -> None:
         schema = client.app.openapi()  # type: ignore[attr-defined]
     ok = schema["paths"]["/healthz"]["get"]["responses"]["200"]["content"]["application/json"]
     assert "$ref" in ok["schema"]
+
+
+@pytest.mark.req("EF-LEC-012")
+def test_manifest_and_service_worker_are_served_with_their_own_types(
+    settings: Settings, build_dir: Path
+) -> None:
+    """The manifest has its own media type and the worker is revalidated at each start: a worker
+    kept by the HTTP cache would hold a stale shell for ever."""
+    (build_dir / "manifest.webmanifest").write_text('{"name": "Shelfhold"}', encoding="utf-8")
+    (build_dir / "service-worker.js").write_text("self.addEventListener('fetch', () => {});", "utf-8")
+    with _client(settings, build_dir) as client:
+        manifest = client.get("/manifest.webmanifest")
+        worker = client.get("/service-worker.js")
+    assert manifest.headers["content-type"].startswith("application/manifest+json")
+    assert worker.headers["content-type"].split(";")[0] in {"text/javascript", "application/javascript"}
+    assert worker.headers["cache-control"] == "no-cache"
+    assert "service-worker-allowed" not in worker.headers  # the scope stays the origin root
+
+
+@pytest.mark.req("EF-LEC-012")
+def test_a_missing_service_worker_is_not_the_shell(settings: Settings, build_dir: Path) -> None:
+    """A browser that asks for the worker of a build that has none must not be handed an HTML page."""
+    with _client(settings, build_dir) as client:
+        response = client.get("/service-worker.js")
+    assert response.status_code == 404
