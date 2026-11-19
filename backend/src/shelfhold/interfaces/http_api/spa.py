@@ -6,12 +6,14 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from starlette.requests import Request
 
-from shelfhold.infrastructure.http_headers import IMMUTABLE_CACHE, NO_CACHE, spa_csp
+from shelfhold.infrastructure.http_headers import IMMUTABLE_CACHE, NO_CACHE, reader_csp, spa_csp
 from shelfhold.interfaces.http_api.catalog import error_code
 from shelfhold.interfaces.http_api.problems import build_problem_response
 
 API_SEGMENTS = frozenset({"api", "healthz", "readyz", "openapi.json"})
-IMMUTABLE_PREFIX = "_app/immutable/"
+IMMUTABLE_PREFIXES = ("_app/immutable/", "reader-entry/assets/")
+READER_SEGMENT = "lire"  # the reader is its own page, under its own policy (ADR-0055)
+READER_DIR = "reader-entry"
 
 
 def mount_spa(app: FastAPI, build_dir: Path) -> bool:
@@ -21,12 +23,16 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
     if not index.is_file():
         return False
     csp = spa_csp(index.read_text(encoding="utf-8"))
+    reader = (root / READER_DIR / "reader.html").resolve()  # compared with resolved paths below
+    reader_policy = reader_csp(reader.read_text(encoding="utf-8")) if reader.is_file() else None
 
     def respond(file: Path, cache: str) -> Response:
         response = FileResponse(file)
         response.headers["Cache-Control"] = cache
         if file == index:
             response.headers["Content-Security-Policy"] = csp
+        elif file == reader and reader_policy is not None:
+            response.headers["Content-Security-Policy"] = reader_policy
         return response
 
     @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
@@ -36,9 +42,14 @@ def mount_spa(app: FastAPI, build_dir: Path) -> bool:
         if path.split("/", 1)[0] in API_SEGMENTS:  # an API client expects a problem, not a blank
             request_id = getattr(request.state, "request_id", None)
             return build_problem_response(error_code("not_found"), request_id=request_id)
+        if path.split("/", 1)[0] == READER_SEGMENT:
+            # a full navigation to the reader: its own page and policy, never the shell of the SPA
+            if reader_policy is None:
+                return Response(status_code=404)
+            return respond(reader, NO_CACHE)
         candidate = (root / path).resolve()
         if path and candidate.is_file() and candidate.is_relative_to(root):
-            immutable = path.startswith(IMMUTABLE_PREFIX)
+            immutable = path.startswith(IMMUTABLE_PREFIXES)
             return respond(candidate, IMMUTABLE_CACHE if immutable else NO_CACHE)
         last = path.rsplit("/", 1)[-1]
         if "." in last or path.startswith("_app/"):

@@ -61,7 +61,7 @@ const workshopConfig = defineConfig({
 export default workshop ? workshopConfig : defineConfig({
   testDir: 'tests',
   // played on the image, by `playwright.image.config.ts` (M3 L57), never on this local server
-  testIgnore: '**/test_m3_journey.spec.ts',
+  testIgnore: ['**/test_m3_journey.spec.ts', '**/m5_reader_epub.spec.ts'], // the reader of EPUB has its own config (three engines)
   reporter: 'list',
   use: { baseURL: `http://127.0.0.1:${PORT}`, locale: 'fr-FR' },
   webServer: {
