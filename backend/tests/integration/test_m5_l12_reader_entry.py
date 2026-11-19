@@ -238,7 +238,7 @@ def test_the_middleware_lets_through_only_the_exact_reader_frame_ancestors(
     written: str, served: str
 ) -> None:
     """A route that writes anything else than `frame-ancestors 'self'` gets `'none'`: the opening
-    is the reader's alone (a `blob:` document inherits it, WebKit checks it for the reading frame)."""
+    is the reader's alone (a `blob:` document inherits it, WebKit checks it for the frame)."""
     from shelfhold.infrastructure.http_headers import with_frame_ancestors
 
     assert with_frame_ancestors(written) == served
