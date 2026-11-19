@@ -69,7 +69,6 @@ def editions(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[Ed
         seed.engine.dispose()
 
 
-@xfail
 @pytest.mark.req("EF-LEC-014", "EF-LEC-009")
 def test_a_walk_through_a_block_never_reads_a_unit_its_file_covers_in_part(
     lab: OpdsWorld,
@@ -100,7 +99,6 @@ def test_a_walk_through_a_block_never_reads_a_unit_its_file_covers_in_part(
     assert items[2].unit_id not in read  # but never the Unit its file holds only in part
 
 
-@xfail
 @pytest.mark.req("EF-BIB-026", "EF-LEC-014")
 def test_changing_the_preferred_edition_writes_no_position_while_a_job_holds_the_work(
     editions: EditionWorld,
@@ -117,7 +115,6 @@ def test_changing_the_preferred_edition_writes_no_position_while_a_job_holds_the
         assert world.state()[1] == before  # no position, no mark, under the job's lease
 
 
-@xfail
 @pytest.mark.req("EF-LEC-014")
 def test_a_finely_paged_partial_cover_never_reaches_the_end_of_the_unit(tmp_path: Path) -> None:
     """The chapter's own file holds it whole in ten pages (spreads); a volume holds part of it in

@@ -666,7 +666,14 @@ class Kosync:
             if m.unit_id and m.item_id and m.page_count > 0
         ]
         if len(steps) >= 2 and spans:
-            marked = mark_traversed_in_frame(connection, position_id, steps=steps, spans=spans)
+            carriers = {
+                m.unit_id: m.item_id
+                for m in self._members(connection, version.id)
+                if m.unit_id and m.item_id
+            }
+            marked = mark_traversed_in_frame(
+                connection, position_id, steps=steps, spans=spans, carriers=carriers
+            )
             if marked:
                 self._write_gap(connection, position_id, steps[-1].ts - steps[-2].ts)
 

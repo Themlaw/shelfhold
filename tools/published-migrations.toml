@@ -337,5 +337,5 @@ since = "1.2"
 
 [[migration]]
 file = "0106_progress_partial_extent.py"
-sha256 = "2dae996e194fdbf39737b44459f2f0729e87b36526e30990d42f776893f3d72f"
+sha256 = "9fd8e2f488747c27495542c56fccc024e7bf7ed18ac1fc8b2c920f0955c4d1be"
 since = "1.2"

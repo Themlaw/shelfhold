@@ -135,7 +135,9 @@ reading_conflict = sa.Table(
 #     `in_progress` from that file, whatever a server says of the file and whatever walk crossed
 #     its pages (M5 L22a, 0106): the rest of the Unit is in no file's pages. Another file that
 #     covers it whole reads it. Its fraction is the one of the UNIT, not of the covered part: the
-#     pages it holds over the span of a file that covers the Unit whole (`unit_span`), so a quarter
+#     pages it holds over the span of a file that covers the Unit whole (`unit_span`, or the
+#     cover's own span when it is the larger: finer paging never reaches 1.0 by itself), so a
+#     quarter
 #     read to its end is a quarter of the Unit, never 1.0; with no such file, no fraction (NULL).
 READING_PROGRESS_SELECT = """
 SELECT user_id, unit_id,
@@ -158,7 +160,8 @@ FROM (
       CASE
         WHEN o.extent <> 'full' THEN CASE
           WHEN o.exact AND o.end_page > o.start_page AND o.unit_span > 0
-          THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0 / o.unit_span)) END
+          THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0
+            / max(o.unit_span, o.end_page - o.start_page))) END
         WHEN o.exact THEN CASE WHEN o.end_page > o.start_page
           THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0 / (o.end_page - o.start_page)))
           WHEN o.page >= o.end_page THEN 1.0 ELSE 0.0 END

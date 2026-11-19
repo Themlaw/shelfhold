@@ -31,6 +31,7 @@ from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.library.public import cover_hash
 from shelfhold.ops.errors import InvalidChoiceError, UnknownSubjectError
+from shelfhold.progress_lease import build_progress_lease
 from shelfhold.reading.public import prefer_edition
 
 if TYPE_CHECKING:
@@ -305,7 +306,14 @@ class SheetOps:
     def prefer_edition(self, edition_id: str) -> dict[str, Any]:
         """Make the Edition the preferred one of its Work, and carry each profile's reading over
         to it (EF-BIB-026). The answer counts profiles; it never says whose reading."""
-        with write_transaction(self._comp.engine) as connection:
+        with self._comp.engine.connect() as peek:
+            work_id = str(self._edition(peek, edition_id).work_id)
+        # the carry over writes a position and read marks per profile: the lease of the Work, like
+        # every other writer of a position (M5 L22a); held by a job, `ProgressBusyError` (a 503)
+        with (
+            build_progress_lease(self._comp.engine, self._comp.clock)(work_id),
+            write_transaction(self._comp.engine) as connection,
+        ):
             edition = self._edition(connection, edition_id)
             done = prefer_edition(connection, edition_id=edition_id, now=self._comp.clock.now())
         return {

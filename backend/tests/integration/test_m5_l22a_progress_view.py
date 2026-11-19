@@ -94,3 +94,31 @@ def test_a_walk_through_the_pages_of_a_partial_cover_marks_nothing_read(tmp_path
             units[0]: "read",
             units[1]: "in_progress",
         }
+
+
+def test_the_fraction_of_a_partial_cover_is_bounded_by_the_unit_not_by_the_cover(
+    tmp_path: Path,
+) -> None:
+    """Borders of the fraction (#386, C3): the divisor is the larger of the span of a file that
+    covers the Unit whole and the cover's own span. Smaller cover (5 pages of 10): the end of it is
+    4/9 of the Unit, behind page 6 of the whole file. Larger cover (30 pages against 10): the end
+    of it is 1.0 at most, never beyond, and behind a position in the whole file when that is
+    further."""
+    whole_hash = "sha256:" + "d6" * 32
+    for cover_pages, whole_page, partial_page, expected in (
+        (5, 6, 5, "whole"),
+        (30, 9, 30, "whole"),
+    ):
+        with reading_env(tmp_path / str(cover_pages)) as env:
+            reader = env.user("reader")
+            (unit,) = env.units("ok", 1)
+            whole = env.file("ok", [unit], bounds=[(1, 10)], content_hash=whole_hash)
+            partial = env.file("ok", [unit], bounds=[(1, cover_pages)], content_hash=NEW_HASH)
+            _partial(env, partial, unit)
+            later = env.position(
+                reader, whole, page=whole_page, percent=None, client_ts=T0 + timedelta(hours=1),
+                content_hash=whole_hash,
+            )  # fmt: skip
+            env.position(reader, partial, page=partial_page, percent=None, client_ts=T0)
+
+            assert env.progress(reader)[unit].last_position_id == later, expected

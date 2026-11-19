@@ -19,8 +19,12 @@ from shelfhold.identity.domain.catalogue import RESERVED_ACTIONS
 from shelfhold.identity.public import Principal
 from shelfhold.interfaces.http_api.auth import reserved_action
 from shelfhold.interfaces.http_api.ops import refusals
+from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.stats import require_admin
 from shelfhold.ops import OpsServices
+from shelfhold.reading.application.lease import ProgressBusyError
+
+_BUSY = {"Cache-Control": "no-store", "Retry-After": "2"}  # a job holds the Work (M5 L22a)
 
 __all__ = ["build_series_sheet_router"]
 
@@ -202,8 +206,11 @@ def build_series_sheet_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
 
     @router.post("/editions/{edition_id}/preferred")
     def preferred_edition_set(edition_id: str, _admin: Admin) -> PreferredEditionOut:
-        with refusals():
-            return PreferredEditionOut(**get_ops().sheet.prefer_edition(edition_id))
+        try:
+            with refusals():
+                return PreferredEditionOut(**get_ops().sheet.prefer_edition(edition_id))
+        except ProgressBusyError:  # a job holds the Work: the same answer as every position write
+            raise ProblemError("progress_busy", headers=_BUSY) from None
 
     @router.post("/attachments/{attach_id}/plan")
     def attach_plan(

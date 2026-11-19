@@ -4,7 +4,8 @@ A file that covers a Unit only in part (`extent <> 'full'`: the first half of a 
 of a volume) says nothing of the rest of it. The view gave `read` to such a Unit when a server said
 the file read, and a plausible walk through its pages journaled the Unit read (`read_units`): both
 are now `in_progress`, unless another file covers the Unit whole. Its fraction is the one of the
-Unit (the pages the file holds over the span of a file that covers it whole), never of the covered
+Unit (the pages the file holds over the span of a file that covers it whole, or over its own span
+when that is the larger), never of the covered
 part alone. The mark a walk already journaled for a partial Unit (written by an earlier version)
 is not read either; a carried-over mark (`transposed`) is not about a file and is kept.
 
@@ -43,7 +44,8 @@ FROM (
       CASE
         WHEN o.extent <> 'full' THEN CASE
           WHEN o.exact AND o.end_page > o.start_page AND o.unit_span > 0
-          THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0 / o.unit_span)) END
+          THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0
+            / max(o.unit_span, o.end_page - o.start_page))) END
         WHEN o.exact THEN CASE WHEN o.end_page > o.start_page
           THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0 / (o.end_page - o.start_page)))
           WHEN o.page >= o.end_page THEN 1.0 ELSE 0.0 END
@@ -163,7 +165,8 @@ FROM (
       CASE
         WHEN o.extent <> 'full' THEN CASE
           WHEN o.exact AND o.end_page > o.start_page AND o.unit_span > 0
-          THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0 / o.unit_span)) END
+          THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0
+            / max(o.unit_span, o.end_page - o.start_page))) END
         WHEN o.exact THEN CASE WHEN o.end_page > o.start_page
           THEN min(1.0, max(0.0, (o.page - o.start_page) * 1.0 / (o.end_page - o.start_page)))
           WHEN o.page >= o.end_page THEN 1.0 ELSE 0.0 END
