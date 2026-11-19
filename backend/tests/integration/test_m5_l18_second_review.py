@@ -48,11 +48,13 @@ def waiting(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[tup
         def acquire(self, blocking: bool = True, timeout: float | None = None) -> bool:
             if self._inner.acquire(blocking=False):
                 return True
+            if not blocking:
+                return False
             with watch.lock:
                 watch.waiting += 1
                 watch.peak = max(watch.peak, watch.waiting)
             try:
-                return self._inner.acquire(blocking, timeout if timeout is not None else -1)
+                return self._inner.acquire(True, timeout if timeout is not None else -1)
             finally:
                 with watch.lock:
                     watch.waiting -= 1

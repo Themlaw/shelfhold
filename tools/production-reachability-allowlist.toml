@@ -135,7 +135,7 @@ symbols = [
 [[allow]]
 category = "unwired-m5-renditions"
 reason = "2026-11-19 (M5 L18): the page-by-page stream (`pse:stream`) now makes and reads renditions (`render`, `read`). One method of `RenditionService` has no production caller: the method form of `collect_orphans` (the sweep is called by the window job through the module function)."
-until = "M5"
+until = "M5"  # L20b wires the sweep method
 symbols = [
   "shelfhold.library.application.renditions:RenditionService.collect_orphans",
 ]
