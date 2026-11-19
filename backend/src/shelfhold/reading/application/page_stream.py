@@ -34,12 +34,21 @@ from shelfhold.reading.application.progress import UnknownCarrierError
 from shelfhold.reading.domain.content_types import media_type_of
 from shelfhold.reading.domain.publication import page_names
 
-__all__ = ["MAX_STREAMS", "PageStream", "StreamOffer", "StreamPage"]
+__all__ = ["MAX_STREAMS", "PageStream", "StreamBudget", "StreamOffer", "StreamPage"]
 
 MAX_STREAMS: Final = 50  # the streams one feed offers in all, so a feed stays bounded
 _MAX_SCAN: Final = 4 * MAX_STREAMS  # rows looked at to find them (a hidden one is skipped)
 _CARRIER: Final = "export_item"
 _FORMAT: Final = "cbz"
+
+
+@dataclass
+class StreamBudget:
+    """What one feed may spend, across all its Editions: streams offered and archives opened (an
+    archive opened and left out costs as much as one that is offered)."""
+
+    offers: int = MAX_STREAMS
+    opens: int = MAX_STREAMS
 
 
 @dataclass(frozen=True)
@@ -62,10 +71,11 @@ class PageStream:
         self._engine, self._access = engine, access
 
     def offers(
-        self, user_id: str, edition_id: str, *, limit: int = MAX_STREAMS
+        self, user_id: str, edition_id: str, budget: StreamBudget | None = None
     ) -> list[StreamOffer]:
         """The streams of an Edition the caller has already shown to the profile: those whose item
         and content the profile sees now, whose kept copy can be read and has pages."""
+        budget = budget or StreamBudget()
         item, content, unit = export.export_item, storage.content, catalog.unit
         with self._engine.connect() as connection:
             rows = connection.execute(
@@ -81,13 +91,15 @@ class PageStream:
             ).all()
         found: list[StreamOffer] = []
         for row in rows:
-            if len(found) >= limit:
+            if budget.offers <= 0 or budget.opens <= 0:
                 break
+            budget.opens -= 1
             item_id = str(row.id)
             try:
                 count = self._count(user_id, item_id)
             except UnknownCarrierError:
                 continue  # what the profile may not see is not offered, and is not named
+            budget.offers -= 1
             found.append(StreamOffer(item_id, count, row.number_raw))
         return found
 

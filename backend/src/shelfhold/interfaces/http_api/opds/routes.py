@@ -64,7 +64,7 @@ from shelfhold.interfaces.http_api.opds.pse import STREAM_REL, STREAM_TYPE, add_
 from shelfhold.interfaces.http_api.problems import ProblemError, language_from_headers
 from shelfhold.interfaces.http_api.thumbnails import thumbnail_response
 from shelfhold.library.public import RenditionService, ThumbnailService, cover_hash
-from shelfhold.reading.application.page_stream import MAX_STREAMS, PageStream
+from shelfhold.reading.application.page_stream import PageStream, StreamBudget
 
 __all__ = ["build_opds_router"]
 
@@ -475,11 +475,9 @@ def build_opds_router(
                         summary=notice,
                     )
                 )
-        budget = MAX_STREAMS  # one bound for the whole feed, not one per Edition
+        budget = StreamBudget()  # one bound for the whole feed, not one per Edition
         for edition in editions:  # a stream is offered for what the profile sees now, nothing else
-            offered = get_streams().offers(principal.user_id, edition.edition_id, limit=budget)
-            budget -= len(offered)
-            for stream in offered:
+            for stream in get_streams().offers(principal.user_id, edition.edition_id, budget):
                 entries.append(
                     Entry(
                         f"urn:shelfhold:stream:{stream.item_id}",

@@ -57,7 +57,8 @@ _MAX_ACCEPT = 2048
 _KINDS: Final = ("jpeg", "png")  # the order of preference when the client has none of its own
 _VARY = ",".join(("Authorization", "Accept"))
 CONVERSIONS = 2  # pages converted at the same time, like the workers of the thumbnails
-_WAIT_S = 10.0
+MAX_HELD = 8  # threads that may wait for a slot or convert, as the thumbnails bound theirs
+_WAIT_S = 1.0
 _NO_STORE = {"Cache-Control": "no-store", "Vary": _VARY}
 
 Choice = Literal["native", "jpeg", "png"]
@@ -131,6 +132,7 @@ def add_pse_routes(
     get_renditions: Callable[[], RenditionService],
 ) -> None:
     slots = threading.BoundedSemaphore(CONVERSIONS)
+    held = threading.BoundedSemaphore(MAX_HELD)
 
     def absent() -> ProblemError:
         return ProblemError("not_found", headers=_NO_STORE)
@@ -161,7 +163,7 @@ def add_pse_routes(
         if choice == "native":
             made = content_response(served.body, media_type=served.media_type, filename=served.name)
         else:
-            made = _converted(get_renditions(), slots, served, choice, absent)
+            made = _converted(get_renditions(), slots, held, served, choice, absent)
         made.headers["Vary"] = _VARY
         return made
 
@@ -169,7 +171,10 @@ def add_pse_routes(
 def _converted(
     service: RenditionService,
     slots: threading.BoundedSemaphore,
-    served: StreamPage, kind: str, absent: Callable[[], ProblemError]
+    held: threading.BoundedSemaphore,
+    served: StreamPage,
+    kind: str,
+    absent: Callable[[], ProblemError],
 ) -> Response:
     """The page as `kind`: made now or found in the cache, read back checked. What the page cannot
     become is 406 (a header the worker refuses, a file that does not decode); a source whose purge
@@ -177,15 +182,19 @@ def _converted(
     params = RenditionParams(kind=kind, entry=served.name[:512])
     try:
         rendition = service.cached(served.content_id, params, served.body)  # no slot for a hit
-        if rendition is None:  # a conversion starts a worker: only a few at a time
-            if not slots.acquire(timeout=_WAIT_S):
-                raise ProblemError(
-                    "rendition_busy", headers={**_NO_STORE, "Retry-After": str(int(_WAIT_S))}
-                )
+        if rendition is None:  # a conversion starts a worker: few at a time, few waiting
+            busy = ProblemError("rendition_busy", headers={**_NO_STORE, "Retry-After": "1"})
+            if not held.acquire(blocking=False):
+                raise busy  # too many threads already wait: refused at once, no thread held
             try:
-                rendition = service.render(served.content_id, served.body, params)
+                if not slots.acquire(timeout=_WAIT_S):
+                    raise busy
+                try:
+                    rendition = service.render(served.content_id, served.body, params)
+                finally:
+                    slots.release()
             finally:
-                slots.release()
+                held.release()
         data = service.read(rendition)
     except (UnknownSourceError, TombstonedContentError):
         raise absent() from None
