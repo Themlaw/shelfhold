@@ -19,7 +19,7 @@
 """
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -119,6 +119,9 @@ class PositionRecord:
     device_id: str | None
 
 
+FULL_EXTENT = "full"  # `unit_coverage.extent` of a file that covers a Unit whole
+
+
 def _edition_of(connection: sa.Connection, carrier_type: str, carrier_id: str) -> str | None:
     if carrier_type == "export_item":
         query = sa.select(export.export_item.c.edition_id).where(
@@ -150,6 +153,7 @@ def _coverage(connection: sa.Connection, carrier_type: str, carrier_id: str) -> 
         connection.execute(
             sa.select(
                 cover.c.unit_id,
+                cover.c.extent,
                 sa.func.json_extract(cover.c.start_locator, "$.page").label("start_page"),
                 sa.func.json_extract(cover.c.end_locator, "$.page").label("end_page"),
             )
@@ -254,6 +258,27 @@ def _mark_state(
     return after, already
 
 
+def partial_units(connection: sa.Connection, carriers: Mapping[str, str]) -> set[str]:
+    """The Units (keys of `carriers`) that the given `export_item` covers only in part: the pages
+    of such a file are not those Units read, whatever walk crosses them."""
+    cover = export.unit_coverage
+    found: set[str] = set()
+    pairs = list(carriers.items())
+    for start in range(0, len(pairs), 400):
+        chunk = pairs[start : start + 400]
+        found.update(
+            str(r[0])
+            for r in connection.execute(
+                sa.select(cover.c.unit_id).where(
+                    cover.c.carrier_type == "export_item",
+                    cover.c.extent != FULL_EXTENT,
+                    sa.tuple_(cover.c.unit_id, cover.c.carrier_id).in_(chunk),
+                )
+            )
+        )
+    return found
+
+
 def mark_traversed_in_frame(
     connection: sa.Connection,
     position_id: str,
@@ -261,12 +286,20 @@ def mark_traversed_in_frame(
     steps: list[Step],
     spans: list[Span],
     max_pages_per_minute: float = DEFAULT_MAX_PAGES_PER_MINUTE,
+    carriers: Mapping[str, str] | None = None,
 ) -> list[str]:
     """The traversal of a frame that is not one file's: the pages of a block of a series, whose
     chapters sit on several files. `steps` are the profile's positions in that frame (page of the
     block, `server_ts`), oldest first, and `spans` the Units' ranges of pages in it. The rule is the
     one of `_mark_traversed` (speed on `server_ts` alone, no instant jump, undoable); the marks go
-    in the journal of the position that closed the move."""
+    in the journal of the position that closed the move.
+
+    `carriers` maps each Unit of `spans` to the file (`export_item`) that holds it in the block: a
+    Unit that file covers only in part is never a span here either, the rule of `_mark_traversed`
+    (`partial_units`, one rule for both writers; M5 L22a)."""
+    if carriers:
+        partial = partial_units(connection, carriers)
+        spans = [span for span in spans if span.unit_id not in partial]
     row = connection.execute(
         sa.select(reading.reading_position.c.user_id).where(
             reading.reading_position.c.id == position_id
@@ -314,8 +347,16 @@ def _mark_traversed(
     scale: float | None = None
     if paged and isinstance(row.locator.get("page"), int):
         mode = PAGES
-        spans = [Span(c.unit_id, float(c.start_page), float(c.end_page)) for c in cover]
-    elif len(cover) == 1 and row.percent is not None:
+        # the pages a file holds of a Unit it covers only in part are not that Unit read (M5 L22a,
+        # `reading_progress`): such a Unit is never a span, whatever walk crosses its pages
+        spans = [
+            Span(c.unit_id, float(c.start_page), float(c.end_page))
+            for c in cover
+            if c.extent == FULL_EXTENT
+        ]
+        if not spans:
+            return []
+    elif len(cover) == 1 and cover[0].extent == FULL_EXTENT and row.percent is not None:
         mode = SHARE
         spans = [Span(cover[0].unit_id, 0.0, 1.0)]
         count = _page_count(connection, row.carrier_type, row.carrier_id)
