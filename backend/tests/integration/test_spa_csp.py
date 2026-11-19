@@ -270,3 +270,19 @@ def test_a_build_that_widens_the_image_sources_is_refused(
     migrate(settings)
     with pytest.raises(RuntimeError, match="img-src"):
         create_app(settings.model_copy(update={"frontend_dir": build}))
+
+
+@pytest.mark.req("EF-LEC-012", "ENF-SEC-004")
+@pytest.mark.parametrize("name", ["worker-src", "manifest-src"])
+@pytest.mark.parametrize(
+    "wider", ["'self' blob:", "*", "'self' https:", "'unsafe-inline'", "data:"]
+)
+def test_a_build_that_loosens_the_worker_or_manifest_source_is_refused(
+    settings: Settings, tmp_path: Path, name: str, wider: str
+) -> None:
+    """The PWA names its worker and its manifest in the policy of the SPA: a build that widens
+    either is not the page that was audited."""
+    build = _build(tmp_path, _page(f"{_csp(script=sha(BOOT))}; {name} {wider}"))
+    migrate(settings)
+    with pytest.raises(RuntimeError, match=name):
+        create_app(settings.model_copy(update={"frontend_dir": build}))
