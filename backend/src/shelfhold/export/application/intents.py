@@ -820,8 +820,9 @@ class IntentJournal:
         """Chapter files replaced by a volume under one intent (M4 L10, EF-EXP-019). The volume is
         written first, then each chapter file goes to the bin of its root, then the bookkeeping:
 
-        - the volume is not there: nothing was done, the chapters are untouched, the intent is
-          closed (the assembly is asked again by whoever wanted it);
+        - the volume is not there: the intent is cancelled, and the chapters it had already taken to
+          the bin are put back where they were (`_cancel_assembly`; the assembly is asked again by
+          whoever wanted it);
         - the volume is there (it is the file the intent names): every chapter file still served
           goes to the bin, one that is already there is left, then the bookkeeping is owed;
         - anything else (a third file at the volume's path, a chapter file nobody made, a chapter
@@ -832,9 +833,7 @@ class IntentJournal:
         disk = self._disk
         found = disk.observe(intent.dst)
         if found is None:
-            self._close(intent.id, "cancelled")
-            report.abandoned.append(intent.id)
-            return
+            return self._cancel_assembly(intent, olds, report)
         if found[0] != "file" or disk.sha256_of(intent.dst) != new:
             return self._drift(intent, report, "the volume's path holds another file")
         replayed = False
@@ -853,6 +852,37 @@ class IntentJournal:
                 return self._drift(intent, report, "a chapter file is not the one replaced")
         self._finish(intent, on_done)
         (report.replayed if replayed else report.completed).append(intent.id)
+
+    def _cancel_assembly(self, intent: OpenIntent, olds: list[Any], report: ResolveReport) -> None:
+        """The volume is not there (it was never written, or a third party removed it after the
+        assembly had begun to take the chapters): the assembly is cancelled, and the chapters it
+        had already sent to the bin go back to their own paths (M5 L22a, #326 c), the same files.
+
+        Everything is looked at first and nothing is moved unless every chapter is one of two
+        things: still served as the intent describes it (left alone), or in its bin entry with its
+        path free. A path another file has taken, or a chapter that is nowhere, is drift: nothing is
+        overwritten, the intent stays open, an admin decides."""
+        disk = self._disk
+        back: list[tuple[str, str]] = []
+        for old in olds:
+            local, sha, entry = old.get("local"), old.get("sha256"), old.get("entry")
+            root_rel = old.get("root_rel")
+            if not (isinstance(local, str) and isinstance(sha, str) and isinstance(entry, str)):
+                return self._drift(intent, report, "a chapter of the assembly is not described")
+            seen = disk.observe(local)
+            if seen is not None:
+                if seen[0] == "file" and disk.sha256_of(local) == sha:
+                    continue  # never taken: it is where it was
+                return self._drift(intent, report, "a chapter file is not the one replaced")
+            if not isinstance(root_rel, str) or not self._binned(local, old):
+                return self._drift(intent, report, "a chapter is neither served nor binned")
+            back.append((local, f"{entry}/{root_rel}"))
+        if back and not isinstance(disk, BinDisk):
+            return self._drift(intent, report, "this disk cannot read a bin")
+        for local, path in back:
+            disk.restore_from_bin(local, path)  # type: ignore[attr-defined]
+        self._close(intent.id, "cancelled")
+        report.abandoned.append(intent.id)
 
     def _binned(self, local: str, old: dict[str, Any]) -> bool:
         """The chapter file is in the bin entry the intent named for it."""

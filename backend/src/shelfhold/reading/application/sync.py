@@ -43,9 +43,9 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.kavita_names import same_kavita_username
 from shelfhold.infrastructure.schema import export, identity, reading
 from shelfhold.infrastructure.secrets.keyring import Keyring
+from shelfhold.reading.application.lease import ProgressBusyError, ProgressLease, progress_leased
 from shelfhold.reading.application.member_keys import MemberKeyRevokedError, live_member_account
 from shelfhold.reading.application.page_map import relayable, verify_page_maps
-from shelfhold.reading.application.lease import ProgressBusyError, ProgressLease, progress_leased  # noqa: F401
 from shelfhold.reading.application.progress import (
     UnknownCarrierError,
     _current_hash,
@@ -258,12 +258,13 @@ def sync_member(
             should_stop,
             max_session_hours * 3600,
             mode,
+            hold_work,
         )
     except _Stop as stop:
         outcome.code = stop.code
     log.info(
         "progress_sync.member_done", code=outcome.code, pulled=outcome.pulled,
-        pushed=outcome.pushed, echoes=outcome.echoes, hidden=outcome.hidden,
+        pushed=outcome.pushed, busy=outcome.busy, echoes=outcome.echoes, hidden=outcome.hidden,
     )  # fmt: skip
     return outcome
 
@@ -444,6 +445,7 @@ def _pass(
     should_stop: Callable[[], bool] | None = None,
     max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
     mode: str = "sync",
+    hold_work: ProgressLease | None = None,
 ) -> None:
     started = clock.now()
     account_id = _live(engine, user_id, destination_id)
@@ -454,7 +456,7 @@ def _pass(
     try:
         _pass_open(
             engine, member, user_id, destination_id, account_id, declared, clock, started,
-            chapters, outcome, should_stop, max_session_s, mode,
+            chapters, outcome, should_stop, max_session_s, mode, hold_work,
         )  # fmt: skip
     finally:
         member.close()
@@ -474,6 +476,7 @@ def _pass_open(
     should_stop: Callable[[], bool] | None,
     max_session_s: float,
     mode: str = "sync",
+    hold_work: ProgressLease | None = None,
 ) -> None:
     try:
         who = member.account_name()
@@ -525,7 +528,7 @@ def _pass_open(
                     changed = _chapter(
                         engine, member, user_id, destination_id, ref, clock, started, outcome,
                         notes.get(ref.chapter_id), ref.chapter_id in pending, stamp,
-                        max_session_s, mode,
+                        max_session_s, mode, hold_work,
                     )  # fmt: skip
                 except ChapterRejected:
                     outcome.rejected += 1  # this chapter only: not for the account, or gone
@@ -764,6 +767,7 @@ def _chapter(
     stamp: str | None,
     max_session_s: float = DEFAULT_MAX_SESSION_HOURS * 3600,
     mode: str = "sync",
+    hold_work: ProgressLease | None = None,
 ) -> _Note | None:
     """Pull, then push, one chapter. The note to write, or `None` when it would be the same.
 
@@ -788,11 +792,17 @@ def _chapter(
         outcome.echoes += 1
     elif (  # a page 0 where the note had seen more is Kavita's « unread » (a chapter it made new
         # has no note: its 0 is a new chapter, not a reading taken back)
-        not unchanged
-        and (seen.page > 0 or (old is not None and (old.seen_page or 0) > 0))
-        and _record_pull(engine, user_id, destination_id, ref, seen.page, clock)
+        not unchanged and (seen.page > 0 or (old is not None and (old.seen_page or 0) > 0))
     ):
-        outcome.pulled += 1
+        try:
+            pulled = _record_pull(engine, user_id, destination_id, ref, seen.page, clock, hold_work)
+        except ProgressBusyError:
+            # a job is rewriting the Work: the chapter waits whole for the next pass, and its note
+            # stays as it was (a note that said "seen" would make the next pass find it unchanged)
+            outcome.busy += 1
+            return None
+        if pulled:
+            outcome.pulled += 1
     if not echo:
         pushed_page = None  # Kavita moved on its own: what we pushed is no longer what it holds
     wanted: int | None = None
@@ -970,11 +980,20 @@ def _said_device_id(locator: dict[str, Any]) -> str:
 
 
 def _record_pull(
-    engine: sa.Engine, user_id: str, destination_id: str, ref: ChapterRef, page: int, clock: Any
+    engine: sa.Engine,
+    user_id: str,
+    destination_id: str,
+    ref: ChapterRef,
+    page: int,
+    clock: Any,
+    hold_work: ProgressLease | None = None,
 ) -> bool:
     now = clock.now()
     at = server_page(page, ref.pages)
-    with write_transaction(engine) as connection:
+    with (
+        progress_leased(engine, hold_work, "export_item", ref.carrier_id),
+        write_transaction(engine) as connection,
+    ):
         content_hash = _current_hash(connection, "export_item", ref.carrier_id)
         if content_hash is None:  # a file with no content to anchor a position on
             return False

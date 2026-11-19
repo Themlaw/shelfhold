@@ -1,6 +1,7 @@
 """Export the followed series as OPML or CSV (EF-INT-027 (3)).
 
-Both formats carry the same four fields: title, source, series URL and last number read. Neither
+Both formats carry the same four fields: title, source, series URL and last number read, the last
+one of one profile (M5 L22a: what a child read is not what the administrator read). Neither
 is a contract: the file is meant to be re-imported by hand elsewhere, so it stays plain text.
 The URL is the one the source gave for the series, stripped of anything that could authenticate
 (user info, fragment, and query parameters that look like a token, key or session).
@@ -17,7 +18,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import sqlalchemy as sa
 
-from shelfhold.infrastructure.schema import acquisition, catalog
+from shelfhold.infrastructure.schema import acquisition, catalog, identity
 
 FORMATS = ("opml", "csv")
 CSV_HEADER = ("title", "source", "url", "last_number")
@@ -67,8 +68,29 @@ def public_url(raw: str | None) -> str:
     return urlunsplit((parts.scheme, netloc, parts.path, query, ""))
 
 
-def collect_follows(engine: sa.Engine, user_id: str | None = None) -> list[FollowRow]:
-    """One row per followed Edition, by title: its best active binding, its last read Unit."""
+def first_administrator(engine: sa.Engine) -> str | None:
+    """The profile an export is for when none is named: the oldest administrator."""
+    with engine.connect() as connection:
+        found = connection.execute(
+            sa.select(identity.user.c.id)
+            .where(identity.user.c.role == "admin")
+            .order_by(identity.user.c.id)  # a ULID: the oldest first
+            .limit(1)
+        ).scalar()
+    return None if found is None else str(found)
+
+
+def profile_by_username(engine: sa.Engine, username: str) -> str | None:
+    with engine.connect() as connection:
+        found = connection.execute(
+            sa.select(identity.user.c.id).where(identity.user.c.username == username)
+        ).scalar()
+    return None if found is None else str(found)
+
+
+def collect_follows(engine: sa.Engine, user_id: str | None) -> list[FollowRow]:
+    """One row per followed Edition, by title: its best active binding, and the last Unit that
+    `user_id` read (never another profile's reading; `None`: nobody, nothing is read)."""
     sf, sb, si = acquisition.series_follow, acquisition.source_binding, acquisition.source_item
     work, unit = catalog.work, catalog.unit
     with engine.connect() as connection:
@@ -88,7 +110,11 @@ def collect_follows(engine: sa.Engine, user_id: str | None = None) -> list[Follo
             sa.select(unit.c.edition_id, unit.c.number_norm)
             .where(
                 unit.c.track == "main",
-                unit.c.id.in_(sa.text("SELECT unit_id FROM reading_progress WHERE state = 'read'")),
+                unit.c.id.in_(
+                    sa.text(
+                        "SELECT unit_id FROM reading_progress WHERE state = 'read' AND user_id = :u"
+                    ).bindparams(u=user_id or "")
+                ),
             )
             .order_by(unit.c.number_sort.asc(), unit.c.number_segment_ordinal.asc())
         ):
@@ -136,11 +162,12 @@ def render_csv(rows: Iterable[FollowRow]) -> str:
     return buffer.getvalue()
 
 
-def export_follows(engine: sa.Engine, fmt: str) -> str:
-    """The followed series as `opml` or `csv` text; any other format is a `ValueError`."""
+def export_follows(engine: sa.Engine, fmt: str, user_id: str | None) -> str:
+    """The followed series as `opml` or `csv` text, with the last number `user_id` read; any other
+    format is a `ValueError`."""
     if fmt not in FORMATS:
         raise ValueError(fmt)
-    rows = collect_follows(engine)
+    rows = collect_follows(engine, user_id)
     return render_opml(rows) if fmt == "opml" else render_csv(rows)
 
 

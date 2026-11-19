@@ -324,3 +324,8 @@ since = "1.2"
 file = "0102_reading_conflict.py"
 sha256 = "0605a4775caaa3c9160fe2be591b504a15aec8bee9c33b745251ec7db7d923b5"
 since = "1.2"
+
+[[migration]]
+file = "0106_progress_partial_extent.py"
+sha256 = "3dcb11122d096e1806983740fd45b21658dfa6e43e20a570679fd2b0720b3ec8"
+since = "1.2"

@@ -150,6 +150,7 @@ def _coverage(connection: sa.Connection, carrier_type: str, carrier_id: str) -> 
         connection.execute(
             sa.select(
                 cover.c.unit_id,
+                cover.c.extent,
                 sa.func.json_extract(cover.c.start_locator, "$.page").label("start_page"),
                 sa.func.json_extract(cover.c.end_locator, "$.page").label("end_page"),
             )
@@ -314,8 +315,16 @@ def _mark_traversed(
     scale: float | None = None
     if paged and isinstance(row.locator.get("page"), int):
         mode = PAGES
-        spans = [Span(c.unit_id, float(c.start_page), float(c.end_page)) for c in cover]
-    elif len(cover) == 1 and row.percent is not None:
+        # the pages a file holds of a Unit it covers only in part are not that Unit read (M5 L22a,
+        # `reading_progress`): such a Unit is never a span, whatever walk crosses its pages
+        spans = [
+            Span(c.unit_id, float(c.start_page), float(c.end_page))
+            for c in cover
+            if c.extent == "full"
+        ]
+        if not spans:
+            return []
+    elif len(cover) == 1 and cover[0].extent == "full" and row.percent is not None:
         mode = SHARE
         spans = [Span(cover[0].unit_id, 0.0, 1.0)]
         count = _page_count(connection, row.carrier_type, row.carrier_id)

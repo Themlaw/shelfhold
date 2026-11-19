@@ -68,9 +68,7 @@ def spy(monkeypatch: pytest.MonkeyPatch) -> list[float]:
 
 
 @pytest.fixture
-def world(
-    spy: list[float], monkeypatch: pytest.MonkeyPatch, settings: Settings
-) -> Iterator[World]:
+def world(spy: list[float], monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World]:
     from tests.integration.test_l05a_content_route import _world
     from tests.integration.test_m5_l06_publication import ServerCutArchives
 
@@ -124,7 +122,7 @@ def test_a_key_or_a_device_token_is_refused_the_same_way_with_the_lease_held(
 ) -> None:
     """The attack: a key of the API and a device token never write a position of the reader, and
     holding the Work must not turn their refusal into a `progress_busy` (it would tell a key that
-    a job is rewriting the Work). The session is the only credential that gets as far as the lease."""
+    a job is rewriting the Work). Only the session gets as far as the lease."""
     import base64
 
     from shelfhold.identity.public import local_auth
@@ -215,10 +213,9 @@ def test_a_read_cannot_land_between_the_guard_and_the_swap_of_an_upgrade(
     guard "read" is behind it, the swap is not done), a writer of a position is refused; before
     and after, it is not. The lease is the real one, the lock the upgrade really takes."""
     import shelfhold.export.application.upgrade as upgrade_module
+    from shelfhold.acquisition.application.team_switch import TeamSwitchService
     from tests.export_env import export_env
     from tests.team_switch_env import RealUpgrader, team_switch
-
-    from shelfhold.acquisition.application.team_switch import TeamSwitchService
 
     with export_env() as env:
         s = team_switch(env)

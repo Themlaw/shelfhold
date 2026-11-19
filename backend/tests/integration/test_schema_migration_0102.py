@@ -25,7 +25,7 @@ WIN, LOSE = "01HZZZZZZZZZZZZZZZZZZZZZZD", "01HZZZZZZZZZZZZZZZZZZZZZZE"
 
 def test_the_revision_is_0102_the_head_on_0100() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0102"]  # the head is pinned here, by the newest
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it (0106 pins it)
     # chained on 0100 until L03 (0101) lands; re-chained then
     assert script.get_revision("0102").down_revision == "0100"
 

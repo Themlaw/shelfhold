@@ -1,6 +1,6 @@
 """The lease a writer of a position takes (M5 L22a, debt of M4 L35).
 
-A job that rewrites files (an upgrade, a team switch, an assembly) holds the lock of the Work for the
+A job that rewrites files (an upgrade, a team switch, an assembly) holds the lock of the Work for
 whole of the replacement, and looks at the guard "chapter read" under it. A position written during
 that time, between the guard and the swap, would mark read a chapter the job then replaces. So every
 writer of a position takes the same lock of the same Work before it writes, outside its own

@@ -34,6 +34,15 @@ def _user(api: Live, name: str, role: str = "member") -> str:
     return user_id
 
 
+def _oldest_admin(api: Live) -> str:
+    """The instance's first administrator (the harness may have made one), else a new one."""
+    with api.env.inst.engine.connect() as connection:
+        found = connection.execute(
+            sa.text("SELECT id FROM user WHERE role = 'admin' ORDER BY id LIMIT 1")
+        ).scalar()
+    return str(found) if found is not None else _user(api, "root", "admin")
+
+
 def _follow(api: Live) -> None:
     with api.env.inst.engine.begin() as connection:
         connection.execute(
@@ -93,7 +102,8 @@ def test_the_command_exports_the_asked_profile_and_by_default_the_first_administ
     with live(monkeypatch, settings, tmp_path, chapters=()) as api:
         units = {n: api.env.add_chapter(api.series, n) for n in ("2", "10")}
         _follow(api)
-        admin, child = _user(api, "root", "admin"), _user(api, "kid")
+        admin, child = _oldest_admin(api), _user(api, "kid")
+        _user(api, "second", "admin")  # a later administrator is not the default
         _read(api, child, units["10"])
         _read(api, admin, units["2"])
         capsys.readouterr()

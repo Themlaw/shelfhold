@@ -1,4 +1,4 @@
-"""M5 L22a (EF-EXP-019, EF-BIB-044, debt of M4 #326 c): a cancelled assembly gives its chapters back.
+"""M5 L22a (EF-EXP-019, EF-BIB-044, M4 #326 c debt): a cancelled assembly gives back its chapters.
 
 An assembly writes the volume, then sends each chapter file to the bin of its root, then keeps the
 books. When it is cut short and a third party removes the volume before the next start, the journal
@@ -89,9 +89,12 @@ def test_cancelled_intent_restores_chapters(monkeypatch: pytest.MonkeyPatch) -> 
         states = sorted(str(r.state) for r in env.rows(export.export_record))
         assert states == ["written"] * 3
         with env.engine.connect() as connection:
-            assert connection.execute(
-                sa.select(sa.func.count()).select_from(export.export_assembly)
-            ).scalar_one() == 0
+            assert (
+                connection.execute(
+                    sa.select(sa.func.count()).select_from(export.export_assembly)
+                ).scalar_one()
+                == 0
+            )
 
 
 def test_a_cancelled_intent_never_overwrites_what_took_the_chapters_place(

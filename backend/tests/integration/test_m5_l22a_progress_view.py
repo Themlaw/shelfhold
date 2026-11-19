@@ -38,7 +38,8 @@ def _partial(env: ReadingEnv, carrier: str, unit: str) -> None:
 def _states(env: ReadingEnv, user: str, view: str) -> dict[str, str]:
     with env.engine.connect() as connection:
         rows = connection.execute(
-            sa.text(f"SELECT unit_id, state FROM {view} WHERE user_id = :u"), {"u": user}  # noqa: S608
+            sa.text(f"SELECT unit_id, state FROM {view} WHERE user_id = :u"),  # noqa: S608
+            {"u": user},
         )
         return {str(r.unit_id): str(r.state) for r in rows}
 

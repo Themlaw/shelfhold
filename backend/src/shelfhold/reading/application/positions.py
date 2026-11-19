@@ -45,7 +45,7 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, reading
 from shelfhold.reading.application.content_access import ContentAccess, NoReadableCopyError
-from shelfhold.reading.application.lease import ProgressBusyError, ProgressLease, progress_leased  # noqa: F401
+from shelfhold.reading.application.lease import ProgressLease, progress_leased
 from shelfhold.reading.application.progress import (
     HISTORY_LIMIT,
     _current_hash,
@@ -185,7 +185,12 @@ class ReaderPositions:
         if scope == "excerpt" or ticket_scope == "excerpt":
             self._access.resolve(user_id, carrier_type, carrier_id)  # absent = hidden, first
             raise ExcerptWritesNoPositionError
-        with write_transaction(self._engine) as connection:
+        if self._hold_work is not None:
+            self._access.resolve(user_id, carrier_type, carrier_id)  # absent = hidden: no lease
+        # the lease of the Work a job may be rewriting (M5 L22a), taken outside the transaction:
+        # what is read in the write below is read after the job let go
+        with progress_leased(self._engine, self._hold_work, carrier_type, carrier_id), \
+                write_transaction(self._engine) as connection:  # fmt: skip
             # « full or excerpt » is read here, in the write itself: what was checked is what is
             # written under (a Work sent elsewhere a moment ago is an excerpt now)
             resolved = self._access.resolve_in(connection, user_id, carrier_type, carrier_id)

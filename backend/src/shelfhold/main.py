@@ -26,7 +26,6 @@ from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline, roots_signature
 from shelfhold.export.targets.kavita import page_probe
 from shelfhold.headless import HeadlessAdmin, wiring
-from shelfhold.progress_lease import build_progress_lease
 from shelfhold.headless.applied import record_applied_public_url
 from shelfhold.identity.adapters.preferences import SqlNotificationPrefsStore, SqlPreferencesStore
 from shelfhold.identity.adapters.user_state_store import user_state_service
@@ -128,6 +127,7 @@ from shelfhold.ops.wiring import open_ops
 from shelfhold.plugin_host.attestation import AttestationStore
 from shelfhold.plugin_host.public import PluginRegistry, installed_versions, start_plugins
 from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse_settings_schema
+from shelfhold.progress_lease import build_progress_lease
 from shelfhold.reading.application.content_access import (
     ContentAccess,
     ContentKey,

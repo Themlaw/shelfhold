@@ -69,6 +69,16 @@ ou un changement de sens attend la 2.0. Aucune écriture : un lecteur enregistre
 5. Aucune Unité qu'aucune position n'atteint n'est marquée : un saut en avant ne marque lu aucun
    chapitre sauté.
 
+## Une Unité couverte en partie
+
+Un fichier qui ne couvre une Unité qu'en partie (`unit_coverage.extent <> 'full'` : la première moitié
+d'un chapitre en fin de tome) ne la lit jamais en entier : depuis ce fichier, l'Unité est au plus
+`in_progress`, que le serveur dise le fichier lu (`source = server`) ou qu'un parcours en ait traversé
+les pages (`read_units`, jamais écrit pour une telle Unité). Un autre fichier qui la couvre en entier
+la lit. Les deux vues (`reading_progress` et `reading_progress_proven`) disent la même chose (0106) ;
+une marque déjà journalisée par un parcours d'une Unité partielle n'est plus lue, une marque
+`transposed` reste.
+
 ## Changement d'Édition préférée
 
 `POST /api/v1/editions/{edition_id}/preferred` (administrateur ; une clé en lecture seule est
