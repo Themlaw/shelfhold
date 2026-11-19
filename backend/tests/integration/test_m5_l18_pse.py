@@ -121,9 +121,27 @@ class Pse:
         return who.get(f"/opds/pse/{item}/{page}", headers=headers)
 
 
+class CuttingArchives(FakeArchives):
+    """The source of the test, with the bound of an excerpt computed by the code of the server."""
+
+    def open(self, carrier_type: str, carrier_id: str, scope: str = "full") -> Any:
+        from shelfhold.reading.application.content_access import ExcerptUnavailableError
+        from shelfhold.reading.domain.excerpt import page_excerpt
+
+        archive = super().open(carrier_type, carrier_id, "full")
+        if scope != "excerpt":
+            return archive
+        kept = page_excerpt(sorted(archive.names()))
+        if kept is None:
+            raise ExcerptUnavailableError
+        content = carrier_id if carrier_type == "content" else self.item_content[carrier_id]
+        entries = {n: b for n, b in self.by_content[content].items() if n in set(kept)}
+        return type(archive)(entries, self.asked, self.pins.get(content, "fake"))
+
+
 @pytest.fixture
 def pse(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[Pse]:
-    src = FakeArchives()
+    src = CuttingArchives()
     monkeypatch.setattr("shelfhold.main.readable_copies", lambda *_a, **_k: src)
     with make_world(monkeypatch, settings) as world:
         yield Pse(world, src)

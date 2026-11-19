@@ -1378,6 +1378,7 @@ def _opds_pse(world: World, client: Any, headers: dict[str, str]) -> None:
 
     from shelfhold.infrastructure.schema import export
     from tests.content_env import PNG, FakeArchives, add_carrier
+    from tests.integration.test_schema_storage_export import add_destination, add_target
 
     seed = world.seed
     fake = FakeArchives()
@@ -1395,6 +1396,14 @@ def _opds_pse(world: World, client: Any, headers: dict[str, str]) -> None:
             )
         fake.item_content[item] = carrier
         items[key] = item
+        with seed.engine.begin() as connection:  # a stream is only offered for a live export
+            destination = add_destination(connection, seed.shelves["adult"], add_target(connection))
+            connection.execute(
+                sa.insert(export.export_record).values(
+                    shelf_destination_id=destination, export_item_id=item,
+                    locator_type="none", state="written",
+                )
+            )  # fmt: skip
     absent = client.get(f"/opds/pse/{ULID}/0", headers=headers)
     assert absent.status_code == 404
     offered = ""
