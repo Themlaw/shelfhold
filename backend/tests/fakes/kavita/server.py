@@ -18,6 +18,7 @@ import base64
 import binascii
 import copy
 import json
+import re
 import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -80,6 +81,9 @@ ALLOWED: dict[tuple[str, str], bool] = {
     ("POST", "/api/reader/progress"): False,
     ("GET", "/api/reader/continue-point"): False,
 }
+_KOSYNC = re.compile(
+    r"/api/Koreader/(?P<key>[^/]+)/syncs/progress(?:/(?P<hash>[^/]+))?", re.IGNORECASE
+)  # M5 L09
 LIBRARY_TYPES = {"Manga": 0, "Comic": 1, "Book": 2, "Image": 3, "LightNovel": 4, "ComicVine": 5}
 
 
@@ -222,6 +226,11 @@ class FakeKavita:
     hub_auth_calls: int = 0
     hub_auth_body: str | None = None  # a 200 whose body is this text instead of a user
     hub_auth_status: int = 200  # what `authenticate` answers (401, 404...) instead of a token
+    # The kosync routes of Kavita (`KoreaderController`, tag v0.9.1.4, M5 L09): the key of the
+    # account
+    # is in the PATH. (account, document digest) -> what the last PUT said.
+    kosync_progress: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
+    kosync_writes: list[dict[str, Any]] = field(default_factory=list)  # every PUT that was taken
 
     def key_is_valid(self, key: object) -> bool:
         return any(k["key"] == key for k in self.auth_keys)
@@ -402,6 +411,9 @@ class FakeKavita:
         if self.hook is not None:
             self.hook(recorded)
         route = (request.method, url.path.lower())
+        kosync = _KOSYNC.fullmatch(url.path)
+        if kosync is not None:
+            return self._koreader(recorded, request.method, kosync["key"], kosync["hash"])
         if route not in ALLOWED:
             return self._violation(f"{request.method} {url.path} is not an allow-listed route")
         if route[1] != "/api/plugin/authenticate" and any(
@@ -474,6 +486,9 @@ class FakeKavita:
         """Kavita's own clock (possibly wrong), the way `LastModifiedUtc` is written."""
         base = self.wall() if self.wall is not None else datetime.now(UTC)
         return (base + self.clock_skew).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+    def _clock(self) -> datetime:
+        return (self.wall() if self.wall is not None else datetime.now(UTC)) + self.clock_skew
 
     def _chapter(self, chapter_id: int) -> dict[str, Any] | None:
         for sid, files in self.files.items():
@@ -565,6 +580,47 @@ class FakeKavita:
         self.member_progress[key] = {"page": page, "modified": self._stamp()}
         self.progress_writes.append((account, key[1], page))
         return httpx2.Response(200)
+
+    def read_in_kavita_epub(self, account: str, digest: str, percentage: float) -> None:
+        """What Kavita's own reader left for an EPUB: a share, under the digest of its file."""
+        self.kosync_progress[(account, digest)] = {
+            "progress": "", "percentage": percentage, "device": "Kavita", "device_id": "kavita",
+            "timestamp": int(self._clock().timestamp()),
+        }  # fmt: skip
+
+    def _koreader(
+        self, recorded: RecordedRequest, method: str, key: str, digest: str | None
+    ) -> httpx2.Response:
+        """`GET /api/Koreader/{apiKey}/syncs/progress/{ebookHash}` (a 400 for a book it holds no
+        state of) and `PUT /api/Koreader/{apiKey}/syncs/progress` (the document, a share and an
+        xpointer). The key opens an account: another route of the controller does not exist here."""
+        failing = self._failing()
+        if failing is not None:
+            return failing
+        account = self.key_accounts.get(key)
+        if account is None or key == API_KEY:
+            return self._text(401, "Unauthorized")
+        if method == "GET" and digest is not None:
+            got = self.kosync_progress.get((account, digest))
+            return (
+                self._text(400, "Bad Request")
+                if got is None
+                else self._json({"document": digest, **got})
+            )
+        if method == "PUT" and digest is None:
+            body = self._body(recorded, "KoreaderBookDto")
+            if isinstance(body, httpx2.Response):
+                return body
+            document = str(body.get("document", ""))
+            self.kosync_progress[(account, document)] = {
+                k: body.get(k) for k in ("progress", "percentage", "device", "device_id")
+            } | {"timestamp": int(self._clock().timestamp())}
+            self.kosync_writes.append(
+                {"account": account, "document": document, "progress": body.get("progress"),
+                 "percentage": body.get("percentage"), "body": dict(body)}
+            )  # fmt: skip
+            return self._json({"document": document, "timestamp": int(self._clock().timestamp())})
+        return self._violation(f"{method} {recorded.path} is not a route of the controller")
 
     def _continue_point(self, recorded: RecordedRequest) -> httpx2.Response:
         return self._json({"id": 1})

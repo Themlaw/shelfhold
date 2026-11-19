@@ -34,6 +34,8 @@ from sqlalchemy import Engine
 from shelfhold.export.domain.path_map import PathEntry, PathMap, PathMode, clean_absolute
 from shelfhold.export.targets.kavita.accounts import (
     GET_PROGRESS,
+    KOSYNC_GET,
+    KOSYNC_PUT,
     POST_PROGRESS,
     SERIES_PROGRESS,
     MemberKavitaClient,
@@ -55,6 +57,7 @@ from shelfhold.reading.application.sync import (
     ChapterRef,
     ChapterRejected,
     RemotePosition,
+    RemoteShare,
     RemoteUnavailable,
     TokenRefused,
     TokenUnreadable,
@@ -74,10 +77,20 @@ MAX_STAMP_PAGES: Final = MAX_SERIES_PAGES  # of 100 series: a bigger list is not
 
 class _Client(Protocol):
     async def call(
-        self, method: str, path: str, *, query: Any = None, body: Any = None
+        self,
+        method: str,
+        path: str,
+        *,
+        query: Any = None,
+        body: Any = None,
+        path_params: Any = None,
     ) -> CallResult: ...
 
     async def whoami(self) -> Any: ...
+
+
+class _NothingHeld(Exception):
+    """Kavita holds no state for this book (its documented 400): a start, not an error."""
 
 
 class MemberProgress:
@@ -103,7 +116,9 @@ class MemberProgress:
     def __repr__(self) -> str:
         return "MemberProgress(<redacted>)"
 
-    def _retrying(self, make: Callable[[], Any], *, on_forbidden: type[Exception]) -> Any:
+    def _retrying(
+        self, make: Callable[[], Any], *, on_forbidden: type[Exception], missing: int | None = None
+    ) -> Any:
         for attempt in range(1, self._attempts + 1):
             try:
                 return self._run(make())
@@ -113,6 +128,8 @@ class MemberProgress:
                     raise TokenRefused from None
                 if status == 403:
                     raise on_forbidden from None
+                if missing is not None and status == missing:
+                    raise _NothingHeld from None
                 transient = status is None or status in (408, 429) or status >= 500
                 if not transient:
                     raise ChapterRejected from None
@@ -174,6 +191,42 @@ class MemberProgress:
         modified = data.get("lastModifiedUtc")
         return RemotePosition(page, modified if isinstance(modified, str) else None)
 
+    def get_epub(self, document: str) -> RemoteShare:
+        """The share Kavita holds for an EPUB (kosync route, M5 L09). A book it holds no state of is
+        a 400 there: nothing held, a start."""
+        try:
+            result: CallResult = self._retrying(
+                lambda: self._client.call(
+                    KOSYNC_GET.method, KOSYNC_GET.path, path_params={"ebookHash": document}
+                ),
+                on_forbidden=ChapterRejected,
+                missing=400,
+            )
+        except _NothingHeld:
+            return RemoteShare(0.0, None)
+        data = result.data
+        share = data.get("percentage") if isinstance(data, dict) else None
+        if isinstance(share, bool) or not isinstance(share, int | float) or not 0.0 <= share <= 1.0:
+            return RemoteShare(0.0, None)
+        stamp = data.get("timestamp") if isinstance(data, dict) else None
+        return RemoteShare(float(share), str(stamp) if isinstance(stamp, int | str) else None)
+
+    def save_epub(
+        self, document: str, *, share: float, xpointer: str, device: str, device_id: str | None
+    ) -> None:
+        """The share, and the xpointer as the device wrote it (Kavita converts it). Nothing counted
+        here goes: no page, no index of the spine."""
+        body: dict[str, Any] = {
+            "document": document, "progress": xpointer, "percentage": share, "device": device,
+            "timestamp": int(time.time()),
+        }  # fmt: skip
+        if device_id is not None:
+            body["device_id"] = device_id
+        self._retrying(
+            lambda: self._client.call(KOSYNC_PUT.method, KOSYNC_PUT.path, body=body),
+            on_forbidden=ChapterRejected,
+        )
+
     def save(self, chapter: ChapterRef, page: int) -> None:
         body = {
             "volumeId": chapter.volume_id, "chapterId": chapter.chapter_id, "pageNum": page,
@@ -200,9 +253,17 @@ class _Session:
         return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
 
     async def call(
-        self, method: str, path: str, *, query: Any = None, body: Any = None
+        self,
+        method: str,
+        path: str,
+        *,
+        query: Any = None,
+        body: Any = None,
+        path_params: Any = None,
     ) -> CallResult:
-        return await self._member.call(method, path, query=query, body=body)
+        return await self._member.call(
+            method, path, query=query, body=body, path_params=path_params
+        )
 
     async def whoami(self) -> Any:
         return await self._member.whoami()
@@ -357,12 +418,13 @@ class KavitaProgress:
                 carriers = {wanted[p] for p in chapter.paths if p in wanted}
                 if len(chapter.paths) != 1 or len(carriers) != 1:
                     continue  # a chapter of several files, or not ours: never guessed
-                if chapter.paths[0].lower().endswith(".epub"):
-                    continue  # Kavita counts an EPUB in book documents, not in pages of ours
                 found.append(
                     ChapterRef(
                         chapter.chapter_id, chapter.volume_id, series.id, series.library_id,
                         chapter.pages, next(iter(carriers)),
+                        # Kavita counts an EPUB in book documents, not in pages of ours: it goes by
+                        # its share alone, through the kosync route (M5 L09, #292)
+                        reflowable=chapter.paths[0].lower().endswith(".epub"),
                     )
                 )  # fmt: skip
         return found

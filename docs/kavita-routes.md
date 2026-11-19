@@ -83,16 +83,24 @@ route ne touche pas à la santé de la destination (le polling reste la preuve).
 ## Routes de la clé d'un membre (EF-USR-012, D8)
 
 La liste : `GET /api/Account`, `GET /api/Reader/get-progress`, `POST /api/Reader/progress`,
-`GET /api/Reader/continue-point` et `POST /api/Series/all-v2` (une lecture malgré le `POST`, la
+`GET /api/Reader/continue-point`, `POST /api/Series/all-v2` (une lecture malgré le `POST`, la
 même route que lit la clé dédiée, mais avec la clé du membre : `pagesRead` et `latestReadDate` sont
-alors ceux de son compte, ce qui dit quelles séries ont bougé sans lire chaque chapitre).
+alors ceux de son compte, ce qui dit quelles séries ont bougé sans lire chaque chapitre) et, depuis
+M5 L09, les deux routes kosync de Kavita (`GET` et `PUT /api/Koreader/{apiKey}/syncs/progress…`), par
+lesquelles un EPUB part vers Kavita **par son pourcentage seul** (voir plus bas).
 
 Chaque membre colle **sa propre clé** Kavita, scellée par le coffre, par utilisateur et par
 destination. Elle n'est pas la clé dédiée : elle n'atteint que cette liste fermée
 (`MEMBER_ROUTES`, `export/targets/kavita/accounts.py`), jamais une bibliothèque, un scan, une
 couverture, la liste des utilisateurs, les métadonnées d'une série ni une route de clés. Le client
 d'exploitation refuse ces routes à son tour : les deux clés ne se croisent jamais. La clé voyage
-dans l'en-tête `x-api-key`, jamais dans une URL, par le Fetcher et sa garde SSRF.
+dans l'en-tête `x-api-key`, jamais dans une URL, par le Fetcher et sa garde SSRF. **Seule exception :
+les deux routes kosync**, où Kavita lit la clé du compte dans le **chemin** (`{apiKey}`) et nulle
+part ailleurs. Le client la place lui-même, depuis la clé de son membre (l'appelant ne fournit
+jamais `apiKey`, et `ebookHash` doit être un md5 de 32 caractères hexadécimaux minuscules) ; il ne
+l'envoie pas aussi en en-tête ; le journal de Shelfhold nomme le gabarit de la route ; la ligne du fetcher nomme
+le chemin, avec la clé masquée par valeur et par forme. Les autres routes du contrôleur (`users/auth`,
+`users/create`) n'y sont pas.
 
 `GET /api/Account` répond un `UserDto` : le nom du compte, mais aussi un jeton de session et la clé
 par défaut du compte. Sont lus le nom, les rôles (`roles`) et la restriction d'âge (`ageRestriction`), pour refuser à un enfant
@@ -105,6 +113,8 @@ compris, est jeté avec la réponse, sans journal ni copie.
 | GET | `/api/Reader/get-progress` | Lire la progression de ce membre pour un chapitre (sync de progression, L14) | M4 |
 | POST | `/api/Reader/progress` | Écrire la progression de ce membre ; ne recule jamais une position plus avancée (L14) | M4 |
 | GET | `/api/Reader/continue-point` | Lire où ce membre en est dans une série (L14) | M4 |
+| GET | `/api/Koreader/{apiKey}/syncs/progress/{ebookHash}` | Lire le pourcentage de ce membre pour un EPUB (Kavita compte un EPUB en documents, pas en pages : seul le pourcentage se compare) ; un livre dont Kavita n'a rien répond `400` | M5 |
+| PUT | `/api/Koreader/{apiKey}/syncs/progress` | Écrire le pourcentage de ce membre pour un EPUB, avec le xpointer de l'appareil tel qu'il l'a écrit (Kavita le convertit) ; jamais une page ni un index de spine, jamais en arrière | M5 |
 
 ## Fixtures `openapi.json`
 
