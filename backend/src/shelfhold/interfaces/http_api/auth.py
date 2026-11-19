@@ -72,6 +72,7 @@ LOGIN_PATH = "/api/v1/auth/login"
 PASSKEY_SCRIPT_PATH = "/login/passkey.js"
 PASSKEY_LOGIN_OPTIONS_PATH = "/api/v1/auth/passkeys/login/options"
 PASSKEY_LOGIN_PATH = "/api/v1/auth/passkeys/login"
+OIDC_LOGIN_PATH = "/api/v1/auth/oidc/login"
 SETUP_ADMIN_PATH = "/api/v1/setup/admin"
 # Anonymous state-changing routes: JSON only (a cross-site form cannot send it), no CSRF token.
 ANONYMOUS_JSON_PATHS = frozenset(
@@ -87,13 +88,14 @@ class CookieNames:
     csrf: str
     device: str  # signed proof of a past login on this browser (attempt limiting only)
     flow: str  # binds a passkey sign-in challenge to the browser that asked for it
+    oidc: str  # binds an OpenID Connect flow to the browser that began it (SameSite=Lax, see below)
     secure: bool
 
 
 SECURE_COOKIES = CookieNames(
-    "__Host-sid", "__Host-csrf", "__Host-dev", "__Host-pkflow", secure=True
+    "__Host-sid", "__Host-csrf", "__Host-dev", "__Host-pkflow", "__Host-oidcflow", secure=True
 )
-PLAIN_COOKIES = CookieNames("sid", "csrf", "dev", "pkflow", secure=False)
+PLAIN_COOKIES = CookieNames("sid", "csrf", "dev", "pkflow", "oidcflow", secure=False)
 DEVICE_COOKIE_MAX_AGE_S = 365 * 24 * 3600
 
 
@@ -136,12 +138,13 @@ def _cookie_header(
     names: CookieNames,
     http_only: bool,
     max_age: int | None,
+    samesite: str = "Strict",
 ) -> str:
     cookie: SimpleCookie = SimpleCookie()
     cookie[name] = value
     morsel = cookie[name]
     morsel["path"] = "/"
-    morsel["samesite"] = "Strict"
+    morsel["samesite"] = samesite
     if http_only:
         morsel["httponly"] = True
     if names.secure:
@@ -186,6 +189,23 @@ def set_flow_cookie(response: Response, names: CookieNames, value: str, *, max_a
 
 def clear_flow_cookie(response: Response, names: CookieNames) -> None:
     set_flow_cookie(response, names, "", max_age=0)
+
+
+def set_oidc_cookie(response: Response, names: CookieNames, value: str, *, max_age: int) -> None:
+    """The one cookie that is `SameSite=Lax`: the provider sends the browser back to the callback
+    from another site, and a `Strict` cookie is not sent on that navigation (the binding would
+    never be seen). `Lax` sends it on a top-level GET only, which is all the callback is; it is
+    `HttpOnly`, short and used up by the callback."""
+    response.headers.append(
+        "set-cookie",
+        _cookie_header(
+            names.oidc, value, names=names, http_only=True, max_age=max_age, samesite="Lax"
+        ),
+    )
+
+
+def clear_oidc_cookie(response: Response, names: CookieNames) -> None:
+    set_oidc_cookie(response, names, "", max_age=0)
 
 
 def clear_session_cookies(response: Response, names: CookieNames) -> None:

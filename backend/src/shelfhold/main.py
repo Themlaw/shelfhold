@@ -199,6 +199,7 @@ LOGGED_SETTINGS: dict[str, str] = {
     "naming_segment_policy_confirmed": "naming_segment_policy_confirmed",
     "wake_url": "wake_url", "wake_suwayomi": "wake_suwayomi", "wake_kavita": "wake_dest",
     "wake_timeout_s": "wake_timeout_s", "wake_session_s": "wake_duration_s",
+    "oidc_issuer": "oidc_issuer", "oidc_client_id": "oidc_client_id",
     "fetcher_cache": "fetcher_cache", "fetcher_cache_off_sources": "fetcher_cache_off_sources",
     "cli_allow_host": "cli_allow_host", "allow_network_data_dir": "allow_network_data_dir",
     "disk_pause_percent": "disk_pause_percent", "disk_pause_gib": "disk_pause_gib",
@@ -236,6 +237,7 @@ SECRET_SETTINGS = frozenset(
         "backup_passphrase_file",
         "metadata_contact",
         "comicvine_api_key",
+        "oidc_client_secret",
         "auth_forward_secret",
         "setup_token",
     }
@@ -286,7 +288,13 @@ def create_app(
                 {"user_id": record.user_id, "passkey_id": record.id},
             )
 
-    auth = local_auth(engine, resolved, clock, on_passkey_registered=passkey_registered)
+    auth = local_auth(
+        engine,
+        resolved,
+        clock,
+        on_passkey_registered=passkey_registered,
+        network=composition.network,
+    )
     ready = Readiness()
     gate = AuthGate(auth, public_url=resolved.public_url, ready=ready.is_set)
 
