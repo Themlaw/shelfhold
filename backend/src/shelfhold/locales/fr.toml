@@ -704,6 +704,8 @@ gap_ack_needs_number = "Indiquez le numéro : shelfhold follow gap-ack <édition
 follow_extra_argument = "Un numéro n'a de sens qu'avec « follow gap-ack »."
 follow_needs_remote_id = "Indiquez l'identifiant de la série : shelfhold follow <source> <série>."
 help_export_format = "Avec « export » : le format de sortie, opml ou csv (opml par défaut)."
+help_export_user = "Avec « export » : le profil dont on écrit le dernier chapitre lu (le premier administrateur par défaut)."
+follow_export_unknown_user = "profil inconnu : rien n'est exporté."
 follow_check_recent = "Source interrogée il y a moins d'une heure : demande ignorée, rien n'a été enfilé."
 follow_check_always_on = "Mode « toujours actif » : aucune source n'est interrogée par Shelfhold, le suivi relira seulement ce que le service connaît."
 follow_check_queued = "Vérification demandée : la série sera regardée au prochain passage, au rythme permis par sa source."
@@ -1519,6 +1521,11 @@ cause = "Une position plus récente a remplacé celle dont parlait la question :
 title = "Trop de blocs sont servis en ce moment."
 action = "Patientez quelques instants, puis relancez le téléchargement."
 cause = "Votre appareil, ou l'ensemble de l'instance, a atteint le nombre de téléchargements de blocs simultanés autorisé."
+
+[errors."progress_busy"]
+title = "Cette œuvre est en cours de mise à jour : la position n'a pas été enregistrée."
+action = "Continuez la lecture : l'appareil réessaiera, ou rouvrez le livre dans quelques instants."
+cause = "Une tâche remplace des fichiers de cette œuvre (mise à niveau, changement d'équipe, assemblage d'un tome) et garde le verrou le temps de l'échange ; enregistrer la position maintenant pourrait marquer lu un chapitre sur le point d'être remplacé."
 
 [errors."too_many_streams"]
 title = "Trop de flux d'événements ouverts pour ce profil."

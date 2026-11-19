@@ -22,13 +22,13 @@ from tests.integration.test_schema_migration_0002 import alembic_config
 
 pytestmark = pytest.mark.req("ENF-OPS-002", "EF-USR-024")
 
-HEAD_BEFORE = "0104"
+HEAD_BEFORE = "0106"
 USER = new_ulid()
 SINCE = datetime(2026, 1, 1, tzinfo=UTC).isoformat(sep=" ")
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC).isoformat(sep=" ")
 
 
-def test_the_revision_is_0107_the_head_on_0104() -> None:
+def test_the_revision_is_0107_the_head_on_0106() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0107"]  # the head is pinned here, by the newest
     assert script.get_revision("0107").down_revision == HEAD_BEFORE
@@ -84,7 +84,7 @@ def test_a_new_session_is_local_by_default_and_the_value_is_checked(settings: Se
             conn.execute("UPDATE session SET proof = NULL WHERE id = ?", (ident,))
 
 
-def test_downgrade_to_0104_drops_the_column(settings: Settings) -> None:
+def test_downgrade_to_0106_drops_the_column(settings: Settings) -> None:
     migrate(settings)
     command.downgrade(alembic_config(settings.database_path), HEAD_BEFORE)
     with closing(sqlite3.connect(settings.database_path)) as conn:

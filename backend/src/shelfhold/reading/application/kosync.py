@@ -39,7 +39,8 @@ import hashlib
 import math
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
@@ -51,8 +52,9 @@ from sqlalchemy import Connection, Engine
 from shelfhold.catalog.public import visible_edition_ids
 from shelfhold.identity.public import reader_scope
 from shelfhold.infrastructure.db import write_transaction
-from shelfhold.infrastructure.schema import bundle, export, reading
+from shelfhold.infrastructure.schema import bundle, catalog, export, reading
 from shelfhold.infrastructure.secrets.keyring import Keyring
+from shelfhold.reading.application.lease import ProgressLease
 from shelfhold.reading.application.positions import propose_for_exported_file
 from shelfhold.reading.application.progress import (
     HISTORY_LIMIT,
@@ -218,7 +220,9 @@ class Kosync:
         now: Callable[[], datetime],
         unknown: UnknownCounter | None = None,
         spine_of: Callable[[str], int | None] | None = None,
+        hold_work: ProgressLease | None = None,
     ) -> None:
+        self._hold_work = hold_work  # the lease of the Work of a write (M5 L22a)
         self._engine = engine
         self._keyring = keyring
         self._now = now
@@ -341,7 +345,53 @@ class Kosync:
         """Records where the device is. True: stored. False: accepted without effect, for a reason
         that goes to the log and the counter and never to the device (unknown or hidden digest, two
         files with one digest, a chapter that is gone, a page beyond the block, a percentage that
-        is not of this file, a format nobody knows). Only a malformed field is an error."""
+        is not of this file, a format nobody knows). Only a malformed field is an error.
+
+        A job that is rewriting the files of the Work holds its lease: the write waits for it, and
+        `ProgressBusyError` says that it is still held (M5 L22a). A digest the profile cannot see
+        is never leased: it is answered as it always was, so that nothing tells a Work is rewritten.
+        """
+        with self._leased(user_id, document):
+            return self._push(
+                user_id=user_id, token=token, document=document, progress=progress,
+                percentage=percentage, device=device, device_id=device_id,
+            )  # fmt: skip
+
+    @contextmanager
+    def _leased(self, user_id: str, document: str) -> Iterator[None]:
+        """The lease of the Work the digest resolves to for this profile, outside the write."""
+        if self._hold_work is None:
+            yield
+            return
+        work: str | None = None
+        with self._engine.connect() as connection:
+            try:
+                doc = self._resolve(connection, user_id, document)
+            except AmbiguousDocumentError:
+                doc = None
+            if doc is not None:
+                work = connection.execute(
+                    sa.select(catalog.edition.c.work_id).where(
+                        catalog.edition.c.id == doc.edition_id
+                    )
+                ).scalar()
+        if work is None:
+            yield
+            return
+        with self._hold_work(str(work)):
+            yield
+
+    def _push(
+        self,
+        *,
+        user_id: str,
+        token: str,
+        document: str,
+        progress: str,
+        percentage: float,
+        device: str,
+        device_id: str | None,
+    ) -> bool:
         device = _clean(device, limit=MAX_TEXT)
         device_id = None if device_id is None else _clean(device_id, limit=MAX_TEXT)
         if not isinstance(percentage, int | float) or not math.isfinite(percentage):
@@ -616,7 +666,14 @@ class Kosync:
             if m.unit_id and m.item_id and m.page_count > 0
         ]
         if len(steps) >= 2 and spans:
-            marked = mark_traversed_in_frame(connection, position_id, steps=steps, spans=spans)
+            carriers = {
+                m.unit_id: m.item_id
+                for m in self._members(connection, version.id)
+                if m.unit_id and m.item_id
+            }
+            marked = mark_traversed_in_frame(
+                connection, position_id, steps=steps, spans=spans, carriers=carriers
+            )
             if marked:
                 self._write_gap(connection, position_id, steps[-1].ts - steps[-2].ts)
 
