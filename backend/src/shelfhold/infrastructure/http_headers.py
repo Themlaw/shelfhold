@@ -132,6 +132,7 @@ def meta_csp(html: str) -> str | None:
 
 _LOOSE_SOURCES = ("'unsafe-inline'", "'unsafe-eval'", "*", "https:", "http:", "data:", "blob:")
 _GUARDED = ("default-src", "script-src", "style-src")
+_IMAGE_SOURCES = ("'self'", "blob:")  # the reader draws its pages as `blob:` images (ADR-0055)
 
 
 def _directive(csp: str, name: str) -> list[str]:
@@ -159,6 +160,9 @@ def spa_csp(html: str) -> str:
         loose = [v for v in _directive(csp, name) if v.lower() in _LOOSE_SOURCES]
         if loose:
             raise RuntimeError(f"the CSP of the SPA build is loose: {name} allows {loose}")
+    wider = [v for v in _directive(csp, "img-src") if v.lower() not in _IMAGE_SOURCES]
+    if wider:
+        raise RuntimeError(f"the CSP of the SPA build is loose: img-src allows {wider}")
     allowed = _directive(csp, "script-src") or _directive(csp, "default-src")
     for body in _inline_scripts(html):
         if source_hash(body) not in allowed:

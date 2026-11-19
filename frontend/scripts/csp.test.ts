@@ -59,6 +59,11 @@ describe('SPA CSP', () => {
   });
 
   // req: ENF-SEC-004
+  it('lets the reader draw its blob: pages, and admits no other image source', () => {
+    expect(kitCsp(appHtml)['img-src']).toEqual(["'self'", 'blob:']); // not data:, not a host, not *
+  });
+
+  // req: ENF-SEC-004
   it('app.html has exactly one inline script, and no inline style or handler', () => {
     expect(appHtml.match(/<script\b/g)?.length).toBe(1);
     expect(appHtml).not.toMatch(/<style\b/);
