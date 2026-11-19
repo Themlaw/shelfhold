@@ -1,6 +1,11 @@
 {
   "extends": "$app/tsconfig",
-  "compilerOptions": { "strict": true, "noUncheckedIndexedAccess": true },
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    // foliate-js (a submodule, plain JavaScript) is third-party code: it is typed by the adapter, not checked
+    "checkJs": false
+  },
   "include": ["src", "scripts", "*.ts", "*.js"],
   "exclude": ["src/service-worker"]
 }

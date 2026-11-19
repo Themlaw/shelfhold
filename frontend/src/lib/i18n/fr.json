@@ -1023,5 +1023,10 @@
   "reader.read": "Lire",
   "reader.read_excerpt": "Lire un extrait",
   "reader.keys": "Flèches, Page suivante ou Espace pour tourner la page ; Échap pour revenir aux commandes.",
-  "reader.page_undisplayable": "Cette page n’a pas pu s’afficher."
+  "reader.page_undisplayable": "Cette page n’a pas pu s’afficher.",
+  "reader.status_epub": "{percent} % lu",
+  "reader.browser_unsupported": "Ce navigateur est trop ancien pour lire un EPUB ici : ouvre-le dans Kavita.",
+  "reader.csp_refused": "La page de lecture ne s’est pas ouverte avec sa propre politique de sécurité : recharge-la depuis la bibliothèque.",
+  "reader.external_confirm": "Ouvrir ce lien hors du lecteur ?\n{href}",
+  "reader.epub_failed": "Ce chapitre n’a pas pu être affiché."
 }

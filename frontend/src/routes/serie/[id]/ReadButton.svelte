@@ -17,8 +17,7 @@
     let stale = false;
     void readerPublication({ path: { carrier_type: 'unit', carrier_id: id } }).then(
       ({ data, error }) => {
-        // an EPUB has no reader yet (L12): no verb for it rather than a door that opens on a refusal
-        if (!stale) scope = error === undefined && data && data.kind === 'pages' ? data.scope : null;
+        if (!stale) scope = error === undefined && data ? data.scope : null;
       }
     );
     return () => {
@@ -28,8 +27,9 @@
 </script>
 
 {#if unitId && scope}
+  <!-- the reader is a page of its own, under its own policy (ADR-0055): a full navigation, never the client router -->
   <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-  <a class="read" href={scope === 'excerpt' ? `/lire/unit/${unitId}?scope=excerpt` : `/lire/unit/${unitId}`}>
+  <a class="read" data-sveltekit-reload href={scope === 'excerpt' ? `/lire/unit/${unitId}?scope=excerpt` : `/lire/unit/${unitId}`}>
     {scope === 'excerpt' ? t('reader.read_excerpt') : t('reader.read')}
   </a>
 {/if}

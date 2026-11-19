@@ -19,6 +19,9 @@ REFERRER_POLICY = "no-referrer"
 ROBOTS_TAG = "noindex, nofollow"
 FRAME_OPTIONS = "DENY"
 FRAME_ANCESTORS = "frame-ancestors 'none'"
+# The reader alone: a `blob:` document inherits the policy of its page, `frame-ancestors` included,
+# and WebKit checks it for the reading frame (its parent is the page, which `'none'` refuses).
+READER_FRAME_ANCESTORS = "frame-ancestors 'self'"
 DATA_CSP = "default-src 'none'"
 CSP_SANDBOX = "sandbox"
 ROBOTS_TXT = "User-agent: *\nDisallow: /\n"
@@ -37,8 +40,12 @@ _DEFAULTS = {
 
 
 def with_frame_ancestors(csp: str) -> str:
-    """A `<meta>` CSP cannot carry `frame-ancestors`; the HTTP header must."""
-    if _FRAME_ANCESTORS_DIRECTIVE.search(csp):
+    """A `<meta>` CSP cannot carry `frame-ancestors`; the HTTP header must. Whatever a route wrote
+    there becomes `'none'`, except the one exact value of the reader's own policy."""
+    found = _FRAME_ANCESTORS_DIRECTIVE.search(csp)
+    if found and " ".join(found.group(0).split()).lower() == READER_FRAME_ANCESTORS:
+        return csp
+    if found:
         return _FRAME_ANCESTORS_DIRECTIVE.sub(FRAME_ANCESTORS, csp)
     return f"{csp}; {FRAME_ANCESTORS}" if csp else FRAME_ANCESTORS
 
@@ -132,7 +139,9 @@ def meta_csp(html: str) -> str | None:
 
 _LOOSE_SOURCES = ("'unsafe-inline'", "'unsafe-eval'", "*", "https:", "http:", "data:", "blob:")
 _GUARDED = ("default-src", "script-src", "style-src")
-_IMAGE_SOURCES = ("'self'", "blob:")  # the reader draws its pages as `blob:` images (ADR-0055)
+_IMAGE_SOURCES = (
+    "'self'",
+)  # the reader (own entry, own policy: `reader_csp`) draws the `blob:` ones
 
 
 def _directive(csp: str, name: str) -> list[str]:
@@ -170,6 +179,88 @@ def spa_csp(html: str) -> str:
                 f"the SPA build has an inline script its CSP does not hash: {body[:40]!r}"
             )
     return csp
+
+
+_PRELOADS = frozenset(
+    {"modulepreload", "preload", "prefetch", "preconnect", "dns-prefetch", "prerender"}
+)
+_REMOTE = re.compile(r"^\s*(?:[a-z][a-z0-9+.-]*:)?//", re.IGNORECASE)
+_READER_ASSETS = "/reader-entry/"
+_READER_TABLE = (
+    ("default-src", ("'none'",)),
+    (
+        "script-src",
+        (),
+    ),  # the hash of the boot script, then `'strict-dynamic'`: filled from the page
+    ("style-src", ("'self'", "blob:", "'unsafe-inline'")),
+    ("style-src-elem", ("'self'", "blob:", "'unsafe-inline'")),
+    ("style-src-attr", ("'unsafe-inline'",)),
+    ("img-src", ("'self'", "blob:")),
+    ("font-src", ("'self'", "blob:")),
+    ("media-src", ("'none'",)),
+    ("frame-src", ("blob:",)),
+    ("worker-src", ("'none'",)),
+    ("manifest-src", ("'none'",)),
+    ("connect-src", ("'self'",)),
+    ("object-src", ("'none'",)),
+    ("base-uri", ("'none'",)),
+    ("form-action", ("'none'",)),
+    ("frame-ancestors", ("'self'",)),
+)
+
+
+class _ReaderAudit(HTMLParser):
+    """What the page of the reader must not hold, read by a real HTML parser: a `<meta http-equiv>`
+    (its policy would stack on the header), a script file, a preload (refused under
+    `'strict-dynamic'`), a link that is not its own style sheet, a handler, a remote address."""
+
+    def __init__(self, html: str) -> None:
+        super().__init__(convert_charrefs=False)
+        self.problems: list[str] = []
+        self.feed(html)
+        self.close()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = {name.lower(): value or "" for name, value in attrs}
+        if tag == "meta" and "http-equiv" in values:
+            self.problems.append("it carries a <meta http-equiv>")
+        if tag == "script" and "src" in values:
+            self.problems.append("it loads a script file")
+        if tag == "link":
+            rel = values.get("rel", "").lower().split()
+            if any(r in _PRELOADS for r in rel):
+                self.problems.append("it holds a preload")
+            elif "stylesheet" not in rel or not values.get("href", "").startswith(_READER_ASSETS):
+                self.problems.append(
+                    f"a link that is not its own style sheet: {values.get('href')}"
+                )
+        for name, value in values.items():
+            if name.startswith("on"):
+                self.problems.append(f"a handler: {name}")
+            if name in {"src", "href", "action", "data", "poster"} and _REMOTE.match(value):
+                self.problems.append(f"a remote address: {name}")
+
+
+def reader_csp(html: str) -> str:
+    """The CSP of `/lire` (ADR-0055, "CSP du lecteur, directive par directive"), written from the
+    table of the ADR and from the very page the build produced: its one inline script is hashed,
+    `'strict-dynamic'` trusts what it imports and nothing a book holds. The page is the reader's
+    own entry, outside the router, with no `<meta>` policy; one that is not the audited page is
+    refused at start-up (as `spa_csp` does for the SPA). `frame-ancestors 'self'` is the one the
+    middleware lets through (see `READER_FRAME_ANCESTORS`)."""
+    audit = _ReaderAudit(html)
+    if audit.problems:
+        raise RuntimeError(f"the reader page is not the audited one: {audit.problems[0]}")
+    scripts = _inline_scripts(html)
+    if len(scripts) != 1:
+        raise RuntimeError(
+            f"the reader page is not the audited one: it has {len(scripts)} inline scripts, not one"
+        )
+    directives = []
+    for name, sources in _READER_TABLE:
+        values = (source_hash(scripts[0]), "'strict-dynamic'") if name == "script-src" else sources
+        directives.append(f"{name} {' '.join(values)}")
+    return "; ".join(directives)
 
 
 _WEB_URL = re.compile(r"https?://[^\s<>\"'`]+", re.IGNORECASE)
