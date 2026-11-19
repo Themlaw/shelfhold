@@ -329,3 +329,8 @@ since = "1.2"
 file = "0102_reading_conflict.py"
 sha256 = "e5f3947eb9f4e355f8cc5667a3afdc5e78735b42f5817103d4d1a34cf2f9ce00"
 since = "1.2"
+
+[[migration]]
+file = "0104_rendition.py"
+sha256 = "11897a28f7af6091440fed589bc88b8bf9adbd89358f7b08ff5474c56abc5ff6"
+since = "1.2"

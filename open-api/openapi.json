@@ -33054,6 +33054,14 @@
       "code": "rename.refused",
       "status": 409
     },
+    "/api/v1/problems/rendition.format-unsupported": {
+      "code": "rendition.format_unsupported",
+      "status": 422
+    },
+    "/api/v1/problems/rendition.remote-refused-watermarked": {
+      "code": "rendition.remote_refused_watermarked",
+      "status": 403
+    },
     "/api/v1/problems/repatriate.blocked": {
       "code": "repatriate.blocked",
       "status": 409
