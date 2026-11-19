@@ -1,4 +1,4 @@
-"""Migration 0102 (M5 L04, EF-USR-024): `session.proof`, what proved a session.
+"""Migration 0107 (M5 L04, EF-USR-024): `session.proof`, what proved a session.
 
 `proof` is `local` or `provider`, NOT NULL. A session that exists when the migration runs is
 `provider` when the audit says a sign-in at the provider opened it or when it never had a local
@@ -28,10 +28,10 @@ SINCE = datetime(2026, 1, 1, tzinfo=UTC).isoformat(sep=" ")
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC).isoformat(sep=" ")
 
 
-def test_the_revision_is_0102_the_head_on_0101() -> None:
+def test_the_revision_is_0107_the_head_on_0101() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0102"]  # the head is pinned here, by the newest
-    assert script.get_revision("0102").down_revision == HEAD_BEFORE
+    assert script.get_heads() == ["0107"]  # the head is pinned here, by the newest
+    assert script.get_revision("0107").down_revision == HEAD_BEFORE
 
 
 def _session(conn: sqlite3.Connection, ident: str, auth_time: str) -> None:
@@ -63,7 +63,7 @@ def test_existing_sessions_get_the_expected_proof(settings: Settings) -> None:
             "INSERT INTO audit (id, actor_id, action, at, session_id) VALUES (?, ?, ?, ?, ?)",
             (new_ulid(), USER, "auth.oidc_login", SINCE, opened),
         )
-    assert "0102" in migrate(settings).applied
+    assert "0107" in migrate(settings).applied
     with closing(sqlite3.connect(settings.database_path)) as conn:
         proofs = dict(conn.execute("SELECT id, proof FROM session").fetchall())
     assert proofs == {opened: "provider", never: "provider", typed: "local"}
