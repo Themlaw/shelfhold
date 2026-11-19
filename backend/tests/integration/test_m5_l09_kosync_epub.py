@@ -57,7 +57,7 @@ def lab(spines: Spines, monkeypatch: pytest.MonkeyPatch, settings: Settings) -> 
 
 def second_device(lab: World, who: Reader) -> Reader:
     """Another token of the same profile: another device (the token is the identity of a device)."""
-    created = auth_of(lab.env).create_device_token(subject_username=who.name, name="seconde")
+    created = auth_of(lab.env).create_device_token(subject_username=who.name, name="second")
     return Reader(who.name, who.client, created.public_id, created.secret)
 
 

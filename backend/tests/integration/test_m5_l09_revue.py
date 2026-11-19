@@ -1,10 +1,10 @@
-"""M5 L09, relecture adverse de #378 : ce que la revue a demandé, un test par point.
+"""M5 L09, review of #378: what the reviewer asked for, one test per point.
 
-m1 : le spine d'un EPUB est lu hors du verrou d'écriture.
-m2 : un fichier momentanément illisible n'est pas retenu comme « sans fin ».
-m3 : l'appareil d'une écriture kosync est celui du jeton, dans un espace de noms à part ; un
-     lecteur qui annonce l'identifiant du navigateur reste un autre appareil.
-(C1 : `test_m5_l09_contradicteur.py`.)
+m1: the spine of an EPUB is read outside the write lock.
+m2: a file that cannot be opened for a moment is not remembered as « no end ».
+m3: the device of a kosync write is the token's, in a namespace of its own; a reader that says the
+    identifier of the browser stays another device.
+(C1: `test_m5_l09_contradicteur.py`.)
 """
 
 # ruff: noqa: F401, F811  (the fixtures of the module of L09 are imported to be used here)
