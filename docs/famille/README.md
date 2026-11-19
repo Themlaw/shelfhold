@@ -15,8 +15,9 @@ Shelfhold est l'atelier : on y cherche, on y demande, on y suit ce qui arrive. *
 - Vous ne voyez jamais les réglages ni la santé de l'instance : ils sont réservés à l'administrateur.
 
 Pour lire sur liseuse ou téléphone : [../admin/clients.md](../admin/clients.md). Où vous en étiez,
-et pourquoi vous ne perdez pas votre place : [progression.md](progression.md). Lire sans réseau, et
-ce qui efface une copie : [copies-hors-ligne.md](copies-hors-ligne.md).
+et pourquoi vous ne perdez pas votre place : [progression.md](progression.md). Lire dans Shelfhold
+lui-même, un extrait ou un livre entier : [lecteur.md](lecteur.md). Lire sans réseau, et ce qui
+efface une copie : [copies-hors-ligne.md](copies-hors-ligne.md).
 
 ## Se repérer
 

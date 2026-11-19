@@ -43,6 +43,10 @@ et ne change rien à l'installation (voir [vérifier les images](verifier-les-im
 | Plusieurs disques sous `/library` | [topologie-racines-physiques.md](topologie-racines-physiques.md), [montage-adopt-ro.md](montage-adopt-ro.md) |
 | Se connecter avec une clé d'accès, la révoquer, que faire si l'appareil est perdu | [passkeys.md](passkeys.md) |
 | Jetons d'appareil des liseuses (OPDS, kosync), émission et révocation | [jetons-appareil.md](jetons-appareil.md) |
+| La page `/lite` sans JavaScript : se connecter, parcourir, télécharger, se déconnecter | [lite.md](lite.md) |
+| Les octets d'un livre : la route `/content`, le ticket, l'origine séparée | [contenu.md](contenu.md) |
+| Une liseuse ancienne qui refuse le TLS moderne, et le risque résiduel R66 | [liseuses-tls.md](liseuses-tls.md) |
+| Se connecter avec un fournisseur d'identité (OIDC) : Compose, liaison, fraîcheur | [oidc.md](oidc.md) |
 | Le flux OPDS de Shelfhold pour une liseuse : ce qu'il montre, réglage de KOReader, derrière un mandataire | [opds.md](opds.md) |
 | La synchronisation de la progression d'une liseuse KOReader (kosync) : réglage, ce qui est reconnu, ce qui est rendu | [kosync.md](kosync.md) |
 | Retrouver l'accès (`admin reset-password`), fermer des sessions, imprimer le kit de secours | [secours.md](secours.md) |
