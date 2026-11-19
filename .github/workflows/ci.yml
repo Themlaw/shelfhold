@@ -741,7 +741,7 @@ jobs:
   # The reader page-turn bench (M5 L15, ENF-PERF-006): a report here, never a gate. The budget
   # (p95 <= 150 ms over 30 turns) is enforced before a release, against the recorded reference
   # (e2e/bench/reference.json, docs/governance/benchmarks.md); in CI the numbers are only
-  # published, so a noisy runner never blocks a PR. Never in the nightly either: a perf budget
+  # published, so a noisy runner never blocks a PR. Never in the night run either: a perf budget
   # is measured before a release (03 §4), not on the pushes of the night.
   reader-bench:
     name: reader-bench (report only)

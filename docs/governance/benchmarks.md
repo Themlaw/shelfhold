@@ -37,7 +37,7 @@ cd e2e && npm run test:bench
 python3 bench/compare.py test-results/bench_reader_page_turn.json
 ```
 
-`compare.py` bloque (code 1) si le p95 dépasse le budget de la spécification, **ou** s'il régresse de plus de **20 %** sur le p95 enregistré. La référence se réenregistre **à dessein** — jamais automatiquement — dans la PR de release, sur le lanceur qui mesure les releases ; si l'environnement de mesure change, la référence est réenregistrée avant toute comparaison, comme la référence des écrans clés ([`e2e/README.md`](../../e2e/README.md)). La marche à suivre est dans la liste de release ([`docs/releasing.md`](../releasing.md)).
+`compare.py` bloque (code 1) si le p95 dépasse le budget de la spécification, **ou** s'il régresse de plus de **20 %** sur le p95 enregistré. La référence se réenregistre **à dessein** — jamais automatiquement — dans la PR de release, sur le lanceur qui mesure les releases ; si l'environnement de mesure change, la référence est réenregistrée avant toute comparaison, comme la référence des écrans clés (`e2e/README.md`). La marche à suivre est dans la liste de release (`docs/releasing.md`).
 
 Le p95 varie avec la charge du lanceur (de ~36 ms au repos à ~96 ms observé sur une machine chargée, toujours sous le budget) : la comparaison se fait entre deux runs du même lanceur dans des conditions comparables, et un run visiblement bruité se relance avant de bloquer quoi que ce soit.
 
