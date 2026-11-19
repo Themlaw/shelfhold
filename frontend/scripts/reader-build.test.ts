@@ -38,6 +38,13 @@ describe('the build of the reader', () => {
   });
 
   // req: ENF-SEC-004
+  it('links its own style sheet, which the build produced', () => {
+    const link = /<link rel="stylesheet" href="(\/reader-entry\/assets\/[^"]+\.css)">/.exec(html());
+    expect(link).not.toBeNull();
+    expect(walk(out).some((f) => f.endsWith(link![1]!.replace('/reader-entry', '')))).toBe(true);
+  });
+
+  // req: ENF-SEC-004
   it('has one inline script, hashed by the policy, that adds the entry of its own base as a script element', () => {
     const scripts = inlineScripts(html());
     expect(scripts).toHaveLength(1);

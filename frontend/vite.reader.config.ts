@@ -46,6 +46,7 @@ function foliateNotRead(): Plugin {
 function readerPage(): Plugin {
   return {
     name: 'shelfhold-reader-page',
+    enforce: 'post', // after the style sheet is emitted
     generateBundle(_, bundle) {
       const entry = Object.values(bundle).find((chunk) => chunk.type === 'chunk' && chunk.isEntry);
       if (!entry) throw new Error('the reader entry was not produced');
