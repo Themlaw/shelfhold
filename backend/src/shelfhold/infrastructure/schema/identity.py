@@ -140,8 +140,14 @@ session = sa.Table(
     # What proved the session (M5 L04): `local` (a password or a passkey typed here) or `provider`
     # (a sign-in at the identity provider). A freshness proved by the provider alone does not add
     # a way in that outlives the session
-    sa.Column("proof", sa.String(), nullable=False, server_default="local"),
-    sa.CheckConstraint("\"proof\" IN ('local', 'provider')", name="proof_values"),
+    sa.Column(
+        "proof",
+        sa.String(),
+        # a column constraint, as the migration adds it (ALTER TABLE cannot add a table one)
+        sa.CheckConstraint("\"proof\" IN ('local', 'provider')", name="proof_values"),
+        nullable=False,
+        server_default="local",
+    ),
     ulid_check("id"),
     prefixed_hash_check("token_hash"),
     sa.UniqueConstraint("token_hash"),

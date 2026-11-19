@@ -32,7 +32,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute(
-        "ALTER TABLE session ADD COLUMN proof VARCHAR NOT NULL DEFAULT 'local' "
+        "ALTER TABLE session ADD COLUMN proof VARCHAR DEFAULT 'local' NOT NULL "
         "CONSTRAINT ck_session_proof_values CHECK (\"proof\" IN ('local', 'provider'))"
     )
     op.execute(

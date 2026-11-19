@@ -327,5 +327,5 @@ since = "1.2"
 
 [[migration]]
 file = "0102_session_proof.py"
-sha256 = "fda45bcdf3be9fdcf06ba24dd963bdece9db01526d4475d94d83d738f42dcbf6"
+sha256 = "496d79b8f03d5db43daecb03ee8abbba3038ff909504480ab1ea0db2e4ea9586"
 since = "1.2"
