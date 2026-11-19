@@ -13131,6 +13131,14 @@
             "title": "Approximate",
             "type": "boolean"
           },
+          "carrier_id": {
+            "title": "Carrier Id",
+            "type": "string"
+          },
+          "carrier_type": {
+            "title": "Carrier Type",
+            "type": "string"
+          },
           "client_ts": {
             "format": "date-time",
             "title": "Client Ts",
@@ -13164,6 +13172,8 @@
         },
         "required": [
           "id",
+          "carrier_type",
+          "carrier_id",
           "locator",
           "client_ts",
           "server_ts",
