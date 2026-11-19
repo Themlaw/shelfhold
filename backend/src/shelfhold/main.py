@@ -133,6 +133,7 @@ from shelfhold.reading.application.content_access import (
     ContentKey,
     NoReadableCopyError,
 )
+from shelfhold.reading.application.positions import ReaderPositions
 from shelfhold.reading.application.publication import PublicationService
 from shelfhold.reading.bundle import SeriesBundles
 from shelfhold.reading.public import Kosync
@@ -471,8 +472,9 @@ def create_app(
             content_access,
             allowed_origin=_origin_of(resolved.public_url) if resolved.content_origin else None,
         ),
-        build_reader_router(  # M5 L06: what the reader opens: pages or spine, links by ticket
-            lambda: PublicationService(engine, content_access())
+        build_reader_router(  # M5 L06: what the reader opens; L07: where it is
+            lambda: PublicationService(engine, content_access()),
+            lambda: ReaderPositions(engine, content_access(), clock.now),
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
             lambda: engine, thumbnails, bundles, clock.now

@@ -231,14 +231,36 @@ class ContentAccess:
         """The carrier as `issue` would judge it, without a ticket: `UnknownCarrierError` when the
         profile does not see it (the one answer for absent and hidden)."""
         with self._engine.connect() as connection:
-            content_id = self._checked(connection, user_id, carrier_type, carrier_id)
-            kind = connection.execute(
-                sa.select(storage.content.c.format).where(storage.content.c.id == content_id)
-            ).scalar()
-            allowed = self._full_allowed(connection, user_id, carrier_type, content_id)
+            return self.resolve_in(connection, user_id, carrier_type, carrier_id)
+
+    def resolve_in(
+        self, connection: sa.Connection, user_id: str, carrier_type: str, carrier_id: str
+    ) -> ResolvedCarrier:
+        """`resolve` on the caller's connection: a write that must decide « full or excerpt » reads
+        it inside its own transaction, so that what it checked is what it writes under."""
+        content_id = self._checked(connection, user_id, carrier_type, carrier_id)
+        kind = connection.execute(
+            sa.select(storage.content.c.format).where(storage.content.c.id == content_id)
+        ).scalar()
         if kind is None:
             raise UnknownCarrierError
+        allowed = self._full_allowed(connection, user_id, carrier_type, content_id)
         return ResolvedCarrier(content_id, str(kind), allowed)
+
+    def scope_of(
+        self, token: str, *, user_id: str, carrier_type: str, carrier_id: str
+    ) -> Scope | None:
+        """The scope of a ticket that is ours, alive, this profile's and for this very carrier,
+        else None (one answer for forged, expired and someone else's). Reads nothing else: it
+        grants nothing."""
+        claims = open_ticket(self._key(), token, now=self._now())
+        if (
+            claims is None
+            or claims.user_id != user_id
+            or (claims.carrier_type, claims.carrier_id) != (carrier_type, carrier_id)
+        ):
+            return None
+        return claims.scope
 
     def url(self, token: str, entry: str) -> str:
         """Where the reader fetches `entry`: this origin, or the separate one when it is set. The

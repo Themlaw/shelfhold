@@ -642,10 +642,15 @@ class _NoteWriter:
         self._waiting = []
 
 
-def _not_transposed(position: sa.Table) -> sa.ColumnElement[bool]:
-    """A position carried over from another Edition (EF-BIB-026) is a guess: never a page to push,
-    never a mark of reading to relay."""
-    return sa.func.json_extract(position.c.locator, "$.transposed").is_(None)
+def relayable_position(position: sa.Table) -> sa.ColumnElement[bool]:
+    """What may be told to Kavita: a position carried over from another Edition (EF-BIB-026) is a
+    guess, and a reader's EPUB anchor (a `cfi`, M5 L07) is a place in a reflowable text, never a
+    page: neither is a page to push or a mark of reading to relay, until L09 says how an EPUB goes
+    out. (The excerpt writes no position at all, so nothing of it can be here.)"""
+    return sa.and_(
+        sa.func.json_extract(position.c.locator, "$.transposed").is_(None),
+        sa.func.coalesce(sa.func.json_extract(position.c.locator, "$.type"), "") != "cfi",
+    )
 
 
 def _pending_chapters(
@@ -669,7 +674,7 @@ def _pending_chapters(
                 position.c.user_id == user_id,
                 position.c.carrier_type == "export_item",
                 position.c.source == "device",
-                _not_transposed(position),
+                relayable_position(position),
                 position.c.server_ts >= min(since.values()),
             )
             .group_by(position.c.carrier_id)
@@ -678,7 +683,7 @@ def _pending_chapters(
             sa.select(position.c.server_ts, position.c.read_units).where(
                 position.c.user_id == user_id,
                 position.c.source == "device",
-                _not_transposed(position),
+                relayable_position(position),
                 position.c.server_ts >= min(since.values()),
                 sa.func.json_array_length(position.c.read_units) > 0,
             )
@@ -836,7 +841,7 @@ def _pending_page(
                 position.c.carrier_type == "export_item",
                 position.c.carrier_id == ref.carrier_id,
                 position.c.source == "device",
-                _not_transposed(position),
+                relayable_position(position),
                 position.c.server_ts >= since,
             )
             .order_by(position.c.server_ts.desc(), position.c.id.desc())
@@ -914,7 +919,7 @@ def _carried_page(
                 position.c.carrier_type == "export_item",
                 position.c.carrier_id == ref.carrier_id,
                 position.c.content_hash == current,
-                _not_transposed(position),
+                relayable_position(position),
             )
         ).all()  # fmt: skip
         seen_pages: list[tuple[Any, dict[str, Any], int]] = []
@@ -1001,7 +1006,7 @@ def _marking_locators(
         sa.select(position.c.locator, position.c.read_units).where(
             position.c.user_id == user_id,
             position.c.source == "device",
-            _not_transposed(position),
+            relayable_position(position),
             position.c.server_ts >= since,
             sa.func.json_array_length(position.c.read_units) > 0,
         )

@@ -27,6 +27,7 @@ EXPORTED: dict[str, str] = {
     "download_request": "download_requests",
     "notification_digest": "notification_digests",
     "reading_position": "reading_positions",
+    "reading_conflict": "reading_conflicts",
     "session": "sessions",
     "api_key": "api_keys",
     "webauthn_credential": "passkeys",  # the list of keys, never the key material
