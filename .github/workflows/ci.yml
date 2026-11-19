@@ -21,6 +21,12 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
+      # Runner of the heavy jobs (lint, backend-*, coverage), see docs/ci-runners.md: the
+      # self-hosted runners only for code of this repository (a push to main, or a pull request from
+      # one of its branches, not opened nor triggered by Dependabot) and only when the repository
+      # variable SELF_HOSTED is 'on'. Anything else (a fork, Dependabot, another event, the variable
+      # off or unset) stays on the GitHub-hosted image.
+      runner: ${{ (vars.SELF_HOSTED == 'on' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && github.triggering_actor != 'dependabot[bot]' && github.event.pull_request.user.login != 'dependabot[bot]'))) && '["self-hosted", "linux", "x64", "shelfhold-ci"]' || '"ubuntu-24.04"' }}
       # Scope of the run (step `scope`): on a pull request, what the changed files can affect; on
       # a push to main, everything ("true"). See CONTRIBUTING.md, "Quelle CI pour quels fichiers".
       backend: ${{ steps.scope.outputs.backend }}
@@ -167,7 +173,8 @@ jobs:
           cat "$GITHUB_OUTPUT"
 
   lint:
-    runs-on: ubuntu-24.04
+    needs: changes
+    runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     timeout-minutes: 15
     env:
       GITLEAKS_VERSION: "8.30.1"
@@ -313,7 +320,7 @@ jobs:
     name: backend-unit (${{ matrix.shard }}/${{ needs.changes.outputs.backend_shard_total }})
     needs: changes
     if: needs.changes.outputs.unit == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -348,7 +355,7 @@ jobs:
     name: backend-integration (${{ matrix.shard }}/${{ needs.changes.outputs.backend_integration_shard_total }})
     needs: changes
     if: needs.changes.outputs.integration == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -384,7 +391,7 @@ jobs:
     name: backend-${{ matrix.suite }}
     needs: changes
     if: needs.changes.outputs.suites == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -445,7 +452,7 @@ jobs:
     # combination would fail the global threshold. A pull request of tests alone does not need it.
     needs: [changes, backend-unit, backend-integration, backend-suites]
     if: needs.changes.outputs.backend == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(needs.changes.outputs.runner) }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

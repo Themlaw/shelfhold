@@ -294,3 +294,149 @@ def test_every_job_has_a_timeout_of_at_most_15_minutes() -> None:
         limit = 20 if name == "backend-integration" else 15
         assert 0 < job.get("timeout-minutes", 0) <= limit, name
     assert ci["concurrency"]["cancel-in-progress"]
+
+
+# --- self-hosted runners (docs/ci-runners.md) --------------------------------------------------
+
+SELF_HOSTED_JOBS = {"lint", "backend-unit", "backend-integration", "backend-suites", "coverage"}
+SELF_HOSTED_LABELS = ["self-hosted", "linux", "x64", "shelfhold-ci"]
+_TOKEN = re.compile(r"\s*(\|\||&&|==|!=|\(|\)|'(?:[^']|'')*'|[A-Za-z_][\w.\-\[\]]*)")
+
+
+def _evaluate(expression: str, context: dict[str, Any]) -> Any:
+    """GitHub expression subset of the `runner` output: ( ) || && == != 'literals' and paths.
+
+    As on GitHub: `a && b` gives b when a is truthy, `a || b` the first truthy operand, and string
+    comparison ignores case; a missing property is null.
+    """
+    body = re.fullmatch(r"\$\{\{(.*)\}\}", expression.strip(), re.S)
+    assert body, expression
+    tokens: list[str] = []
+    rest = body.group(1).strip()
+    while rest:
+        found = _TOKEN.match(rest)
+        assert found, rest
+        tokens.append(found.group(1))
+        rest = rest[found.end() :].strip()
+    pos = 0
+
+    def take() -> str:
+        nonlocal pos
+        pos += 1
+        return tokens[pos - 1]
+
+    def peek() -> str | None:
+        return tokens[pos] if pos < len(tokens) else None
+
+    def primary() -> Any:
+        item = take()
+        if item == "(":
+            value = either()
+            assert take() == ")"
+            return value
+        if item.startswith("'"):
+            return item[1:-1].replace("''", "'")
+        value: Any = context
+        for part in item.split("."):
+            value = value.get(part) if isinstance(value, dict) else None
+        return value
+
+    def comparison() -> Any:
+        left = primary()
+        operator = peek()
+        if operator in ("==", "!="):
+            take()
+            equal = str(left).casefold() == str(primary()).casefold()
+            return equal if operator == "==" else not equal
+        return left
+
+    def both() -> Any:
+        value = comparison()
+        while peek() == "&&":
+            take()
+            right = comparison()
+            value = right if value else value
+        return value
+
+    def either() -> Any:
+        value = both()
+        while peek() == "||":
+            take()
+            right = both()
+            value = value if value else right
+        return value
+
+    result = either()
+    assert pos == len(tokens), tokens[pos:]
+    return result
+
+
+def _runner(
+    event: str = "pull_request",
+    variable: str | None = "on",
+    head_repo: str = "Themlaw/shelfhold",
+    author: str = "Themlaw",
+    actor: str = "Themlaw",
+    triggering_actor: str | None = None,
+) -> Any:
+    """The `runs-on` of the heavy jobs for one event, from the real `runner` output of `changes`."""
+    ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))
+    github: dict[str, Any] = {
+        "event_name": event,
+        "repository": "Themlaw/shelfhold",
+        "actor": actor,
+        "triggering_actor": triggering_actor or actor,
+        "event": {},
+    }
+    if event.startswith("pull_request"):
+        github["event"] = {
+            "pull_request": {"head": {"repo": {"full_name": head_repo}}, "user": {"login": author}}
+        }
+    context = {"github": github, "vars": {} if variable is None else {"SELF_HOSTED": variable}}
+    return json.loads(_evaluate(ci["jobs"]["changes"]["outputs"]["runner"], context))
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_self_hosted_runners_only_for_code_of_this_repository_when_switched_on() -> None:
+    assert _runner() == SELF_HOSTED_LABELS
+    assert _runner(event="push") == SELF_HOSTED_LABELS
+    # the switch: off or unset, everything stays on GitHub
+    assert _runner(variable="off") == "ubuntu-24.04"
+    assert _runner(variable=None) == "ubuntu-24.04"
+    assert _runner(event="push", variable="") == "ubuntu-24.04"
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_self_hosted_runners_never_for_a_fork_nor_dependabot() -> None:
+    assert _runner(head_repo="someone/shelfhold") == "ubuntu-24.04"
+    stranger = "someone"
+    assert _runner(head_repo="someone/shelfhold", author=stranger, actor=stranger) == "ubuntu-24.04"
+    bot = "dependabot[bot]"
+    assert _runner(author=bot, actor=bot) == "ubuntu-24.04"
+    assert _runner(author=bot) == "ubuntu-24.04"  # a Dependabot pull request re-run by the owner
+    assert _runner(actor=bot, triggering_actor="Themlaw") == "ubuntu-24.04"
+    assert _runner(triggering_actor=bot) == "ubuntu-24.04"
+    # other events, pull_request_target first, never get there
+    for event in ("pull_request_target", "workflow_dispatch", "schedule", "workflow_run"):
+        assert _runner(event=event) == "ubuntu-24.04", event
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_only_the_heavy_jobs_may_go_self_hosted_and_they_get_no_secret() -> None:
+    ci: dict[str, Any] = yaml.safe_load(CI.read_text(encoding="utf-8"))
+    routed = "${{ fromJSON(needs.changes.outputs.runner) }}"
+    for name, job in ci["jobs"].items():
+        if "uses" in job:
+            continue
+        if name in SELF_HOSTED_JOBS:
+            assert job["runs-on"] == routed, name
+            assert "changes" in ([job["needs"]] if isinstance(job["needs"], str) else job["needs"])
+            assert "secrets." not in yaml.safe_dump(job), name
+        else:
+            assert job["runs-on"] == "ubuntu-24.04", name
+    # the label of these runners appears nowhere else, and never next to pull_request_target
+    for workflow in CI.parent.glob("*.yml"):
+        text = workflow.read_text(encoding="utf-8")
+        if workflow != CI:
+            assert "self-hosted" not in text and "shelfhold-ci" not in text, workflow.name
+        assert "pull_request_target" not in text, workflow.name
