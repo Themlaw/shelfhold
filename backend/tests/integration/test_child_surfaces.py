@@ -135,6 +135,7 @@ OPDS = (
     "GET /opds/search",
     "GET /opds/covers/{content_hash}/{size}",
     "GET /opds/editions/{edition_id}/complete",
+    "GET /opds/kepub/{item_id}",
     "GET /opds/bundles/{version_id}",
     "GET /opds/pse/{item_id}/{page}",  # M5 L18: OPDS-PSE, a page of an exported volume
     # M5 L19: the OPDS 2.0 JSON feed, the same queries as the 1.2 one (the crawl below walks both)
@@ -169,6 +170,7 @@ LITE = (
     "GET /lite/search",
     "GET /lite/covers/{content_hash}/{size}",
     "GET /lite/editions/{edition_id}/complete",
+    "GET /lite/kepub/{item_id}",
     "GET /lite/{rest:path}",
 )
 DEVICE = (*KOSYNC, *OPDS)

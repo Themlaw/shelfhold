@@ -167,6 +167,7 @@ from shelfhold.library.application.import_match import (
     isbns_in,
     open_request_matches,
 )
+from shelfhold.library.application.kepub import KepubError
 from shelfhold.library.application.reclaim import (
     EARLY_PURGE_BATCH,
     EMPTY_TRASH_PHRASE,
@@ -176,6 +177,7 @@ from shelfhold.library.application.reclaim import (
     require_empty_phrase,
 )
 from shelfhold.library.application.renditions import (
+    RenditionBusyError,
     RenditionService,
     UnknownSourceError,
 )
@@ -433,6 +435,7 @@ __all__ = [
     "Irreplaceability",
     "KeepCopier",
     "Kept",
+    "KepubError",
     "LibraryCopy",
     "LibraryPageNormalizer",
     "LinkPolicy",
@@ -467,6 +470,7 @@ __all__ = [
     "RegenerationBlockedError",
     "ReleaseOutcome",
     "RemoteProcessorRefusedError",
+    "RenditionBusyError",
     "RenditionParams",
     "RenditionService",
     "ReneutralizePlan",

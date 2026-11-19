@@ -42,6 +42,12 @@ class FakeArchive:
         self._asked.append(name)
         return self._entries[name]
 
+    def whole(self, max_bytes: int) -> bytes:
+        data = zip_of(self._entries)
+        if len(data) > max_bytes:
+            raise ValueError("larger than the bound")
+        return data
+
     def close(self) -> None:
         return None
 

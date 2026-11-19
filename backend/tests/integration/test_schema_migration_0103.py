@@ -24,7 +24,7 @@ SERIES = "01HZZZZZZZZZZZZZZZZZZZZZZC"
 
 def test_the_revision_is_0103_the_head_on_0105() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0103"]  # the head is pinned here, by the newest
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     # chained on 0105 (L21), the head of main
     assert script.get_revision("0103").down_revision == "0105"
 

@@ -2994,6 +2994,7 @@
   search_description = "Search the library"
   complete = "{title} — Complete series"
   complete_in = "{title} — Complete series ({lang})"
+  kepub = "{title} {number} — KEPUB (Kobo)"
   stream = "{title} — page by page"
   excluded = "{count, plural, one {# chapter left out} other {# chapters left out}}: format not readable on an e-reader, or file unavailable."
 
@@ -3034,6 +3035,7 @@
   excluded = "{count, plural, one {# chapter left out} other {# chapters left out}}: format not readable on an e-reader, or file unavailable."
   download_sized = "Download ({mb} MB)"
   download = "Download"
+  kepub = "KEPUB for Kobo: {number}"
   no_download = "No file to download for this work."
 
   [errors."source_migration.collision"]
