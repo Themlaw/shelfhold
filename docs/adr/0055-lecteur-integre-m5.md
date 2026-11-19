@@ -85,7 +85,7 @@ Un document `blob:` hérite de la CSP du document qui l'a créé :
 | `manifest-src` | `'none'` | le manifeste de la PWA n'est pas lié depuis `/lire` |
 | `connect-src` | `'self'` | pour `fetch` de `/content/*` |
 | `object-src`, `base-uri`, `form-action` | `'none'` | |
-| `frame-ancestors` | `'none'` | ajouté par l'intergiciel |
+| `frame-ancestors` | `'self'` | seul `/lire` ; le reste reste `'none'` (intergiciel). Un document `blob:` hérite de la politique de sa page, `frame-ancestors` compris, et WebKit la vérifie pour le cadre de lecture (mesuré en CI) : `'none'` l'empêchait de s'afficher |
 | `Referrer-Policy` | `no-referrer` | |
 
 **Origines distantes interdites** : toutes. `@import` et `url()` distants dans une CSS ou un attribut `style`, `<link rel="dns-prefetch|preconnect|prefetch">` et toute ressource distante sont refusés. Les métadonnées de la publication (titre, auteur) affichées par `/lire` sont **toujours insérées comme texte**, jamais par `{@html}` (le `style-src 'unsafe-inline'` vaut pour la page elle-même) ; test `test_reader_metadata_rendered_as_text` (L12).

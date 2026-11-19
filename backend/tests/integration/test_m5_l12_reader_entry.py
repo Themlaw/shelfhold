@@ -97,6 +97,7 @@ def test_reader_csp_font_media_frame_blob() -> None:
         "object-src": ["'none'"],
         "base-uri": ["'none'"],
         "form-action": ["'none'"],
+        "frame-ancestors": ["'self'"],
     }
     for name, values in expected.items():
         assert _directive(csp, name) == values, name
@@ -166,7 +167,8 @@ def test_the_reader_is_served_under_its_own_policy_and_the_spa_keeps_its_own(
     assert reader.headers["content-security-policy"] == bare.headers["content-security-policy"]
     csp = reader.headers["content-security-policy"]
     assert _directive(csp, "script-src") == [sha(BOOT), "'strict-dynamic'"]
-    assert _directive(csp, "frame-ancestors") == ["'none'"]
+    assert _directive(csp, "frame-ancestors") == ["'self'"]
+    assert _directive(spa.headers["content-security-policy"], "frame-ancestors") == ["'none'"]
     assert reader.headers["referrer-policy"] == "no-referrer"
     assert reader.headers["cache-control"] == "no-cache"
     # the SPA keeps its policy: no widening, and not a single `blob:` for images any more
@@ -218,3 +220,25 @@ def test_a_build_with_a_loose_reader_page_is_refused_at_start_up(
 def test_mount_spa_reads_the_reader_page_once(tmp_path: Path) -> None:
     build = _build(tmp_path, _reader())
     assert mount_spa(FastAPI(), build) is True
+
+
+@pytest.mark.req("ENF-SEC-004")
+@pytest.mark.parametrize(
+    ("written", "served"),
+    [
+        ("img-src 'self'; frame-ancestors 'self'", "img-src 'self'; frame-ancestors 'self'"),
+        ("frame-ancestors  'SELF'", "frame-ancestors  'SELF'"),
+        ("frame-ancestors 'self' https://x.example", "frame-ancestors 'none'"),
+        ("frame-ancestors *", "frame-ancestors 'none'"),
+        ("frame-ancestors 'self' *", "frame-ancestors 'none'"),
+        ("img-src 'self'", "img-src 'self'; frame-ancestors 'none'"),
+    ],
+)
+def test_the_middleware_lets_through_only_the_exact_reader_frame_ancestors(
+    written: str, served: str
+) -> None:
+    """A route that writes anything else than `frame-ancestors 'self'` gets `'none'`: the opening
+    is the reader's alone (a `blob:` document inherits it, WebKit checks it for the reading frame)."""
+    from shelfhold.infrastructure.http_headers import with_frame_ancestors
+
+    assert with_frame_ancestors(written) == served
