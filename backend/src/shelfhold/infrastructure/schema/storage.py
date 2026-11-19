@@ -30,6 +30,7 @@ TRASH_LEVELS = ("unfollow", "remove_destinations", "delete_content")
 THUMBNAIL_SIZES = (160, 320, 640)
 WATERMARK_ORIGINS = ("none", "heuristic", "user")
 IMPORT_STATES = ("seen", "stored", "refused", "removed")
+RENDITION_KINDS = ("jpeg", "png")  # what a conversion makes (EF-BIB-015)
 
 
 def processor_check(column: str) -> sa.CheckConstraint:
@@ -224,4 +225,29 @@ thumbnail = sa.Table(
     relative_path_check("path"),
     positive_check("bytes"),
     sa.Index("ix_thumbnail_last_used", "last_used_at"),
+)
+
+
+# A converted image (M5 L20a, EF-BIB-015): what a client that lacks a format is served instead. The
+# key is what was asked, not what was made: the hash of the source `content`, the kind, and the
+# canonical parameters (the page of the archive, the quality). The file is under
+# `/data/cache/renditions/<aa>/<hex of content_hash>.<kind>`, named by what it is, so two sources
+# that convert to the same bytes share it. Nothing cascades from `content` (a file is never
+# forgotten on disk): a purge erases the files, then the rows (ADR-0048). A cache: regenerable.
+rendition = sa.Table(
+    "rendition",
+    metadata,
+    sa.Column("source_content_hash", sa.String(), nullable=False),
+    sa.Column("kind", sa.String(), nullable=False),
+    sa.Column("params", sa.JSON(), nullable=False, server_default="{}"),
+    sa.Column("content_hash", sa.String(), nullable=False),  # of the converted bytes
+    sa.Column("size", sa.BigInteger(), nullable=False),
+    now_column(),
+    sa.PrimaryKeyConstraint("source_content_hash", "kind", "params"),
+    prefixed_hash_check("source_content_hash"),
+    prefixed_hash_check("content_hash"),
+    in_check("kind", RENDITION_KINDS),
+    json_shape_check("params", "object"),
+    positive_check("size", minimum=1),
+    sa.Index("ix_rendition_content_hash", "content_hash"),
 )

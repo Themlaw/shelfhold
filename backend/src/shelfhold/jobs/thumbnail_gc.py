@@ -1,6 +1,7 @@
 """The window jobs of the cover thumbnails (EF-BIB-020, ENF-OPS-014): collect, then catch up.
 
-`thumbnail_gc` drops the thumbnails of covers no Edition points at any more; `thumbnail_catchup`
+`thumbnail_gc` drops the thumbnails of covers no Edition points at any more, and the converted
+images no row names (a render that raced a purge); `thumbnail_catchup`
 makes the sizes a library that was never browsed still lacks, so that the first screen is not the
 one that pays. Both run in the maintenance window only, stop between two files when it closes, and
 work in `/data`: nothing of `/store` or `/library` is opened. The rules are in
@@ -18,7 +19,7 @@ from shelfhold.catalog.public import referenced_cover_refs
 from shelfhold.composition import Composition
 from shelfhold.infrastructure.imaging import WorkerLimits
 from shelfhold.jobs.huey_app import JobContext, JobPools
-from shelfhold.library.public import ThumbnailService, cover_hash
+from shelfhold.library.public import ThumbnailService, collect_rendition_orphans, cover_hash
 
 __all__ = [
     "THUMBNAIL_CATCHUP_KIND",
@@ -53,7 +54,13 @@ def thumbnail_gc_handler(
         )
         done = service.collect(_referenced(comp.engine), closing=closing)
         context.preempted = closing()
-        context.record(files=done.files, rows=done.rows)
+        # the cache of converted images: what a render that raced a purge left (EF-BIB-015)
+        orphans = (
+            0
+            if context.preempted
+            else collect_rendition_orphans(comp.engine, comp.settings.data_dir, context.clock)
+        )
+        context.record(files=done.files, rows=done.rows, renditions=orphans)
 
     return run
 

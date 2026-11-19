@@ -23,9 +23,8 @@ CARRIER = "01HZZZZZZZZZZZZZZZZZZZZZZC"
 WIN, LOSE = "01HZZZZZZZZZZZZZZZZZZZZZZD", "01HZZZZZZZZZZZZZZZZZZZZZZE"
 
 
-def test_the_revision_is_0102_the_head_on_0101() -> None:
+def test_the_revision_is_0102_on_0101() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0102"]  # the head is pinned here, by the newest
     assert script.get_revision("0102").down_revision == "0101"
 
 

@@ -28,6 +28,7 @@ STORAGE_TABLES = {
     "content", "trash_item", "replica", "safeguard_backlog", "import_entry",
     "thumbnail",  # migration 0046 (M3 L01)
     "page_issue",  # migration 0085 (M4 L53)
+    "rendition",  # migration 0104 (M5 L20a)
 }  # fmt: skip
 EXPORT_TABLES = {
     "export_target", "kavita_instance", "shelf", "shelf_destination", "remote_library",

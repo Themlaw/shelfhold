@@ -12,6 +12,9 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("tombstone.root_mismatch", 409, "admin", event=True),
     ErrorCode("unit.safeguard_failed", 500, "admin", event=True),
     ErrorCode("unit.confirmation_required", 409, "user"),
+    # M5 L20a (EF-BIB-015): renditions. A bomb or an oversized image answers with `image.*`.
+    ErrorCode("rendition.format_unsupported", 422, "user"),  # not AVIF or WebP (no JPEG XL decoder)
+    ErrorCode("rendition.remote_refused_watermarked", 403, "admin"),  # EF-EXP-058, ENF-LEG-009
     # M3 L26 (EF-BIB-030, 06 Q54): the doors of « Récupérer de la place » and of the lift
     ErrorCode("library.space_insufficient", 409, "admin"),  # the addition does not fit
     ErrorCode("trash.confirmation_required", 409, "admin"),  # the typed word is not the phrase
