@@ -9,6 +9,8 @@ from shelfhold.config import Settings
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.main import create_app
 
+pytestmark = pytest.mark.req("EF-LEC-009", "EF-INT-007")  # the OPDS feed and the kosync server
+
 CSP = "default-src 'self'; script-src 'self' 'sha256-abc='"
 INDEX = (
     f'<!doctype html><meta http-equiv="content-security-policy" content="{CSP}">'
