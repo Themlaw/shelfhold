@@ -237,6 +237,25 @@ def build_headless_router(
         located(response, f"/api/v1/targets/{added.id}")
         return Created(id=added.id)
 
+    @router.post("/targets/kobo", status_code=201)
+    def add_kobo(
+        body: NativeFolderIn,
+        response: Response,
+        principal: Principal = Depends(_PATH_MAP),  # noqa: B008
+    ) -> Created:
+        """EF-EXP-021: the folder a Kobo reads, filled with one `.kepub.epub` per book. Which
+        folders are written is a reserved action, like a native folder."""
+        try:
+            added = get_admin().target_add_kobo(
+                name=body.name, path_map=body.path_map, actor=_actor_of(principal)
+            )
+        except BindingError as error:
+            raise ProblemError(error.code) from None
+        except HeadlessError as error:
+            raise _problem(error) from None
+        located(response, f"/api/v1/targets/{added.id}")
+        return Created(id=added.id)
+
     @router.post("/destinations/{destination_id}/sync-progress")
     def sync_progress(
         destination_id: str,

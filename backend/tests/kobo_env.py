@@ -9,13 +9,15 @@ L20b — never from the received original.
 from __future__ import annotations
 
 import hashlib
+import io
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
 import sqlalchemy as sa
-from shelfhold.export.targets.kobo.source import KoboSource
 
 from shelfhold.export.application.fan_out import EpubFile, FanOut, HostContentStore
+from shelfhold.export.targets.kobo.source import KoboSource
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.application.renditions import RenditionService
@@ -27,6 +29,13 @@ from tests.null_tombstones import NONE_PURGED
 from tests.plan_executor_env import Probe
 
 KOBO = "Kobo"
+CHAPTER = "OEBPS/ch1.xhtml"  # the spine document the corpus builds around a paragraph
+
+
+def member(data: bytes, name: str) -> bytes:
+    """One entry of an EPUB, decompressed: what a reader opens, not the compressed bytes."""
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        return archive.read(name)
 
 
 @dataclass

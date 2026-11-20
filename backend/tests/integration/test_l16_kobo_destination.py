@@ -23,10 +23,12 @@ from shelfhold.library.application.kepub import kepubify
 from tests.export_env import ExportEnv, export_env
 from tests.fan_out_env import service
 from tests.kobo_env import (
+    CHAPTER,
     add_book,
     bind_kobo,
     kobo_target,
     lower_ceiling,
+    member,
     records,
     renditions,
     rig,
@@ -52,12 +54,13 @@ def test_kobo_destination_kepubify() -> None:
         destination = bind_kobo(env)
         rends = renditions(env)
         fan, _source = rig(env, store, rends)
-        assert _run(fan, env, "c1", destination) == ("done", 1)
+        assert _run(fan, env, "c1", destination) == ("done", 2)  # the folder and the book
         files = tree_files(env)
         assert len(files) == 1
         assert files[0].name.endswith(".kepub.epub")  # the extension a Kobo wants, mandatory
         data = files[0].read_bytes()
-        assert b"koboSpan" in data  # the spans of the conversion, not the EPUB it came from
+        chapter = member(data, CHAPTER)
+        assert b"koboSpan" in chapter  # the spans of the conversion, not the EPUB it came from
         assert data == kepubify(book.data)  # the KEPUB of the derivative, byte for byte
         with env.engine.connect() as connection:
             kinds = (
@@ -80,12 +83,13 @@ def test_kobo_destination_never_serves_untrusted_original() -> None:
     with export_env() as env:
         store: dict[str, EpubFile] = {}
         book = add_book(env, env.new_series("Synthetic Book"), "1", store)
-        assert b"original" in book.original and b"original" not in book.data
+        assert b"original" in member(book.original, CHAPTER)
+        assert b"original" not in member(book.data, CHAPTER)
         destination = bind_kobo(env)
         fan, _source = rig(env, store, renditions(env))
-        assert _run(fan, env, "c1", destination) == ("done", 1)
+        assert _run(fan, env, "c1", destination) == ("done", 2)  # the folder and the book
         data = tree_files(env)[0].read_bytes()
-        assert b"original" not in data  # nothing of the received file, nothing of the archive
+        assert b"original" not in member(data, CHAPTER)  # nothing of the received file
         assert data == kepubify(book.data)  # the neutralized derivative, converted
 
 
