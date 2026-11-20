@@ -6,6 +6,9 @@ a separate distribution cannot provide `shelfhold.sdk`, and a `shelfhold` packag
 plugin would collide with the host. This package stays during the whole 1.x series of the
 application and re-exports every `shelfhold_sdk` module under its old name, so code written
 for the 1.x series keeps importing `shelfhold.sdk.*` unchanged; it disappears with `api` 1.
+
+The pytest plugin (`shelfhold_sdk.testing.pytest_plugin`) is deliberately NOT re-exported:
+it is the only SDK module that imports `pytest`, which the production image does not carry.
 """
 
 import sys
@@ -35,9 +38,11 @@ import shelfhold_sdk.testing.destination_kit
 import shelfhold_sdk.testing.fakes
 import shelfhold_sdk.testing.fixtures
 import shelfhold_sdk.testing.fixtures.reserved_targets
-import shelfhold_sdk.testing.kit
-import shelfhold_sdk.testing.pytest_plugin  # noqa: F401  (aliased below)
+import shelfhold_sdk.testing.kit  # noqa: F401  (aliased into sys.modules below)
 
+# `shelfhold_sdk.testing.pytest_plugin` is not imported above on purpose: it is the only SDK
+# module that needs `pytest`, which the production image does not carry, and this re-export
+# must stay importable without it.
 for _name, _module in list(sys.modules.items()):
     if _name == "shelfhold_sdk" or _name.startswith("shelfhold_sdk."):
         _alias = "shelfhold.sdk" + _name[len("shelfhold_sdk") :]

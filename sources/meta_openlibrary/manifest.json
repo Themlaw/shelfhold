@@ -32,7 +32,7 @@
   "respects_robots": true,
   "attribution": "Data from Open Library (openlibrary.org), CC0 1.0",
   "homepage": "https://openlibrary.org",
-  "min_sdk": "2.0",
+  "min_sdk": "1.2",
   "capabilities": [
     "COVER",
     "IDENTIFY"

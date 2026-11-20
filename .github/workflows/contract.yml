@@ -15,7 +15,7 @@ on:
       - "backend/src/shelfhold/plugin_host/adapters/meta/suwayomi/**"
       - "backend/tests/fixtures/synthetic/**"
       - "backend/pyproject.toml"
-      - "backend/uv.lock"
+      - "uv.lock"
       - ".github/workflows/contract.yml"
 
 permissions:

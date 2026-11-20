@@ -222,3 +222,38 @@ def test_the_1_x_series_still_imports_the_sdk_under_its_old_name() -> None:
 
     assert old_export_target is shelfhold_sdk.export_target
     assert old_kit is shelfhold_sdk.testing.kit
+
+
+@pytest.mark.req("ENF-QUAL-003", "EF-SRC-001")
+def test_the_reexport_and_the_kit_import_without_pytest(tmp_path: Path) -> None:
+    """The production image carries no pytest: `shelfhold.sdk` (the 1.x re-export) and
+    `shelfhold_sdk.testing` (the kit) must import in an interpreter where pytest is
+    unfindable; only the plugin module `pytest_plugin` may depend on it."""
+    (tmp_path / "pytest.py").write_text(
+        "raise ImportError('pytest is not installed in the production image')\n",
+        encoding="utf-8",
+    )
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "import sys\n"
+        "import shelfhold.sdk\n"
+        "import shelfhold.sdk.testing.corpus.trapped_epubs.build\n"
+        "import shelfhold_sdk.testing\n"
+        "assert 'pytest' not in sys.modules, 'the re-export pulled pytest in'\n"
+        "try:\n"
+        "    import shelfhold_sdk.testing.pytest_plugin\n"
+        "except ImportError:\n"
+        "    pass\n"
+        "else:\n"
+        "    raise AssertionError('the plugin module imported without pytest')\n"
+        "print('NO-PYTEST-OK')\n",
+        encoding="utf-8",
+    )
+    run = subprocess.run(  # noqa: S603
+        [sys.executable, str(probe)],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        check=False,
+    )
+    assert run.returncode == 0 and "NO-PYTEST-OK" in run.stdout, run.stdout + run.stderr

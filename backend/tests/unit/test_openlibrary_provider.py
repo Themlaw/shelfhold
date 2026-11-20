@@ -197,7 +197,8 @@ def test_the_adapter_imports_only_the_sdk_and_nothing_that_decodes_or_connects()
                 imported |= {a.name for a in node.names}
             elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
                 imported.add(node.module)
-    own = {m for m in imported if m.startswith("shelfhold.")}
+    # M6 L02: the SDK is its own distribution, imported as `shelfhold_sdk` (was `shelfhold.sdk`)
+    own = {m for m in imported if m.startswith(("shelfhold.", "shelfhold_sdk"))}
     own -= {
         m for m in own if m.startswith("shelfhold.plugin_host.adapters.native.openlibrary")
     }  # itself
