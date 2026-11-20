@@ -100,7 +100,8 @@ def test_the_kobo_route_refuses_binding_error_and_headless_error(
     drop.mkdir(exist_ok=True)
     body = {"name": "Kobo2", "path_map": [{"local": str(drop), "remote": "/kobo", "mode": "rw"}]}
     refused = world.api.post(KOBO, json=body)
-    assert refused.status_code is not None
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "target.transport_not_supported"
     monkeypatch.setattr(HeadlessAdmin, "target_add_kobo", original)
 
     # HeadlessError branch
@@ -109,7 +110,8 @@ def test_the_kobo_route_refuses_binding_error_and_headless_error(
 
     monkeypatch.setattr(HeadlessAdmin, "target_add_kobo", raise_headless)
     refused2 = world.api.post(KOBO, json=body)
-    assert refused2.status_code is not None
+    assert refused2.status_code == 422
+    assert refused2.json()["code"] == HeadlessError.code
     monkeypatch.setattr(HeadlessAdmin, "target_add_kobo", original)
 
 
@@ -127,7 +129,8 @@ def test_the_cwa_route_refuses_binding_error(world: World, monkeypatch: pytest.M
     drop.mkdir(exist_ok=True)
     body = {"name": "Cwa2", "path_map": [{"local": str(drop), "remote": "/cwa", "mode": "rw"}]}
     refused = world.api.post(CWA, json=body)
-    assert refused.status_code is not None
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "target.transport_not_supported"
     monkeypatch.setattr(HeadlessAdmin, "target_add_cwa", original)
 
 
@@ -181,9 +184,7 @@ def test_first_party_destinations_kobo_branches(tmp_path: Path, settings: Settin
 @pytest.mark.req("EF-EXP-021")
 def test_kobo_source_branches() -> None:
     with export_env() as env:
-        # kobo_series with empty native_formats -> []
-        assert kobo_series(env.engine.connect(), {}) == [] if False else True
-        # call kobo_series directly
+        # no native formats: no series to send
         with env.engine.connect() as connection:
             assert kobo_series(connection, {}) == []
         # sender refuses
