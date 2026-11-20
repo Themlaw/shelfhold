@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.age import AgeRating, from_comicinfo
 from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import (
@@ -92,7 +93,6 @@ from shelfhold.library.public import (
     has_active_content,
     record_destination_copy,
 )
-from shelfhold.sdk.age import AgeRating, from_comicinfo
 
 if TYPE_CHECKING:
     from shelfhold.export.application.pipeline import ExportPipeline

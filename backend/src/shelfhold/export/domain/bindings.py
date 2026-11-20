@@ -13,9 +13,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from shelfhold_sdk.age import ADULT_MIN_AGE, AGE_TIERS, is_family_ceiling
+
 from shelfhold.export.domain.folders import FOLDER_TRANSPORTS, Relation, folder_relation
 from shelfhold.export.domain.path_map import clean_absolute, within
-from shelfhold.sdk.age import ADULT_MIN_AGE, AGE_TIERS, is_family_ceiling
 
 X_CEILING = 99  # `shelf.max_age_rating` stores X as 99
 FAMILY_SHELF_NAME = "Famille"  # the pre-created shelf for children (EF-UX-007)

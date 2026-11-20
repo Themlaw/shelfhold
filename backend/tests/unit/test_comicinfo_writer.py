@@ -1,6 +1,7 @@
 """ComicInfo v2.0 + draft 2.1 writer (EF-EXP-011, EF-BIB-046, ENF-SEC-015, EF-BIB-022)."""
 
 import pytest
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.catalog.public import ContributorName, NameKind
 from shelfhold.infrastructure.packaging.comicinfo import (
@@ -9,7 +10,6 @@ from shelfhold.infrastructure.packaging.comicinfo import (
     render_comicinfo,
 )
 from shelfhold.infrastructure.xml import safe_parse_xml
-from shelfhold.sdk.age import AgeRating
 from tests.comicinfo_xsd import kavita_schema, schema, strip_kavita_elements
 
 

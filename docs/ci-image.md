@@ -2,7 +2,7 @@
 
 | Workflow / job | Quand | Jeton | Rôle |
 | --- | --- | --- | --- |
-| `ci.yml` / `image-pr` | `pull_request`, seulement si `backend/src`, `backend/pyproject.toml`, `backend/uv.lock`, `frontend/`, `docker/`, `open-api/`, `e2e/` ou `.github/workflows/image*` changent (tous les scénarios e2e) ; `compose*.yaml`, `.env.example` ou `.dockerignore` seuls : build et scénario `smoke-install` uniquement | `contents: read`, `packages: read` | `image.yml` : build natif **amd64 seul**, taille <= 300 Mo, e2e |
+| `ci.yml` / `image-pr` | `pull_request`, seulement si `backend/src`, `backend/pyproject.toml`, `uv.lock`, `frontend/`, `docker/`, `open-api/`, `e2e/` ou `.github/workflows/image*` changent (tous les scénarios e2e) ; `compose*.yaml`, `.env.example` ou `.dockerignore` seuls : build et scénario `smoke-install` uniquement | `contents: read`, `packages: read` | `image.yml` : build natif **amd64 seul**, taille <= 300 Mo, e2e |
 | `ci.yml` / `image-main` | `push` sur `main` | `packages: write` | idem sur amd64 **et arm64**, plus rafraîchissement du cache de couches dans GHCR |
 | `ci.yml` / `image-publish` | `push` sur `main`, après `image-main`, `frontend` et `openapi` (ou filtrés) | `packages: write` | `image-publish.yml` : publie les archives OCI **déjà testées**, puis le manifeste multi-arch (`edge`, `sha-<long>`) |
 | `ci.yml` / `scan` | tout run où l'image est construite | `security-events: write` | Grype sur l'archive amd64 testée, SARIF vers l'onglet Sécurité ; **informatif** (hors `ci-success`, `fail-build` désactivé : une CVE publiée demain ne doit pas casser une PR sans rapport) |

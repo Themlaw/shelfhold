@@ -4,6 +4,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.export.domain.field_owner import (
     FieldAction,
@@ -26,7 +27,6 @@ from shelfhold.export.domain.kavita_instance import (
     instance_fingerprint,
     match_library,
 )
-from shelfhold.sdk.age import AgeRating
 from tests.kavita_env import NOW
 
 X18, TEEN, EVERYONE, UNKNOWN, NOT_APPLICABLE = 14, 8, 3, 0, -1

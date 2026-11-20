@@ -16,19 +16,25 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
     UV_PROJECT_ENVIRONMENT=/opt/venv
+# The uv workspace root is the build context root: `backend` (the host) and `sdk`
+# (shelfhold-sdk, MIT) are members; the lockfile lives at the root. The SDK wheel is built
+# from the same sources and installed with the host (`--no-editable` below).
 WORKDIR /src
-COPY backend/pyproject.toml backend/uv.lock ./
+COPY pyproject.toml uv.lock ./
+COPY backend/pyproject.toml backend/
+COPY sdk/pyproject.toml sdk/
+COPY sdk/src sdk/src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-install-project
-COPY backend/src ./src
+    uv sync --project backend --locked --no-dev --no-install-project
+COPY backend/src backend/src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable
+    uv sync --project backend --locked --no-dev --no-editable
 
 # --- Development target (compose.dev.yaml): source mounted, hot reload ---
 FROM builder AS dev
-ENV PATH="/opt/venv/bin:$PATH" PYTHONPATH=/src/src SHELFHOLD_HOST=0.0.0.0
+ENV PATH="/opt/venv/bin:$PATH" PYTHONPATH=/src/backend/src SHELFHOLD_HOST=0.0.0.0
 EXPOSE 8080
-CMD ["python", "-m", "uvicorn", "shelfhold.main:app_from_env", "--factory", "--reload", "--reload-dir", "/src/src", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["python", "-m", "uvicorn", "shelfhold.main:app_from_env", "--factory", "--reload", "--reload-dir", "/src/backend/src", "--host", "0.0.0.0", "--port", "8080"]
 
 # --- Frontend: either nothing (default) or the static build ---
 FROM scratch AS frontend-false

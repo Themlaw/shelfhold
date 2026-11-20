@@ -8,17 +8,17 @@ on purpose to show that the kit would say so.
 """
 
 import pytest
-
-from shelfhold.export.domain.bindings import effective_partitioning
-from shelfhold.export.targets.cwa import CwaDestination, DropSpec
-from shelfhold.sdk.fsops import ContentRef, FsOp, FsOpPlan
-from shelfhold.sdk.testing.destination_kit import (
+from shelfhold_sdk.fsops import ContentRef, FsOp, FsOpPlan
+from shelfhold_sdk.testing.destination_kit import (
     SYNTHETIC_ITEM,
     SYNTHETIC_WATERMARKED,
     DestinationScenario,
     assert_destination_conforms,
     run_destination_conformance,
 )
+
+from shelfhold.export.domain.bindings import effective_partitioning
+from shelfhold.export.targets.cwa import CwaDestination, DropSpec
 
 ITEM = "01HZSYNTHBOOK00000000000A"
 OTHER = "01HZSYNTHBOOK00000000000B"

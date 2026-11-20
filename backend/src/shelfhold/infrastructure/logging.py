@@ -181,7 +181,7 @@ def _redact_path(path: str) -> str:
 
 
 _PATH_KEYWORD_ONLY = re.compile(_PATH_KEYWORD, re.IGNORECASE)
-_PLACEHOLDER = "{secret}"  # the template slot of a reference (shelfhold.sdk.refs)
+_PLACEHOLDER = "{secret}"  # the template slot of a reference (shelfhold_sdk.refs)
 
 
 def _redact_pairs(text: str, separators: str = "&;") -> str:

@@ -10,6 +10,7 @@ from pathlib import Path, PurePath
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import Member, epub_bytes, opf, xhtml
 
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.infrastructure.clock import SystemClock
@@ -19,7 +20,6 @@ from shelfhold.library.adapters.epub_derivative import UntrustedEpubStore
 from shelfhold.library.adapters.import_scan import ImportFolder, ImportItem
 from shelfhold.library.adapters.pdf_store import PdfStore
 from shelfhold.library.adapters.storage import PassthroughStore
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import Member, epub_bytes, opf, xhtml
 from tests.library_env import LibEnv, lib_env
 from tests.null_tombstones import NONE_PURGED
 

@@ -7,8 +7,9 @@ import asyncio
 from collections.abc import Awaitable
 from urllib.parse import parse_qs
 
+from shelfhold_sdk.metadata import MetadataManifest
+
 from shelfhold.plugin_host.provider_fetcher import ProviderFetcher, ProviderRuntime, open_provider
-from shelfhold.sdk.metadata import MetadataManifest
 from tests.fakes.cassette_server import CassetteServer
 
 EDITION = "01HZZZZZZZZZZZZZZZZZZZZZZA"

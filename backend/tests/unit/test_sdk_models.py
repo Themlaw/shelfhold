@@ -8,9 +8,8 @@ from typing import Any
 
 import pytest
 from pydantic import BaseModel, ValidationError
-
-from shelfhold.sdk import api_call, connected, export_target, fetcher, fsops, models, refs, source
-from shelfhold.sdk.age import AgeRating
+from shelfhold_sdk import api_call, connected, export_target, fetcher, fsops, models, refs, source
+from shelfhold_sdk.age import AgeRating
 
 OPAQUE = "opaque-handle"
 URL = "https://a.invalid/t"

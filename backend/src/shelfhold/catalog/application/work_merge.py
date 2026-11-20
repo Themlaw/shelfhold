@@ -34,6 +34,7 @@ from typing import Any
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.age import AgeRating, max_rating, to_columns
 from sqlalchemy import Connection, exc
 
 from shelfhold.catalog.application.changes import record_work_removed, track_work_changes
@@ -45,7 +46,6 @@ from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, identity
 from shelfhold.infrastructure.schema._base import metadata as _METADATA
-from shelfhold.sdk.age import AgeRating, max_rating, to_columns
 
 __all__ = [
     "MERGE_WINDOW_DAYS",

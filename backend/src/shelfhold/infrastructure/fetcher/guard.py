@@ -24,10 +24,10 @@ from urllib.parse import urlsplit
 
 import idna
 import structlog
+from shelfhold_sdk.models import DomainRule
 
 from shelfhold.infrastructure.fetcher.errors import DomainNotAllowed, SsrfBlocked
 from shelfhold.infrastructure.logging import redact_url
-from shelfhold.sdk.models import DomainRule
 
 log = structlog.get_logger(__name__)
 

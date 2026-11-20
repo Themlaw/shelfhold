@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.source import SourceChanged
 from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -19,7 +20,6 @@ from shelfhold.events.waiting_state import WaitingState
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.plugin_host.errors import RefHasSecret
-from shelfhold.sdk.source import SourceChanged
 
 _PAUSE_EVENTS = {
     "auth": "source.auth_expired",

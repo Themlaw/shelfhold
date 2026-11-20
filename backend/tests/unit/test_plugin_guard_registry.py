@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from shelfhold_sdk.models import API_VERSION
 
 from shelfhold.plugin_host.registry import (
     InstalledPlugin,
@@ -15,7 +16,6 @@ from shelfhold.plugin_host.registry import (
     PluginStatus,
     third_party_candidates,
 )
-from shelfhold.sdk.models import API_VERSION
 from tests.plugin_guard_env import manifest
 
 pytestmark = pytest.mark.req("ENF-SEC-009")

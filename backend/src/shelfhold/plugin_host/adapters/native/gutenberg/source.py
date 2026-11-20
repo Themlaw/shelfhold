@@ -20,6 +20,26 @@ import weakref
 from collections.abc import Callable
 from typing import Any
 
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.models import (
+    Cursor,
+    DomainRule,
+    FilterSpec,
+    Page,
+    Permissions,
+    PluginKind,
+    RateLimit,
+)
+from shelfhold_sdk.refs import FileAsset, ImageRequest, SeriesInfo, SeriesRef, UnitInfo
+from shelfhold_sdk.source import (
+    Capability,
+    ContentRemoved,
+    RateLimited,
+    SourceChanged,
+    SourceManifest,
+    TemporarilyUnavailable,
+)
+
 from shelfhold.plugin_host.adapters.native.gutenberg.catalog import (
     CatalogBook,
     CatalogError,
@@ -30,25 +50,6 @@ from shelfhold.plugin_host.adapters.native.gutenberg.mirror import (
     CATALOG_PATH_PREFIX,
     epub_url,
     setting_url,
-)
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.models import (
-    Cursor,
-    DomainRule,
-    FilterSpec,
-    Page,
-    Permissions,
-    PluginKind,
-    RateLimit,
-)
-from shelfhold.sdk.refs import FileAsset, ImageRequest, SeriesInfo, SeriesRef, UnitInfo
-from shelfhold.sdk.source import (
-    Capability,
-    ContentRemoved,
-    RateLimited,
-    SourceChanged,
-    SourceManifest,
-    TemporarilyUnavailable,
 )
 
 __all__ = ["KEY", "PUBLISHER", "GutenbergSource", "build_manifest"]
@@ -69,7 +70,7 @@ def build_manifest() -> SourceManifest:
         key=KEY,
         kind=PluginKind.SOURCE,
         version="0.1.0",
-        api=1,
+        api=2,
         name="Project Gutenberg (official catalogue and a mirror)",
         permissions=Permissions(
             domains=[

@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from shelfhold_sdk.connected import ConnectedCapability
+from shelfhold_sdk.refs import SeriesRef, UnitInfo
+from shelfhold_sdk.source import Capability, SourceManifest
+from shelfhold_sdk.testing.kit import ConformanceReport, run_source_conformance
 
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
-from shelfhold.sdk.connected import ConnectedCapability
-from shelfhold.sdk.refs import SeriesRef, UnitInfo
-from shelfhold.sdk.source import Capability, SourceManifest
-from shelfhold.sdk.testing.kit import ConformanceReport, run_source_conformance
 from tests.fakes.suwayomi import BASE_URL, FakeSuwayomi, FakeSuwayomiFetcher
 
 MANIFEST = Path(__file__).resolve().parents[3] / "sources" / "meta_suwayomi" / "manifest.json"

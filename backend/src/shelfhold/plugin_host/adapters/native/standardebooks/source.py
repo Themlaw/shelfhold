@@ -28,12 +28,9 @@ from collections.abc import Callable, Mapping
 from typing import Any, Final
 from urllib.parse import urlsplit
 
-from shelfhold.plugin_host.adapters.native.opds import OpdsSource
-from shelfhold.plugin_host.adapters.native.opds.atom import ParseXml
-from shelfhold.plugin_host.adapters.native.opds.model import Feed
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.lang import LanguageTag
-from shelfhold.sdk.models import (
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.lang import LanguageTag
+from shelfhold_sdk.models import (
     AuthBasic,
     Cursor,
     DomainRule,
@@ -43,13 +40,17 @@ from shelfhold.sdk.models import (
     PluginKind,
     RateLimit,
 )
-from shelfhold.sdk.refs import FileAsset, ImageRequest, SeriesInfo, SeriesRef, UnitInfo
-from shelfhold.sdk.source import (
+from shelfhold_sdk.refs import FileAsset, ImageRequest, SeriesInfo, SeriesRef, UnitInfo
+from shelfhold_sdk.source import (
     AuthRequired,
     Capability,
     ContentRemoved,
     SourceManifest,
 )
+
+from shelfhold.plugin_host.adapters.native.opds import OpdsSource
+from shelfhold.plugin_host.adapters.native.opds.atom import ParseXml
+from shelfhold.plugin_host.adapters.native.opds.model import Feed
 
 __all__ = ["KEY", "ORIGIN", "StandardEbooksSource", "build_manifest", "parse_slug"]
 
@@ -75,7 +76,7 @@ def build_manifest() -> SourceManifest:
         key=KEY,
         kind=PluginKind.SOURCE,
         version="0.1.0",
-        api=1,
+        api=2,
         name="Standard Ebooks (one address per book, patron feed with credentials)",
         permissions=Permissions(
             domains=[

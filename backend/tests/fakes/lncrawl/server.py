@@ -23,9 +23,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import httpx2
-
-from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Response
-from shelfhold.sdk.refs import ImageRequest
+from shelfhold_sdk.fetcher import CookieJarView, DownloadedFile, Response
+from shelfhold_sdk.refs import ImageRequest
 
 BASE_URL = "http://lncrawl.lan:8080"
 API_KEY = "synthetic-test-key-not-a-real-one"

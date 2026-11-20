@@ -9,9 +9,15 @@
 
 ```
 shelfhold/
+├── pyproject.toml                    # racine du workspace uv (M6 L02) : membres backend + sdk, lockfile et réglages supply-chain à la racine
+├── uv.lock
+├── sdk/                              # shelfhold-sdk 2.0.0 (MIT, D10), membre du workspace, nom d'import shelfhold_sdk (M6 L02)
+│   ├── pyproject.toml                # pydantic seule dépendance d'exécution ; entrée pytest11 du kit
+│   ├── LICENSE                       # MIT ; chaque fichier porte « SPDX-License-Identifier: MIT »
+│   ├── src/shelfhold_sdk/            # le contrat (models, source, export_target, …) et testing/ (kit de conformité)
+│   └── tests/                        # garde du SDK (test_sdk_never_imports_core, déplacé depuis le backend)
 ├── backend/                          # application Python (uv)
-│   ├── pyproject.toml                # dépendances (huey>=3.5.4,<3.6, defusedxml …), entry points shelfhold.plugins, ruff/mypy
-│   ├── uv.lock
+│   ├── pyproject.toml                # dépendances (huey>=3.5.4,<3.6, defusedxml …) + shelfhold-sdk==2.0.0 (workspace), entry points shelfhold.plugins, ruff/mypy
 │   ├── alembic/                      # migrations (render_as_batch=True) ; jamais dans une release patch
 │   ├── importlinter.ini              # forbidden (domaine sans sqlalchemy/fastapi/httpx) + independence + safe_open_archive unique (ENF-QUAL-002)
 │   │                                 # + safe_parse_xml unique : xml.etree, lxml, xml.dom, xml.sax interdits hors infrastructure/xml (ENF-SEC-014)
@@ -31,8 +37,7 @@ shelfhold/
 │   │                             # passe 6 (M1a) : meta rebuild (ENF-OPS-020) | adopt set-follow-from <série> <chapitre> (coverage_unknown) | adopt set-coverage <tome> <premier> <dernier>
 │   │                             #           edition set-lang <édition|liaison> <étiquette BCP 47> (language_unknown) | target recheck (racine physique)
 │   │   ├── config.py                 # pydantic-settings : env > config.toml > base
-│   │   ├── sdk/                      # SDK en V1 (ADR-0024) → publié comme shelfhold-sdk 2.0.0 (MIT, nom d'import shelfhold_sdk, D10) en M6 (ADR-0056) ; passe 11 (GAP-11-15) : sous-arbre sous LICENSE MIT propre
-│   │   │   ├── LICENSE               # MIT (le reste du dépôt est AGPL) ; chaque fichier porte « SPDX-License-Identifier: MIT »
+│   │   ├── sdk/                      # réexport déprécié de shelfhold_sdk pendant la série 1.x de l'application (D10) ; disparaît avec api 1
 │   │   │   ├── age.py                # passe 11 : AgeRating = {min_age: int, x: bool} (EF-EXP-011)
 │   │   │   ├── models.py             # SeriesRef, UnitInfo, PageRef (paresseux), ImageRequest, Cursor, FilterSpec, AuthFlow…
 │   │   │   ├── source.py  export_target.py  metadata.py          # implémentés (Source, ExportTarget en V1 ; MetadataProvider en M2)

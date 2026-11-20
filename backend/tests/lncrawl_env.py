@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.models import AuthApiKey
 
 from shelfhold.acquisition.application.lncrawl_ranges import epub_only
 from shelfhold.acquisition.public import FollowCycle, FollowReport, bounded_receiver
@@ -25,7 +26,6 @@ from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.library.public import RangedKeeper
 from shelfhold.plugin_host.adapters.meta.lncrawl import LncrawlService
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
-from shelfhold.sdk.models import AuthApiKey
 from tests.fakes.lncrawl import API_KEY, BASE_URL, FakeLncrawl
 from tests.fakes_clock import ManualClock
 from tests.fakes_fetcher import FakeResolver

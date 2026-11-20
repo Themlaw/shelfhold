@@ -298,7 +298,7 @@ Retrait possible le 2026-11-15, quand les deux versions ont plus de 14 jours : s
 - **tzdata** : base des fuseaux horaires (`Europe/Paris` pour la fenêtre de maintenance, ENF-OPS-014) ;
   l'image `python:slim` n'en contient pas et `zoneinfo` échouerait.
 - **uvicorn**, **SQLAlchemy**, **Alembic**, **structlog**, **pydantic** : socle du squelette,
-  versions minimales et verrou dans `backend/pyproject.toml` et `backend/uv.lock`.
+  versions minimales et verrou dans `backend/pyproject.toml` et `uv.lock` (racine de l'espace de travail uv).
 
 ## Harnais de test de l'atelier (M3 L02)
 

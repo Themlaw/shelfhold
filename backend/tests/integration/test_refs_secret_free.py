@@ -16,6 +16,8 @@ from urllib.parse import quote
 import pytest
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.connected import ConnectedCapability
+from shelfhold_sdk.refs import SeriesRef
 
 from shelfhold.acquisition.application.upstream import (
     SnapshotRefusedError,
@@ -30,8 +32,6 @@ from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.infrastructure.write_guard import SecretInWriteError
 from shelfhold.library.adapters.meta_projection import MetaProjection
-from shelfhold.sdk.connected import ConnectedCapability
-from shelfhold.sdk.refs import SeriesRef
 from tests.backup_env import backup_bench, read_members
 from tests.follow_env import Bench, follow_bench
 from tests.library_env import lib_env

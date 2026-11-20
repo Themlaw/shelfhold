@@ -477,7 +477,7 @@ def test_docs_site_config_is_zensical_over_docs() -> None:
     assert config["site_dir"].startswith("_")  # inside the project root, ignored by git
     assert "site_url" not in config or "divprotocol" not in str(config["site_url"])  # no own domain
     assert "_site" in _read(".gitignore")
-    lock = _read("backend/uv.lock")
+    lock = _read("uv.lock")  # M6 L02: the lockfile lives at the workspace root
     assert 'name = "zensical"' in lock
     groups = tomllib.loads(_read("backend/pyproject.toml"))["dependency-groups"]
     assert any(d.startswith("zensical==") for d in groups["docs"])  # pinned exactly

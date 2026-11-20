@@ -4,6 +4,7 @@ import importlib
 from pathlib import Path
 
 import pytest
+from shelfhold_sdk import source as sdk_source
 
 from shelfhold.events.operating import (
     M1B,
@@ -15,7 +16,6 @@ from shelfhold.events.waiting_state import WaitingState
 from shelfhold.i18n import load_catalog
 from shelfhold.infrastructure.fetcher import errors as fetch_errors
 from shelfhold.interfaces.http_api.catalog import all_error_codes, error_code_modules
-from shelfhold.sdk import source as sdk_source
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "shelfhold"
 

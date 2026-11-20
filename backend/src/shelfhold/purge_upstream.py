@@ -16,6 +16,8 @@ from contextlib import AbstractAsyncContextManager, contextmanager, nullcontext,
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from shelfhold_sdk.connected import Ticket
+from shelfhold_sdk.refs import SeriesRef
 from sqlalchemy import Engine
 
 from shelfhold.acquisition.public import FollowRequests
@@ -35,8 +37,6 @@ from shelfhold.library.public import (
     ServiceGate,
     UpstreamPurge,
 )
-from shelfhold.sdk.connected import Ticket
-from shelfhold.sdk.refs import SeriesRef
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition

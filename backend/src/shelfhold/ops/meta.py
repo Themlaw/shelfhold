@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.metadata import MatchHints, MetadataProvider
 
 from shelfhold.catalog.application.enrich import DAILY_QUOTA
 from shelfhold.catalog.application.release_calendar import ReleaseCalendar
@@ -55,7 +56,6 @@ from shelfhold.plugin_host.adapters.native.mangaupdates import MangaUpdatesProvi
 from shelfhold.plugin_host.adapters.native.openlibrary import OpenLibraryProvider
 from shelfhold.plugin_host.adapters.native.wikidata import WikidataProvider
 from shelfhold.plugin_host.bnf_sru import read_sru
-from shelfhold.sdk.metadata import MatchHints, MetadataProvider
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition

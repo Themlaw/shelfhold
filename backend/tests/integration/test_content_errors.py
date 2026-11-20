@@ -10,12 +10,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from shelfhold_sdk.fetcher import Response
+from shelfhold_sdk.source import ContentRemoved, TemporarilyUnavailable
 
 from shelfhold.acquisition.application.failures import FailureLedger
 from shelfhold.library.domain.irreplaceable import CANDIDATE_AFTER, is_candidate
 from shelfhold.library.public import content_error_candidates
-from shelfhold.sdk.fetcher import Response
-from shelfhold.sdk.source import ContentRemoved, TemporarilyUnavailable
 from tests.fakes.suwayomi import FakeSuwayomi
 from tests.follow_env import Bench, follow_bench
 

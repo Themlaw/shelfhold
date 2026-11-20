@@ -562,7 +562,8 @@ def test_a_tree_that_is_or_holds_a_root_of_ours_is_refused() -> None:
 
 @pytest.mark.req("EF-INT-009")
 def test_a_protected_file_named_as_a_chapter_is_refused_and_stays() -> None:
-    from shelfhold.sdk.testing.corpus.trapped_epubs.build import Member
+    from shelfhold_sdk.testing.corpus.trapped_epubs.build import Member
+
     from tests.import_env import AES, encryption_xml, epub_with
 
     protected = epub_with(Member("META-INF/encryption.xml", encryption_xml(AES, "OEBPS/c.xhtml")))

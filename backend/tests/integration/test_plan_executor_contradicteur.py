@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.api_call import ApiCall
 
 from shelfhold.export.application.plan_executor import PlanBinding, PlanRefusedError
 from shelfhold.export.application.target_state import DestinationPausedError, save_fingerprint
@@ -18,7 +19,6 @@ from shelfhold.export.domain.bindings import TreeOverlapError
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, platform
-from shelfhold.sdk.api_call import ApiCall
 from tests.export_env import ROOT_SUBPATH, export_env
 from tests.plan_executor_env import (
     BOOK_A,

@@ -21,6 +21,8 @@ from datetime import datetime
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.metadata import FieldProposal, Provenance
+from shelfhold_sdk.refs import SeriesInfo
 
 from shelfhold.catalog.public import (
     Catalog,
@@ -31,8 +33,6 @@ from shelfhold.catalog.public import (
     propose_fields,
 )
 from shelfhold.infrastructure.schema import catalog
-from shelfhold.sdk.metadata import FieldProposal, Provenance
-from shelfhold.sdk.refs import SeriesInfo
 
 __all__ = [
     "credit_authors",

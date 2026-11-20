@@ -102,7 +102,7 @@ def test_pull_request_scope_production_code_runs_everything_as_before() -> None:
     for path in (
         "backend/src/shelfhold/app.py",
         "backend/pyproject.toml",
-        "backend/uv.lock",
+        "uv.lock",  # M6 L02: the lockfile lives at the workspace root
         "backend/tests/conftest.py",
         "backend/tests/library_env.py",
         "backend/tests/fixtures/synthetic/a.cbz",

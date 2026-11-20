@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.fsops import PlannedContent
 
 from shelfhold.export.application.fan_out import EpubFile
 from shelfhold.export.application.plan_executor import PlanBinding, PlanRefusedError
@@ -19,7 +20,6 @@ from shelfhold.export.targets.cwa import CwaDestination
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
-from shelfhold.sdk.fsops import PlannedContent
 from tests.cwa_env import (
     INGEST,
     add_book,

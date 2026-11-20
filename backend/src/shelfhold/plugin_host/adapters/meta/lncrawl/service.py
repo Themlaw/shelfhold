@@ -21,18 +21,15 @@ from decimal import Decimal
 from typing import Any, Final, Literal
 from urllib.parse import urlsplit
 
-from shelfhold.catalog.lang import LanguageError, normalize_lang
-from shelfhold.plugin_host.adapters.meta.lncrawl import api
-from shelfhold.plugin_host.errors import AuthExpired
-from shelfhold.sdk.connected import (
+from shelfhold_sdk.connected import (
     ConnectedCapability,
     ServiceHealth,
     Ticket,
     TicketState,
 )
-from shelfhold.sdk.fetcher import Fetcher, Response
-from shelfhold.sdk.lang import LanguageTag
-from shelfhold.sdk.models import (
+from shelfhold_sdk.fetcher import Fetcher, Response
+from shelfhold_sdk.lang import LanguageTag
+from shelfhold_sdk.models import (
     API_VERSION,
     AuthApiKey,
     Cursor,
@@ -43,7 +40,7 @@ from shelfhold.sdk.models import (
     PluginKind,
     RateLimit,
 )
-from shelfhold.sdk.refs import (
+from shelfhold_sdk.refs import (
     FileAsset,
     ImageRequest,
     RangedPayload,
@@ -54,7 +51,7 @@ from shelfhold.sdk.refs import (
     UnitPayload,
     UnitRef,
 )
-from shelfhold.sdk.source import (
+from shelfhold_sdk.source import (
     AuthRequired,
     Capability,
     ContentRemoved,
@@ -63,6 +60,10 @@ from shelfhold.sdk.source import (
     SourceManifest,
     TemporarilyUnavailable,
 )
+
+from shelfhold.catalog.lang import LanguageError, normalize_lang
+from shelfhold.plugin_host.adapters.meta.lncrawl import api
+from shelfhold.plugin_host.errors import AuthExpired
 
 KEY: Final = "lncrawl"
 EPUB_MIME: Final = "application/epub+zip"

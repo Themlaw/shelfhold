@@ -12,7 +12,8 @@ import pytest
 
 BACKEND = Path(__file__).resolve().parents[2]
 SRC = BACKEND / "src"
-SDK = SRC / "shelfhold" / "sdk"
+# the SDK is its own distribution since M6 L02: sdk/src/shelfhold_sdk (shelfhold-sdk, MIT)
+SDK = BACKEND.parent / "sdk" / "src" / "shelfhold_sdk"
 CONFIG = BACKEND / "importlinter.ini"
 
 CORE_TOP_LEVEL = {
@@ -59,17 +60,6 @@ def _is_core(name: str) -> bool:
     return parts[0] == "shelfhold" and len(parts) > 1 and parts[1] in CORE_TOP_LEVEL
 
 
-@pytest.mark.req("ENF-LEG-010", "ENF-QUAL-002")
-def test_sdk_never_imports_core() -> None:
-    offenders = [
-        f"{p.name}: {name}"
-        for p in SDK.rglob("*.py")
-        for name in _imported_modules(p)
-        if _is_core(name)
-    ]
-    assert not offenders, offenders
-
-
 @pytest.mark.req("ENF-LEG-010")
 def test_core_import_detector_catches_all_import_forms(tmp_path: Path) -> None:
     probe = tmp_path / "_probe.py"  # never write into src/: other tests walk it under xdist
@@ -95,7 +85,7 @@ def test_importlinter_declares_forbidden_independence_and_layers() -> None:
 def test_importlinter_sdk_contract_matches_core_top_level() -> None:
     section = _config()["importlinter:contract:sdk-without-core"]
     assert section["type"] == "forbidden"
-    assert section["source_modules"].strip() == "shelfhold.sdk"
+    assert set(_lines(section["source_modules"])) == {"shelfhold_sdk", "shelfhold.sdk"}
     assert set(_lines(section["forbidden_modules"])) == {f"shelfhold.{m}" for m in CORE_TOP_LEVEL}
 
 
@@ -341,6 +331,23 @@ VIOLATIONS = [
      "from shelfhold.events import stream\n", None),
     ("webhooks-read-events-through-activity-view", "integrations/webhooks/other.py",
      "from shelfhold.events import bus\n", "integrations/apprise/other.py"),
+    # M6 L00: one violation per new contract
+    ("plugin-host-rpc-not-catalog-export-identity", "plugin_host/rpc/other.py",
+     "import shelfhold.catalog\n", None),
+    ("plugin-host-rpc-not-catalog-export-identity", "plugin_host/rpc/other.py",
+     "from shelfhold.export import public\n", None),
+    ("plugin-host-rpc-not-catalog-export-identity", "plugin_host/rpc/other.py",
+     "import shelfhold.identity\n", None),
+    ("plugin-host-runner-companion", "plugin_host/runner/other.py",
+     "import shelfhold.catalog\n", None),
+    ("plugin-host-runner-companion", "plugin_host/runner/other.py",
+     "import shelfhold.plugin_host.registry\n", None),
+    ("kobo-not-opds-lite", "interfaces/http_api/kobo/other.py",
+     "import shelfhold.interfaces.http_api.opds\n", None),
+    ("kobo-not-opds-lite", "interfaces/http_api/kobo/other.py",
+     "from shelfhold.interfaces.http_api import lite\n", None),
+    ("trackers-not-acquisition", "integrations/trackers/other.py",
+     "import shelfhold.acquisition\n", None),
 ]  # fmt: skip
 
 
@@ -372,7 +379,7 @@ def test_each_contract_breaks_on_a_violation_and_allows_its_sanctioned_module(
 
 @pytest.mark.req("ENF-QUAL-002", "EF-SRC-033")
 def test_native_adapter_may_import_the_sdk(tmp_path: Path) -> None:
-    code = "from shelfhold.sdk import models\n"
+    code = "from shelfhold_sdk import models\n"
     result = _run_in_copy(tmp_path, {"plugin_host/adapters/native/demo/client.py": code})
     assert result.returncode == 0, result.stdout
 

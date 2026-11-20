@@ -30,6 +30,9 @@ import time
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from typing import TYPE_CHECKING, Any, Final
 
+from shelfhold_sdk.models import AuthApiKey, AuthBasic, AuthFlow
+from shelfhold_sdk.source import AuthRequired, NotConfigured
+
 from shelfhold.infrastructure.fetcher import FetchLimits, GuardedFetcher, Network
 from shelfhold.infrastructure.fetcher.cache import HttpCache, cache_for
 from shelfhold.infrastructure.fetcher.client import TrafficCounter
@@ -37,8 +40,6 @@ from shelfhold.infrastructure.fetcher.guard import DomainAllowlist
 from shelfhold.infrastructure.fetcher.pacer import Pacer
 from shelfhold.infrastructure.fetcher.robots import RobotsPolicy
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
-from shelfhold.sdk.models import AuthApiKey, AuthBasic, AuthFlow
-from shelfhold.sdk.source import AuthRequired, NotConfigured
 
 if TYPE_CHECKING:
     from shelfhold.plugin_host.registry import PluginRecord

@@ -18,13 +18,13 @@ The caller owns the transaction.
 from dataclasses import dataclass
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import is_family_ceiling
 from sqlalchemy import Connection
 
 from shelfhold.catalog.application.changes import track_shelf_changes
 from shelfhold.catalog.application.rating import RatingService
 from shelfhold.catalog.domain.age import Admission
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.sdk.age import is_family_ceiling
 
 __all__ = ["Filing", "file_new_edition"]
 

@@ -11,6 +11,7 @@ from collections.abc import Iterator
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from shelfhold_sdk.testing.corpus.trapped_epubs import find_active_css, find_active_patterns, xhtml
 
 from shelfhold.infrastructure.content_trust import (
     CONTENT_FILTER,
@@ -20,7 +21,6 @@ from shelfhold.infrastructure.content_trust import (
     neutralize,
 )
 from shelfhold.infrastructure.xml import Element, safe_parse_xml
-from shelfhold.sdk.testing.corpus.trapped_epubs import find_active_css, find_active_patterns, xhtml
 
 pytestmark = pytest.mark.req("EF-LEC-005", "ENF-SEC-004")
 

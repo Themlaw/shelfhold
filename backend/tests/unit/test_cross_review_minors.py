@@ -9,6 +9,8 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.fetcher import CookieJarView, Response
+from shelfhold_sdk.source import SourceChanged
 
 from shelfhold.identity.domain.credentials import Credential, Principal
 from shelfhold.infrastructure.db import create_db_engine
@@ -17,8 +19,6 @@ from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.interfaces.http_api import plans
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
-from shelfhold.sdk.fetcher import CookieJarView, Response
-from shelfhold.sdk.source import SourceChanged
 from tests.fakes.suwayomi import BASE_URL
 
 pytestmark = pytest.mark.req("ENF-SEC-005")

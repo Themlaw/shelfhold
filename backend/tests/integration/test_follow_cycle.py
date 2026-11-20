@@ -9,10 +9,9 @@ from typing import Any
 
 import pytest
 import structlog.testing
-
-from shelfhold.sdk.connected import ConnectedCapability, ServiceHealth, Ticket, TicketState
-from shelfhold.sdk.fetcher import Response
-from shelfhold.sdk.refs import (
+from shelfhold_sdk.connected import ConnectedCapability, ServiceHealth, Ticket, TicketState
+from shelfhold_sdk.fetcher import Response
+from shelfhold_sdk.refs import (
     FileAsset,
     ImageRequest,
     RangedPayload,
@@ -21,7 +20,8 @@ from shelfhold.sdk.refs import (
     UnitInfo,
     UnitRef,
 )
-from shelfhold.sdk.source import TemporarilyUnavailable
+from shelfhold_sdk.source import TemporarilyUnavailable
+
 from tests.fakes.suwayomi import FakeSuwayomi
 from tests.follow_env import Bench, follow_bench, new_chapter
 
@@ -244,7 +244,7 @@ class MinimalService:
     wake_target = None
 
     def __init__(self, source_key: str, remote_id: str, cbz: bytes, base_url: str) -> None:
-        from shelfhold.sdk.models import RateLimit
+        from shelfhold_sdk.models import RateLimit
 
         self.manifest = type("M", (), {"key": "suwayomi", "rate_limit": RateLimit(
             requests_per_second=100.0)})()  # fmt: skip

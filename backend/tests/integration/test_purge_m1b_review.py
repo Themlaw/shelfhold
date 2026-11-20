@@ -14,6 +14,8 @@ from typing import Any, ClassVar
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.source import ContentRemoved
 
 from shelfhold.acquisition.public import FollowRequests
 from shelfhold.export.application.intents import IntentJournal
@@ -31,8 +33,6 @@ from shelfhold.library.public import PassthroughStore, PinnedCopy, StoreIndex, U
 from shelfhold.ops.status import kept_in_service_report
 from shelfhold.purge_upstream import ConnectedUpstream
 from shelfhold.safeguard_jobs import service_refusal
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.source import ContentRemoved
 from shelfhold.work_locks import holder_over, index_holder_over
 from tests.export_env import ExportEnv, export_env
 from tests.integration.test_schema_catalog import add_unit, add_variant

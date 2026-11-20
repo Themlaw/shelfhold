@@ -15,6 +15,13 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.metadata import (
+    EntityRef,
+    IdentifyResult,
+    MatchHints,
+    Provenance,
+    RelationProposal,
+)
 from sqlalchemy import Engine
 
 from shelfhold.catalog.application.enrich import EnrichService
@@ -35,13 +42,6 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.imaging import WorkerLimits
 from shelfhold.infrastructure.schema import acquisition, catalog, metadata
 from shelfhold.plugin_host.adapters.native.anilist import AniListProvider, build_manifest
-from shelfhold.sdk.metadata import (
-    EntityRef,
-    IdentifyResult,
-    MatchHints,
-    Provenance,
-    RelationProposal,
-)
 from tests.fakes.anilist.server import TITLE, fake_anilist
 from tests.fakes_clock import ManualClock
 from tests.integration.test_schema_catalog import (

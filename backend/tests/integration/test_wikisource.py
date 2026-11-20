@@ -14,13 +14,13 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import epub_bytes, opf, xhtml
 
 from shelfhold.export.application.rendering import EpubRenderer, epub_opf_edit
 from shelfhold.infrastructure.fetcher import DomainNotAllowed
 from shelfhold.infrastructure.schema import catalog
 from shelfhold.library.public import servable_epub
 from shelfhold.plugin_host.errors import NoSourceForUrl
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, opf, xhtml
 from tests.fakes.wikisource import Page
 from tests.gutenberg_env import CLEAN, TRAPPED, RoutedStore
 from tests.wikisource_env import (
@@ -285,7 +285,7 @@ def test_a_language_cannot_choose_the_host(language: str) -> None:
 def test_a_reference_that_is_not_a_page_of_a_wikisource_is_refused_without_a_request(
     remote_id: str,
 ) -> None:
-    from shelfhold.sdk.refs import SeriesRef
+    from shelfhold_sdk.refs import SeriesRef
 
     with wikisource_bench() as b:
         ref = SeriesRef(source_key=KEY, remote_id=remote_id, title="")

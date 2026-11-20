@@ -10,10 +10,10 @@ from typing import Annotated, Literal, Protocol
 
 from pydantic import PlainSerializer, PlainValidator, WithJsonSchema
 
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.models import SdkModel, flag_names, flag_parser
-from shelfhold.sdk.refs import RangedPayload, RangeRef, SeriesRef, UnitPayload, UnitRef
-from shelfhold.sdk.source import Source
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.models import SdkModel, flag_names, flag_parser
+from shelfhold_sdk.refs import RangedPayload, RangeRef, SeriesRef, UnitPayload, UnitRef
+from shelfhold_sdk.source import Source
 
 
 class ConnectedCapability(Flag):

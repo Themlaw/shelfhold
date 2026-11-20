@@ -1,10 +1,10 @@
 """L11 (EF-INT-014, EF-EXP-048): the age typed on the command line, and the token of the batch."""
 
 import pytest
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.catalog.public import parse_age
 from shelfhold.export.application.to_rate import ToRate, batch_token
-from shelfhold.sdk.age import AgeRating
 
 pytestmark = pytest.mark.req("EF-INT-014")
 

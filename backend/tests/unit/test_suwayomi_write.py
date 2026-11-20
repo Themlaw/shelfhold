@@ -7,12 +7,12 @@ import time
 from collections.abc import Awaitable
 
 import pytest
+from shelfhold_sdk.connected import ConnectedCapability
+from shelfhold_sdk.refs import SeriesRef, UnitRef
+from shelfhold_sdk.source import TemporarilyUnavailable
 
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
 from shelfhold.plugin_host.adapters.meta.suwayomi import queries as q
-from shelfhold.sdk.connected import ConnectedCapability
-from shelfhold.sdk.refs import SeriesRef, UnitRef
-from shelfhold.sdk.source import TemporarilyUnavailable
 from tests.fakes.suwayomi import BASE_URL, FakeSuwayomi, FakeSuwayomiFetcher
 
 GAMMA = SeriesRef(source_key="suwayomi:7003", remote_id="/series-gamma", title="Series Gamma")

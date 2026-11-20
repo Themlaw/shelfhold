@@ -156,8 +156,9 @@ def test_family_export_is_refused_below_the_minimum_or_when_unread(version) -> N
 def test_export_job_reads_the_version_before_writing_for_children(
     version, monkeypatch, settings: Settings, tmp_path: Path
 ) -> None:
+    from shelfhold_sdk.age import AgeRating
+
     from shelfhold.catalog.public import RatingService
-    from shelfhold.sdk.age import AgeRating
     from tests.l54_env import bench54
 
     with bench54(monkeypatch, settings, tmp_path) as b:

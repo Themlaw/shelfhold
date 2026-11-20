@@ -21,6 +21,10 @@ from itertools import groupby
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.connected import ConnectedService, Ticket
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.refs import FileAsset, RangedPayload, RangeRef, SeriesRef, UnitInfo
+from shelfhold_sdk.source import SourceChanged
 from sqlalchemy import Connection, Engine
 
 from shelfhold.acquisition.application.failures import from_service
@@ -33,10 +37,6 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.library.public import Received, readable_unit_ids
-from shelfhold.sdk.connected import ConnectedService, Ticket
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.refs import FileAsset, RangedPayload, RangeRef, SeriesRef, UnitInfo
-from shelfhold.sdk.source import SourceChanged
 
 OPEN = ("requested", "downloaded")
 MAX_ATTEMPTS = 8

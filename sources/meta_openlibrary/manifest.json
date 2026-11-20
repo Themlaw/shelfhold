@@ -2,7 +2,7 @@
   "key": "openlibrary",
   "kind": "metadata",
   "version": "0.1.0",
-  "api": 1,
+  "api": 2,
   "name": "Open Library",
   "permissions": {
     "domains": [

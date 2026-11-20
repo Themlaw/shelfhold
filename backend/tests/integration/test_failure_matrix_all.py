@@ -60,7 +60,8 @@ def test_infra_failure_pauses_not_failures(tmp_path: Path) -> None:
 @pytest.mark.req("ENF-OPS-011")
 def test_a_content_failure_is_not_mistaken_for_an_outage(tmp_path: Path) -> None:
     """Attack: the pause must not swallow a real failure; a source that answers keeps counting."""
-    from shelfhold.sdk.source import TemporarilyUnavailable
+    from shelfhold_sdk.source import TemporarilyUnavailable
+
     from tests.follow_env import follow_bench
 
     with follow_bench() as bench:

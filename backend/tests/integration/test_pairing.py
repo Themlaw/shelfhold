@@ -6,6 +6,7 @@ adopted series, and Kavita still has one series.
 """
 
 import pytest
+from shelfhold_sdk.refs import SeriesRef
 
 from shelfhold.export.application.migration_detect import SwitchoverUnconfirmed
 from shelfhold.export.application.pairing import (
@@ -13,7 +14,6 @@ from shelfhold.export.application.pairing import (
     BatchStaleError,
     PairingResult,
 )
-from shelfhold.sdk.refs import SeriesRef
 from tests.adopt_env import tree_state
 from tests.kavita_export_env import LIBRARY_ID, REMOTE_ROOT
 from tests.pairing_env import SERIES, Paired, paired_env

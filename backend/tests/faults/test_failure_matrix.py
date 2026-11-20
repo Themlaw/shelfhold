@@ -80,7 +80,8 @@ def test_kavita_down_pauses_exports() -> None:
 
 @pytest.mark.req("ENF-OPS-011")
 def test_suwayomi_down_marks_source_unavailable() -> None:
-    from shelfhold.sdk.source import TemporarilyUnavailable
+    from shelfhold_sdk.source import TemporarilyUnavailable
+
     from tests.follow_env import follow_bench
 
     with follow_bench() as bench:

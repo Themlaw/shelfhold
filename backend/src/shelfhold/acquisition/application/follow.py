@@ -28,6 +28,10 @@ from typing import Literal, NamedTuple, cast
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.connected import ConnectedCapability, ConnectedService
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.refs import SeriesRef, UnitInfo
+from shelfhold_sdk.source import Capability, SourceError, SubSource
 from structlog.contextvars import bound_contextvars
 
 from shelfhold.acquisition.application.backfill import (
@@ -131,10 +135,6 @@ from shelfhold.plugin_host.errors import (
     ServiceVersionMismatch,
 )
 from shelfhold.plugin_host.refs_guard import screened, secret_of, values_of
-from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.refs import SeriesRef, UnitInfo
-from shelfhold.sdk.source import Capability, SourceError, SubSource
 
 log = structlog.get_logger(__name__)
 

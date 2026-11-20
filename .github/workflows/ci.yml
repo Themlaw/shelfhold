@@ -67,6 +67,8 @@ jobs:
           predicate-quantifier: some-with-excludes
           filters: |
             core:
+              - 'pyproject.toml'
+              - 'uv.lock'
               - 'backend/**'
               - '!backend/tests/unit/**'
               - '!backend/tests/integration/**'
@@ -75,6 +77,7 @@ jobs:
               - '!backend/tests/property/**'
               - '!backend/tests/bench/**'
               - '!backend/**/*.md'
+              - 'sdk/**'
               - 'docker/**'
               - 'frontend/**'
               - 'open-api/**'
@@ -123,9 +126,11 @@ jobs:
               - 'e2e/**'
               - '.github/workflows/ci.yml'
             image:
+              - 'pyproject.toml'
+              - 'uv.lock'
               - 'backend/pyproject.toml'
-              - 'backend/uv.lock'
               - 'backend/src/**'
+              - 'sdk/**'
               - 'frontend/**'
               - 'docker/**'
               - 'open-api/**'
@@ -183,7 +188,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: ruff check
@@ -327,7 +332,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: pytest (shard, coverage data only)
@@ -362,7 +367,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: pytest (integration, coverage data only)
@@ -398,7 +403,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: pytest (suite, coverage data only)
@@ -430,7 +435,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: pytest (bench)
@@ -456,7 +461,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --project backend --locked
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -492,7 +497,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Regenerate synthetic fixtures and verify manifest
         working-directory: backend
         run: |
@@ -551,7 +556,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -591,7 +596,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -657,7 +662,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -710,7 +715,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -759,7 +764,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -805,7 +810,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -907,9 +912,10 @@ jobs:
         with:
           persist-credentials: false
       # Every delivered milestone blocks (M2 and M3 since the closure of M3, L58; M4 since its
-      # closure, L45 of M4; M5 since its closure, L25 of M5). A requirement moved to a later
-      # milestone by the maintainer leaves the matrix of the milestone it left, in 01 and 03: it
-      # is never hidden here. M6 and later are not built yet.
+      # closure, L45 of M4; M5 since its closure, L25 of M5). M6 is reported without blocking
+      # (L28 of M6 makes it blocking at the closure). A requirement moved to a later milestone
+      # by the maintainer leaves the matrix of the milestone it left, in 01 and 03: it is never
+      # hidden here.
       - name: Build the traceability matrix of every delivered milestone
         run: |
           set +e
@@ -928,6 +934,22 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           done
           exit $status
+      - name: Report the traceability matrix of M6 (not blocking until its closure, L28)
+        if: always()
+        run: |
+          set +e
+          python3 tools/traceability.py --milestone M6 --output "$RUNNER_TEMP/M6.md" 2> "$RUNNER_TEMP/errors-M6.txt"
+          code=$?
+          [ $code -eq 0 ] || echo "::warning::traceability M6 (report only): exit $code"
+          {
+            cat "$RUNNER_TEMP/M6.md"
+            echo
+            echo "## Erreurs et avertissements (M6, exit $code)"
+            echo '```'
+            cat "$RUNNER_TEMP/errors-M6.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

@@ -6,9 +6,9 @@ from typing import Annotated, Any, Literal, Protocol
 
 from pydantic import Field, PlainSerializer, PlainValidator, WithJsonSchema
 
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.lang import LanguageTag
-from shelfhold.sdk.models import (
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.lang import LanguageTag
+from shelfhold_sdk.models import (
     AuthFlow,
     Cursor,
     FilterSpec,
@@ -20,7 +20,7 @@ from shelfhold.sdk.models import (
     flag_names,
     flag_parser,
 )
-from shelfhold.sdk.refs import (
+from shelfhold_sdk.refs import (
     ImageRequest,
     Nature,
     PageRef,

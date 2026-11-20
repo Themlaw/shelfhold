@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from shelfhold_sdk.api_call import ApiCall, ApiCallError
 
 from shelfhold.export.targets.kavita.errors import TargetForbidden, TargetUnreachable
 from shelfhold.export.targets.komga import (
@@ -22,7 +23,6 @@ from shelfhold.export.targets.komga import (
     KomgaNoLibrary,
     KomgaRouteNotAllowed,
 )
-from shelfhold.sdk.api_call import ApiCall, ApiCallError
 from tests.fakes.komga import API_KEY, BASE_URL, OTHER_KEY, UNKNOWN_KEY, build_fetcher
 from tests.fakes_clock import ManualClock
 from tests.komga_env import NOW, documented_routes, harness, run

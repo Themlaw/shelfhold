@@ -18,8 +18,9 @@ def test_archive_default_caps_match_the_spec() -> None:
 def test_raw_number_is_plain_text_before_the_database() -> None:
     from datetime import UTC, datetime
 
+    from shelfhold_sdk.refs import UnitInfo
+
     from shelfhold.acquisition.application.follow import _trusted
-    from shelfhold.sdk.refs import UnitInfo
 
     info = UnitInfo(remote_unit_id="u", source_order=1, number="<b>12</b>&#x202E;.5")
     assert _trusted(info, datetime(2026, 11, 5, tzinfo=UTC)).number == "12.5"

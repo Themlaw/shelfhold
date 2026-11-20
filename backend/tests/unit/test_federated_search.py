@@ -11,6 +11,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from shelfhold_sdk.models import Cursor
+from shelfhold_sdk.source import RateLimited, SourceError
 
 from shelfhold.acquisition.application.federated_search import (
     FederatedCursors,
@@ -20,8 +22,6 @@ from shelfhold.acquisition.application.federated_search import (
     InvalidFederatedCursorError,
     format_of,
 )
-from shelfhold.sdk.models import Cursor
-from shelfhold.sdk.source import RateLimited, SourceError
 from tests.fakes_clock import ManualClock
 from tests.federated_env import FakeSearcher, FakeSource, hit
 
@@ -234,7 +234,7 @@ def test_grouping_without_reordering_between_two_pages() -> None:
 
 
 def test_grouping_survives_hostile_memos() -> None:
-    from shelfhold.sdk.refs import SeriesRef
+    from shelfhold_sdk.refs import SeriesRef
 
     hostile: list[Any] = [
         [["isbn", "1"]], {"isbn": ["1"]}, {"isbn": None}, {"": "x"}, {"isbn": ""}, "isbn:1",

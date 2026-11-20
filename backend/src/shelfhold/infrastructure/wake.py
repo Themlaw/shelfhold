@@ -19,13 +19,13 @@ from datetime import datetime, timedelta
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.connected import WakeHook, WakeTimeout
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import platform
-from shelfhold.sdk.connected import WakeHook, WakeTimeout
 
 log = structlog.get_logger(__name__)
 

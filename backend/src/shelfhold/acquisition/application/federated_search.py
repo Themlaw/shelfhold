@@ -37,9 +37,8 @@ from hashlib import sha256
 from typing import Any, Final, Protocol
 
 import structlog
-
-from shelfhold.sdk.models import Page
-from shelfhold.sdk.refs import SeriesRef
+from shelfhold_sdk.models import Page
+from shelfhold_sdk.refs import SeriesRef
 
 __all__ = [
     "CURSOR_TTL",

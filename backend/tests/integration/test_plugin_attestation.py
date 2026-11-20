@@ -14,6 +14,9 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.models import API_VERSION
+from shelfhold_sdk.source import SourceManifest
+from shelfhold_sdk.testing.fakes import FakeRangedConnectedService
 
 from shelfhold.config import Settings
 from shelfhold.headless.actor import Actor
@@ -37,9 +40,6 @@ from shelfhold.plugin_host.registry import (
     PluginRegistry,
     PluginStatus,
 )
-from shelfhold.sdk.models import API_VERSION
-from shelfhold.sdk.source import SourceManifest
-from shelfhold.sdk.testing.fakes import FakeRangedConnectedService
 from tests.auth_env import auth_env
 from tests.integration.test_untrusted_epub_pipeline import (
     CLEAN,

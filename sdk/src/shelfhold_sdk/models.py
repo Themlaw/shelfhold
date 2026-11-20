@@ -23,18 +23,17 @@ from pydantic import (
     field_validator,
 )
 
-from shelfhold.sdk.lang import LanguageTag
+from shelfhold_sdk.lang import LanguageTag
 
-API_VERSION = 1
-"""Major of the plugin data contract. The host accepts API_VERSION and API_VERSION - 1 (shim)."""
+API_VERSION = 2
+"""Major of the plugin data contract (D11). The host accepts API_VERSION natively and
+API_VERSION - 1 through the shim, for 12 months after the publication of 2.0.0 (until 2027-11)."""
 
-SDK_VERSION = "1.4"
-"""Major.minor of the SDK. 1.4 is the destination contract (M4 L03): `ApiCall.body`, optional
-`update_metadata`, `content_body`; all optional, a 1.3 destination loads unchanged. 1.3 froze the
-plugin boundary (M3 L34): the serialisable `FsOp` plan, plugin event spaces, declared exits of
-plugin waiting states, `fetch_range` optional. 1.2 added MetadataProvider (EF-BIB-013, D16). A
-minor only adds optional fields and new contracts, so a plugin written for 1.1 keeps loading
-(ADR-0024)."""
+SDK_VERSION = "2.0"
+"""Major.minor of the SDK. 2.0 is the first published distribution (`shelfhold-sdk`, MIT, D10):
+the deprecated Kavita-only members of `ExportTarget` are removed, as announced since 1.1; a
+manifest `api = 1` still loads through the host's shim (ADR-0024, SDK 2.0 amendment). The 1.x
+series kept them, with optional fields only, so a plugin written for 1.1 loaded unchanged."""
 
 
 def sdk_supports(min_sdk: str, host: str = SDK_VERSION) -> bool:
@@ -45,6 +44,19 @@ def sdk_supports(min_sdk: str, host: str = SDK_VERSION) -> bool:
     except ValueError:
         return False
     return need_major == have_major and need_minor <= have_minor
+
+
+def sdk_supports_n_minus_1(min_sdk: str, host: str = SDK_VERSION) -> bool:
+    """`sdk_supports`, plus the previous major during the `api` N-1 shim window (D11): a plugin
+    written for SDK 1.x still runs on SDK 2.0 until 2027-11, exactly like its `api` 1 manifest."""
+    if sdk_supports(min_sdk, host):
+        return True
+    try:
+        need_major = int(min_sdk.split(".")[0])
+        have_major = int(host.split(".")[0])
+    except ValueError:
+        return False
+    return need_major == have_major - 1
 
 
 class SdkModel(BaseModel):
@@ -272,4 +284,5 @@ __all__ = [
     "flag_names",
     "flag_parser",
     "sdk_supports",
+    "sdk_supports_n_minus_1",
 ]

@@ -11,13 +11,14 @@ import asyncio
 from collections.abc import Callable
 from typing import Any, cast
 
+from shelfhold_sdk.models import AuthBasic
+from shelfhold_sdk.source import AuthRequired
+
 from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
 from shelfhold.plugin_host.adapters.meta.suwayomi.jwt import suwayomi_jwt_fetcher
 from shelfhold.plugin_host.adapters.meta.suwayomi.service import SuwayomiService
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
 from shelfhold.plugin_host.errors import AuthExpired, AuthModeUnsupported
-from shelfhold.sdk.models import AuthBasic
-from shelfhold.sdk.source import AuthRequired
 
 FetcherFactory = Callable[[str], GuardedFetcher]
 

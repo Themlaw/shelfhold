@@ -1,0 +1,21 @@
+# Workspace root (uv) of the repository: `backend` (the AGPL host application) and `sdk`
+# (the MIT `shelfhold-sdk` distribution, D10) are members of one workspace; the lockfile
+# lives here, at the root. Supply-chain settings are workspace-wide, so they live here too
+# (uv ignores `tool.uv` in a member).
+[tool.uv.workspace]
+members = ["backend", "sdk"]
+
+[tool.uv]
+# Supply chain: only releases published at least 14 days ago (decision M0 10, ADR-0016).
+exclude-newer = "14 days"
+# Targeted exceptions to the 14-day window, removable once both versions are older than 14 days
+# (2026-11-15): huey 3.5.4 (2026-11-01) was verified by spike S1 and apprise 2.1.0 (2026-10-24) is
+# the floor required by ENF-SEC-016. See docs/dependencies.md.
+exclude-newer-package = { huey = "2026-11-02T00:00:00Z", apprise = "2026-11-02T00:00:00Z" }
+# ENF-SEC-016 security floors for packages that may arrive transitively or later.
+constraint-dependencies = [
+    "python-multipart>=0.0.30",
+    "pillow>=13.0.0",
+    "apprise>=2.1,<3",
+    "pyasn1>=0.6.5",  # transitive (webauthn/cryptography stack); GHSA-9m75-vc3g-4x39 and 3 more, fixed in 0.6.5
+]

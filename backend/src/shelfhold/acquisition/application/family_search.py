@@ -29,13 +29,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Final, Literal
 
+from shelfhold_sdk.refs import SeriesRef
+
 from shelfhold.acquisition.application.federated_search import (
     FederatedCursors,
     FederatedSearch,
     FederatedSource,
     Searcher,
 )
-from shelfhold.sdk.refs import SeriesRef
 
 __all__ = [
     "FamilyPage",

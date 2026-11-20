@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.connected import ReleaseResult, Ticket
 
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.purge import PurgeService
@@ -19,7 +20,6 @@ from shelfhold.infrastructure.schema import acquisition, platform
 from shelfhold.library.public import StoreIndex
 from shelfhold.purge_upstream import ConnectedUpstream
 from shelfhold.safeguard_jobs import service_refusal
-from shelfhold.sdk.connected import ReleaseResult, Ticket
 from tests.export_env import ExportEnv
 from tests.locks_env import index_lock as locks_index
 from tests.null_tombstones import NONE_PURGED

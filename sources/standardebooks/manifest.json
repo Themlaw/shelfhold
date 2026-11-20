@@ -2,7 +2,7 @@
   "key": "standardebooks",
   "kind": "source",
   "version": "0.1.0",
-  "api": 1,
+  "api": 2,
   "name": "Standard Ebooks (one address per book, patron feed with credentials)",
   "permissions": {
     "domains": [

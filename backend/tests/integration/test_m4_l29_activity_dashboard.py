@@ -20,6 +20,7 @@ from typing import Any
 import httpx2
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
 
 from shelfhold.acquisition.application.blocklist import (
     BLOCK_REASONS,
@@ -36,7 +37,6 @@ from shelfhold.infrastructure.fetcher.traffic_store import SqlTrafficCounter
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export, platform
 from shelfhold.infrastructure.schema import replica as replica_schema
-from shelfhold.sdk.refs import SeriesRef
 from tests.auth_env import CSRF_COOKIE, CSRF_HEADER, AuthEnv, db_rows
 from tests.fakes_fetcher import FakeResolver, Recorder
 from tests.follow_env import Bench, follow_bench

@@ -5,14 +5,6 @@
 # refuses an entry that is wired or no longer cited.
 
 [[allow]]
-category = "public-sdk"
-reason = "shelfhold.sdk.testing is the conformance kit for plugin authors (shelfhold-sdk, MIT): its fakes and checks are consumed by third parties and by tests, never by the host's composition root. The rest of shelfhold.sdk (the models and ports) is used by the host and is not excused."
-until = "permanent"
-symbols = [
-  "shelfhold.sdk.testing.*",
-]
-
-[[allow]]
 category = "governance-catalogue"
 reason = "Closed catalogues (events, exits, reserved actions, deletion sites, failure matrix, citable normalizers, routes) that the production code applies by other means and that governance tests read to prove the catalogue and the code agree."
 until = "permanent"
@@ -40,7 +32,7 @@ symbols = [
 [[allow]]
 category = "unwired-m4-komga"
 reason = "2026-11-16 (M4 L08a): the Komga destination is described, tested against a fake and declared to the core (`KomgaDestination.capabilities`, read by `FirstPartyDestinations`). 2026-11-17 (M4 L46): the target is now created (`target add komga`, `POST /api/v1/targets/komga`: the key is sealed by `store_komga_key` and shown to the server once by `KomgaClient.probe`), which settles the key, the routes and the scan calls. What is left is the scan relay of the export pass (`open_client`, `KomgaNoLibrary`, the inventory) and the audit of the accounts (`admit` before a binding, `audit` daily), written down in docs/decisions/M4.md. 2026-11-19 (M5 L22b): redated M6. No M5 lot carries the scan relay or the audit of the accounts (not in the 30 cards of PLAN-M5), and `KomgaAuditor` is not called in production: the proof of partitioning stays empty, so a shelf under 18+ is refused for Komga and every other binding is unchanged, which is the safe direction. Nothing is deleted: the code is proved by its tests and is the base of the lot that wires the pass (docs/decisions/M5.md, section of L22b)."
-until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md): the scan relay and the audit of the pass, a lot of M6
+until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md): the scan relay and the audit of the pass, a lot of M6 — L22
 # 2026-11-16 (M4 L08b): the audit of the accounts (`KomgaAuditor`, `KomgaClient.list_accounts`) is
 # written and tested against the fake, and its proof is read by every binding and every pass
 # (`partitioning_of`), but nothing creates a Komga target: its callers are the link of a shelf
@@ -57,11 +49,13 @@ symbols = [
 
 [[allow]]
 category = "unwired-m4-cwa"
-reason = "2026-11-16 (M4 L09): the CWA drop box is described, executed by the pass (`dropbox_destinations`, `CwaSource` read by `FirstPartyDestinations`) and tested end to end, the target is now created (M4 L46: `target add cwa`, `POST /api/v1/targets/cwa`, reserved action). What stays unwired are the two calls a drop box never makes (an inventory and sidecars: nothing is indexed, nothing is written beside the book). 2026-11-19 (M5 L22b): redated M6, with the same reason: a drop box has no inventory and no sidecar to write, so no M5 lot calls them; they stay declared because the destination contract asks for them (docs/decisions/M5.md, section of L22b)."
-until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md): a drop box never calls them, no lot plans to
+reason = "2026-11-16 (M4 L09): the CWA drop box is described, executed by the pass (`dropbox_destinations`, `CwaSource` read by `FirstPartyDestinations`) and tested end to end, the target is now created (M4 L46: `target add cwa`, `POST /api/v1/targets/cwa`, reserved action). What stays unwired are the calls a drop box never makes (an inventory and sidecars: nothing is indexed, nothing is written beside the book). 2026-11-19 (M5 L22b): redated M6, with the same reason: a drop box has no inventory and no sidecar to write, so no M5 lot calls them; they stay declared because the destination contract asks for them (docs/decisions/M5.md, section of L22b). 2026-11-21 (M6 L02): `interpret` and `supported_versions` join them — since the reserved-target fixtures moved to the `shelfhold_sdk` distribution (outside the host graph), the req tests of test_reserved_destinations.py no longer name an in-graph class, and these two members of the host's CwaDestination surface as cited by tests only; no production path calls them."
+until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md): a drop box never calls them, no lot plans to — L25
 symbols = [
   "shelfhold.export.targets.cwa.destination:CwaDestination.inventory_calls",
   "shelfhold.export.targets.cwa.destination:CwaDestination.render_sidecars",
+  "shelfhold.export.targets.cwa.destination:CwaDestination.interpret",
+  "shelfhold.export.targets.cwa.destination:CwaDestination.supported_versions",
 ]
 
 [[route_test]]
@@ -80,42 +74,23 @@ tests = [
 [[allow]]
 category = "m4-l43-normalizer-migration"
 reason = "2026-11-17 (M4 L43, D21): the preview of a migration to a new version of a normalizer (`normalize migrate`, EF-BIB-054, ENF-OPS-021) has no caller before a normalizer changes version. M4 raises none: the Unicode folding of L30 is a function of comparison, not a normalizer, and every normalizer is still at its first version. Redated M5, then to the first version bump of a normalizer, whichever milestone brings it (docs/decisions/M4.md, table of the debts). It is proved by its tests until then. 2026-11-19 (M5 L22b): redated M6, then to the first version bump of a normalizer. M5 raises none (no change of `normalizers.py` since `v1.1.0`)."
-until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md): settled by the first version bump of a normalizer
+until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md): settled by the first version bump of a normalizer — L25
 symbols = [
   "shelfhold.catalog.domain.normalizers:NormalizerRegistry.plan_migration",
 ]
 
 [[allow]]
-category = "published-sdk-contract"
-reason = "ExportTarget is the destination contract published under MIT (SDK 1.1: the Kavita-only members are deprecated and kept, N-1). The host builds its Kavita destination without going through the Protocol; the contract is read by third parties. 2026-11-15 (M4 L03, D7): redated M6. SDK 1.4 adds to the contract without breaking it (ApiCall.body, optional update_metadata), and the Kavita-only members stay deprecated through the whole 1.x series; their removal is the SDK 2.0 break, published in M6 with the kit, once the second adapter has designed their generic replacements (PLAN-M1b D9)."
-until = "M6"  # settled by the publication of SDK 2.0
-symbols = [
-  "shelfhold.sdk.export_target:ExportTarget",
-  "shelfhold.sdk.export_target:MetadataUpdater.update_metadata",
-  "shelfhold.sdk.export_target:MetadataUpdateSupport",
-  "shelfhold.sdk.export_target:metadata_change_route",
-  "shelfhold.sdk.export_target:copy_can_serve_bytes",
-]
-
-# What waited for M2 and is neither wired nor deleted (M2 L31 and closure, 2026-11-12): each group
-# is written down for M3, where it has its first caller (docs/decisions/M2-L31-debts.md).
-[[allow]]
 category = "m3-l34-sdk-freeze"
-reason = "2026-11-12 (M3 L34), reduced 2026-11-16 (M4 L04): what is left of the SDK 1.3 boundary is the event space of a plugin (`plugin_event_type`, `check_plugin_event`, `publish_plugin_event`), the closed list of exits of a plugin waiting state, and the optional `fetch_range`. Nothing lets a plugin raise an event or wait before the first plugin that declares one: redated M6, so the checks are proved by tests and listed until then. The destination plan symbols (`FsOp`, `FsOpPlan`, `parse_destination_plan`, `check_destination_plan`, `is_reserved_path`) left this entry when the executor of M4 L04 (`export.application.plan_executor`) took them into production: it runs the copy `parse_destination_plan` returns and checks it again right before each operation (docs/decisions/M3.md, docs/decisions/M4.md)."
-until = "M6"  # the first plugin that declares an event or a waiting state
+reason = "2026-11-12 (M3 L34), reduced 2026-11-16 (M4 L04), reduced again 2026-11-21 (M6 L02): what is left of the SDK 1.3 boundary is the event space of a plugin (`publish_plugin_event` on the registry side; the SDK-side checks moved with the SDK to its own distribution, `shelfhold_sdk`, outside the host graph). Nothing lets a plugin raise an event before the first plugin that declares one: redated M6, so the check is proved by tests and listed until then. The destination plan symbols (`FsOp`, `FsOpPlan`, `parse_destination_plan`, `check_destination_plan`, `is_reserved_path`) left this entry when the executor of M4 L04 (`export.application.plan_executor`) took them into production: it runs the copy `parse_destination_plan` returns and checks it again right before each operation (docs/decisions/M3.md, docs/decisions/M4.md)."
+until = "M6"  # the first plugin that declares an event or a waiting state — L10
 symbols = [
   "shelfhold.plugin_host.registry:publish_plugin_event",
-  "shelfhold.sdk.events:PluginEventError",
-  "shelfhold.sdk.events:check_plugin_event",
-  "shelfhold.sdk.events:plugin_event_type",
-  "shelfhold.sdk.models:WAITING_EXITS",
-  "shelfhold.sdk.source:Source.fetch_range",
 ]
 
 [[allow]]
 category = "m4-l43-reading-service"
 reason = "2026-11-17 (M4 L43): what L14a wrote for the relays of progress is still not called, and none of L14b, L47 and L50 turned out to need it: the sweep of the aliases a crash left without hashes (`heal_alias_hashes`, `verified_hashes`: since M4 L47 the export itself calls them, they left this entry) needs a locator under the physical roots of a binding, which is a security contract of its own (no symbolic link, never outside the roots) and is not a simple wiring; the read of a position (`position_of`), the delivery of a server state (`record_delivery`) and the undo of a read mark (`undo_read_mark`) wait for the reader of M5 (the screen where a member undoes a mark); `reading.domain.merge` (`latest`, `furthest`) states the rule that the SQL view `reading_progress` implements, and a test proves the two equal. Redated M5 in writing (docs/decisions/M4.md, table of the debts). 2026-11-19 (M5 L22b): redated M6. No M5 lot carries a route or a screen where a member undoes a read mark, nor a read of the server state by the reader (the reader writes positions through its own routes, docs/decisions/M5.md, L07): `position_of`, `record_delivery`, `undo_read_mark` and the two merge rules stay as they are, proved by their tests. Until then a read mark cannot be undone by anyone: the mark is journalled (`reading.read_marked`) and only a device report that crosses pages marks, which is the cost accepted in writing in docs/decisions/M5.md. The undo is a lot of M6."
-until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md): the undo of a read mark and the lazy read of the aliases, a lot of M6
+until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md): the undo of a read mark and the lazy read of the aliases, a lot of M6 — L18
 symbols = [
   "shelfhold.reading.application.progress:position_of",
   "shelfhold.reading.application.progress:record_delivery",
@@ -127,7 +102,7 @@ symbols = [
 [[allow]]
 category = "deferred-l24-deprecation-window"
 reason = "2026-11-17 (M4 L24): `Deprecation` builds the window during which an event is sent in two versions of its shape (EF-INT-005). Every event of the catalogue is still at its first version, so no entry declares one: the double emission is proved with a catalogue the test builds, and the bounds are checked when any catalogue is built. It comes with the first change of the shape of an event. 2026-11-19 (M5 L22b): redated M6 (D18), then to the first change of the shape of an event. No event changes shape in M5 (the catalogue of events and the webhooks are untouched since `v1.1.0`), so there is nothing to declare yet."
-until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md, D18): the first change of the shape of an event
+until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md, D18): the first change of the shape of an event — L25
 symbols = [
   "shelfhold.integrations.webhooks.catalogue:Deprecation",
 ]

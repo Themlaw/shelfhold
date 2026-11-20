@@ -19,6 +19,9 @@ from decimal import Decimal
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.age import AgeRating
+from shelfhold_sdk.refs import SeriesRef, UnitInfo
+from shelfhold_sdk.source import SubSource
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.acquisition.application.sub_sources import upsert_sub_sources
@@ -49,9 +52,6 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.library.public import SeriesBindingRef, TombstoneGate
-from shelfhold.sdk.age import AgeRating
-from shelfhold.sdk.refs import SeriesRef, UnitInfo
-from shelfhold.sdk.source import SubSource
 
 __all__ = ["Discovery", "Notices", "SeriesDiscovery", "decline_pairing"]
 

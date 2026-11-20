@@ -2,15 +2,14 @@
 with the SDK 1.4 types alone, and pass the declaration kit. No adapter ships (PLAN-M4 D9)."""
 
 import pytest
-
-from shelfhold.sdk.api_call import ApiCall, ContentBody, RawEncoding, check_api_call
-from shelfhold.sdk.export_target import TargetCapabilities
-from shelfhold.sdk.fsops import ContentRef, PlannedContent
-from shelfhold.sdk.testing.fixtures.reserved_targets import (
+from shelfhold_sdk.api_call import ApiCall, ContentBody, RawEncoding, check_api_call
+from shelfhold_sdk.export_target import TargetCapabilities
+from shelfhold_sdk.fsops import ContentRef, PlannedContent
+from shelfhold_sdk.testing.fixtures.reserved_targets import (
     AudiobookshelfReservedTarget,
     CalibreReservedTarget,
 )
-from shelfhold.sdk.testing.kit import run_destination_declaration_check
+from shelfhold_sdk.testing.kit import run_destination_declaration_check
 
 
 def _parts(raw: str) -> tuple[int, ...]:

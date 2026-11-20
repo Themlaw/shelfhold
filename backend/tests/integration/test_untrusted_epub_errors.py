@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import Member, epub_bytes, xhtml
 
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.infrastructure.clock import SystemClock
@@ -28,7 +29,6 @@ from shelfhold.library.public import (
     require_servable_derivative,
     servable_epub,
 )
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import Member, epub_bytes, xhtml
 from tests.integration.test_untrusted_epub_pipeline import (
     CLEAN,
     TRAPPED,

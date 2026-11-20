@@ -20,6 +20,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Final
 
+from shelfhold_sdk.age import AgeRating, to_comicinfo
+
 from shelfhold.catalog.public import (
     ContributorName,
     NoPersonFieldName,
@@ -27,7 +29,6 @@ from shelfhold.catalog.public import (
     person_field_name,
 )
 from shelfhold.infrastructure.content_trust import Destination, sanitize_upstream_text
-from shelfhold.sdk.age import AgeRating, to_comicinfo
 
 PERSON_ROLES: Final = (
     "Writer", "Penciller", "Inker", "Colorist", "Letterer", "CoverArtist", "Editor",

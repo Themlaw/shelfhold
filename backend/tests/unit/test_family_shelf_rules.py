@@ -2,6 +2,7 @@
 functions and through the one planner. No disk, no database."""
 
 import pytest
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.catalog.public import Admission, EditionAge, admission, ceiling_of
 from shelfhold.export.domain.bindings import (
@@ -25,7 +26,6 @@ from shelfhold.export.domain.planner import (
     UnitFacts,
     plan_destination,
 )
-from shelfhold.sdk.age import AgeRating
 from tests.fakes.kavita.plugin_parse import simulate_parse
 
 LIBRARY = "01JLIBRARY00000000000000A1"

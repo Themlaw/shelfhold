@@ -18,6 +18,9 @@ from typing import Any, ClassVar
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.testing import FakeRangedConnectedService, fake_ranged_fetcher
+from shelfhold_sdk.testing.fakes import FAKE_KEY
 
 import shelfhold.runtime_jobs as rj
 from shelfhold.config import Settings
@@ -27,9 +30,6 @@ from shelfhold.infrastructure.schema import acquisition, export
 from shelfhold.library.public import Received
 from shelfhold.ops.library import LibraryOps
 from shelfhold.plugin_host.adapters.meta.suwayomi.probe import HttpSuwayomiProbe
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.testing import FakeRangedConnectedService, fake_ranged_fetcher
-from shelfhold.sdk.testing.fakes import FAKE_KEY
 from tests.fakes.suwayomi.server import FakeSuwayomi, FakeSuwayomiFetcher
 from tests.headless_env import SUWAYOMI_URL, headless
 from tests.integration.test_schema_catalog import add_edition, add_work

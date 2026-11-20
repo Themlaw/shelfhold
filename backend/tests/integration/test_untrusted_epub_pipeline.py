@@ -20,6 +20,13 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import (
+    Member,
+    epub_bytes,
+    xhtml,
+    zip_bytes,
+)
+from shelfhold_sdk.testing.corpus.trapped_epubs.standard import standard_epub3
 
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.infrastructure.archives import safe_open_archive
@@ -36,13 +43,6 @@ from shelfhold.library.public import (
     independent_copies,
     servable_epub,
 )
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import (
-    Member,
-    epub_bytes,
-    xhtml,
-    zip_bytes,
-)
-from shelfhold.sdk.testing.corpus.trapped_epubs.standard import standard_epub3
 from tests.library_env import LibEnv, lib_env
 from tests.null_tombstones import NONE_PURGED
 

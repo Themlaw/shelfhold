@@ -9,8 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
+from shelfhold_sdk.api_call import Method
+
 from shelfhold.export.targets.kavita.errors import RouteNotAllowed
-from shelfhold.sdk.api_call import Method
 
 
 @dataclass(frozen=True)

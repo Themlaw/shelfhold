@@ -10,13 +10,13 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.catalog.public import RatingService
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.sdk.age import AgeRating
 from tests.export_env import ExportEnv, Series, export_env
 
 NOW = datetime(2026, 11, 8, 12, 0, tzinfo=UTC)

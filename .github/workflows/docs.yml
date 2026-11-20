@@ -10,7 +10,7 @@ on:
       - "docs/**"
       - ".github/workflows/docs.yml"
       - "backend/pyproject.toml"
-      - "backend/uv.lock"
+      - "uv.lock"
   release:
     types: [published]
   workflow_dispatch:

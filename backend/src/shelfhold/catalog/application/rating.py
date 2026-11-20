@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import AGE_TIERS, AgeRating, label_key, to_columns
 from sqlalchemy import Connection
 
 from shelfhold.catalog.application.changes import track_work_changes
@@ -33,7 +34,6 @@ from shelfhold.identity.public import (
 )
 from shelfhold.infrastructure.follow_suspended import lift
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.sdk.age import AGE_TIERS, AgeRating, label_key, to_columns
 
 __all__ = [
     "EditionSuggestion",

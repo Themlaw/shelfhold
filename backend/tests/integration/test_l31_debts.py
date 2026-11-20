@@ -14,6 +14,8 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.metadata import EntityRef, MetadataManifest
+from shelfhold_sdk.refs import SeriesInfo, SeriesRef
 
 from shelfhold.acquisition.public import AcquireRefused
 from shelfhold.export.application.restore import (
@@ -29,8 +31,6 @@ from shelfhold.library.application.anti_echo import received_content_hash
 from shelfhold.ops.errors import OpsError
 from shelfhold.plugin_host import provider_fetcher
 from shelfhold.plugin_host.adapters.native.openlibrary import OpenLibraryProvider
-from shelfhold.sdk.metadata import EntityRef, MetadataManifest
-from shelfhold.sdk.refs import SeriesInfo, SeriesRef
 from tests.acquire_env import NativeBooks, acquire_bench
 from tests.anti_echo_env import seed_own_export
 from tests.import_env import CLEAN_EPUB, import_env
@@ -311,11 +311,21 @@ def test_a_root_that_is_mounted_and_readable_cannot_be_forgotten() -> None:
 @pytest.mark.req("EF-BIB-013")
 def test_a_metadata_provider_for_a_later_sdk_is_refused() -> None:
     manifest = OpenLibraryProvider().manifest
-    later = MetadataManifest.model_validate({**manifest.model_dump(mode="json"), "min_sdk": "1.9"})
+    # D11: during the `api` N-1 shim window, a provider written for SDK 1.x still opens on 2.0
+    earlier_major = MetadataManifest.model_validate(
+        {**manifest.model_dump(mode="json"), "min_sdk": "1.9"}
+    )
+    try:
+        provider_fetcher.open_provider(earlier_major, None, contact=None)  # type: ignore[arg-type]
+    except provider_fetcher.SdkTooOldError:
+        pytest.fail("SDK 1.x stays supported during the shim window (D11, until 2027-11)")
+    later_minor = MetadataManifest.model_validate(
+        {**manifest.model_dump(mode="json"), "min_sdk": "2.1"}
+    )
     with pytest.raises(provider_fetcher.SdkTooOldError):
-        provider_fetcher.open_provider(later, None, contact=None)  # type: ignore[arg-type]
+        provider_fetcher.open_provider(later_minor, None, contact=None)  # type: ignore[arg-type]
     wrong_major = MetadataManifest.model_validate(
-        {**manifest.model_dump(mode="json"), "min_sdk": "2.0"}
+        {**manifest.model_dump(mode="json"), "min_sdk": "3.0"}
     )
     with pytest.raises(provider_fetcher.SdkTooOldError):
         provider_fetcher.open_provider(wrong_major, None, contact=None)  # type: ignore[arg-type]

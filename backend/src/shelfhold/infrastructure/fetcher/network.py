@@ -14,13 +14,13 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx2
+from shelfhold_sdk.fetcher import Response
 
 from shelfhold.infrastructure.fetcher.client import FetchLimits, GuardedFetcher, IntegrationFetcher
 from shelfhold.infrastructure.fetcher.errors import FetchError, InvalidLanTarget
 from shelfhold.infrastructure.fetcher.guard import DomainAllowlist
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.infrastructure.fetcher.resolver import Resolver, SystemResolver
-from shelfhold.sdk.fetcher import Response
 
 __all__ = ["Network", "OneShotFetcher"]
 

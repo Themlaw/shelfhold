@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.metadata import FieldProposal, Provenance
 from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import (
@@ -21,7 +22,6 @@ from shelfhold.catalog.public import (
 )
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.schema import catalog, metadata
-from shelfhold.sdk.metadata import FieldProposal, Provenance
 from tests.integration.test_schema_catalog import add_edition, add_work
 
 pytestmark = pytest.mark.req("EF-BIB-008")

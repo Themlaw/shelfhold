@@ -17,6 +17,8 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.age import X_MIN_AGE, AgeRating
+from shelfhold_sdk.refs import SeriesRef
 
 from shelfhold.acquisition.application.tree_target import source_suggestion
 from shelfhold.acquisition.public import AcquireRefused, NativeAcquirer
@@ -32,8 +34,6 @@ from shelfhold.export.application.withdrawal import build_plan
 from shelfhold.infrastructure.binding_priority import next_binding_priority
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.library.public import CatalogScreenAdapter, WorkRef
-from shelfhold.sdk.age import X_MIN_AGE, AgeRating
-from shelfhold.sdk.refs import SeriesRef
 from tests.acquire_env import BOOK, KEY, Bench, NativeBooks, acquire_bench
 from tests.follow_env import Bench as FollowBench
 from tests.follow_env import add_adult_shelf, follow_bench

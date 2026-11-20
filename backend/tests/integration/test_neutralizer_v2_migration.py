@@ -16,12 +16,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from shelfhold_sdk.testing.corpus.trapped_epubs import CHAPTER, epub_bytes, xhtml
 
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.content_trust import DERIVED_BY, neutralize_epub, xhtml_neutralizer
 from shelfhold.library.public import Reneutralizer, StalePlanError, UntrustedEpubStore
-from shelfhold.sdk.testing.corpus.trapped_epubs import CHAPTER, epub_bytes, xhtml
 from tests.integration.test_untrusted_epub_pipeline import content_row, ingest, sha, store
 from tests.library_env import lib_env
 from tests.null_tombstones import NONE_PURGED

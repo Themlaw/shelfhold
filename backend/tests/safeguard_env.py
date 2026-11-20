@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.connected import ReleaseResult, Ticket
 
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import IntentJournal
@@ -27,7 +28,6 @@ from shelfhold.library.public import (
     UpstreamPurge,
 )
 from shelfhold.safeguard_jobs import service_refusal
-from shelfhold.sdk.connected import ReleaseResult, Ticket
 from tests.fakes_clock import ManualClock
 from tests.library_env import JPEG, PNG, LibEnv, cbz_bytes
 from tests.locks_env import work_lock

@@ -132,8 +132,9 @@ def test_a_pass_pauses_with_a_closed_code_while_the_local_source_is_the_root_or_
 
 @pytest.mark.req("EF-EXP-010")
 def test_the_destination_forbids_every_json_by_a_pattern() -> None:
+    from shelfhold_sdk.export_target import sidecar_forbidden
+
     from shelfhold.export.targets.native_folder.destination import NativeFolderDestination
-    from shelfhold.sdk.export_target import sidecar_forbidden
 
     forbidden = NativeFolderDestination.capabilities.forbidden_sidecars
     for name in ("series.json", "Anything.JSON", "x y.json", "comic.Json"):

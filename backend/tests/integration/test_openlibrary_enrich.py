@@ -19,6 +19,15 @@ import httpx2
 import pytest
 import sqlalchemy as sa
 from PIL import Image
+from shelfhold_sdk.fetcher import Response
+from shelfhold_sdk.metadata import (
+    EntityRef,
+    FieldProposal,
+    IdentifyResult,
+    MatchHints,
+    RelationProposal,
+)
+from shelfhold_sdk.testing import FakeFetcher
 from sqlalchemy import Engine
 
 from shelfhold.catalog.application import enrich as enrich_module
@@ -39,15 +48,6 @@ from shelfhold.infrastructure.imaging import client as imaging_client
 from shelfhold.infrastructure.schema import catalog, metadata
 from shelfhold.plugin_host.adapters.native.openlibrary import OpenLibraryProvider, build_manifest
 from shelfhold.plugin_host.provider_fetcher import ProviderFetcher, ProviderRuntime, open_provider
-from shelfhold.sdk.fetcher import Response
-from shelfhold.sdk.metadata import (
-    EntityRef,
-    FieldProposal,
-    IdentifyResult,
-    MatchHints,
-    RelationProposal,
-)
-from shelfhold.sdk.testing import FakeFetcher
 from tests.fakes.openlibrary.server import (
     API_HOST,
     COVER_HOST,

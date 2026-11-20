@@ -9,13 +9,13 @@ gets a new file into the shelf of the children. An age read from a ComicInfo is 
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.catalog.public import Admission, RatingService
 from shelfhold.export.targets.kavita.adopt import AdoptionRefused
 from shelfhold.infrastructure.follow_suspended import suspended_work_ids
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export, identity
-from shelfhold.sdk.age import AgeRating
 from tests.adopt_env import Adoption, adoption, comicinfo
 from tests.export_env import ExportEnv, Series, export_env
 from tests.fakes.kavita import member

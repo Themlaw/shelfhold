@@ -7,10 +7,10 @@ import json
 from pathlib import Path
 
 import pytest
+from shelfhold_sdk.testing.fakes import FakeFetcher
 
 from shelfhold.plugin_host.adapters.native.wikisource import WikisourceSource, build_manifest
 from shelfhold.plugin_host.registry import compile_url_pattern
-from shelfhold.sdk.testing.fakes import FakeFetcher
 
 ROOT = Path(__file__).resolve().parents[3]
 

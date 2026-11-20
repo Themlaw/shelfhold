@@ -20,6 +20,8 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.models import API_VERSION
+from shelfhold_sdk.testing.fakes import FakeRangedConnectedService
 
 from shelfhold.config import Settings
 from shelfhold.headless.actor import Actor
@@ -40,8 +42,6 @@ from shelfhold.plugin_host.settings import (
     parse_settings_schema,
     secret_row_id,
 )
-from shelfhold.sdk.models import API_VERSION
-from shelfhold.sdk.testing.fakes import FakeRangedConnectedService
 from tests.auth_env import CSRF_HEADER, auth_env, db_dump
 from tests.backup_env import backup_bench, read_members
 from tests.redaction_support import forget_secret_values

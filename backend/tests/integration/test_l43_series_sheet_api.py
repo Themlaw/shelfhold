@@ -445,6 +445,8 @@ def test_the_sheet_shows_a_merge_that_can_still_be_undone_and_not_an_old_one(
 def _suggested_attach(world: World) -> tuple[str, str, str]:
     """(holder Work, arriving Edition, attach id): an Edition rated 18+ that shares an identifier
     with a Work rated for everyone is suggested to it, never attached by itself."""
+    from shelfhold_sdk.age import AgeRating
+
     from shelfhold.catalog.public import (
         AutoAttachService,
         ExternalId,
@@ -453,7 +455,6 @@ def _suggested_attach(world: World) -> tuple[str, str, str]:
         add_external_id,
     )
     from shelfhold.identity.public import Credential, Principal
-    from shelfhold.sdk.age import AgeRating
     from tests.integration.test_schema_catalog import add_edition, add_work
     from tests.null_tombstones import NO_CATALOG_HITS
 

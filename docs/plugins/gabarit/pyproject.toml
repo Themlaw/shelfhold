@@ -4,8 +4,10 @@ version = "0.1.0"
 description = "Gabarit de source Shelfhold"
 requires-python = ">=3.13"
 license = "AGPL-3.0-or-later"
-# Le SDK est celui de ce dépôt (`shelfhold.sdk`) tant que `shelfhold-sdk` n'est pas publié (M6).
-dependencies = []
+# Le SDK publié (M6) : distribution `shelfhold-sdk` 2.0, MIT, importée `shelfhold_sdk` (D10).
+# Le manifeste déclare `api = 2` ; un manifeste `api = 1` se charge encore par le shim de
+# l'hôte jusqu'en 2027-11 (voir ../compatibilite.md).
+dependencies = ["shelfhold-sdk>=2.0,<3"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

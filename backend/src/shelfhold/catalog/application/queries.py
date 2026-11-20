@@ -28,10 +28,10 @@ from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import is_family_ceiling
 
 from shelfhold.catalog.domain.provenance import encode_value
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.sdk.age import is_family_ceiling
 
 __all__ = [
     "MAX_PAGE",

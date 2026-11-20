@@ -5,16 +5,15 @@ import json
 from pathlib import Path
 
 import pytest
-
-from shelfhold.sdk.connected import ConnectedCapability
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.testing.fakes import (
+from shelfhold_sdk.connected import ConnectedCapability
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.testing.fakes import (
     FakeFetcher,
     FakeRangedConnectedService,
     NetworkForbidden,
     fake_ranged_fetcher,
 )
-from shelfhold.sdk.testing.kit import ConformanceReport, run_source_conformance
+from shelfhold_sdk.testing.kit import ConformanceReport, run_source_conformance
 
 
 def _run(
@@ -142,8 +141,8 @@ def test_fetcher_replays_a_synthetic_cassette(tmp_path: Path) -> None:
 
 @pytest.mark.req("ENF-QUAL-003")
 def test_assert_conforms_and_pytest_tool_for_plugin_authors() -> None:
-    from shelfhold.sdk.testing import assert_conforms
-    from shelfhold.sdk.testing.pytest_plugin import check_conformance, offline_fetcher
+    from shelfhold_sdk.testing import assert_conforms
+    from shelfhold_sdk.testing.pytest_plugin import check_conformance, offline_fetcher
 
     service = FakeRangedConnectedService()
     report = assert_conforms(service, fake_ranged_fetcher(), reinstall=service.reinstall)

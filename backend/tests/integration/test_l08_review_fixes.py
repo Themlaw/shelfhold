@@ -14,6 +14,7 @@ from contextlib import closing
 from pathlib import Path
 
 import pytest
+from shelfhold_sdk.refs import SeriesRef
 
 from shelfhold.config import Settings
 from shelfhold.events.bus import USER_FIELDS, EventBus, EventPayloadError, check_payload
@@ -21,7 +22,6 @@ from shelfhold.identity.application import profiles as profiles_module
 from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.sdk.refs import SeriesRef
 from tests.auth_env import PASSWORD, AuthEnv, auth_env, db_rows
 from tests.integration.test_user_delete_export import (
     PROFILES,

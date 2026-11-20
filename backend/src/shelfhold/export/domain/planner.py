@@ -30,6 +30,8 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Final, Literal, overload
 
+from shelfhold_sdk.age import AgeRating
+
 from shelfhold.export.domain.bindings import is_family
 from shelfhold.export.domain.export_series import EditionNaming, propose_series_name
 from shelfhold.export.domain.naming import (
@@ -47,7 +49,6 @@ from shelfhold.infrastructure.imaging.rendition_formats import (
     source_format,
     target_kind,
 )
-from shelfhold.sdk.age import AgeRating
 
 __all__ = [
     "AGE_PAUSES",

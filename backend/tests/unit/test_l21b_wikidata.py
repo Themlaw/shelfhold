@@ -10,17 +10,17 @@ from datetime import UTC, datetime, timedelta
 
 import httpx2
 import pytest
-
-from shelfhold.infrastructure.fetcher.errors import FetchTimeout, FetchUnreachable
-from shelfhold.plugin_host.adapters.native.wikidata import WikidataProvider, build_manifest
-from shelfhold.plugin_host.provider_fetcher import ProviderRuntime, open_provider
-from shelfhold.sdk.metadata import (
+from shelfhold_sdk.metadata import (
     EntityRef,
     IdentifyResult,
     MatchHints,
     ProviderCapability,
     ProviderUnavailable,
 )
+
+from shelfhold.infrastructure.fetcher.errors import FetchTimeout, FetchUnreachable
+from shelfhold.plugin_host.adapters.native.wikidata import WikidataProvider, build_manifest
+from shelfhold.plugin_host.provider_fetcher import ProviderRuntime, open_provider
 from tests.fakes.cassette_server import CassetteServer
 from tests.fakes.wikidata.server import ABSENT, FOREIGN, HOSTILE, QID, TITLE, TWIN, fake_wikidata
 from tests.fakes_fetcher import FakeResolver

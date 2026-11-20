@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from shelfhold_sdk.export_target import ApiCall
 
 from shelfhold.export.targets.kavita import (
     ALLOWED_ROUTES,
@@ -14,7 +15,6 @@ from shelfhold.export.targets.kavita import (
 )
 from shelfhold.export.targets.kavita.accounts import MEMBER_ROUTES
 from shelfhold.export.targets.kavita.routes import HUB_ROUTES
-from shelfhold.sdk.export_target import ApiCall
 from tests.fakes.kavita import API_KEY
 from tests.kavita_env import OPENAPI_DIR, documented_routes, harness, run
 
