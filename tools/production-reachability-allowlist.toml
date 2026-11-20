@@ -118,3 +118,16 @@ until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md, D18): the first chang
 symbols = [
   "shelfhold.integrations.webhooks.catalogue:Deprecation",
 ]
+
+[[allow]]
+category = "unwired-m6-rpc"
+reason = "2026-11-20 (M6 L04): `rpc_protocol` 1 is written and tested end to end against real subprocesses and in-process peers: the length-prefixed codec, the host session (`RpcSession`: handshake before the manifest, deadlines, calls in flight, the Fetcher and events served to a plugin during a host call), the plugin side, the `rpc_stdio` adapter, the proxy that gives a plugin the contract's methods and `PluginRegistry.load_isolated`, which marks a failing plugin in error. Nothing in production starts a plugin process yet: no process exists to speak to until the runner (the companion container of D-P1, L05) and the guard that decides whether an isolated plugin may run (enabling is a reserved action, L06) call `load_isolated`. Wiring it earlier would hand the core a way to start a third-party process before the lot that cuts that process off from `/data`, from the CLI socket and from the network exists (ADR-0056, D-P1)."
+until = "M6"  # M6 L04 (2026-11-20, ADR-0056 D12): the runner starts the plugin processes and the guard enables them — L05, L06
+symbols = [
+  "shelfhold.plugin_host.adapters.rpc.proxy:RpcPluginProxy",
+  "shelfhold.plugin_host.adapters.rpc.stdio:closed_environment",
+  "shelfhold.plugin_host.adapters.rpc.stdio:spawn_stdio",
+  "shelfhold.plugin_host.registry:PluginRegistry.load_isolated",
+  "shelfhold.plugin_host.rpc.host_side:RpcSession",
+  "shelfhold.plugin_host.rpc.protocol:RpcLimits",
+]

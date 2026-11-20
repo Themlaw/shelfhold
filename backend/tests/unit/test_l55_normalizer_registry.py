@@ -23,7 +23,12 @@ def test_production_registry_declares_no_number_version_beyond_the_stored_one() 
     assert missing_citable(registry) == []
 
 
-_EXEMPT = {"plugin_host/registry.py", "interfaces/cli/registry.py"}  # CLI: own package
+# plugin_side runs in the plugin's own subprocess and loads the one entry the runner names
+_EXEMPT = {
+    "plugin_host/registry.py",
+    "interfaces/cli/registry.py",
+    "plugin_host/rpc/plugin_side.py",
+}  # CLI: own package
 _GROUPS = {"shelfhold.normalizers", "shelfhold.plugins"}
 _DYNAMIC = {
     "entry_points",

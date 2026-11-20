@@ -25,6 +25,9 @@ from pydantic import (
 
 from shelfhold_sdk.lang import LanguageTag
 
+RPC_PROTOCOL_VERSIONS: tuple[int, ...] = (1,)
+"""Versions of the wire protocol (`rpc_protocol`) this SDK speaks, apart from `api` (D12)."""
+
 API_VERSION = 2
 """Major of the plugin data contract (D11). The host accepts API_VERSION natively and
 API_VERSION - 1 through the shim, for 12 months after the publication of 2.0.0 (until 2027-11)."""
@@ -169,6 +172,10 @@ class PluginManifest(SdkModel):
     kind: PluginKind
     version: str  # plugin semver
     api: int  # major of the contract: N or N-1 (shim)
+    # Version of the wire protocol an isolated plugin speaks (D12). Negotiated by the `hello`
+    # handshake before this manifest is read, and independent of `api`: a manifest that names
+    # another version than the one negotiated is refused.
+    rpc_protocol: int = 1
     name: str
     permissions: Permissions = Field(default_factory=Permissions)
     settings_schema: dict[str, Any] = Field(default_factory=dict)  # JSON Schema -> generated UI
@@ -255,6 +262,7 @@ class SessionState(SdkModel):
 
 __all__ = [
     "API_VERSION",
+    "RPC_PROTOCOL_VERSIONS",
     "SDK_VERSION",
     "WAITING_EXITS",
     "AuthApiKey",

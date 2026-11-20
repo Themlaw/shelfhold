@@ -21,6 +21,7 @@ Shelfhold : lisez [../admin/plugins-tiers.md](../admin/plugins-tiers.md) avant d
 | `rights_basis` | `us_public_domain`, `worldwide_public_domain`, `licence` ou `user_supplied`. Pour les États-Unis, écrivez « libre de droits aux États-Unis », jamais « source légale ». |
 | `content_trust` | `untrusted` par défaut : l'hôte neutralise les EPUB avant tout export. `publisher` n'est qu'un défaut proposé, que l'admin doit attester ([../admin/neutraliseur.md](../admin/neutraliseur.md)). |
 | `settings_schema` | Schéma plat ; un champ `writeOnly` ou `format: password` est un secret, injecté par l'hôte et jamais relu. |
+| `rpc_protocol` | Version du protocole de fil d'un plugin isolé (`1` par défaut), négociée par `hello` **avant** la lecture du manifeste et distincte de `api`. Un manifeste qui en nomme une autre que celle convenue est refusé. |
 | `waiting_states` | SDK 1.3 : un état où le plugin attend un humain porte un nom, une sortie (`retry`, `recheck`, `reconfigure`) et son événement `plugin.<clé>.<nom>`. Le kit refuse un état sans sortie. |
 | `capabilities` | `SEARCH`, `LATEST`, `POPULAR`, `URL_RESOLVE`, `LOGIN`, `FILTERS`, `METADATA_ONLY`, `FOLLOW`, `SUB_SOURCES`, `RANGED_CONTENT` ; un service connecté déclare aussi sa file côté serveur. |
 
