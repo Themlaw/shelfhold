@@ -18,7 +18,7 @@ Compatibility (EF-SRC-001, D11): the host accepts ``api == N`` natively and ``ap
 a shim that rewrites the old manifest into the current shape; any other value is refused with a
 reason and the remaining plugins still load. With the SDK 2.0 (``api`` 2) the built-in shim
 ``shim_api_1`` loads an ``api`` 1 manifest for 12 months after the publication of 2.0.0
-(until 2027-11, ADR-0024 amendement SDK 2.0).
+(until 2027-11, ADR-0024 SDK 2.0 amendment).
 
 Every loaded plugin is handed out behind the direct-I/O detector (``plugin_host.audit_hook``,
 EF-SRC-002), and a manifest whose DomainRules or ``url_patterns`` do not parse is refused: a

@@ -32,7 +32,7 @@ API_VERSION - 1 through the shim, for 12 months after the publication of 2.0.0 (
 SDK_VERSION = "2.0"
 """Major.minor of the SDK. 2.0 is the first published distribution (`shelfhold-sdk`, MIT, D10):
 the deprecated Kavita-only members of `ExportTarget` are removed, as announced since 1.1; a
-manifest `api = 1` still loads through the host's shim (ADR-0024, amendement SDK 2.0). The 1.x
+manifest `api = 1` still loads through the host's shim (ADR-0024, SDK 2.0 amendment). The 1.x
 series kept them, with optional fields only, so a plugin written for 1.1 loaded unchanged."""
 
 

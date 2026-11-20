@@ -1,8 +1,11 @@
 # The build context is only what the Dockerfile copies.
 *
+!pyproject.toml
+!uv.lock
 !backend/pyproject.toml
-!backend/uv.lock
 !backend/src/
+!sdk/pyproject.toml
+!sdk/src/
 !docker/healthcheck.py
 !frontend/
 # foliate-js: only what the reader imports enters the build context (never pdf.js, which no engine

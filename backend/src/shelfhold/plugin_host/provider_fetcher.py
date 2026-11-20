@@ -21,7 +21,7 @@ from typing import Any
 
 from shelfhold_sdk.fetcher import CookieJarView, DownloadedFile, Response
 from shelfhold_sdk.metadata import MetadataManifest
-from shelfhold_sdk.models import sdk_supports
+from shelfhold_sdk.models import sdk_supports_n_minus_1
 from shelfhold_sdk.refs import ImageRequest
 
 from shelfhold.infrastructure.fetcher.cache import HttpCache
@@ -162,7 +162,9 @@ def open_provider(
     limits: FetchLimits | None = None,
 ) -> ProviderFetcher:
     """The Fetcher of `manifest`'s provider for this instance (`contact`: the configured one)."""
-    if not sdk_supports(manifest.min_sdk):
+    # D11: during the `api` N-1 shim window, a provider written for SDK 1.x (min_sdk 1.2)
+    # still opens on SDK 2.0, exactly like its `api` 1 manifest loads through the shim.
+    if not sdk_supports_n_minus_1(manifest.min_sdk):
         raise SdkTooOldError(f"{manifest.key}: asks for SDK {manifest.min_sdk}")
     runtime = runtime or default_runtime()
     inner = GuardedFetcher(

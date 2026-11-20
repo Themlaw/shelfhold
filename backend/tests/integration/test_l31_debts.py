@@ -311,11 +311,14 @@ def test_a_root_that_is_mounted_and_readable_cannot_be_forgotten() -> None:
 @pytest.mark.req("EF-BIB-013")
 def test_a_metadata_provider_for_a_later_sdk_is_refused() -> None:
     manifest = OpenLibraryProvider().manifest
+    # D11: during the `api` N-1 shim window, a provider written for SDK 1.x still opens on 2.0
     earlier_major = MetadataManifest.model_validate(
         {**manifest.model_dump(mode="json"), "min_sdk": "1.9"}
     )
-    with pytest.raises(provider_fetcher.SdkTooOldError):
+    try:
         provider_fetcher.open_provider(earlier_major, None, contact=None)  # type: ignore[arg-type]
+    except provider_fetcher.SdkTooOldError:
+        pytest.fail("SDK 1.x stays supported during the shim window (D11, until 2027-11)")
     later_minor = MetadataManifest.model_validate(
         {**manifest.model_dump(mode="json"), "min_sdk": "2.1"}
     )

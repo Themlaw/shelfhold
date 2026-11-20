@@ -1,5 +1,5 @@
 """ExportTarget (SDK 2.0, M6 L02): the members that only described Kavita are removed, as the
-1.x series announced (ADR-0024, amendement SDK 2.0)."""
+1.x series announced (ADR-0024, SDK 2.0 amendment)."""
 
 from shelfhold_sdk.export_target import ExportTarget
 
