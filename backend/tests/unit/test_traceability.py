@@ -353,6 +353,7 @@ def test_m4_l43_no_exception_waits_for_a_milestone_that_is_over() -> None:
         if "M4" in d["reason"] and d["requirement"] != "ENF-GOV-004"
     ]
     assert not waiting, f"exceptions still waiting for M4: {waiting}"
-    redated = [p for p in tr.load_partial(root) if p["requirement"] == "EF-BIB-029"]
-    assert redated, "EF-BIB-029 is still partial: its screen is redated, not dropped"
-    assert "2026-11-17" in redated[0]["reason"]
+    # M6 L24 delivered the « Même œuvre ? » screen: the partial is retired, not redated again
+    assert not [p for p in tr.load_partial(root) if p["requirement"] == "EF-BIB-029"], (
+        "EF-BIB-029 is still partial: its screen is delivered (M6 L24), the entry must go"
+    )

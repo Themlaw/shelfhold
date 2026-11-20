@@ -93,11 +93,13 @@ def test_no_allowlist_entry_until_past_milestone() -> None:
 
 def test_open_traceability_exceptions_are_redated_by_m5_l22b() -> None:
     """M5 L22b: the `[[partial]]` that named M5 and the deferred ENF-GOV-004 are written down again
-    (docs/decisions/M5.md, section of L22b), with their date, and name no milestone that is over."""
+    (docs/decisions/M5.md, section of L22b), with their date, and name no milestone that is over.
+    M6 L24 delivered the « Même œuvre ? » screen, so EF-BIB-029 is no longer partial."""
     trace = load_tool("traceability")
     partial = {p["requirement"]: p for p in trace.load_partial(REPO)}
-    assert partial["EF-BIB-029"]["milestone"] == "M6"
-    assert "2026-11-19 (M5 L22b)" in partial["EF-BIB-029"]["reason"]
+    assert "EF-BIB-029" not in partial, (
+        "EF-BIB-029 is still partial: its screen is delivered (M6 L24), the entry must go"
+    )
     assert all(p["milestone"] not in ("M4", "M5") for p in partial.values())
     deferred = {d["requirement"]: d for d in trace.load_deferred(REPO)}
     assert "2026-11-19 (M5 L22b)" in deferred["ENF-GOV-004"]["reason"]
