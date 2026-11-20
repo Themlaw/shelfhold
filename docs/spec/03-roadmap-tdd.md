@@ -32,7 +32,7 @@
 | M3 | **UI atelier → 1.0** | Assistant de premier lancement, recherche unifiée, étagères, Activité, mode famille « Demander » (recherche famille pour les enfants), contrôle parental complet et audit des comptes Kavita, renommages avec avertissement de progression ; premier livre dans Kavita en ≤ 10 min ; `SECURITY.md` complet ; parcours auteur de plugin documenté ; **précédé de la porte P2** (M3-lite si le besoin famille n'est pas confirmé) | 240–420 h (M3-lite : ~120–300 h) | `v1.0.0` |
 | M4 | Multi-destinations et sync | Dossier natif / Mihon-local, Komga, CWA, fan-out ; sync de progression avec Kavita et **préservation de la progression lors des renommages** ; `.tachibk` ; webhooks/outbox ; autres fournisseurs de métadonnées (dont BnF) ; « Soutenir l'auteur » ; BagIt | 170–250 h | `v1.x` |
 | M5 | Lecteur intégré | foliate-js (EPUB), manga paginé / webtoon, OPDS et kosync propres, OIDC, appareils, page `/lite` e-ink, PWA | 170–250 h | `v1.x` |
-| M6 | Écosystème | SDK publié sur PyPI (`shelfhold-sdk`) par publication de confiance OIDC, plugins tiers isolés en sous-processus, index signé, parcours auteur complet, Kobo sync (seulement si Kavita ne la livre pas, Q21), trackers | 120–200 h | `v2.0.0` |
+| M6 | Écosystème | SDK `shelfhold-sdk` **2.0.0** publié sur PyPI par publication de confiance OIDC, plugins tiers isolés via le compagnon `plugin-runner` (`rpc_protocol` 1, ADR-0056), index signé, parcours auteur complet, Kobo sync (seulement si Kavita ne la livre pas, Q21), trackers | 120–200 h | `v1.3.0` (SDK : `2.0.0`, D24) |
 | Plus tard | Non planifié | Moteur YAML, PDF, annotations, Calibre, Send-to-Kindle, Stump/Booklore, Audiobookshelf, API clients tiers, imports V2, traces OTel, MetronInfo | — | — |
 
 Paliers CI (A16, ADR-0016) : **M0** lint/types/tests, images natives amd64+arm64, GHCR avec **cache des couches dans le registre** (ENF-QUAL-007), actions épinglées SHA, Renovate (cooldown), release-please, rulesets, **contrôle DCO** (ENF-LEG-010) ; **M1b** attestations provenance + SBOM **attachées en assets de release**, Grype, CodeQL, zizmor, **second registre d'images et miroir du dépôt** (ADR-0029), nettoyage GHCR limité aux tags `pr-*` ; **M3** cosign (sur les deux registres), OpenSSF Scorecard, site de documentation ; **M6** publication de confiance OIDC vers PyPI et npm.
@@ -517,10 +517,10 @@ Les EF de la partie famille (EF-USR-010, EF-UX-004/005/006, EF-INT-021) portent 
 
 ### M6 — Écosystème
 
-**Objectif.** Ouvrir aux plugins tiers sans compromettre la sécurité : SDK publié, isolation sous-processus, index signé, Kobo sync, trackers.
+**Objectif.** Ouvrir aux plugins tiers sans compromettre la sécurité : SDK `shelfhold-sdk` **2.0.0** publié (`api` 2 + shim `api` 1 pendant 12 mois, Q20 tranchée), isolation via le compagnon `plugin-runner` (`rpc_protocol` 1, ADR-0056), index signé, Kobo sync, trackers. L'application sort en **`v1.3.0`** (D24), pas `v2.0.0`.
 
 **Exigences couvertes.**
-- EF : EF-SRC-016, EF-SRC-017, EF-SRC-019 (isolation), EF-SRC-020, EF-SRC-030 (index, migrations d'état) ; EF-BIB-018 ; EF-EXP-021 ; EF-INT-010, EF-INT-012 (**conditionnelle** : seulement si Kavita ne livre pas la sync Kobo d'ici là, Q21).
+- EF : EF-SRC-016, EF-SRC-017, EF-SRC-019 (isolation), EF-SRC-020, EF-SRC-030 (index, migrations d'état) ; EF-BIB-018 ; EF-EXP-021 (**destination « dossier Kobo »**, D19) ; EF-INT-010, EF-INT-012 (**conditionnelle**, critère écrit D-P5 : seulement si aucune version publiée de Kavita ne livre la sync Kobo avec le contrôle de profil à l'entrée de M6, Q21).
 - ENF : ENF-SEC-009 (volet tiers isolés), ENF-SEC-007 (publication de confiance OIDC), ENF-QUAL-003 (kit publié avec le SDK), ENF-OPS-018.
 - Passe 8 : EF-SRC-017 (clé de plugin épinglée à son index et à son signataire).
 
@@ -541,7 +541,7 @@ Les EF de la partie famille (EF-USR-010, EF-UX-004/005/006, EF-INT-021) portent 
 - Passe 8 : `test_plugin_key_pinned_to_signer`.
 - Passe 4 : `test_plugin_state_migration_required_when_payload_schema_changes`, `test_rollback_refused_when_persisted_state_newer`, `test_plugin_incompatible_event_after_host_upgrade`, `test_index_fields_deprecated_replaced_by_min_host`, workflow `publish-sdk` sans jeton longue durée (OIDC).
 
-**Definition of done.** `shelfhold-sdk` publié sur PyPI par publication de confiance OIDC, avec matrice de compatibilité `api` N-1 et kit de conformité ; un plugin tiers d'exemple s'installe depuis un index signé et tourne isolé ; une Kobo synchronise ses livres.
+**Definition of done.** `shelfhold-sdk` **2.0.0** publié sur PyPI par publication de confiance OIDC, avec matrice de compatibilité `api` 2/1 (shim `api` 1, 12 mois) et kit de conformité ; un plugin tiers d'exemple s'installe depuis un index signé et tourne isolé via `plugin-runner` ; une Kobo synchronise ses livres (ou la sync Kobo de Kavita est constatée, critère D-P5).
 
 **Risques.** Protocole Kobo non documenté (→ surface minimale, proxy magasin opt-in) ; charge de maintenance de l'écosystème (→ GOVERNANCE.md, facteur bus).
 

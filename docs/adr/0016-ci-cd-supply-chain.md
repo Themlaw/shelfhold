@@ -1,7 +1,7 @@
 ---
 status: accepté
 date: 2026-11-02
-amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-03 (passe 12)
+amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-03 (passe 12) ; 2026-11-20 (M6, ADR-0056)
 decision-makers: mainteneur
 ---
 # ADR-0016 — CI/CD GitHub Actions et chaîne d'approvisionnement
@@ -79,8 +79,13 @@ L3, L6 (GAP-11-04, GAP-11-15, Z1, Z4).
 - **Planchers** (ENF-SEC-016) : `apprise>=2.1,<3` (CVE-2026-59180 ; API v2) ; Komga ≥ 1.22.0 (CVE-2025-52880) dans `known_bad_versions` le jour où la destination est écrite (M4).
 - **Frontière SDK MIT** (ENF-LEG-010) : contrôles CI dès M0 — `sdk/` avec `LICENSE` MIT et en-têtes SPDX par fichier (`test_sdk_files_have_mit_spdx_header`), contrat import-linter « le SDK n'importe jamais le cœur » (`test_sdk_never_imports_core`).
 
+## Amendement M6 (2026-11-20, ADR-0056)
+- **Publication du SDK 2.0.0** : le workflow `publish-sdk.yml` (déclenché sur le tag `sdk-v2.0.0`) publie `shelfhold-sdk` **2.0.0** sur PyPI par **publication de confiance OIDC** — environnement protégé, **aucun jeton longue durée**, attestations PEP 740 attachées à la release (ENF-SEC-007). Le SDK est un **composant release-please séparé** (SemVer indépendant : 2.0.0 en M6, D24), distinct de la version de l'application (`v1.3.0` à M6).
+- **L'index signé des plugins n'est pas sur PyPI** : il est servi par chaque dépôt déclaré (URL + clé minisign épinglée, ADR-0056 D14) ; PyPI n'est qu'un canal de wheels, vérifiées par sha256 à l'installation. Aucun dépôt d'index n'est préconfiguré.
+- Le compagnon `plugin-runner` est livré **dans l'image** (même base Python épinglée par digest que le cœur) ; il n'est jamais publié sur PyPI.
+
 ## Exigences liées
-ENF-SEC-006, ENF-SEC-007, ENF-SEC-011, ENF-PORT-001, ENF-PERF-002, ENF-DOC-001, ENF-QUAL-001, ENF-OPS-008, ENF-GOV-001, ENF-QUAL-007, ENF-LEG-010, ENF-SEC-016, ENF-LEG-013, EF-SRC-008.
+ENF-SEC-006, ENF-SEC-007, ENF-SEC-011, ENF-PORT-001, ENF-PERF-002, ENF-DOC-001, ENF-QUAL-001, ENF-OPS-008, ENF-GOV-001, ENF-QUAL-007, ENF-LEG-010, ENF-SEC-016, ENF-LEG-013, EF-SRC-008, EF-SRC-016, EF-SRC-017.
 
 ## Sources
 - https://github.com/paperless-ngx/paperless-ngx/blob/dev/.github/workflows/ci-docker.yml

@@ -1,7 +1,7 @@
 ---
 status: accepté
 date: 2026-11-02
-amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 6) ; 2026-11-03 (passe 11)
+amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 6) ; 2026-11-03 (passe 11) ; 2026-11-20 (M6, ADR-0056)
 decision-makers: mainteneur
 ---
 # ADR-0014 — Licence : AGPL-3.0-or-later pour l'app, MIT pour le SDK, exception plugins
@@ -62,6 +62,10 @@ F12 (GAP-6-20).
 
 ## Amendement passe 11 (2026-11-03)
 GAP-11-15, M0. Frontière outillée entre le SDK MIT et le cœur AGPL : `sdk/` est un paquet séparé avec sa propre `LICENSE` MIT et des en-têtes SPDX par fichier ; un contrat import-linter interdit au SDK d'importer le cœur ; `CONTRIBUTING.md` : aucun code ne passe du cœur au SDK sans l'accord de ses auteurs (une contribution AGPL versée au paquet MIT exigerait leur accord).
+
+## Amendement M6 (2026-11-20, ADR-0056)
+- **D-P4 tranchée : relecture, pas de levée.** La relecture juridique de l'exception de plugin (Q17) a lieu **avant la publication de M6** (SDK 2.0.0 + index signé) et est consignée par écrit ; l'exception reste **provisoire** jusque-là (en-tête « texte relu avant 1.0 et avant M6 »). La levée (retrait de l'exception) n'est pas retenue : les plugins tiers isolés tournent hors processus via le compagnon `plugin-runner` (ADR-0056) et ne dépendent pas de l'exception ; seuls les plugins natifs en processus — first-party — en dépendent.
+- **SDK 2.0.0** : le paquet `shelfhold-sdk` (MIT) est publié en M6 en version **2.0.0**, nom d'import `shelfhold.sdk` (D10), par publication de confiance OIDC (ADR-0016) ; `api` 2 avec shim `api` 1 pendant 12 mois (D11, Q20 tranchée). L'application, elle, sort en `v1.3.0` (D24).
 
 ## Exigences liées
 ENF-DOC-001, ENF-SEC-007, ENF-LEG-001, ENF-LEG-004, ENF-GOV-001, ENF-LEG-010, ENF-LEG-012, EF-SRC-001.

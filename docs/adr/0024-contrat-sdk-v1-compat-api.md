@@ -1,7 +1,7 @@
 ---
 status: accepté (amende ADR-0007)
 date: 2026-11-02
-amended: 2026-11-03 (passe 6) ; 2026-11-03 (passe 7) ; 2026-11-03 (passe 8) ; 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-03 (passe 12) ; 2026-11-15 (SDK 1.4, ADR-0052)
+amended: 2026-11-03 (passe 6) ; 2026-11-03 (passe 7) ; 2026-11-03 (passe 8) ; 2026-11-03 (passe 10) ; 2026-11-03 (passe 11) ; 2026-11-03 (passe 12) ; 2026-11-15 (SDK 1.4, ADR-0052) ; 2026-11-20 (SDK 2.0, ADR-0056)
 decision-makers: mainteneur
 ---
 # ADR-0024 — Contrat de données du SDK v1 et compatibilité `api` N-1
@@ -174,3 +174,14 @@ Contrat de destination v1.4 : **ajouts compatibles N-1**, `API_VERSION` reste 1.
 - Tests : `test_kit_indexes_tree_defaults_false`, `test_kit_accepts_plugin_written_for_sdk_1_3`, `test_deprecated_kavita_members_still_resolve`.
 
 Source : `docs/adr/0052-arbre-et-indexeurs.md`, `docs/spec/06-points-discutables.md` (Q48).
+
+## Amendement SDK 2.0 (M6 L01, ADR-0056)
+Première version publiée du contrat : rupture contrôlée unique, prévue depuis la V1.
+- **Distribution et nom d'import (D10)** : paquet PyPI **`shelfhold-sdk` 2.0.0**, nom d'import **`shelfhold.sdk`** (identique au paquet interne du monorepo : aucun `import` ne change dans le code first-party), licence MIT, publié par OIDC (ADR-0016, tag `sdk-v2.0.0`). L'application, elle, sort en **`v1.3.0`** à M6 (D24) ; le SDK a son SemVer propre.
+- **`api` 2 (D11, Q20 tranchée)** : le SDK 2.0.0 déclare `api = 2`. L'hôte accepte `api` 2 **et** `api` 1 via un shim ; `api` 1 est supporté pendant **12 mois** après la sortie de 2.0.0, puis retiré au SDK 3.0. La durée n'est plus « à valider » : elle est inscrite dans la politique de versions (ENF-OPS-008) et dans 06 (Q20).
+- **Retraits au SDK 2.0** : les membres propres à Kavita dépréciés depuis la série 1.x (`parse_name_call`, `ensure_library_call`, `resolve_remote_calls`, `event_subscription`, `progress_calls`) sont **retirés** (leur retrait était annoncé « au SDK 2.0 » par l'amendement SDK 1.4) ; leurs remplaçants génériques (ajoutés en 1.4/1.5) couvrent le besoin.
+- **`rpc_protocol` 1 (D12)** : transport JSON-RPC 2.0 sur stdio des plugins isolés (compagnon `plugin-runner`, ADR-0056), versionné **séparément** de `api` et du socket CLI ; le manifest déclare `api` et `rpc_protocol` distinctement, l'hôte refuse toute combinaison non supportée.
+- **Sérialisabilité** : inchangée et désormais contraignante pour l'isolation — seuls des types JSON traversent la frontière RPC ; aucun objet vivant (`Fetcher`, mandataire `f`) ; les destinations rendent un plan `list[FsOp]` (Q52).
+- Le kit de conformité `shelfhold.sdk.testing` est publié avec le SDK 2.0.0 et s'exécute dans le runner comme dans l'adaptateur natif (ENF-QUAL-003).
+
+Source : `docs/adr/0056-plugins-tiers-isoles-index-signe.md`, `docs/spec/06-points-discutables.md` (Q20).
