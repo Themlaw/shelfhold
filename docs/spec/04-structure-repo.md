@@ -31,7 +31,7 @@ shelfhold/
 │   │                             # passe 6 (M1a) : meta rebuild (ENF-OPS-020) | adopt set-follow-from <série> <chapitre> (coverage_unknown) | adopt set-coverage <tome> <premier> <dernier>
 │   │                             #           edition set-lang <édition|liaison> <étiquette BCP 47> (language_unknown) | target recheck (racine physique)
 │   │   ├── config.py                 # pydantic-settings : env > config.toml > base
-│   │   ├── sdk/                      # SDK en V1 (ADR-0024) → publié comme shelfhold-sdk (MIT) en M6 ; passe 11 (GAP-11-15) : sous-arbre sous LICENSE MIT propre
+│   │   ├── sdk/                      # SDK en V1 (ADR-0024) → publié comme shelfhold-sdk 2.0.0 (MIT, nom d'import shelfhold_sdk, D10) en M6 (ADR-0056) ; passe 11 (GAP-11-15) : sous-arbre sous LICENSE MIT propre
 │   │   │   ├── LICENSE               # MIT (le reste du dépôt est AGPL) ; chaque fichier porte « SPDX-License-Identifier: MIT »
 │   │   │   ├── age.py                # passe 11 : AgeRating = {min_age: int, x: bool} (EF-EXP-011)
 │   │   │   ├── models.py             # SeriesRef, UnitInfo, PageRef (paresseux), ImageRequest, Cursor, FilterSpec, AuthFlow…
@@ -62,7 +62,7 @@ shelfhold/
 │   │   ├── integrations/   {apprise/, sablier/, public.py}                      # webhooks/ en M4, trackers/ en M6
 │   │   ├── jobs/           {huey_app.py (pools io/cpu/maint), slots.py (domain_slot), progress.py, public.py}
 │   │   ├── events/         {bus.py}                                             # outbox.py en M4
-│   │   ├── plugin_host/    {registry.py, permissions.py, adapters/{native,meta/{suwayomi,lncrawl}}/, public.py}   # rpc_stdio/ en M6
+│   │   ├── plugin_host/    {registry.py, permissions.py, adapters/{native,meta/{suwayomi,lncrawl}}/, public.py}   # rpc_stdio/ via le compagnon plugin-runner en M6 (ADR-0056)
 │   │   │                   # adapters/meta/suwayomi : GraphQL en JSON seulement, liste blanche des routes REST conservées (passe 6, U7)
 │   │   ├── interfaces/     {http_api/, sse/, spa/}                              # opds/, kosync/, lite/ en M5
 │   │   └── infrastructure/ {fetcher/ (httpx + httpx-secure, cache RFC 9111), db/ (entretien : optimize, checkpoint, vacuum), storage/ (passage | /store),
@@ -139,7 +139,7 @@ shelfhold/
 │   ├── api/                          # référence OpenAPI, événements
 │   ├── reference/config.md           # GÉNÉRÉ depuis config.py : chaque clé avec sa valeur par défaut (N = 6 h, k = 3, 6 mois, plafonds par kind,
 │   │                                 # garde disque 5 % / 10 Gio / reprise max(8 %, 15 Gio), sentinelle ≥ 10 et > 5 % ou > 50, fenêtre 03 h–07 h)
-│   ├── adr/0001-…md … 0042-…md       # MADR 4 (copie de deliverables/adr)
+│   ├── adr/0001-…md … 0056-…md       # MADR 4 (copie de deliverables/adr)
 │   └── security/threat-model.md
 ├── docker/
 │   ├── Dockerfile                    # multi-stage, base python:3.13-slim épinglée par digest, USER 1000:1000, HEALTHCHECK ; passe 12 (AA6) : RLIMIT_CORE=0 (aucun core dump de l'index déchiffré, I46)
@@ -165,7 +165,7 @@ shelfhold/
 ```
 
 Notes :
-- Le SDK vit **dans** l'application en V1 (`backend/src/shelfhold/sdk/`) : un seul contrat, compatibilité `api` N-1 via un shim (ADR-0024). Il est extrait et publié sur PyPI sous le nom `shelfhold-sdk` (MIT) en M6, avec la matrice de compatibilité.
+- Le SDK vit **dans** l'application en V1 (`backend/src/shelfhold/sdk/`) : un seul contrat, compatibilité `api` N-1 via un shim (ADR-0024). Il est extrait et publié sur PyPI sous le nom `shelfhold-sdk` **2.0.0** (MIT, nom d'import `shelfhold_sdk`, D10 ; publication selon D-P2) en M6 (ADR-0056), avec la matrice de compatibilité `api` 2/1 (shim `api` 1 pendant 12 mois, D11, Q20 tranchée) ; l'application sort en `v1.3.0` à M6 (D24).
 - **Frontière de licence du SDK (passe 11, GAP-11-15, ENF-LEG-010, dès le premier commit)** : `sdk/` porte sa propre `LICENSE` MIT et un en-tête `SPDX-License-Identifier: MIT` dans chaque fichier (`test_sdk_files_have_mit_spdx_header`) ; contrat import-linter **« le SDK n'importe jamais le cœur »** (`shelfhold.sdk` ne dépend d'aucun autre module `shelfhold.*`, `test_sdk_never_imports_core`) ; règle de `CONTRIBUTING.md` : aucun code ne passe du cœur AGPL au SDK MIT sans l'accord de ses auteurs (un changement de `sdk/` qui recopie du code du cœur est refusé en revue). L'extraction en paquet séparé en M6 ne demande ainsi aucun audit de provenance.
 - **Lint des exportateurs (passe 11, Z3-c, ENF-I18N-003)** : aucun appel `t()` du catalogue i18n dans `exporters/` (les jetons lus par Kavita — `Specials`, `Vol.`, `Ch.` — ne se traduisent jamais) ; aucun âge écrit dans un EPUB (`test_epub_export_writes_no_age_subject_nor_tool_meta`).
 - Les sources first-party restent dans le monorepo ; un dépôt séparé `shelfhold-sources` avec index signé n'est envisagé qu'en M6.
@@ -203,7 +203,7 @@ Toutes les actions sont **épinglées par SHA complet** avec commentaire `# vX.Y
 | `docs.yml` | M3 | PR (build) ; `main` (déploiement) | Site Zensical sur GitHub Pages ; référence de config générée |
 | `mutation.yml` | facultatif | mensuel | mutmut sur domaine + assainisseurs, non bloquant |
 | `cleanup.yml` | M1b | hebdo | Purge des **seuls** tags GHCR `pr-*` de plus de 30 jours ; jamais les digests non étiquetés (manifestes de plate-forme d'une image multi-arch, signatures cosign, attestations), jamais `sha-*`, `edge` ni une version (ENF-QUAL-007, `test_ghcr_cleanup_policy_only_pr_tags`) |
-| `publish-sdk.yml` | M6 | tag `sdk-v*` | Publication de `shelfhold-sdk` sur PyPI (et paquet npm éventuel) par **publication de confiance OIDC** : environnement protégé, aucun jeton longue durée, attestations PEP 740 (ENF-SEC-007) |
+| `publish-sdk.yml` | M6 | étiquettes `sdk-v*` | Publication de `shelfhold-sdk` **2.0.0** sur PyPI (et paquet npm éventuel) par **publication de confiance OIDC** : environnement protégé, aucun jeton longue durée, attestations PEP 740 (ENF-SEC-007, ADR-0056) ; l'index signé des plugins reste hors PyPI (URL + clé minisign épinglées) ; publication réelle selon D-P2 (action du porteur) |
 
 Retirés par rapport à la v1 du document : Postgres en nightly (ENF-PORT-002 retirée), mutation hebdomadaire obligatoire, benchmarks nocturnes, variante d'image `:full`.
 
@@ -227,7 +227,7 @@ Images publiées : `ghcr.io/<org>/shelfhold:{X.Y.Z, X.Y, latest, edge, sha-<long
 | `GOVERNANCE.md` | Mainteneur, facteur bus, **successeur désigné** (accès organisation, GHCR, clés de signature, domaine), procédure d'archivage propre (dernière release + export intégral documenté), modération légale des issues, réponse aux notifications (accusé 72 h, pas de contre-notification sans avis juridique, pas de réécriture d'historique), **procédure de continuité** en cas de retrait (bascule vers le second registre et le miroir, ADR-0029), **triage et financement** (aucun don avant un hôte fiscal — Open Collective Europe ou association loi 1901 ; fonctions payantes = Jamais), revue de chevauchement Kavita à chaque jalon, 2FA matérielle (ENF-GOV-001, ENF-GOV-003, ADR-0026) |
 | `TRADEMARKS.md` | Les marques citées (Kavita, Komga, Kobo, Kindle…) appartiennent à leurs titulaires ; aucune affiliation (ENF-LEG-004) |
 | `AI_POLICY.md` / `AGENTS.md` | Pas de PR autonome d'agent ; **passe 5 (T7)** : la politique couvre aussi le **code assisté par IA du mainteneur** (chaque diff relu, aucun commit de plus d'environ 400 lignes non relu, pas de vitesse au détriment des garanties ni des tests rouges d'abord) ; règles TDD (voir `03-roadmap-tdd.md` §4.5), commandes `mise` ; Shelfhold n'embarque aucun modèle d'IA (à rappeler si un serveur MCP arrive, AI Act, explorateur passe 4 R7) |
-| `docs/adr/` | ADR MADR 4 (ADR-0001), 0001 à 0039 |
+| `docs/adr/` | ADR MADR 4 (ADR-0001), 0001 à 0056 |
 | `docs/dependencies.md` | Registre des dépendances critiques (M0) : rôle, facteur bus, licence, dernière release, repli, signal de déclenchement ; revue trimestrielle (ENF-GOV-002) |
 | `docs/security/threat-model.md` | Modèle de menace (`02-architecture.md`) |
 | `.github/CODEOWNERS` | `* @<org>/maintainers` ; `sources/`, `tests/fixtures/`, `tests/cassettes/`, `.github/` explicitement couverts |
@@ -255,7 +255,7 @@ Réglages de l'organisation et du dépôt :
 | Branches | `main` seule branche longue ; branches courtes `feat/…`, `fix/…`, `test/…` ; squash merge via merge queue ; titre de PR en Conventional Commits |
 | Commits | Commit rouge séparé recommandé (`test: … (red)`) ; e-mail `noreply` conseillé ; `Signed-off-by:` obligatoire sur chaque commit (DCO, `dco.yml`) dès le premier commit public |
 | Versionnage app | SemVer ; `0.x` jusqu'à M3 (`0.1` M0, `0.2` M1a, `0.3` M1b, `0.4` M2) ; **`1.0.0` à la fin de M3**, et aucune promotion publique avant ; dépréciation d'API par en-têtes `Deprecation`/`Sunset`, au moins une mineure et 6 mois après 1.0 ; release-please décide le bump ; le mainteneur choisit quand fusionner la PR de release |
-| Versionnage SDK | Interne en V1 (entier `api` + shim N-1) ; publié en M6 avec SemVer indépendant ; support d'une `api` dépréciée pendant 12 mois (à valider, Q20) |
+| Versionnage SDK | Interne en V1 (entier `api` + shim N-1) ; publié en M6 (`shelfhold-sdk` 2.0.0, `api` 2 + shim `api` 1) avec SemVer indépendant (composant release-please séparé) ; support d'une `api` dépréciée pendant **12 mois** (Q20 tranchée, D11, ADR-0056) ; l'application sort en `v1.3.0` à M6 (D24) |
 | Tags d'image | `edge` = `main` ; `X.Y.Z`, `X.Y` et `latest` = releases finales (`X.Y` et `latest` ne reculent jamais, décision du porteur du 15/11) ; `sha-<long>` = traçabilité ; pas de majeur seul ; jamais de réécriture d'un tag de version |
 | Migrations | Uniquement en avant, idempotentes ; `shelfhold migrate` (service dédié du compose) ; sauvegarde pré-migration nommée par révision, hors rotation ; **jamais de migration dans une release patch** (contrôle CI) ; Shelfhold **refuse de démarrer** sur un schéma plus récent que le sien (ENF-OPS-002) |
 | Retour arrière | Revenir au tag `X.Y` précédent + restaurer la sauvegarde pré-migration ; procédure testée en E2E (ENF-OPS-008) ; notes de version « migration : oui/non, réversible : oui/non » |

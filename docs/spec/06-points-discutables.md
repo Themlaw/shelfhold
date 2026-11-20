@@ -206,7 +206,7 @@ Ce que l'utilisateur fait chez lui de son côté ne regarde pas le projet. Le pr
 **Recommandation (révisée passe 2, B24).** Partir du modèle FSF « linking over a controlled interface » (permission additionnelle §7) et du précédent CondationCMS : modules qui communiquent uniquement par l'API plugin publique (paquet SDK MIT), retirables sans modifier le cœur, API internes exclues, exception caduque si l'interface est modifiée, limitée au code détenu par le projet. **Ne pas la publier avant la relecture** : jusque-là, `LICENSE` reste AGPL-3.0-or-later + SDK MIT, ce qui est sûr (ajouter une permission est facile, la retirer est impossible pour les versions déjà distribuées). Repli sans exception : modèle Grafana. Contributions sous DCO, sans CLA. Relecture à regrouper avec Q27.
 **Amendement passe 4 (D2, ADR-0036).** La recommandation « ne pas publier avant relecture » est **renversée**. Une permission additionnelle ne peut être accordée que par les titulaires des droits : dès la première contribution externe fusionnée, ajouter l'exception exigerait l'accord de chaque contributeur. À l'inverse, une permission additionnelle peut toujours être retirée par la suite (AGPL §7). D'où : **premier commit public** avec `LICENSE` AGPL + exception de plugin **provisoire** (en-tête « texte relu avant 1.0 et avant M6 »), **DCO obligatoire** et clause entrante dans `CONTRIBUTING.md` (ENF-LEG-010). La relecture (regroupée avec Q27) peut ensuite resserrer ou préciser le texte.
 **Impact d'un changement tardif.** Faible pour un resserrement ; élevé pour un ajout après la première contribution externe (d'où la décision immédiate).
-**Statut.** Tranché sur le principe (D2) : exception provisoire et DCO dans le **premier commit public (M0)** ; relecture juridique ouverte, avant **1.0** puis avant **M6**.
+**Statut.** Tranché sur le principe (D2) : exception provisoire et DCO dans le **premier commit public (M0)** ; relecture juridique avant **1.0** puis avant **M6**. **Mise à jour M6 (D-P4, ADR-0056) : en attente du porteur.** Le SDK est sous MIT ; un plugin isolé ne parle au cœur que par `rpc_protocol` et ne se lie à aucun code AGPL ; l'exception ne sert qu'au mode en processus. Options : relecture par un juriste avant `v1.3.0`, ou levée écrite de l'exigence de relecture (risque accepté, comme Q27a). *Recommandation du plan* : découpler — M6 avance sans attendre ; la décision ne conditionne que le texte définitif de l'exception et l'annonce des plugins tiers en processus. *Repli* : l'en-tête « provisoire » reste.
 
 ## Q18 — Directions de design et densité
 
@@ -244,7 +244,7 @@ Ce que l'utilisateur fait chez lui de son côté ne regarde pas le projet. Le pr
 
 **Décision.** Principe N-1 via un shim, avec un état de plugin versionné (`memo_version`, `payload_schema`).
 **Recommandation.** Support de N-1 pendant **12 mois** après la sortie de N, annoncé dans la politique de versions (ENF-OPS-008).
-**Statut.** Tranché sur le principe (A9) ; la durée est ouverte jusqu'à la publication du SDK (**M6**).
+**Statut.** **Tranché (A9, D11, ADR-0056)** : N-1 via un shim pendant **12 mois** après la sortie de N. Pour le SDK 2.0.0 (M6, `api` 2) : `api` 1 est supporté 12 mois après la sortie de 2.0.0, puis retiré au SDK 3.0.
 
 ## Q21 — Propriétaire de la synchronisation Kobo
 
@@ -263,7 +263,7 @@ Ce que l'utilisateur fait chez lui de son côté ne regarde pas le projet. Le pr
 | Destination Kobo par fichiers (EF-EXP-021, kepubify) seulement | Simple | Pas de progression |
 
 **Décision (passe 2, B18).** **Laisser la synchronisation Kobo à Kavita**, qui l'a annoncée pour 2026 ; la revue de chevauchement de chaque jalon (ENF-GOV-003) suit son avancement. Shelfhold ne l'émule en M6 (EF-INT-012, conditionnelle) **que si Kavita ne l'a pas livrée** d'ici là ; dans ce cas : surface minimale, modèle SyncPoint, jeton par appareil, proxy magasin **désactivé par défaut, opt-in par appareil**, avec avertissement (les CGU du magasin Kobo n'ont pas pu être lues, `research/10-closure-C.md` §6).
-**Statut.** Tranché (B18). **Révisée à la sortie de M5 (2026-11-20, `docs/decisions/M5.md`, « Révision de Q21 »)** : la décision tient, sans élément nouveau. Établi par les sources du dépôt : Kavita a annoncé la synchronisation Kobo et la corrigeait dans ses commits du 2026-11-15, sans version publiée. Non établi (relecture faite sans réseau) : une version publiée depuis, et son respect du contrôle de profil. EF-INT-012 reste conditionnelle et non planifiée en M6 ; condition à relire dans les notes de version de Kavita à l'entrée de M6 ([chevauchement-M5](../governance/chevauchement-M5.md)).
+**Statut.** Tranché (B18). **Révisée à la sortie de M5 (2026-11-20, `docs/decisions/M5.md`, « Révision de Q21 »)** : la décision tient, sans élément nouveau. Établi par les sources du dépôt : Kavita a annoncé la synchronisation Kobo et la corrigeait dans ses commits du 2026-11-15, sans version publiée. Non établi (relecture faite sans réseau) : une version publiée depuis, et son respect du contrôle de profil. **Critère de D-P5 (fixé à la clôture de M5, écrit par ADR-0056)** : EF-INT-012 est tranchée quand **Kavita `0.9.2` est publiée** (page des versions publiées, pas la branche de développement) avec la sync Kobo **filtrée par bibliothèque et par plafond d'âge**. **Question au porteur, ouverte** : un filtre par bibliothèque suffit-il là où Shelfhold raisonne par étagère réservée à un profil ? Contrôle à la V1 puis à l'entrée de V10 : `0.9.2` publiée avec les deux filtres **et** réponse « la bibliothèque suffit » → L17 n'est pas lancé, EF-INT-012 passe en « Jamais » (L25) ; sinon L17a et L17b partent (coupables ; surface minimale, jeton par appareil, proxy magasin coupé par défaut). Résultat consigné dans `docs/decisions/M6.md` ([chevauchement-M5](../governance/chevauchement-M5.md)).
 
 ## Q22 — Rôle du lecteur intégré en M5
 
@@ -680,7 +680,7 @@ Ce que l'utilisateur fait chez lui de son côté ne regarde pas le projet. Le pr
 | **Plan d'opérations sérialisable** (`list[FsOp]`) rendu par la destination, validé et exécuté par l'hôte | Pur, testable par aller-retour JSON, cohérent avec `ApiCall` ; l'hôte garde `fsops` | Une destination ne peut pas lire le résultat d'une opération au milieu du plan |
 
 **Recommandation.** Plan sérialisable, forme fixée avant la documentation des auteurs (M3), testée dans le kit destinations (M4).
-**Statut.** Tranché (H3).
+**Statut.** Tranché (H3). **Rappelé par ADR-0056 (M6)** : avec l'isolation des plugins tiers (`plugin-runner`, `rpc_protocol` 1), aucun mandataire `f` vivant ne peut traverser la frontière RPC — le plan sérialisable `list[FsOp]` est la **seule** forme possible, exécutée par l'hôte.
 
 ## Q53 — Contenu exporté : où neutraliser le XHTML d'un EPUB récupéré sur le web
 
@@ -1063,11 +1063,11 @@ Chaque risque résiduel accepté a un **responsable** et un jalon de revue (GAP-
 | Q14 | GitHub | Organisation gratuite | Tranché (A16) |
 | Q15 | Suwayomi | CBZ par défaut, pas de mode pages en V1 ; contrat vérifié par S5 ; purge optionnelle | Tranché (A2, B6, B16), spike S5 |
 | Q16 | OIDC | M5 ; forward-auth à secret en V1 | Tranché (A15) |
-| Q17 | Exception AGPL | Modèle FSF « controlled interface » ; **provisoire dès le premier commit public**, DCO obligatoire ; relecture avant 1.0 et M6 | Tranché sur le principe (D2) ; relecture ouverte, 1.0 / M6 |
+| Q17 | Exception AGPL | Modèle FSF « controlled interface » ; **provisoire dès le premier commit public**, DCO obligatoire ; relecture avant 1.0 et avant M6 | Tranché sur le principe (D2) ; **D-P4 (ADR-0056) : relecture ou levée, en attente du porteur (recommandation : découpler)** |
 | Q18 | Design | Une direction livrée en 1.0 (A) ; quatre thèmes ensuite (Q74) | Tranché (porteur 2, Q2) |
 | Q19 | Series | Entité optionnelle au-dessus de Work | Tranché (A6) |
-| Q20 | Compat `api` | N-1 via shim ; 12 mois à valider | Tranché sur le principe (A9), durée M6 |
-| Q21 | Sync Kobo | Laissée à Kavita ; émulation M6 seulement si Kavita ne la livre pas ; proxy opt-in par appareil | Tranché (B18) |
+| Q20 | Compat `api` | N-1 via shim pendant **12 mois** après la sortie de N ; SDK 2.0.0 (M6) : `api` 2 + shim `api` 1, 12 mois, retiré au SDK 3.0 | Tranché (A9, D11, ADR-0056) |
+| Q21 | Sync Kobo | Laissée à Kavita ; émulation M6 sauf si Kavita `0.9.2` publiée la livre filtrée par bibliothèque et par âge et que le porteur juge la bibliothèque suffisante (critère D-P5, ADR-0056) ; proxy opt-in par appareil | Tranché (B18) ; critère D-P5 écrit, question au porteur ouverte |
 | Q22 | Rôle du lecteur | Lecteur pour le contenu non exporté + extraits | Tranché (M5, ADR-0055) |
 | Q23 | Étagère | Par Édition | Tranché (A31) |
 | Q24 | OPDS propre | Masqué par défaut | Ouvert, M5 |
@@ -1098,7 +1098,7 @@ Chaque risque résiduel accepté a un **responsable** et un jalon de revue (GAP-
 | Q49 | Provenance des fichiers exportés | Miroir par racine physique, rien dans les fichiers (ADR-0046) | Tranché (H1) |
 | Q50 | Nommage d'un segment de numérotation | Dossier ou track, tranché par golden `plugin/parse` ; `numbering_conflict` d'ici là | Ouvert : M1a |
 | Q51 | Boîte de M1a (passe 8) | 200 h conservées, 2 exigences et volets de schéma absorbés, aucun nouveau coupable | Ouvert, M0 |
-| Q52 | Opérations fichier des destinations | Plan sérialisable `list[FsOp]` exécuté par l'hôte | Tranché (H3) |
+| Q52 | Opérations fichier des destinations | Plan sérialisable `list[FsOp]` exécuté par l'hôte ; aucun mandataire `f` vivant ne traverse la frontière RPC (ADR-0056) | Tranché (H3), rappelé par ADR-0056 (M6) |
 | Q53 | Contenu exporté non fiable | Dérivé canonique neutralisé à l'ingestion pour les sources `untrusted` (ADR-0047) | Tranché (J1) |
 | Q54 | Effacement immédiat | `purge --now`, pierres tombales en base et hors base rejouées après restauration (ADR-0048) ; portées et journal chiffré (Q60, Q64) ; actions réservées à une session fraîche ou à la CLI (Q65) | Tranché (J2, K1, K2, L1) ; levée ouverte, M3 |
 | Q55 | Faille de contrôle d'accès Kavita | Catégorie `access_control`, minimum 0.9.1 pour les étagères famille ; passe 10 : toutes les étagères de l'instance en pause dès qu'un compte restreint existe | Tranché (J3), re-tranché (K4) |
