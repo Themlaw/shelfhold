@@ -331,6 +331,23 @@ VIOLATIONS = [
      "from shelfhold.events import stream\n", None),
     ("webhooks-read-events-through-activity-view", "integrations/webhooks/other.py",
      "from shelfhold.events import bus\n", "integrations/apprise/other.py"),
+    # M6 L00: one violation per new contract
+    ("plugin-host-rpc-not-catalog-export-identity", "plugin_host/rpc/other.py",
+     "import shelfhold.catalog\n", None),
+    ("plugin-host-rpc-not-catalog-export-identity", "plugin_host/rpc/other.py",
+     "from shelfhold.export import public\n", None),
+    ("plugin-host-rpc-not-catalog-export-identity", "plugin_host/rpc/other.py",
+     "import shelfhold.identity\n", None),
+    ("plugin-host-runner-companion", "plugin_host/runner/other.py",
+     "import shelfhold.catalog\n", None),
+    ("plugin-host-runner-companion", "plugin_host/runner/other.py",
+     "import shelfhold.plugin_host.registry\n", None),
+    ("kobo-not-opds-lite", "interfaces/http_api/kobo/other.py",
+     "import shelfhold.interfaces.http_api.opds\n", None),
+    ("kobo-not-opds-lite", "interfaces/http_api/kobo/other.py",
+     "from shelfhold.interfaces.http_api import lite\n", None),
+    ("trackers-not-acquisition", "integrations/trackers/other.py",
+     "import shelfhold.acquisition\n", None),
 ]  # fmt: skip
 
 
