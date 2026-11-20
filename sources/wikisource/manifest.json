@@ -3,6 +3,7 @@
   "kind": "source",
   "version": "0.1.0",
   "api": 2,
+  "rpc_protocol": 1,
   "name": "Wikisource (one EPUB per book, with its attribution)",
   "permissions": {
     "domains": [

@@ -16,6 +16,7 @@ import contextvars
 import importlib
 import inspect
 import json
+import operator
 import os
 import sys
 import traceback
@@ -191,7 +192,7 @@ async def _call_method(instance: Any, spec: MethodSpec, params: Any, fetcher: Rp
         except ValueError as exc:
             raise _BadParams(f"argument {p.name!r} is not valid: {type(exc).__name__}") from exc
         keywords[p.name] = value  # by the names the SDK contract gives them
-    outcome = getattr(instance, spec.name)(*positional, **keywords)
+    outcome = operator.attrgetter(spec.name)(instance)(*positional, **keywords)
     if inspect.isawaitable(outcome):
         outcome = await outcome
     if outcome is None:

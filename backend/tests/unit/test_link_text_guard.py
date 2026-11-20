@@ -92,6 +92,9 @@ CLOSED: dict[str, Counter[str]] = {
 # fields of a report, `ctypes.CDLL(None)` loads libc for `openat2`/`statfs`/`prctl` (no link call),
 # and `__dict__[...]` is the proxy of `refs_guard`. No `extractall`, no `ln`, no `symlinks=True`.
 SAFE_USES: dict[str, dict[str, int]] = {
+    "plugin_host/rpc/plugin_side.py": {
+        "factory = getattr(importlib.import_module(module_name), attr)": 1
+    },
     "export/application/plans.py": {"observed = os.stat(path, follow_symlinks=False)": 1},
     "export/application/reconcile.py": {
         "for name, value in vars(report).items()": 1,
