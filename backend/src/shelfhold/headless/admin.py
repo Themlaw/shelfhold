@@ -630,6 +630,16 @@ class HeadlessAdmin:
             raise InvalidConfigValue("a drop box needs the folder it writes: give a path map")
         return self._add_folder_target("cwa", "target.add_cwa", name, path_map, actor)
 
+    def target_add_kobo(
+        self, *, name: str, path_map: PathMapSpec | None, actor: Actor | None = None
+    ) -> TargetAdded:
+        """The folder a Kobo reads: the one the household's sync tool, or the mounted reader,
+        takes its `.kepub.epub` from (EF-EXP-021). Like a native folder: no server, no key,
+        writable folders, never the local source of Suwayomi."""
+        if path_map is None:
+            raise InvalidConfigValue("a Kobo folder needs the folder it reads: give a path map")
+        return self._add_folder_target("kobo", "target.add_kobo", name, path_map, actor)
+
     def _add_folder_target(
         self, kind: str, action: str, name: str, path_map: PathMapSpec, actor: Actor | None
     ) -> TargetAdded:

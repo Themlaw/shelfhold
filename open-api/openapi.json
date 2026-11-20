@@ -30266,6 +30266,68 @@
         ]
       }
     },
+    "/api/v1/targets/kobo": {
+      "post": {
+        "description": "EF-EXP-021: the folder a Kobo reads, filled with one `.kepub.epub` per book. Which\nfolders are written is a reserved action, like a native folder.",
+        "operationId": "add_kobo",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeFolderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Add Kobo",
+        "tags": [
+          "configuration"
+        ]
+      }
+    },
     "/api/v1/targets/komga": {
       "post": {
         "description": "EF-EXP-020: a Komga with the API key of a dedicated administrator account. The key is\nshown to Komga once, sealed, and never answered back. Reserved (a secret): a fresh admin\nsession or the host CLI, never a key, a member or a child.",

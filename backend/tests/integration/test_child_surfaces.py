@@ -432,6 +432,7 @@ CLOSED = (
     "POST /api/v1/targets/native-folder",  # M4 L07: a reserved action (config.path_map)
     "POST /api/v1/targets/komga",  # M4 L46: a reserved action (target.add_komga)
     "POST /api/v1/targets/cwa",  # M4 L46: a reserved action (config.path_map)
+    "POST /api/v1/targets/kobo",  # M6 L16: a reserved action (config.path_map)
     "POST /api/v1/destinations/{destination_id}/sync-progress",  # M4 L46: reserved
     "POST /api/v1/targets/{target_id}/recheck",
     "POST /api/v1/targets/{target_id}/reconnect",

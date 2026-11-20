@@ -381,6 +381,7 @@ class HeadlessCommands(Protocol):
         self, *, name: str, url: str, api_key: str, path_map: PathMapSpec | None = None
     ) -> TargetAdded: ...
     def target_add_cwa(self, *, name: str, path_map: PathMapSpec | None) -> TargetAdded: ...
+    def target_add_kobo(self, *, name: str, path_map: PathMapSpec | None) -> TargetAdded: ...
     def destination_sync_progress(
         self, *, destination_id: str, enabled: bool
     ) -> SyncProgressSet: ...
@@ -464,6 +465,12 @@ class SocketHeadless:
 
     def target_add_cwa(self, *, name: str, path_map: PathMapSpec | None) -> TargetAdded:
         raw = self._call("target.add_cwa", name=name, path_map=path_map)
+        if not isinstance(raw, dict):
+            raise ValueError("malformed_reply")
+        return TargetAdded(raw["id"], raw["name"], raw["created"])
+
+    def target_add_kobo(self, *, name: str, path_map: PathMapSpec | None) -> TargetAdded:
+        raw = self._call("target.add_kobo", name=name, path_map=path_map)
         if not isinstance(raw, dict):
             raise ValueError("malformed_reply")
         return TargetAdded(raw["id"], raw["name"], raw["created"])

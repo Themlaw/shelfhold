@@ -162,15 +162,16 @@ def effective_partitioning(
     knows). Komga does too, but only for a folder whose accounts its audit proved (L08b,
     EF-EXP-047): the declaration and an admin's attestation count for nothing without that proof
     (`audit_proved`, read for the folder of the binding). A CWA drop box is a folder that one
-    ingester empties: it partitions nothing, whatever it is declared or attested. The value a
+    ingester empties, and a Kobo folder is a folder a sync tool of the home or the mounted reader
+    reads: neither keeps an account apart, whatever either is declared or attested. The value a
     third-party plugin declares is a default proposal and counts only once the admin attested it
     (K9, GAP-10-08); an unattested one is `none`."""
     if kind == "kavita":
         return "library"
     if kind == "komga":
         return "library" if audit_proved else "none"
-    if kind == "cwa":
-        return "none"  # a drop box keeps no account apart, and no attestation changes that
+    if kind in ("cwa", "kobo"):
+        return "none"  # a folder keeps no account apart, and no attestation changes that
     return stored if attested else "none"
 
 

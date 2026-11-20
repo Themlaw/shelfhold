@@ -17909,6 +17909,39 @@ export type AddCwaResponses = {
 
 export type AddCwaResponse = AddCwaResponses[keyof AddCwaResponses];
 
+export type AddKoboData = {
+    body: NativeFolderIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/targets/kobo';
+};
+
+export type AddKoboErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AddKoboError = AddKoboErrors[keyof AddKoboErrors];
+
+export type AddKoboResponses = {
+    /**
+     * Successful Response
+     */
+    201: Created;
+};
+
+export type AddKoboResponse = AddKoboResponses[keyof AddKoboResponses];
+
 export type AddKomgaData = {
     body: KomgaIn;
     path?: never;
