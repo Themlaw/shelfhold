@@ -37,5 +37,5 @@ Révisée à la sortie de M5, comme 06 le demande. **Établi** : Kavita a annonc
 
 - Aucune exigence n'est déclarée livrée par un tiers : aucune passe en « Jamais ».
 - Q21 : voir ci-dessus ; **à confirmer par le porteur**.
-- Revue **sans réseau** : à compléter par la lecture des notes de version avant la release, ou à l'entrée de M6 au plus tard.
+- Revue **sans réseau** : complétée le 2026-11-20 par la relecture en ligne du contradicteur de jalon (`docs/decisions/M5.md`, « Q21 et chevauchement : relecture en ligne », sources citées). Aucun des trois projets n'a publié de version depuis le 2026-11-15 ; la synchronisation Kobo de Kavita n'est que dans des versions nocturnes (version visée : `0.9.2`).
 - Prochaine revue : sortie de M6, ou à l'entrée de M6 pour Q21.
