@@ -22,13 +22,13 @@ def world(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World
 
 
 @pytest.mark.req("EF-LEC-007", "EF-LEC-014")
-def test_web_reader_turning_every_two_pages_to_the_end_marks_read(world: World) -> None:
-    """The reader writes as pages are turned: a walk of small steps covers the Unit, at any pace."""
+def test_web_reader_turning_page_after_page_to_the_end_marks_read(world: World) -> None:
+    """The reader writes as pages are turned: a walk of small steps (a page at a time, the kept copy
+    carries no page bounds, so it is judged by share) covers the Unit, at any pace."""
     content, unit = _paged(world)
-    for index in range(0, 30, 2):
+    for index in range(30):
         assert put(world, world.admin, content, page(index)).status_code == 200
         world.env.clock.advance(timedelta(hours=3))  # a slow reader: the pace is not the proof
-    assert put(world, world.admin, content, page(29)).status_code == 200
     assert _state(world, unit) == "read"
 
 
