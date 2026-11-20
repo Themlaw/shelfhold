@@ -53,6 +53,14 @@ def test_allowlist_m5_entries_are_commented() -> None:
             assert "#" in line, line
 
 
+def test_allowlist_m6_entries_are_commented() -> None:
+    text = (ROOT / "tools" / "production-reachability-allowlist.toml").read_text(encoding="utf-8")
+    for line in text.splitlines():
+        if 'until = "M6"' in line:
+            assert "#" in line, line
+            assert "L" in line.split("#", 1)[1], line
+
+
 @pytest.mark.req("ENF-SEC-007")
 def test_ci_traceability_includes_m5_and_blocks() -> None:
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")

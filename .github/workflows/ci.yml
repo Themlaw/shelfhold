@@ -898,7 +898,7 @@ jobs:
           category: grype
 
   traceability:
-    # Blocking for every delivered milestone (M0, M1a, M1b, M2, M3, M4, M5, M6): every requirement of the milestone has a test, every test has a marker.
+    # Blocking for every delivered milestone (M0, M1a, M1b, M2, M3, M4, M5): every requirement of the milestone has a test, every test has a marker.
     # The matrix is not committed: it is an artifact and the job summary.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
