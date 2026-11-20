@@ -15,13 +15,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import sqlalchemy as sa
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 
 from shelfhold.export.application.fan_out import EpubFile, FanOut, HostContentStore
 from shelfhold.export.targets.kobo.source import KoboSource
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.application.renditions import RenditionService
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 from tests.byte_source_env import add_format, unit_with_item
 from tests.export_env import ExportEnv, Series
 from tests.fan_out_env import add_target, service
