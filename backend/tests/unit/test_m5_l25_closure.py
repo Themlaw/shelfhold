@@ -21,7 +21,7 @@ def _read(rel: str) -> str:
 def _section(text: str, heading: str) -> str:
     """The body of `heading` (a line `## …` or `### …`) up to the next heading of the same rank."""
     rank = len(heading) - len(heading.lstrip("#"))
-    match = re.search(rf"^{re.escape(heading)}\b.*$", text, re.M)
+    match = re.search(rf"^{re.escape(heading)}(?=\s|$).*$", text, re.M)
     assert match, f"missing section {heading!r}"
     rest = text[match.end() :]
     stop = re.search(rf"^#{{1,{rank}}} ", rest, re.M)
