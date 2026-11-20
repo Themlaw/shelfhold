@@ -50,6 +50,10 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     cwa.add_argument("--name", default="cwa", help=t("cli.target_cwa_name_help"))
     cwa.add_argument("--path-map", required=True, help=t("cli.target_cwa_path_map_help"))
     cwa.set_defaults(handler=run_add_cwa, configure_logging=False)
+    kobo = kinds.add_parser("kobo", help=t("cli.target_add_kobo_help"), allow_abbrev=False)
+    kobo.add_argument("--name", default="kobo", help=t("cli.target_kobo_name_help"))
+    kobo.add_argument("--path-map", required=True, help=t("cli.target_kobo_path_map_help"))
+    kobo.set_defaults(handler=run_add_kobo, configure_logging=False)
     # the exits of EF-INT-023
     for name, handler, help_text in (
         ("recheck", run_recheck, t("ops.help_target_recheck")),
@@ -149,6 +153,19 @@ def run_add_cwa(args: argparse.Namespace, commands: HeadlessCommands) -> int:
     if isinstance(path_map, str):
         return fail(path_map)
     added = commands.target_add_cwa(name=args.name, path_map=path_map)
+    if added.created:
+        print(t("headless.folder_added", name=added.name))
+    else:
+        print(t("headless.target_exists", name=added.name))
+    return 0
+
+
+@headless_command
+def run_add_kobo(args: argparse.Namespace, commands: HeadlessCommands) -> int:
+    path_map = _path_map_of(args)
+    if isinstance(path_map, str):
+        return fail(path_map)
+    added = commands.target_add_kobo(name=args.name, path_map=path_map)
     if added.created:
         print(t("headless.folder_added", name=added.name))
     else:

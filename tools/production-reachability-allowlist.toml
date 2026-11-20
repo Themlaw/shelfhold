@@ -58,6 +58,18 @@ symbols = [
   "shelfhold.export.targets.cwa.destination:CwaDestination.supported_versions",
 ]
 
+[[allow]]
+category = "unwired-m6-kobo-folder"
+reason = "2026-11-20 (M6 L16): the Kobo folder is a first-party destination: the pass reaches it through `FirstPartyDestinations` (`capabilities`, `kepub`, `plan`) and writes KEPUB files into the folder. The other members of the destination contract are never called for it: a folder has no inventory to read and no sidecar to write, its configuration and naming template are fixed by the core (no schema shown, no template chosen by the admin), and it answers no third-party version. They stay declared because the contract asks for them, and they are proved by the tests of L16."
+until = "M6"  # M6 L16: settled with the other contract members by L25
+symbols = [
+  "shelfhold.export.targets.kobo.destination:KoboDestination.config_schema",
+  "shelfhold.export.targets.kobo.destination:KoboDestination.default_template",
+  "shelfhold.export.targets.kobo.destination:KoboDestination.interpret",
+  "shelfhold.export.targets.kobo.destination:KoboDestination.inventory_calls",
+  "shelfhold.export.targets.kobo.destination:KoboDestination.render_sidecars",
+]
+
 [[route_test]]
 category = "generic-mechanics"
 reason = "Proves a generic mechanic of the HTTP stack (identity headers, idempotency replay, reserved-action gate, unhandled-exception log line) on the real middleware of create_app() with a toy route: no product route carries the case (a reserved action that touches secrets, a request header dump, a failing handler). 2026-11-14 (M3 L56): the meta-test of the child surfaces counts a mount and a WebSocket, which the product has none of; the test declares them. The routes outside OpenAPI (the stream, the thumbnails) are now proved on the product's own routes."

@@ -66,6 +66,7 @@ from shelfhold.composition import (
     SUWAYOMI_WAKE,
     Composition,
     KeyringUnavailableError,
+    LazyTombstones,
     NoLibraryError,
     WriteContext,
 )
@@ -151,6 +152,7 @@ from shelfhold.export.targets.kavita.series import (
     refresh_foreign_names,
     refresh_names,
 )
+from shelfhold.export.targets.kobo.source import KoboSource
 from shelfhold.export.targets.komga.target import KomgaDestination
 from shelfhold.export.targets.native_folder.source import NativeFolderSource
 from shelfhold.identity.public import child_kavita_accounts
@@ -612,11 +614,14 @@ def build_pipeline(
     )
     # the executor of the plans destinations describe (M4 L04), with the bytes the host owns and
     # the identity each server gives now (asked at most every 30 s, whatever the plan's length)
+    destinations = FirstPartyDestinations(comp.engine)
     pipeline.use_plan_executor(
         contents=HostContentStore(
             comp.engine,
-            capabilities=FirstPartyDestinations(comp.engine).capabilities,
-            renders=FirstPartyDestinations(comp.engine).renders,  # EF-EXP-010: a ComicInfo each
+            capabilities=destinations.capabilities,
+            renders=destinations.renders,  # EF-EXP-010: a ComicInfo each
+            kepub=destinations.kepub,  # EF-EXP-021: a KEPUB each, from the derivative
+            kepub_maker=_kepub_maker_of(comp),
             epub_path=_epub_path_of(comp, fsops),
             fsops=fsops,
             page_target=PageTarget(
@@ -628,6 +633,16 @@ def build_pipeline(
         barrier=TreeBarrier(comp.engine),  # the barrier of a family shelf, read again as it runs
     )
     return pipeline, reconciler, fsops
+
+
+def _kepub_maker_of(comp: Composition) -> Callable[[str, bytes], bytes]:
+    """The KEPUB of a book for a Kobo folder (EF-EXP-021): the conversion of M5 through the
+    rendition cache, on the neutralized derivative the host serves (I35), never the original."""
+    from shelfhold.library.public import RenditionService
+
+    return RenditionService(
+        comp.engine, comp.settings.data_dir, comp.clock, tombstones=LazyTombstones(comp)
+    ).kepub_bytes
 
 
 def _epub_path_of(comp: Composition, fsops: Fsops) -> Callable[[str], EpubFile | None]:
@@ -673,20 +688,22 @@ def _instance_identity(comp: Composition) -> Callable[[str], str | None]:
 class FirstPartyDestinations:
     """What the destinations of the core describe for a binding. Kavita is run by its own client
     (`KavitaClient.execute`, with the key the core holds): it describes calls the core already
-    sends and no plan of files, so nothing is asked of it here. The native folder (EF-EXP-010)
-    and the CWA drop box (EF-EXP-022) describe a plan of files: `NativeFolderSource` and
-    `CwaSource` read what was planned and answer for their kind. Komga (EF-EXP-020) declares what
-    it is and describes calls of the library; it is not run by the pass yet (its scan is asked by
-    `KomgaClient`, see docs/decisions/M4.md, L08a)."""
+    sends and no plan of files, so nothing is asked of it here. The native folder (EF-EXP-010),
+    the CWA drop box (EF-EXP-022) and the Kobo folder (EF-EXP-021) describe a plan of files:
+    `NativeFolderSource`, `CwaSource` and `KoboSource` read what was planned and answer for their
+    kind. Komga (EF-EXP-020) declares what it is and describes calls of the library; it is not
+    run by the pass yet (its scan is asked by `KomgaClient`, see docs/decisions/M4.md, L08a)."""
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
         self._native = NativeFolderSource(engine, root_check=RootGuard().check_root)
         self._cwa = CwaSource(engine)
+        self._kobo = KoboSource(engine)
 
     def attach(self, host: Any) -> None:
         self._native.attach(host)
         self._cwa.attach(host)
+        self._kobo.attach(host)
 
     def _kind(self, target_id: str) -> str | None:
         with self._engine.connect() as connection:
@@ -700,6 +717,8 @@ class FirstPartyDestinations:
             return self._native.capabilities(target_id)
         if kind == "cwa":
             return self._cwa.capabilities(target_id)
+        if kind == "kobo":
+            return self._kobo.capabilities(target_id)
         if kind == "komga":
             return KomgaDestination.capabilities
         return KavitaDestination.capabilities if kind == "kavita" else None
@@ -708,6 +727,8 @@ class FirstPartyDestinations:
         kind = self._kind(binding.target_id)
         if kind == "native_folder":
             return self._native.plan(binding)
+        if kind == "kobo":
+            return self._kobo.plan(binding)
         return self._cwa.plan(binding) if kind == "cwa" else None  # None for every other kind
 
     def sidecars(self, binding: Any) -> frozenset[str]:
@@ -717,6 +738,10 @@ class FirstPartyDestinations:
 
     def renders(self, target_id: str) -> bool:
         return self._kind(target_id) == "native_folder" and self._native.renders(target_id)
+
+    def kepub(self, target_id: str) -> bool:
+        """The targets whose EPUB is served as a KEPUB (EF-EXP-021): a Kobo folder."""
+        return self._kind(target_id) == "kobo" and self._kobo.kepub(target_id)
 
     def calls(self, _binding: Any) -> tuple[object, ...]:
         return ()

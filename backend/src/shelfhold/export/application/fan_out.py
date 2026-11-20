@@ -1086,7 +1086,10 @@ class HostContentStore:
 
     The format is the first of the server's `accepted_content_types` the Variant has (EF-EXP-046);
     an EPUB only by the file `epub_path` names (its verified derivative, EF-BIB-051), never one
-    of the copies above."""
+    of the copies above. A Kobo folder is served the KEPUB of that derivative (EF-EXP-021): the
+    conversion and its cache are the host's (`kepub_maker`, M5 L20b), asked for the targets
+    `kepub` names, and a book that does not convert is a refusal, never a plain EPUB.
+    """
 
     def __init__(
         self,
@@ -1098,10 +1101,15 @@ class HostContentStore:
         fsops: Any = None,
         renders: Callable[[str], bool] | None = None,
         page_target: PageTarget | None = None,
+        kepub: Callable[[str], bool] | None = None,
+        kepub_maker: Callable[[str, bytes], bytes] | None = None,
     ) -> None:
         self._page_target = page_target or PageTarget()
         # the targets whose CBZ is given a ComicInfo made for the binding (a native folder)
         self._renders = renders
+        # the targets whose EPUB is served as a KEPUB (a Kobo folder), and what makes it
+        self._kepub = kepub
+        self._kepub_maker = kepub_maker
         self._engine = engine
         self._capabilities = capabilities
         self._download = download
@@ -1234,7 +1242,11 @@ class HostContentStore:
                 else byte_sources(connection, unit, chosen.content_id, shelf_id=binding.shelf_id)
             )
         if chosen.format == "epub":
-            return self._read_epub(unit, chosen.content_id), chosen.format, binding.target_id
+            data = self._read_epub(unit, chosen.content_id)
+            maker = self._kepub_maker
+            if self._kepub is not None and maker is not None and self._kepub(binding.target_id):
+                data = self._kepub_of(maker, chosen.content_id, data)
+            return data, chosen.format, binding.target_id
         for source in sources:
             if source.kind == "destination":
                 held = None if source.target_id is None else self._caps(source.target_id)
@@ -1250,6 +1262,20 @@ class HostContentStore:
         if self._download is not None:
             self._download(unit)
         raise ContentNeedsDownloadError("no copy of the archive can be read and verified")
+
+    def _kepub_of(
+        self, maker: Callable[[str, bytes], bytes], content_id: str, data: bytes
+    ) -> bytes:
+        """The KEPUB of the derivative the host just read (EF-EXP-021): the conversion of M5
+        through the rendition cache, on the bytes of the neutralized derivative alone (I35). The
+        maker is the host's, so every refusal it raises is one refusal here — a book that cannot be
+        converted is never served as the EPUB it came from."""
+        try:
+            return maker(content_id, data)
+        except (ValueError, LookupError, PermissionError, RuntimeError, OSError) as error:
+            raise PlanRefusedError(
+                "the book cannot be made the KEPUB of this destination"
+            ) from error
 
     def _read_epub(self, unit_id: str, content_id: str) -> bytes:
         """The derivative `servable_epub` verified, read once and compared to the hash it was

@@ -429,6 +429,16 @@ def _target_add_cwa(admin: HeadlessAdmin, params: Params) -> object:
     return {"id": added.id, "name": added.name, "created": added.created}
 
 
+def _target_add_kobo(admin: HeadlessAdmin, params: Params) -> object:
+    path_map = params.get("path_map")
+    added = admin.target_add_kobo(
+        name=str(_text(params, "name")),
+        path_map=path_map if isinstance(path_map, list) else None,
+        actor=_actor(params),
+    )
+    return {"id": added.id, "name": added.name, "created": added.created}
+
+
 def _destination_sync_progress(admin: HeadlessAdmin, params: Params) -> object:
     done = admin.destination_sync_progress(
         destination_id=str(_text(params, "destination_id")),
@@ -484,6 +494,7 @@ HEADLESS_METHODS: Mapping[str, tuple[HeadlessMethod, str | None]] = {
     "target.add": (_target_add, "admin_risk.accept"),
     "target.add_komga": (_target_add_komga, "target.add_komga"),  # M4 L46: a secret
     "target.add_cwa": (_target_add_cwa, "config.path_map"),  # M4 L46: which folders are written
+    "target.add_kobo": (_target_add_kobo, "config.path_map"),  # M6 L16: which folders are written
     "destination.sync_progress": (_destination_sync_progress, "destination.sync_progress"),
     "source.add": (_source_add, "source.set_secret"),
     "source.confirm_roles": (_source_confirm_roles, "source.set_secret"),

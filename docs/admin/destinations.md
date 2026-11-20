@@ -18,6 +18,7 @@ Kavita par lecteur) est dans [famille.md](famille.md).
 | **dossier natif** | un dossier à la disposition locale de Mihon, ou que lit la source locale de Suwayomi ; aucun serveur, aucune clé | `POST /api/v1/targets/native-folder` |
 | **Komga** | une bibliothèque Komga ; le cloisonnement par bibliothèque est prouvé par l'audit des comptes ; **destination secondaire seulement jusqu'à M5** : Komga indexe un arbre écrit par une autre liaison, aucun arbre ne lui appartient | `shelfhold target add komga` (plus bas) |
 | **CWA** | la boîte de dépôt de Calibre-Web Automated : un EPUB déposé, l'importeur le prend | `shelfhold target add cwa` (plus bas) |
+| **dossier Kobo** | le dossier qu'une liseuse monte, ou que l'outil de synchronisation du foyer lit : un fichier `.kepub.epub` par livre, jamais l'EPUB d'origine | `shelfhold target add kobo` (plus bas) |
 
 Le détail de chaque contrat (routes appelées, dépôt atomique, refus) est dans
 [komga-routes.md](../destinations/komga-routes.md) et
@@ -86,6 +87,24 @@ C'est le dossier que Calibre-Web Automated surveille : aucun secret, des dossier
 jamais la source locale de Suwayomi. Même ajout par `POST /api/v1/targets/cwa` (`name`, `path_map`) :
 action réservée comme le dossier natif (`config.path_map`), journalisé (`target.add_cwa`). Une étagère
 se lie à une boîte de dépôt avec le transport `dropbox`.
+
+### Dossier Kobo
+
+```sh
+shelfhold target add kobo --name liseuse \
+    --path-map '[{"local": "/library/kobo", "remote": "/kobo", "mode": "rw"}]'
+```
+
+Le dossier que la liseuse monte, ou que l'outil de synchronisation du foyer lit : un dossier par
+série, un fichier `.kepub.epub` par livre (l'extension est ce qui fait ouvrir le livre avec ses
+marques de lecture, jamais `.epub` seul). Le fichier n'est jamais l'EPUB reçu : Shelfhold écrit le
+KEPUB de la **copie neutralisée** du livre, faite par sa conversion Python (aucun binaire), en
+cache comme pour le flux OPDS. Aucun secret, des dossiers en écriture seulement, jamais la source
+locale de Suwayomi. Même ajout par `POST /api/v1/targets/kobo` (`name`, `path_map`) : action
+réservée comme le dossier natif (`config.path_map`), journalisé (`target.add_kobo`). Une étagère se
+lie à ce dossier avec le transport `tree` ; le dossier ne tient aucun compte à part, une étagère
+sous 18+ n'y est jamais liée. La synchronisation de la progression par la liseuse (l'émulation
+Kobo sync) est une autre surface, qui réutilise la même déclaration.
 
 ## Lier une étagère : le fan-out
 
