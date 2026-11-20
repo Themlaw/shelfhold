@@ -49,6 +49,8 @@ from shelfhold.reading.application.content_access import ContentAccess, NoReadab
 from shelfhold.reading.application.lease import ProgressLease, progress_leased
 from shelfhold.reading.application.progress import (
     HISTORY_LIMIT,
+    VIA,
+    VIA_WEB,
     _current_hash,
     check_carrier,
     insert_position,
@@ -204,7 +206,8 @@ class ReaderPositions:
                 raise NoReadableCopyError
             insert_position(
                 connection, user_id=user_id, carrier_type=carrier_type, carrier_id=carrier_id,
-                content_hash=content_hash, locator=parsed.stored(), percent=parsed.progression,
+                content_hash=content_hash,
+                locator=_with_channel(parsed.stored()), percent=parsed.progression,
                 client_ts=when, device_id=device_id, source="device", now=now,
                 traverse=parsed.kind == "page",  # a place in a reflowable text proves no reading
             )  # fmt: skip
@@ -493,7 +496,8 @@ class ReaderPositions:
                     insert_position(
                         connection, user_id=user_id, carrier_type=lost.carrier_type,
                         carrier_id=lost.carrier_id, content_hash=lost.content_hash,
-                        locator=_resumed(lost.locator), percent=lost.percent, client_ts=now,
+                        locator=_with_channel(_resumed(lost.locator)), percent=lost.percent,
+                        client_ts=now,
                         device_id=device_id
                         or (sides[row.winner_position_id].device_id
                             if row.winner_position_id in sides else lost.device_id),
@@ -559,8 +563,14 @@ def _reported(row: Any) -> Reported:
     )  # fmt: skip
 
 
+def _with_channel(stored: dict[str, Any]) -> dict[str, Any]:
+    """The locator to keep: a page also says it came from the web reader (J5-POS-1: the rule of the
+    read mark is by channel). A place in a reflowable text proves no reading and carries none."""
+    return {**stored, VIA: VIA_WEB} if stored.get("type") == "page" else stored
+
+
 def _stored(row: Any, now_hash: str | None) -> StoredPosition:
-    locator = dict(row.locator)
+    locator = {k: v for k, v in row.locator.items() if k != VIA}  # the server's own mark
     filtered_otherwise = locator.get("type") == "cfi" and locator.get("filter") != (
         current_content_filter()
     )

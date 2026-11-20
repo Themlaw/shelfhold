@@ -177,7 +177,7 @@ def test_reading_position_on_unexported_content_anchor(world: World) -> None:
         row = connection.execute(sa.select(reading.reading_position)).one()
     assert (row.carrier_type, row.carrier_id, row.content_hash) == ("content", content, HASH)
     assert (row.source, row.device_id, row.read_units) == ("device", "tablet", [])
-    assert row.percent == 1.0 and row.locator == {**page(29), "page": 30}
+    assert row.percent == 1.0 and row.locator == {**page(29), "page": 30, "via": "web"}
     assert count(world, export.export_item) == 0  # no export_item was needed
     admin = user_id_of(world.seed.engine, "admin")
     with world.seed.engine.connect() as connection:

@@ -45,7 +45,11 @@ from shelfhold.reading.domain.traversal import (
 log = structlog.get_logger(__name__)
 
 HISTORY_LIMIT = 1000
-SPARSE_WRITER = "kosync:"  # the namespace of the device of KOReader (`kosync._writer`)
+VIA = (
+    "via"  # the channel of a position, set by the server only (a client's locator has no such key)
+)
+VIA_WEB = "web"  # the reader of the web and its offline queue (`ReaderPositions.write`)
+VIA_DELIVERY = "delivery"
 
 __all__ = [
     "InvalidLocatorError",
@@ -367,11 +371,13 @@ def _mark_traversed(
         scale = None if count is None or is_text else float(count)
     else:
         return []
-    # who writes decides which rule judges a move (J5-POS-1): KOReader pushes rarely, so a move may
-    # be judged by its speed; the reader of the web and its offline queue push a page at a time and
-    # let the reader jump anywhere, so only the small gap proves a page was turned (speed 0 admits
-    # none). The two never share a walk: a position of one is never a step of the other's chain.
-    sparse = (row.device_id or "").startswith(SPARSE_WRITER)
+    # the channel that writes decides which rule judges a move (J5-POS-1): the reader of the web
+    # and its offline queue (`via = web`, set by `ReaderPositions.write` on a locator rebuilt from
+    # its parsed fields: a client cannot name its channel, nor take another by its `device_id`)
+    # push a page at a time and let the reader jump anywhere, so only the small gap proves a page
+    # was turned (speed 0 admits none). Every other writer (KOReader on its three paths, a device
+    # token) pushes rarely and keeps the rule by speed. The two never share a walk.
+    sparse = row.locator.get(VIA) != VIA_WEB
     limit = max_pages_per_minute if sparse else 0.0
     history = list(
         connection.execute(
@@ -419,12 +425,12 @@ def _mark_traversed(
 
 
 def _same_pace(table: sa.Table, sparse: bool) -> sa.ColumnElement[bool]:
-    """The positions that can be steps of this walk: KOReader's (`kosync:` writers) for a sparse
-    writer, the others' for a dense one; the delivery of the file (page 0) starts both."""
-    device = table.c.device_id
+    """The positions that can be steps of this walk: the web reader's for a dense writer, the
+    others' for a sparse one; the delivery of the file (page 0) starts both."""
+    via = sa.func.json_extract(table.c.locator, "$." + VIA)
     if sparse:
-        return sa.or_(device.like(SPARSE_WRITER + "%"), device == "delivery")
-    return sa.or_(device.is_(None), device.not_like(SPARSE_WRITER + "%"))
+        return sa.or_(via.is_(None), via != VIA_WEB)
+    return via.in_([VIA_WEB, VIA_DELIVERY])
 
 
 def _same_writer(table: sa.Table, locator: dict[str, Any]) -> list[sa.ColumnElement[bool]]:
@@ -546,7 +552,8 @@ def record_delivery(
     when = now or datetime.now(UTC)
     return insert_position(
         connection, user_id=user_id, carrier_type=carrier_type, carrier_id=carrier_id,
-        content_hash=content_hash, locator={"page": 0}, percent=0.0, client_ts=when,
+        content_hash=content_hash, locator={"page": 0, VIA: VIA_DELIVERY}, percent=0.0,
+        client_ts=when,
         device_id="delivery", source="device", now=when,
     )  # fmt: skip
 

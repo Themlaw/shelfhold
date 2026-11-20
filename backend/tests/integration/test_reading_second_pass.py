@@ -32,10 +32,6 @@ def states(env: ReadingEnv, user: str, units: list[str]) -> list[str]:
     return [got[u].state if u in got else "-" for u in units]
 
 
-# A sparse writer: the device of a KOReader token (the speed rule is its own, J5-POS-1).
-KOREADER = "kosync:reader-1"
-
-
 def report(
     env: ReadingEnv, reader: str, volume: str, page: int, when: datetime, **kw: float
 ) -> str:
@@ -43,7 +39,7 @@ def report(
         return record_position(
             connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
             carrier_id=volume, content_hash=NEW_HASH, locator={"page": page}, percent=None,
-            client_ts=when, now=when, device_id=KOREADER, **kw,
+            client_ts=when, now=when, device_id="reader-1", **kw,
         )  # fmt: skip
 
 

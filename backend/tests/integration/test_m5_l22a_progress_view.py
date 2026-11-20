@@ -87,7 +87,7 @@ def test_a_walk_through_the_pages_of_a_partial_cover_marks_nothing_read(tmp_path
                 record_position(
                     connection, reader_id=reader, subject_id=reader, carrier_type="export_item",
                     carrier_id=volume, content_hash=NEW_HASH, locator={"page": page},
-                    percent=None, client_ts=later, now=later, device_id="kosync:walk",
+                    percent=None, client_ts=later, now=later,
                 )  # fmt: skip
 
         assert _states(env, reader, "reading_progress") == {

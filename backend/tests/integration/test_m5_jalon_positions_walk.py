@@ -43,3 +43,17 @@ def test_web_reader_jump_after_a_few_pages_marks_nothing(world: World) -> None:
     world.env.clock.advance(timedelta(days=1))
     assert put(world, world.admin, content, page(29)).status_code == 200
     assert _state(world, unit) == "in_progress"
+
+
+@pytest.mark.req("EF-LEC-007", "EF-LEC-014")
+@pytest.mark.parametrize("claimed", ["kosync:abcdef0123456789", "delivery", "koreader"])
+def test_a_web_client_cannot_take_the_speed_rule_back_by_its_device_id(
+    world: World, claimed: str
+) -> None:
+    """The channel is the server's: whatever `device_id` the web reader claims, a jump to the last
+    page an hour after the first position stays a look."""
+    content, unit = _paged(world)
+    assert put(world, world.admin, content, page(0), device=claimed).status_code == 200
+    world.env.clock.advance(timedelta(minutes=60))
+    assert put(world, world.admin, content, page(29), device=claimed).status_code == 200
+    assert _state(world, unit) == "in_progress"
