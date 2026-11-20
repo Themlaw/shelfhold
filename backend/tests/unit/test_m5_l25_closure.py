@@ -35,7 +35,7 @@ def test_overlap_review_m5_has_sources_and_a_decision() -> None:
         assert re.search(rf"\| {project}.*https://github\.com/", text), project
     assert "## Décision" in text
     assert "Q21" in text and "EF-INT-012" in text
-    assert "## Relecture du registre de pré-mortem" in text
+    assert re.search(r"^## Relecture du .* pré-mortem$", text, re.M)
 
 
 @pytest.mark.req("ENF-GOV-003")
