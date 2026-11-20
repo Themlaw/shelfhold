@@ -85,7 +85,6 @@ def test_no_allowlist_entry_until_past_milestone() -> None:
             "m4-l43-normalizer-migration",
             "m4-l43-reading-service",
             "deferred-l24-deprecation-window",
-            "unwired-m5-renditions",
         }
         and not (e["until"] == "M6" and "2026-11-19 (M5 L22b)" in e["reason"])
     ]

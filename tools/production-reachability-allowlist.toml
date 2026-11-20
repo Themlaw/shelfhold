@@ -131,11 +131,3 @@ until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md, D18): the first chang
 symbols = [
   "shelfhold.integrations.webhooks.catalogue:Deprecation",
 ]
-
-[[allow]]
-category = "unwired-m5-renditions"
-reason = "2026-11-19 (M5 L18): the page-by-page stream (`pse:stream`) now makes and reads renditions (`render`, `read`). One method of `RenditionService` has no production caller: the method form of `collect_orphans` (the sweep is called by the window job through the module function). 2026-11-19 (M5 L22b): redated M6. L20b (KEPUB, #395) did not wire the method and the sweep itself runs through the module function, from the collection job of thumbnails (`jobs/thumbnail_gc.py`), so nothing is left behind; the method is a thin wrapper that either gets a caller or is deleted with its test, in the next lot that touches `renditions.py` (docs/decisions/M5.md, section of L22b)."
-until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md): a caller for the wrapper, or its deletion
-symbols = [
-  "shelfhold.library.application.renditions:RenditionService.collect_orphans",
-]

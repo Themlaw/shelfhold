@@ -41,6 +41,7 @@ Clôture de M5 : un lecteur intégré (images et EPUB) pour le contenu non expor
 
 - **Kosync (M5 L08, L09)** : les noms de tests de la spécification portent maintenant le comportement livré en M4 (quatre routes, en-têtes, `users/create` fermé, empreinte du fichier exporté, jamais de devinette) ; l'EPUB est traité (voir « Passage d'EPUB »).
 - **Dettes de M5 (L22b)** : six entrées « jusqu'à M5 » de l'allowlist de joignabilité sont redatées M6 par écrit, chacune avec sa raison ; les choix « à valider » de M4 sont clos ou redatés dans `docs/decisions/M5.md`.
+- **Marque « lu » (relecture de jalon M5)** : un saut à la dernière page dans le lecteur web, ou une position isolée envoyée par la file hors ligne, ne marque plus rien ; seules des pages tournées (petits pas) comptent pour le lecteur web, et la règle par vitesse reste celle de KOReader. Un lecteur qui tourne vite peut donc ne rien marquer.
 - **Traçabilité de M5 bloquante (L25)** : le job `traceability` échoue désormais si une exigence de M5 n'a pas de test, comme pour M0 à M4.
 
 ### Sécurité

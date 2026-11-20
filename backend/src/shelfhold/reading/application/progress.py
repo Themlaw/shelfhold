@@ -45,6 +45,7 @@ from shelfhold.reading.domain.traversal import (
 log = structlog.get_logger(__name__)
 
 HISTORY_LIMIT = 1000
+SPARSE_WRITER = "kosync:"  # the namespace of the device of KOReader (`kosync._writer`)
 
 __all__ = [
     "InvalidLocatorError",
@@ -366,6 +367,12 @@ def _mark_traversed(
         scale = None if count is None or is_text else float(count)
     else:
         return []
+    # who writes decides which rule judges a move (J5-POS-1): KOReader pushes rarely, so a move may
+    # be judged by its speed; the reader of the web and its offline queue push a page at a time and
+    # let the reader jump anywhere, so only the small gap proves a page was turned (speed 0 admits
+    # none). The two never share a walk: a position of one is never a step of the other's chain.
+    sparse = (row.device_id or "").startswith(SPARSE_WRITER)
+    limit = max_pages_per_minute if sparse else 0.0
     history = list(
         connection.execute(
             sa.select(table)
@@ -376,6 +383,7 @@ def _mark_traversed(
                 table.c.content_hash == row.content_hash,
                 table.c.source == "device",
                 *_same_writer(table, row.locator),
+                _same_pace(table, sparse),
                 # nor is a position carried over from another Edition (EF-BIB-026): a guess
                 sa.func.json_extract(table.c.locator, "$.transposed").is_(None),
             )
@@ -396,7 +404,7 @@ def _mark_traversed(
             chain,
             spans,
             mode=mode,
-            max_pages_per_minute=max_pages_per_minute,
+            max_pages_per_minute=limit,
             pages_per_unit_of_x=scale,
             after=after,
         )
@@ -408,6 +416,15 @@ def _mark_traversed(
         )
         log.info("reading.read_marked", position=position_id, units=len(marked))
     return marked
+
+
+def _same_pace(table: sa.Table, sparse: bool) -> sa.ColumnElement[bool]:
+    """The positions that can be steps of this walk: KOReader's (`kosync:` writers) for a sparse
+    writer, the others' for a dense one; the delivery of the file (page 0) starts both."""
+    device = table.c.device_id
+    if sparse:
+        return sa.or_(device.like(SPARSE_WRITER + "%"), device == "delivery")
+    return sa.or_(device.is_(None), device.not_like(SPARSE_WRITER + "%"))
 
 
 def _same_writer(table: sa.Table, locator: dict[str, Any]) -> list[sa.ColumnElement[bool]]:

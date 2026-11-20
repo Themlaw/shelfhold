@@ -52,10 +52,6 @@ def _state(world: World, unit: str) -> str:
 
 
 @pytest.mark.req("EF-LEC-007", "EF-LEC-014")
-@pytest.mark.xfail(
-    strict=True,
-    reason="J5-POS-1: the speed rule of KOReader judges the web reader, which can jump anywhere",
-)
 def test_web_reader_jump_to_last_page_an_hour_later_is_not_a_reading(world: World) -> None:
     """The reader opens a 30-page volume (page 1 is written), closes it, and an hour later jumps
     with the slider to the last page: two positions, 29 pages in 60 minutes, under 20 pages a
@@ -71,10 +67,6 @@ def test_web_reader_jump_to_last_page_an_hour_later_is_not_a_reading(world: Worl
 
 
 @pytest.mark.req("EF-LEC-007", "EF-LEC-012")
-@pytest.mark.xfail(
-    strict=True,
-    reason="J5-POS-1: the offline queue keeps one position per file; arrival is judged as a move",
-)
 def test_offline_queue_single_position_marks_nothing_by_its_arrival(world: World) -> None:
     """The offline queue (`frontend/src/lib/offline/store.ts`, `queueNow`) keeps only the latest
     position of a file. A reader who opened a copy (page 1 written online), then looked at the last

@@ -475,10 +475,6 @@ class RenditionService:
             digest = _hex(content_hash)
             _erase(self._data, f"{CACHE_DIR}/{digest[:2]}/{digest}.{kind}")
 
-    def collect_orphans(self) -> int:
-        """See `collect_orphans`: the same sweep, with this service's engine, folder and clock."""
-        return collect_orphans(self._engine, self._data, self._clock)
-
 
 def collect_orphans(engine: sa.Engine, data_dir: Path, clock: Clock) -> int:
     """Erase the files of the cache that no row names and that are older than `STRAY_GRACE` (a

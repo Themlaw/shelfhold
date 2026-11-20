@@ -22,6 +22,7 @@ from shelfhold.library.application.renditions import (
     RenditionBusyError,
     RenditionService,
     SourceTombstones,
+    collect_orphans,
 )
 from shelfhold.library.domain.failures import TombstonedContentError
 from shelfhold.library.domain.rendition import RenditionParams, target_kind
@@ -217,7 +218,7 @@ def test_the_orphan_sweep_knows_a_kepub_file_by_its_name() -> None:
 
         old = NOW.timestamp() - 3600
         os.utime(stray, (old, old))
-        assert service.collect_orphans() == 1
+        assert collect_orphans(env.engine, env.lib.data, clock) == 1
         assert not stray.exists() and service.read(made) is not None
 
 
