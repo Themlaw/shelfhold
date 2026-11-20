@@ -14,8 +14,7 @@ enters an Edition key (`edition_key_lang`). Any addition to the alias table is a
 from dataclasses import dataclass
 
 import langcodes
-
-from shelfhold.sdk.lang import PLACEHOLDER_LANGUAGES, LanguageTag
+from shelfhold_sdk.lang import PLACEHOLDER_LANGUAGES, LanguageTag
 
 LANG_NORMALIZER_NAME = "lang"
 LANG_NORMALIZER_VERSION = 1

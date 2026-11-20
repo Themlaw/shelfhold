@@ -9,10 +9,10 @@ import asyncio
 from datetime import timedelta
 
 import pytest
+from shelfhold_sdk.connected import ConnectedCapability
 
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.wake import Wakes
-from shelfhold.sdk.connected import ConnectedCapability
 from tests.fakes_clock import ManualClock
 from tests.follow_env import Bench, follow_bench, new_chapter
 from tests.wake_env import RecordingHook, make_wakes

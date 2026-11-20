@@ -4,10 +4,10 @@ admin opened for one official feed is not opened for the rest of its site."""
 from __future__ import annotations
 
 import pytest
+from shelfhold_sdk.models import DomainRule
 
 from shelfhold.infrastructure.fetcher import DomainNotAllowed
 from shelfhold.infrastructure.fetcher.guard import DomainAllowlist
-from shelfhold.sdk.models import DomainRule
 
 pytestmark = pytest.mark.req("EF-SRC-003", "ENF-LEG-003")
 

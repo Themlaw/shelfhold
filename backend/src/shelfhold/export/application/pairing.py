@@ -24,6 +24,7 @@ from difflib import SequenceMatcher
 from typing import Final, Literal
 
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -39,7 +40,6 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.library.public import EDITION_KEY_COLUMNS, PlaceRef, TombstoneGate
-from shelfhold.sdk.refs import SeriesRef
 
 __all__ = [
     "AlreadyPairedError",

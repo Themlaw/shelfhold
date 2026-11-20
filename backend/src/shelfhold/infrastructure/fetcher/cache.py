@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from email.utils import parsedate_to_datetime
 from typing import Final
 
-from shelfhold.sdk.fetcher import Response
+from shelfhold_sdk.fetcher import Response
 
 # Request headers that cannot identify an account. Anything else bypasses the cache.
 _HARMLESS: Final = frozenset(

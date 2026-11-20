@@ -4,11 +4,10 @@ import asyncio
 from decimal import Decimal
 
 import pytest
-
-from shelfhold.sdk.connected import ConnectedCapability
-from shelfhold.sdk.refs import FileAsset, RangedPayload, RangeRef, UnitRef
-from shelfhold.sdk.source import Capability, ContentRemoved, SourceError, TemporarilyUnavailable
-from shelfhold.sdk.testing.fakes import FakeRangedConnectedService, fake_ranged_fetcher
+from shelfhold_sdk.connected import ConnectedCapability
+from shelfhold_sdk.refs import FileAsset, RangedPayload, RangeRef, UnitRef
+from shelfhold_sdk.source import Capability, ContentRemoved, SourceError, TemporarilyUnavailable
+from shelfhold_sdk.testing.fakes import FakeRangedConnectedService, fake_ranged_fetcher
 
 
 async def _units(service: FakeRangedConnectedService) -> list:  # type: ignore[type-arg]

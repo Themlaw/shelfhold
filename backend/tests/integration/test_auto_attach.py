@@ -15,6 +15,8 @@ from datetime import timedelta
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating
+from shelfhold_sdk.metadata import FieldProposal, Provenance
 from sqlalchemy import Connection
 
 from shelfhold.catalog.public import (
@@ -39,8 +41,6 @@ from shelfhold.export.application.to_rate import to_rate
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, platform
-from shelfhold.sdk.age import AgeRating
-from shelfhold.sdk.metadata import FieldProposal, Provenance
 from tests.export_env import ExportEnv, Series
 from tests.family_env import (
     NOW,

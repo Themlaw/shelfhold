@@ -4,9 +4,9 @@ import os
 from pathlib import Path
 
 import pytest
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.infrastructure.packaging.comicinfo import ComicInfoData, render_comicinfo
-from shelfhold.sdk.age import AgeRating
 from tests.comicinfo_xsd import kavita_schema
 
 GOLDEN = Path(__file__).parent / "comicinfo"

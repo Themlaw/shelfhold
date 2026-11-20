@@ -5,8 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
-
-from shelfhold.sdk.metadata import (
+from shelfhold_sdk.metadata import (
     EntityRef,
     FieldProposal,
     IdentifyResult,
@@ -15,14 +14,14 @@ from shelfhold.sdk.metadata import (
     Provenance,
     RelationProposal,
 )
-from shelfhold.sdk.models import SDK_VERSION, PluginKind, sdk_supports
-from shelfhold.sdk.testing.fakes import (
+from shelfhold_sdk.models import SDK_VERSION, PluginKind, sdk_supports, sdk_supports_n_minus_1
+from shelfhold_sdk.testing.fakes import (
     FAKE_ISBN,
     FakeMetadataProvider,
     NetworkForbidden,
     fake_metadata_fetcher,
 )
-from shelfhold.sdk.testing.kit import ConformanceReport, run_metadata_conformance
+from shelfhold_sdk.testing.kit import ConformanceReport, run_metadata_conformance
 
 EDITION = EntityRef(entity_type="edition", ids={"isbn13": FAKE_ISBN})
 HINTS = MatchHints(title="Fake Book")
@@ -136,7 +135,7 @@ def test_kit_flags_network_access_outside_the_script() -> None:
 
 @pytest.mark.req("EF-BIB-013")
 def test_auth_declared_requires_login_and_refresh() -> None:
-    from shelfhold.sdk.models import AuthApiKey
+    from shelfhold_sdk.models import AuthApiKey
 
     auth = AuthApiKey(location="header", name="x-key")
     assert _check(
@@ -148,15 +147,16 @@ def test_auth_declared_requires_login_and_refresh() -> None:
 
 
 @pytest.mark.req("EF-BIB-013")
-def test_sdk_1_2_is_compatible_with_n_minus_1() -> None:
-    """D16: MetadataProvider is an addition (SDK 1.2); a 1.1 plugin keeps working."""
-    assert SDK_VERSION == "1.4"  # the destination contract (M4 L03) is the next minor; 1.2 loads
-    assert sdk_supports("1.1") and sdk_supports("1.2") and sdk_supports("1.3")
-    assert not sdk_supports("1.5") and not sdk_supports("2.0")
+def test_sdk_2_is_native_and_1_x_loads_in_the_shim_window() -> None:
+    """D16: MetadataProvider is an addition (SDK 1.2); a 1.x plugin keeps working in the window."""
+    assert SDK_VERSION == "2.0"  # M6 L02: the first published distribution (shelfhold-sdk)
+    assert sdk_supports("2.0") and not sdk_supports("2.1")
+    assert not sdk_supports("1.2")  # strict: another major
+    assert sdk_supports_n_minus_1("1.2")  # api N-1 shim window (D11), until 2027-11
     manifest = FakeMetadataProvider().manifest
-    assert manifest.kind is PluginKind.METADATA and manifest.api == 1 and manifest.min_sdk == "1.2"
+    assert manifest.kind is PluginKind.METADATA and manifest.api == 2 and manifest.min_sdk == "1.2"
     # a manifest written by a later 1.x (unknown field) still loads: additions are optional
-    data = manifest.model_dump(mode="json") | {"added_in_1_3": True}
+    data = manifest.model_dump(mode="json") | {"added_in_1_4": True}
     assert MetadataManifest.model_validate(data) == manifest
-    too_new = FakeMetadataProvider(min_sdk="1.9")
+    too_new = FakeMetadataProvider(min_sdk="2.9")
     assert not _check(_run(too_new), "sdk_compatible")

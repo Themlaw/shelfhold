@@ -7,6 +7,9 @@ from typing import Any
 import pytest
 
 BACKEND = Path(__file__).resolve().parents[2]
+# M6 L02: the uv workspace root holds the lockfile and the `[tool.uv]` supply-chain settings
+# (uv ignores `tool.uv` in a workspace member).
+ROOT = Path(__file__).resolve().parents[3]
 
 # name -> (inclusive floor, exclusive ceiling or None)
 FLOORS: dict[str, tuple[str, str | None]] = {
@@ -36,7 +39,7 @@ def _version(text: str) -> tuple[int, ...]:
 
 
 def _locked() -> dict[str, str]:
-    data = tomllib.loads((BACKEND / "uv.lock").read_text(encoding="utf-8"))
+    data = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
     return {p["name"]: p["version"] for p in data["package"]}
 
 
@@ -65,8 +68,9 @@ def test_dependency_floors_enforced_in_lockfile() -> None:
 @pytest.mark.req("ENF-SEC-016")
 def test_floors_are_declared_in_pyproject_not_only_in_the_lock() -> None:
     project = tomllib.loads((BACKEND / "pyproject.toml").read_text(encoding="utf-8"))
+    uv = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["uv"]
     declared = _names(project["project"]["dependencies"])
-    constrained = _names(project["tool"]["uv"]["constraint-dependencies"])
+    constrained = _names(uv["constraint-dependencies"])
     for name in FLOORS:
         assert name in declared | constrained, f"{name} has no floor in pyproject.toml"
     assert declared >= M1A_RUNTIME | M1B_RUNTIME
@@ -75,8 +79,8 @@ def test_floors_are_declared_in_pyproject_not_only_in_the_lock() -> None:
 
 @pytest.mark.req("ENF-SEC-016")
 def test_exclude_newer_supply_chain_window_is_kept() -> None:
-    project = tomllib.loads((BACKEND / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["tool"]["uv"]["exclude-newer"] == "14 days"
+    uv = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["uv"]
+    assert uv["exclude-newer"] == "14 days"
 
 
 @pytest.mark.req("ENF-SEC-016")

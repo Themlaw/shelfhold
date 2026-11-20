@@ -1,12 +1,12 @@
-# Écrire un fournisseur de métadonnées (SDK 1.4)
+# Écrire un fournisseur de métadonnées (SDK 2.0)
 
 Un fournisseur de métadonnées répond à la question « que sait-on de cette entité ? ». Il propose
 des valeurs avec leur provenance ; l'hôte décide ce qu'il garde et ne remplace jamais un champ
-verrouillé (EF-BIB-008). Le contrat vit dans `shelfhold.sdk.metadata` (licence MIT) et arrive avec
-le **SDK 1.2** : c'est un ajout, un plugin écrit pour le SDK 1.1 continue de fonctionner (`api` N ou
+verrouillé (EF-BIB-008). Le contrat vit dans `shelfhold_sdk.metadata` (licence MIT) et arrive avec
+le **SDK 1.2** : c'est un ajout, un plugin écrit pour le SDK 1.x continue de fonctionner dans la fenêtre du shim (`api` N ou
 N-1, voir l'ADR-0024). Un fournisseur déclare `min_sdk = "1.2"`.
 
-Le contrat reste celui du SDK 1.2 dans le **SDK 1.4** courant (ajouts compatibles seulement). Le kit est décrit
+Le contrat reste celui du SDK 1.2 dans le **SDK 2.0** courant (ajouts compatibles seulement, fenêtre `api` N-1 jusqu'en 2027-11). Le kit est décrit
 dans [kit.md](kit.md), le parcours dans [parcours.md](parcours.md).
 
 La forme s'inspire du concept de source de métadonnées (identifier, couverture, correspondance
@@ -82,8 +82,8 @@ Tome) ; ce que le fournisseur sait de l'Œuvre (rattachement, auteur d'Œuvre) p
 
 ```python
 import asyncio
-from shelfhold.sdk.metadata import EntityRef, MatchHints
-from shelfhold.sdk.testing import FakeFetcher, run_metadata_conformance
+from shelfhold_sdk.metadata import EntityRef, MatchHints
+from shelfhold_sdk.testing import FakeFetcher, run_metadata_conformance
 
 report = asyncio.run(
     run_metadata_conformance(

@@ -1,16 +1,16 @@
 # Le kit de conformité des destinations
 
 Le kit des destinations est le chapitre « destination » du kit de conformité ([kit.md](kit.md)). Il est livré dans
-le SDK (`shelfhold.sdk.testing`, licence MIT), ne dépend d'aucun code de l'hôte et tourne hors réseau, sans
+le SDK (`shelfhold_sdk.testing`, licence MIT), ne dépend d'aucun code de l'hôte et tourne hors réseau, sans
 toucher le disque : une destination **décrit** (plan `FsOp`, `ApiCall`), l'hôte exécute. Une destination n'est
 dite « conforme » que si ce kit passe.
 
 ## Lancer le kit
 
 ```python
-from shelfhold.sdk.fsops import ContentRef, FsOp, FsOpPlan
-from shelfhold.sdk.testing import DestinationScenario, assert_destination_conforms
-from shelfhold.sdk.testing.destination_kit import SYNTHETIC_ITEM
+from shelfhold_sdk.fsops import ContentRef, FsOp, FsOpPlan
+from shelfhold_sdk.testing import DestinationScenario, assert_destination_conforms
+from shelfhold_sdk.testing.destination_kit import SYNTHETIC_ITEM
 
 plan = FsOpPlan(
     ops=(
@@ -34,7 +34,7 @@ def test_my_destination_conforms():
 | `events` | les types d'événements que la destination émet |
 
 Le kit rejoue aussi, seul, `scan_calls` et `inventory_calls` de la destination. La fixture pytest
-`check_destination` (`pytest_plugins = ["shelfhold.sdk.testing.pytest_plugin"]`) enveloppe
+`check_destination` (`pytest_plugins = ["shelfhold_sdk.testing.pytest_plugin"]`) enveloppe
 `assert_destination_conforms`. `run_destination_conformance` rend le rapport complet sans lever.
 
 Le plan doit citer seulement `SYNTHETIC_ITEM`, planifié par le kit. `SYNTHETIC_WATERMARKED` est planifié **et tatoué** :

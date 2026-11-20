@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.catalog.public import (
     AutoAttachService,
@@ -23,7 +24,6 @@ from shelfhold.catalog.public import (
 from shelfhold.config import Settings
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.sdk.age import AgeRating
 from tests.integration.test_schema_catalog import add_edition, add_work
 from tests.l54_env import Bench54, bench54
 from tests.null_tombstones import NO_CATALOG_HITS

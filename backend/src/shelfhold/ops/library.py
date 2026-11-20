@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.refs import SeriesRef
 
 from shelfhold.acquisition.application.upstream import (
     Detacher,
@@ -145,7 +146,6 @@ from shelfhold.ops.backup.scratch import sweep_orphans
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, OpsError, UnknownSubjectError
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.purge_upstream import connected_upstream
-from shelfhold.sdk.refs import SeriesRef
 from shelfhold.work_locks import index_holder
 
 if TYPE_CHECKING:

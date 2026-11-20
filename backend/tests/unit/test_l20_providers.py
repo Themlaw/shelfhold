@@ -16,6 +16,12 @@ from collections.abc import Awaitable, Iterator
 from pathlib import Path
 
 import pytest
+from shelfhold_sdk.metadata import (
+    EntityRef,
+    MatchHints,
+    ProviderCapability,
+    ProviderUnavailable,
+)
 from sqlalchemy import Engine
 
 from shelfhold.infrastructure.db import create_db_engine
@@ -25,12 +31,6 @@ from shelfhold.infrastructure.schema import metadata
 from shelfhold.plugin_host.adapters.native import anilist as anilist_package
 from shelfhold.plugin_host.adapters.native.anilist import AniListProvider, build_manifest
 from shelfhold.plugin_host.provider_fetcher import ProviderFetcher, ProviderRuntime, open_provider
-from shelfhold.sdk.metadata import (
-    EntityRef,
-    MatchHints,
-    ProviderCapability,
-    ProviderUnavailable,
-)
 from tests.fakes.anilist.server import HOST, TITLE, fake_anilist
 from tests.fakes.cassette_server import CassetteServer
 

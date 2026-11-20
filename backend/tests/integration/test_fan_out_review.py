@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.fsops import ContentRef, PlannedContent
 
 from shelfhold.export.application.fan_out import (
     HostContentStore,
@@ -25,7 +26,6 @@ from shelfhold.export.application.withdrawal import _files
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
-from shelfhold.sdk.fsops import ContentRef, PlannedContent
 from tests.detach_env import detach_env
 from tests.export_env import ExportEnv, export_env
 from tests.family_env import family_env, rate

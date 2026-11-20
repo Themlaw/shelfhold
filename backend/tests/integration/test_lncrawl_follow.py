@@ -10,15 +10,15 @@ import hashlib
 from pathlib import Path
 
 import pytest
-
-from shelfhold.acquisition.application.lncrawl_ranges import MAX_TICKET_AGE
-from shelfhold.export.application.ranged_export import RangedExporter, RangedExportError
-from shelfhold.sdk.testing.corpus.trapped_epubs import (
+from shelfhold_sdk.testing.corpus.trapped_epubs import (
     base_traps,
     find_active_css,
     find_active_patterns,
     find_remote_references,
 )
+
+from shelfhold.acquisition.application.lncrawl_ranges import MAX_TICKET_AGE
+from shelfhold.export.application.ranged_export import RangedExporter, RangedExportError
 from tests.fakes.lncrawl import CANARY, FakeLncrawl
 from tests.lncrawl_env import lncrawl_bench
 from tests.ranged_env import ranged_bench, volume_epub

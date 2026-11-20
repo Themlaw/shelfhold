@@ -25,6 +25,7 @@ from datetime import timedelta
 from typing import Any, Literal, Protocol
 
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.acquisition.application.failures import FailureLedger, from_service
@@ -36,7 +37,6 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.requesters import still_a_user
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.plugin_host.errors import ServiceInstanceChanged
-from shelfhold.sdk.refs import SeriesRef
 
 __all__ = [
     "CLAIM_TTL",

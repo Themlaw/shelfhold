@@ -14,13 +14,14 @@ from dataclasses import dataclass, field
 from typing import Final
 from urllib.robotparser import RobotFileParser
 
+from shelfhold_sdk.fetcher import Response
+
 from shelfhold.infrastructure.fetcher.errors import (
     FetchError,
     ProviderQuotaExceeded,
     RobotsDisallowed,
     RobotsUnavailable,
 )
-from shelfhold.sdk.fetcher import Response
 
 ROBOTS_AGENT: Final = "Shelfhold"
 ROBOTS_PATH: Final = "/robots.txt"

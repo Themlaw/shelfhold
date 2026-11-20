@@ -15,12 +15,12 @@ from urllib.parse import quote, quote_plus
 import httpx2
 import pytest
 import structlog
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.source import AuthRequired
 
 from shelfhold.infrastructure.fetcher import DomainNotAllowed
 from shelfhold.library.public import servable_epub
 from shelfhold.plugin_host.errors import NoSourceForUrl
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.source import AuthRequired
 from tests.fakes.standardebooks import FEED_ROOT, download_path
 from tests.gutenberg_env import CLEAN, TRAPPED, RoutedStore
 from tests.standardebooks_env import (

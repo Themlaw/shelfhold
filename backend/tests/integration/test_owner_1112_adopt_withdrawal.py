@@ -144,8 +144,9 @@ def test_a_rating_that_lands_in_between_makes_the_plan_stale() -> None:
             work_id = connection.execute(
                 sa.select(catalog.work.c.id).where(catalog.work.c.title == "Monster")
             ).scalar_one()
+        from shelfhold_sdk.age import AgeRating
+
         from shelfhold.catalog.public import RatingService
-        from shelfhold.sdk.age import AgeRating
 
         with env.engine.begin() as connection:
             RatingService().rate(connection, work_id, AgeRating(10), principal=admin(), now=NOW)

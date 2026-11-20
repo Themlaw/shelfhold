@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating, max_rating, to_columns
 from sqlalchemy import Connection
 
 from shelfhold.catalog.application.changes import track_work_changes
@@ -41,7 +42,6 @@ from shelfhold.catalog.application.work_merge import (
 from shelfhold.infrastructure.event_sequence import invalidate_tokens
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, identity
-from shelfhold.sdk.age import AgeRating, max_rating, to_columns
 
 __all__ = [
     "MergeAlreadyUndoneError",

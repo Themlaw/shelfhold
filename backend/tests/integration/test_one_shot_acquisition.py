@@ -12,13 +12,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import Member, epub_bytes, xhtml, zip_bytes
 
 from shelfhold.acquisition.public import AcquireRefused
 from shelfhold.infrastructure.fetcher import DomainNotAllowed
 from shelfhold.library.public import servable_epub
 from shelfhold.plugin_host.errors import NoSourceForUrl, RefHasSecret
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import Member, epub_bytes, xhtml, zip_bytes
 from tests.acquire_env import BOOK, EVIL, HOST, KEY, PAGE, NativeBooks, acquire_bench
 from tests.library_env import cbz_bytes
 

@@ -11,10 +11,10 @@ from collections.abc import Iterator
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from shelfhold_sdk.testing.corpus.trapped_epubs import epub_bytes, xhtml
 
 from shelfhold.infrastructure.content_trust import NeutralizationError, neutralize
 from shelfhold.infrastructure.xml import safe_parse_xml
-from shelfhold.sdk.testing.corpus.trapped_epubs import epub_bytes, xhtml
 
 pytestmark = pytest.mark.req("EF-LEC-005", "ENF-SEC-004")
 

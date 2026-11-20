@@ -18,6 +18,9 @@ from typing import Any, Final
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.connected import ConnectedCapability
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.refs import SeriesRef
 from sqlalchemy import Connection, Engine
 
 from shelfhold.acquisition.application.upstream_snapshot import (
@@ -35,9 +38,6 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.infrastructure.secrets.vault import SecretVault
-from shelfhold.sdk.connected import ConnectedCapability
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.refs import SeriesRef
 
 __all__ = [
     "CAPABILITY",

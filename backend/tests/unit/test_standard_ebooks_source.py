@@ -8,6 +8,10 @@ import json
 from pathlib import Path
 
 import pytest
+from shelfhold_sdk.models import AuthBasic
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.source import AuthRequired, ContentRemoved
+from shelfhold_sdk.testing.fakes import FakeFetcher
 
 from shelfhold.infrastructure.xml import safe_parse_xml
 from shelfhold.plugin_host.adapters.native.standardebooks import (
@@ -17,10 +21,6 @@ from shelfhold.plugin_host.adapters.native.standardebooks import (
 from shelfhold.plugin_host.adapters.native.standardebooks.source import parse_slug
 from shelfhold.plugin_host.registry import compile_url_pattern
 from shelfhold.plugin_host.source_fetcher import authenticated
-from shelfhold.sdk.models import AuthBasic
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.source import AuthRequired, ContentRemoved
-from shelfhold.sdk.testing.fakes import FakeFetcher
 
 ROOT = Path(__file__).resolve().parents[3]
 SITE = "https://standardebooks.org"

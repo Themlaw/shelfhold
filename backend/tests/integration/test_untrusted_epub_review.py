@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import Member, epub_bytes, xhtml
 
 import shelfhold.library.adapters.epub_derivative as mod
 from shelfhold.infrastructure.archives import safe_open_archive
@@ -16,7 +17,6 @@ from shelfhold.infrastructure.content_trust import (
     neutralize_epub,
 )
 from shelfhold.library.public import OriginalNotServableError, servable_epub
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import Member, epub_bytes, xhtml
 from tests.integration.test_untrusted_epub_pipeline import (
     V2,
     ingest,

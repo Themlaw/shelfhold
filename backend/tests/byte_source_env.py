@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import sqlalchemy as sa
+from shelfhold_sdk.export_target import TargetCapabilities
 
 from shelfhold.export.application.export_items import create_export_item
 from shelfhold.export.application.fan_out import AppliedFile, ensure_trees, record_applied
@@ -25,7 +26,6 @@ from shelfhold.library.public import (
     record_destination_copy,
     record_replica,
 )
-from shelfhold.sdk.export_target import TargetCapabilities
 from tests.export_env import ExportEnv, Series, sha
 from tests.fan_out_env import add_target
 

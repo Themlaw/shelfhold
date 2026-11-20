@@ -5,12 +5,12 @@ The kit runs offline, on synthetic fixtures only (`record_mode = "none"`): any r
 scripted fails. It is delivered as a pytest tool inside the SDK and published with `shelfhold-sdk`.
 """
 
-from shelfhold.sdk.testing.destination_kit import (
+from shelfhold_sdk.testing.destination_kit import (
     DestinationScenario,
     assert_destination_conforms,
     run_destination_conformance,
 )
-from shelfhold.sdk.testing.fakes import (
+from shelfhold_sdk.testing.fakes import (
     FakeFetcher,
     FakeMetadataProvider,
     FakeRangedConnectedService,
@@ -18,7 +18,7 @@ from shelfhold.sdk.testing.fakes import (
     fake_metadata_fetcher,
     fake_ranged_fetcher,
 )
-from shelfhold.sdk.testing.kit import (
+from shelfhold_sdk.testing.kit import (
     CheckResult,
     ConformanceReport,
     assert_conforms,

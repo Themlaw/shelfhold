@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.catalog.public import (
     IncomingUnit,
@@ -22,7 +23,6 @@ from shelfhold.catalog.public import (
 from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog, export, identity
-from shelfhold.sdk.age import AgeRating
 from tests.catalog_env import Harness, at, harness
 
 NOW = datetime(2026, 11, 7, 12, 0, tzinfo=UTC)

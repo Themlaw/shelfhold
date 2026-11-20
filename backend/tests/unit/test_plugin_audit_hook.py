@@ -18,14 +18,14 @@ from typing import Any, ClassVar
 
 import pytest
 import structlog
+from shelfhold_sdk import io_guard
+from shelfhold_sdk.io_guard import ForbiddenIOError, GuardedPlugin, host_io, plugin_io
+from shelfhold_sdk.testing.fakes import FakeRangedConnectedService, fake_ranged_fetcher
+from shelfhold_sdk.testing.kit import assert_conforms, run_source_conformance
 
 from shelfhold.plugin_host import audit_hook
 from shelfhold.plugin_host.audit_hook import audited
 from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
-from shelfhold.sdk import io_guard
-from shelfhold.sdk.io_guard import ForbiddenIOError, GuardedPlugin, host_io, plugin_io
-from shelfhold.sdk.testing.fakes import FakeRangedConnectedService, fake_ranged_fetcher
-from shelfhold.sdk.testing.kit import assert_conforms, run_source_conformance
 
 pytestmark = pytest.mark.req("EF-SRC-002")
 

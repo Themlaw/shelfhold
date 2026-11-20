@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating, to_columns
+from shelfhold_sdk.metadata import FieldProposal
 from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -30,8 +32,6 @@ from shelfhold.catalog.domain.provenance import (
 )
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog
-from shelfhold.sdk.age import AgeRating, to_columns
-from shelfhold.sdk.metadata import FieldProposal
 
 __all__ = [
     "ADMIN_PROVIDER",

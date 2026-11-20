@@ -5,19 +5,19 @@ from collections.abc import Awaitable
 from datetime import timedelta
 
 import pytest
-
-from shelfhold.acquisition.application.failures import from_service
-from shelfhold.acquisition.domain.freshness import cadence, stale_threshold
-from shelfhold.acquisition.public import Disposition, classify, disposition_of
-from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
-from shelfhold.plugin_host.errors import AuthExpired, AuthModeUnsupported, ServiceVersionMismatch
-from shelfhold.sdk.source import (
+from shelfhold_sdk.source import (
     AuthRequired,
     ContentRemoved,
     RateLimited,
     SourceChanged,
     TemporarilyUnavailable,
 )
+
+from shelfhold.acquisition.application.failures import from_service
+from shelfhold.acquisition.domain.freshness import cadence, stale_threshold
+from shelfhold.acquisition.public import Disposition, classify, disposition_of
+from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
+from shelfhold.plugin_host.errors import AuthExpired, AuthModeUnsupported, ServiceVersionMismatch
 
 pytestmark = pytest.mark.req("EF-SRC-009")
 

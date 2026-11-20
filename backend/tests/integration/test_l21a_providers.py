@@ -20,6 +20,7 @@ import httpx2
 import pytest
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.metadata import MatchHints
 from sqlalchemy import Engine
 
 from shelfhold.catalog.application.enrich import EnrichReport, EnrichService
@@ -44,7 +45,6 @@ from shelfhold.plugin_host import provider_fetcher
 from shelfhold.plugin_host.adapters.native.googlebooks import PACIFIC, GoogleBooksProvider
 from shelfhold.plugin_host.adapters.native.googlebooks import build_manifest as gb_manifest
 from shelfhold.plugin_host.provider_fetcher import ProviderRuntime
-from shelfhold.sdk.metadata import MatchHints
 from tests.auth_env import run_cli
 from tests.fakes.cassette_server import PUBLIC, CassetteServer
 from tests.fakes.googlebooks import server as gb

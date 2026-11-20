@@ -24,6 +24,7 @@ from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.events import EVENT_TYPE
 from sqlalchemy import Connection
 
 from shelfhold.events.id_keys import NON_CONTENT_ID_KEYS, NOT_CATALOG_KEYS, is_content_key
@@ -33,7 +34,6 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.requesters import still_a_user
 from shelfhold.infrastructure.schema import platform
-from shelfhold.sdk.events import EVENT_TYPE
 
 log = structlog.get_logger(__name__)
 

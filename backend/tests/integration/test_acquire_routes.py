@@ -13,13 +13,13 @@ from unittest.mock import patch
 import httpx2
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 
 import shelfhold.main as main_module
 from shelfhold.acquisition.public import ACQUIRE_JOB_KIND
 from shelfhold.config import Settings
 from shelfhold.plugin_host import attestation
 from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 from tests.acquire_env import HOST, KEY, PAGE, NativeBooks, Wire
 from tests.auth_env import run_cli
 from tests.fakes_fetcher import Recorder

@@ -23,8 +23,8 @@ import re
 from typing import Any, Final
 from urllib.parse import quote, unquote, urlencode, urlsplit
 
-from shelfhold.sdk.fetcher import Fetcher, Response
-from shelfhold.sdk.models import (
+from shelfhold_sdk.fetcher import Fetcher, Response
+from shelfhold_sdk.models import (
     Cursor,
     DomainRule,
     FilterSpec,
@@ -33,8 +33,8 @@ from shelfhold.sdk.models import (
     PluginKind,
     RateLimit,
 )
-from shelfhold.sdk.refs import FileAsset, ImageRequest, SeriesInfo, SeriesRef, UnitInfo
-from shelfhold.sdk.source import (
+from shelfhold_sdk.refs import FileAsset, ImageRequest, SeriesInfo, SeriesRef, UnitInfo
+from shelfhold_sdk.source import (
     Capability,
     ContentRemoved,
     RateLimited,
@@ -72,7 +72,7 @@ def build_manifest() -> SourceManifest:
         key=KEY,
         kind=PluginKind.SOURCE,
         version="0.1.0",
-        api=1,
+        api=2,
         name="Wikisource (one EPUB per book, with its attribution)",
         permissions=Permissions(
             domains=[

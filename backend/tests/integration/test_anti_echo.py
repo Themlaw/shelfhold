@@ -16,11 +16,11 @@ import pytest
 import sqlalchemy as sa
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 
 from shelfhold.infrastructure.archives import safe_open_archive
 from shelfhold.infrastructure.content_trust.epub_scan import epub_payload_hash
 from shelfhold.library.domain.content_hash import content_hash
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 from tests.acquire_env import Bench, NativeBooks, acquire_bench
 from tests.anti_echo_env import seed_own_export
 from tests.library_env import OLD_COMICINFO, RENDERED_COMICINFO, cbz_bytes

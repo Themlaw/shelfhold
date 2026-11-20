@@ -18,9 +18,10 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from shelfhold_sdk.metadata import AdaptiveLimit, ProviderQuota
+
 from shelfhold.infrastructure.fetcher.day_window import day_key
 from shelfhold.infrastructure.fetcher.errors import ProviderQuotaExceeded
-from shelfhold.sdk.metadata import AdaptiveLimit, ProviderQuota
 
 __all__ = ["BucketStore", "ProviderBuckets", "TokenBucket"]
 

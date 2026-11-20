@@ -18,11 +18,11 @@ from typing import Any
 import pytest
 import structlog
 import yaml
+from shelfhold_sdk.fetcher import Response
 
 from shelfhold.config import ConfigError, Settings, load_settings
 from shelfhold.infrastructure.fetcher.errors import FetchTimeout, SsrfBlocked
 from shelfhold.platform.update_check import UpdateStatus, check_for_update, update_check_enabled
-from shelfhold.sdk.fetcher import Response
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "publish-mirror.yml"

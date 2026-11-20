@@ -7,11 +7,10 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
-
-from shelfhold.sdk.connected import ConnectedCapability
-from shelfhold.sdk.events import PluginEventError, check_plugin_event, plugin_event_type
-from shelfhold.sdk.export_target import ExportTarget, TargetCapabilities
-from shelfhold.sdk.fsops import (
+from shelfhold_sdk.connected import ConnectedCapability
+from shelfhold_sdk.events import PluginEventError, check_plugin_event, plugin_event_type
+from shelfhold_sdk.export_target import ExportTarget, TargetCapabilities
+from shelfhold_sdk.fsops import (
     FsOp,
     FsOpPlan,
     FsOpPlanError,
@@ -19,20 +18,21 @@ from shelfhold.sdk.fsops import (
     is_reserved_path,
     parse_destination_plan,
 )
-from shelfhold.sdk.models import (
+from shelfhold_sdk.models import (
     SDK_VERSION,
     WAITING_EXITS,
     PluginKind,
     PluginManifest,
     PluginWaitingState,
     sdk_supports,
+    sdk_supports_n_minus_1,
 )
-from shelfhold.sdk.source import Source
-from shelfhold.sdk.testing.fakes import (
+from shelfhold_sdk.source import Source
+from shelfhold_sdk.testing.fakes import (
     FakeRangedConnectedService,
     fake_ranged_fetcher,
 )
-from shelfhold.sdk.testing.kit import run_source_conformance
+from shelfhold_sdk.testing.kit import run_source_conformance
 
 
 def _plan(*ops: dict[str, Any]) -> str:
@@ -322,10 +322,11 @@ def test_kit_checks_every_plugin_waiting_state_has_an_exit() -> None:
 
 
 @pytest.mark.req("EF-SRC-036", "ENF-QUAL-003")
-def test_sdk_is_1_4_and_a_1_2_plugin_still_loads() -> None:
-    assert SDK_VERSION == "1.4"  # M4 L03: the destination contract, a minor
-    assert sdk_supports("1.2") and sdk_supports("1.3") and not sdk_supports("1.5")
-    assert not sdk_supports("2.0")
+def test_sdk_is_2_0_and_a_1_x_plugin_still_loads_in_the_shim_window() -> None:
+    assert SDK_VERSION == "2.0"  # M6 L02: the first published distribution (shelfhold-sdk)
+    assert sdk_supports("2.0") and not sdk_supports("2.1")
+    assert not sdk_supports("1.2")  # strict: another major
+    assert sdk_supports_n_minus_1("1.2")  # api N-1 shim window (D11), until 2027-11
 
 
 @pytest.mark.req("EF-SRC-036", "ENF-QUAL-003")
@@ -361,7 +362,7 @@ def test_fetch_range_is_optional_and_the_kit_never_calls_it() -> None:
 
 @pytest.mark.req("EF-SRC-036", "ENF-QUAL-003")
 def test_remote_ids_stable_across_connected_tool_reinstall() -> None:
-    from shelfhold.sdk.refs import SeriesRef
+    from shelfhold_sdk.refs import SeriesRef
 
     stable = FakeRangedConnectedService()
     assert _run(stable).ok
@@ -518,4 +519,4 @@ def test_the_default_fetch_range_does_not_count_as_an_implementation() -> None:
     assert "capabilities_implemented" not in {c.name for c in _run(Real()).failures}
 
 
-FSOPS_DOC = __import__("shelfhold.sdk.fsops", fromlist=["x"]).__doc__ or ""
+FSOPS_DOC = __import__("shelfhold_sdk.fsops", fromlist=["x"]).__doc__ or ""

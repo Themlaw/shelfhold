@@ -11,13 +11,13 @@ base échoue. Le test de propriété n'est donc pas fragile : il trouve un vrai 
 """
 
 import pytest
+from shelfhold_sdk.refs import SeriesRef
 
 from shelfhold.infrastructure.fetcher.refs import SECRET_PLACEHOLDER
 from shelfhold.infrastructure.logging import register_secret_value
 from shelfhold.infrastructure.write_guard import SecretInWriteError, check_write
 from shelfhold.plugin_host.errors import RefHasSecret
 from shelfhold.plugin_host.refs_guard import RefsGuard
-from shelfhold.sdk.refs import SeriesRef
 from tests.redaction_support import forget_secret_values
 
 SECRET = "0000000" + ":"  # not a credential: the shrunk example of Hypothesis

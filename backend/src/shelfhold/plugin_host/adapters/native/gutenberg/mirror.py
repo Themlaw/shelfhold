@@ -14,7 +14,7 @@ import unicodedata
 from typing import Any
 from urllib.parse import urlsplit
 
-from shelfhold.sdk.source import NotConfigured
+from shelfhold_sdk.source import NotConfigured
 
 __all__ = [
     "CATALOG_PATH_PREFIX",

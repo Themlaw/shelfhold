@@ -11,8 +11,8 @@ import json
 import re
 from typing import Any, Final
 
-from shelfhold.sdk.fetcher import Response
-from shelfhold.sdk.source import SourceChanged
+from shelfhold_sdk.fetcher import Response
+from shelfhold_sdk.source import SourceChanged
 
 API: Final = "/api/v1"
 STATUS: Final = "/status"

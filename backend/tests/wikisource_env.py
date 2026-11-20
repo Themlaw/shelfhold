@@ -22,13 +22,13 @@ from unittest.mock import patch
 
 import httpx2
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
 
 from shelfhold.acquisition.public import NativeAcquirer
 from shelfhold.events.bus import EventBus
 from shelfhold.plugin_host import attestation
 from shelfhold.plugin_host.registry import PluginRegistry
 from shelfhold.plugin_host.source_fetcher import SourceFetchers
-from shelfhold.sdk.refs import SeriesRef
 from tests.fakes.wikisource import Page, info_answer, search_answer
 from tests.fakes_fetcher import Recorder
 from tests.follow_env import empty_catalog

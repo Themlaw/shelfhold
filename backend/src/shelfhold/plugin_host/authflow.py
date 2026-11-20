@@ -17,15 +17,16 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, quote_plus, urlencode, urlsplit, urlunsplit
 
+from shelfhold_sdk.fetcher import CookieJarView, DownloadedFile, Fetcher, Response
+from shelfhold_sdk.models import AuthApiKey, AuthBasic, AuthFlow
+from shelfhold_sdk.refs import SECRET_PLACEHOLDER, ImageRequest
+from shelfhold_sdk.source import SourceChanged, TemporarilyUnavailable
+
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.logging import known_secret_values, register_secret_value
 from shelfhold.infrastructure.secret_text import secret_forms
 from shelfhold.infrastructure.secrets.envelope import Envelope, open_with, seal
 from shelfhold.plugin_host.errors import AuthExpired, UnsupportedAuthFlow
-from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Fetcher, Response
-from shelfhold.sdk.models import AuthApiKey, AuthBasic, AuthFlow
-from shelfhold.sdk.refs import SECRET_PLACEHOLDER, ImageRequest
-from shelfhold.sdk.source import SourceChanged, TemporarilyUnavailable
 
 __all__ = [
     "AuthInjectingFetcher",

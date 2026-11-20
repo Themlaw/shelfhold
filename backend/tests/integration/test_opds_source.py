@@ -12,12 +12,12 @@ from urllib.parse import quote, quote_plus
 import httpx2
 import pytest
 import structlog
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.source import SourceError
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 
 from shelfhold.acquisition.public import AcquireRefused
 from shelfhold.library.public import servable_epub
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.source import SourceError
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 from tests.fakes.opds import ATOM, acquisition_entry, atom_feed
 from tests.opds_env import (
     EVIL,
@@ -496,8 +496,9 @@ def test_opds_references_hold_no_secret_whatever_the_feed_puts_in_a_link() -> No
 def test_opds_manifest_is_untrusted_and_bound_to_the_configured_host() -> None:
     from pathlib import Path
 
+    from shelfhold_sdk.source import Capability, SourceManifest
+
     from shelfhold.plugin_host.native_sources import opds_source
-    from shelfhold.sdk.source import Capability, SourceManifest
 
     source = opds_source()
     on_disk = SourceManifest.model_validate_json(
@@ -556,7 +557,7 @@ def test_opds_2_0_catalogue_search_and_acquire() -> None:
 
 @pytest.mark.req("EF-SRC-006")
 def test_opds_http_errors_are_typed_source_errors() -> None:
-    from shelfhold.sdk.source import (
+    from shelfhold_sdk.source import (
         AuthRequired,
         ContentRemoved,
         RateLimited,
@@ -584,7 +585,7 @@ def test_opds_http_errors_are_typed_source_errors() -> None:
 
 @pytest.mark.req("EF-SRC-006")
 def test_opds_html_or_garbage_instead_of_a_feed_is_a_source_that_changed() -> None:
-    from shelfhold.sdk.source import SourceChanged
+    from shelfhold_sdk.source import SourceChanged
 
     for body in (b"<html><body>login</body></html>", b"\x00\xff\x00", b"{}", b""):
         with opds_bench(auth="none", base_path="/opds") as b:
@@ -611,7 +612,7 @@ def test_opds_credentials_chosen_but_not_set_send_nothing() -> None:
         with opds_bench(auth=mode, base_path="/opds") as b:
             serve_komga(b, {"tome-1.epub": CLEAN})
             b.secrets.pop(secret_name)
-            from shelfhold.sdk.source import AuthRequired
+            from shelfhold_sdk.source import AuthRequired
 
             with pytest.raises(AuthRequired):
                 search(b)

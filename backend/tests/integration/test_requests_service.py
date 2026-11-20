@@ -610,8 +610,9 @@ def test_work_the_library_holds_arrives_at_once_and_a_stricter_age_replaces_a_la
 
 @pytest.mark.req("EF-USR-010")
 def test_an_age_is_written_over_a_laxer_one_never_over_a_stricter_one(settings: Settings) -> None:
+    from shelfhold_sdk.age import AgeRating
+
     from shelfhold.acquisition.application.requests import _to_apply
-    from shelfhold.sdk.age import AgeRating
 
     with rig(settings) as r, r.engine.begin() as connection:
         rated = bind_work(connection, "alpha", "x1", rated=True)  # rated 6

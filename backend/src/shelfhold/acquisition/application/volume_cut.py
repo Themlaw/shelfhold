@@ -20,6 +20,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from shelfhold_sdk.refs import UnitInfo
+
 from shelfhold.library.public import (
     DEFAULT_POLICY,
     DEFAULT_VOLUME_SIZE,
@@ -28,7 +30,6 @@ from shelfhold.library.public import (
     parse_policy,
     volume_slices,
 )
-from shelfhold.sdk.refs import UnitInfo
 
 __all__ = ["CUT_MARK", "VolumeCut", "cut_volumes", "is_cut"]
 

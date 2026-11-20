@@ -17,26 +17,16 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, ClassVar, Literal
 
-from shelfhold.catalog.lang import LanguageError, normalize_lang
-from shelfhold.infrastructure.clock import DEFAULT_SKEW
-from shelfhold.integrations.suwayomi.settings import read_local_source
-from shelfhold.plugin_host.adapters.meta.suwayomi import queries as q
-from shelfhold.plugin_host.adapters.meta.suwayomi.versions import is_supported
-from shelfhold.plugin_host.errors import (
-    AuthExpired,
-    AuthModeUnsupported,
-    ServiceVersionMismatch,
-)
-from shelfhold.sdk.connected import (
+from shelfhold_sdk.connected import (
     ConnectedCapability,
     ReleaseResult,
     ServiceHealth,
     Ticket,
     TicketState,
 )
-from shelfhold.sdk.fetcher import Fetcher, Response
-from shelfhold.sdk.lang import LanguageTag
-from shelfhold.sdk.models import (
+from shelfhold_sdk.fetcher import Fetcher, Response
+from shelfhold_sdk.lang import LanguageTag
+from shelfhold_sdk.models import (
     API_VERSION,
     AuthBasic,
     Cursor,
@@ -45,7 +35,7 @@ from shelfhold.sdk.models import (
     PluginKind,
     RateLimit,
 )
-from shelfhold.sdk.refs import (
+from shelfhold_sdk.refs import (
     FileAsset,
     ImageRequest,
     RangedPayload,
@@ -56,7 +46,7 @@ from shelfhold.sdk.refs import (
     UnitPayload,
     UnitRef,
 )
-from shelfhold.sdk.source import (
+from shelfhold_sdk.source import (
     AuthRequired,
     Capability,
     ContentRemoved,
@@ -65,6 +55,17 @@ from shelfhold.sdk.source import (
     SourceManifest,
     SubSource,
     TemporarilyUnavailable,
+)
+
+from shelfhold.catalog.lang import LanguageError, normalize_lang
+from shelfhold.infrastructure.clock import DEFAULT_SKEW
+from shelfhold.integrations.suwayomi.settings import read_local_source
+from shelfhold.plugin_host.adapters.meta.suwayomi import queries as q
+from shelfhold.plugin_host.adapters.meta.suwayomi.versions import is_supported
+from shelfhold.plugin_host.errors import (
+    AuthExpired,
+    AuthModeUnsupported,
+    ServiceVersionMismatch,
 )
 
 KEY = "suwayomi"

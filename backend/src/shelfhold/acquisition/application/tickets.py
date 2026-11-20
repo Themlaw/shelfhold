@@ -20,6 +20,10 @@ from typing import Any, Protocol
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.connected import ConnectedService, Ticket
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.refs import FileAsset, SeriesRef, UnitInfo, UnitRef
+from shelfhold_sdk.source import RateLimited, SourceChanged, TemporarilyUnavailable
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -42,10 +46,6 @@ from shelfhold.library.public import (
     receive_cbz,
     sniff_kind,
 )
-from shelfhold.sdk.connected import ConnectedService, Ticket
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.refs import FileAsset, SeriesRef, UnitInfo, UnitRef
-from shelfhold.sdk.source import RateLimited, SourceChanged, TemporarilyUnavailable
 
 MAX_ATTEMPTS = 8
 log = structlog.get_logger(__name__)

@@ -17,13 +17,13 @@ from __future__ import annotations
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.api_call import ApiCall
+from shelfhold_sdk.export_target import TargetCapabilities
 from sqlalchemy import Connection, Engine
 
 from shelfhold.export.application.plan_executor import PlanBinding
 from shelfhold.export.targets.cwa.destination import CwaDestination, DropSpec
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.sdk.api_call import ApiCall
-from shelfhold.sdk.export_target import TargetCapabilities
 
 __all__ = ["KIND", "CwaSource"]
 

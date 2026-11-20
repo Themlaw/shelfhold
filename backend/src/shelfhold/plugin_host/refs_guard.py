@@ -19,12 +19,12 @@ from typing import Any, Final, cast
 from urllib.parse import quote
 
 from pydantic import BaseModel
+from shelfhold_sdk.refs import SECRET_PLACEHOLDER
 
 from shelfhold.infrastructure.fetcher.refs import SecretInRef, check_ref, rewrite_ref
 from shelfhold.infrastructure.logging import known_secret_index
 from shelfhold.infrastructure.secret_text import SecretIndex, contains_secret
 from shelfhold.plugin_host.errors import RefHasSecret
-from shelfhold.sdk.refs import SECRET_PLACEHOLDER
 
 __all__ = ["RefsGuard", "ScreenedService", "screened", "secret_of", "values_of"]
 

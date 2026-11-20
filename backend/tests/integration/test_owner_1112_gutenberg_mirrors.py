@@ -5,11 +5,11 @@ does every other host under the project's names. Nothing here reaches a network.
 from __future__ import annotations
 
 import pytest
+from shelfhold_sdk.source import NotConfigured
 
 from shelfhold.acquisition.public import AcquireRefused
 from shelfhold.infrastructure.fetcher import DomainNotAllowed
 from shelfhold.plugin_host.adapters.native.gutenberg import mirror
-from shelfhold.sdk.source import NotConfigured
 from tests.gutenberg_env import (
     CATALOG_URL,
     CLEAN,

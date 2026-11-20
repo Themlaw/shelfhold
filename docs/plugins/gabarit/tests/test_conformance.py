@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from plugin_gabarit.source import ExampleSource
-from shelfhold.sdk.testing import FakeFetcher, assert_conforms
+from shelfhold_sdk.testing import FakeFetcher, assert_conforms
 
 CASSETTE = Path(__file__).parent / "cassettes" / "catalogue.json"
 

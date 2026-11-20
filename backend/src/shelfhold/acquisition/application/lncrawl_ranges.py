@@ -17,9 +17,10 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Final
 from urllib.parse import urlsplit
 
+from shelfhold_sdk.refs import RangedPayload
+
 from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.library.public import Received, sniff_kind
-from shelfhold.sdk.refs import RangedPayload
 
 if TYPE_CHECKING:
     from shelfhold.acquisition.application.ranges import Keeper, RangeUnit

@@ -6,8 +6,8 @@ command also says ``--no-index``) into a ``site-packages`` of its own under ``<d
 which is never on ``sys.path`` (``registry``: a finder after all others serves granted
 plugins). Before any file is written the wheel is read as a zip and refused when:
 
-- its distribution name, after PEP 503 normalisation, is the host's or one of its dependencies'
-  (``shelfhold``, ``shelfhold-sdk``, ``httpx``...) or an installed plugin's;
+- its distribution name, after PEP 503 normalisation, is the host's, the SDK's or one of their
+  dependencies' (``shelfhold``, ``shelfhold-sdk``, ``httpx``...) or an installed plugin's;
 - one of its top-level modules is a standard-library module, a module the host can import or a
   name already imported (a plugin can neither mask nor extend the host);
 - it carries a ``.pth`` file, a ``.data`` directory, a path leaving the archive, or a
@@ -49,7 +49,11 @@ from shelfhold.plugin_host.registry import normalise_name as normalise_name
 ENV_ALLOW = "SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS"
 CONFIRMATION = "mêmes droits que Shelfhold"
 RESERVED_DISTRIBUTIONS = frozenset({"shelfhold", "shelfhold-sdk", "httpx", "httpcore"})
-RESERVED_MODULES = frozenset({"shelfhold", "httpx", "httpcore"})  # whatever is installed here
+# M6 L02 (D10): the SDK is its own distribution (`shelfhold_sdk`); a plugin shipping that
+# top-level module would shadow it, so the name is reserved like the host's own.
+RESERVED_MODULES = frozenset(
+    {"shelfhold", "shelfhold_sdk", "httpx", "httpcore"}
+)  # whatever is installed here
 PIP_FLAGS = ("--only-binary", ":all:", "--require-hashes", "--no-deps", "--no-index")
 NO_COMPILE = {
     "pip": "--no-compile",

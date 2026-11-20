@@ -11,9 +11,9 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
-from shelfhold.sdk.age import AgeRating
-from shelfhold.sdk.lang import LanguageTag
-from shelfhold.sdk.models import SdkModel
+from shelfhold_sdk.age import AgeRating
+from shelfhold_sdk.lang import LanguageTag
+from shelfhold_sdk.models import SdkModel
 
 # Where a credential sits in a reference (an OPDS feed that carries the API key in its path), a
 # source writes this placeholder instead and the host puts the key back when it sends the request

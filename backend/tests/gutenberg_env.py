@@ -23,6 +23,8 @@ from unittest.mock import patch
 
 import httpx2
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 
 from shelfhold.acquisition.public import NativeAcquirer
 from shelfhold.events.bus import EventBus
@@ -36,8 +38,6 @@ from shelfhold.plugin_host.adapters.native.gutenberg import GutenbergSource
 from shelfhold.plugin_host.gutenberg_rdf import read_rdf
 from shelfhold.plugin_host.registry import PluginRegistry
 from shelfhold.plugin_host.source_fetcher import SourceFetchers
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 from tests.fakes_fetcher import Recorder
 from tests.follow_env import empty_catalog
 from tests.library_env import LibEnv, lib_env

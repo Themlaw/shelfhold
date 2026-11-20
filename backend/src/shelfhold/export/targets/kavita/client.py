@@ -19,6 +19,8 @@ from typing import Any, Final
 from urllib.parse import quote, urlencode, urlsplit
 
 import structlog
+from shelfhold_sdk.api_call import JsonBody
+from shelfhold_sdk.export_target import ApiCall
 
 from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.application.target_health import TargetHealth
@@ -52,8 +54,6 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
 from shelfhold.infrastructure.logging import elapsed_ms, register_secret_value
 from shelfhold.infrastructure.wake import WakeDeferred
-from shelfhold.sdk.api_call import JsonBody
-from shelfhold.sdk.export_target import ApiCall
 
 HUB_PLUGIN_NAME: Final = "Shelfhold"  # what Kavita's `authenticate` asks the caller to be called
 BULK_BATCH: Final = 100  # `parse-bulk` takes 100 names at most

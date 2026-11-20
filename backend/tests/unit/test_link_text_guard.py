@@ -1,6 +1,7 @@
 # ruff: noqa: E501
-"""EF-BIB-027, EF-EXP-015: a plain text guard on `backend/src`, because a syntax-tree guard is
-reached round (`import os as o`, `import posix`, `Path.hardlink_to`, `getattr(os, "li" + "nk")`).
+"""EF-BIB-027, EF-EXP-015: a plain text guard on `backend/src` and the SDK tree (`sdk/src`),
+because a syntax-tree guard is reached round (`import os as o`, `import posix`,
+`Path.hardlink_to`, `getattr(os, "li" + "nk")`).
 Every line that can make a hard or a symbolic link is named here, in a closed list: the probe, the
 lease, the no-clobber put, the private-file writer of the keyring, the archive store, and the one
 road of the option (`link_fd` under `link_replaceable`). A new line is a decision, reviewed as such."""
@@ -14,6 +15,9 @@ from pathlib import Path
 import pytest
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "shelfhold"
+# M6 L02: the SDK lives in its own distribution (`sdk/src/shelfhold_sdk`); its files are scanned
+# under the same `sdk/` prefix, so the closed list below keeps its keys unchanged.
+SDK_SRC = Path(__file__).resolve().parents[3] / "sdk" / "src" / "shelfhold_sdk"
 
 FORMS = [
     r"\b(?:hard|sym)link_to\b",
@@ -202,13 +206,14 @@ def hits_in(text: str) -> list[str]:
 @pytest.mark.req("EF-BIB-027", "EF-EXP-015")
 def test_no_line_of_the_source_can_make_a_link_outside_the_closed_list() -> None:
     found: dict[str, Counter[str]] = {}
-    for path in sorted(SRC.rglob("*.py")):
-        rel = path.relative_to(SRC).as_posix()
-        if rel.startswith("sdk/testing/corpus/"):
-            continue  # builders of hostile test archives: they never touch the disk
-        lines = Counter(hits_in(path.read_text(encoding="utf-8")))
-        if lines:
-            found[rel] = lines
+    for root, prefix in ((SRC, ""), (SDK_SRC, "sdk/")):
+        for path in sorted(root.rglob("*.py")):
+            rel = prefix + path.relative_to(root).as_posix()
+            if rel.startswith("sdk/testing/corpus/"):
+                continue  # builders of hostile test archives: they never touch the disk
+            lines = Counter(hits_in(path.read_text(encoding="utf-8")))
+            if lines:
+                found.setdefault(rel, Counter()).update(lines)
     offenders = [
         f"{rel}: {line}"
         for rel, lines in found.items()

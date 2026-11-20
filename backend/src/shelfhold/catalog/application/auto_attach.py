@@ -41,6 +41,8 @@ from datetime import datetime
 from typing import Any, Protocol
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating
+from shelfhold_sdk.metadata import FieldProposal
 from sqlalchemy import Connection
 
 from shelfhold.catalog.application.changes import track_work_changes
@@ -79,8 +81,6 @@ from shelfhold.identity.public import (
 )
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
-from shelfhold.sdk.age import AgeRating
-from shelfhold.sdk.metadata import FieldProposal
 
 __all__ = [
     "ATTACH_SUGGESTED",

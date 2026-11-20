@@ -6,9 +6,10 @@ measured, `queries.login` and `queries.refresh_token`) and the lifetime of the a
 
 from collections.abc import Callable, Mapping
 
+from shelfhold_sdk.fetcher import Fetcher
+
 from shelfhold.plugin_host.adapters.meta.suwayomi import queries as q
 from shelfhold.plugin_host.authflow import JwtDialect, JwtFetcher
-from shelfhold.sdk.fetcher import Fetcher
 
 SUWAYOMI_JWT = JwtDialect(
     path=q.GRAPHQL_PATH,

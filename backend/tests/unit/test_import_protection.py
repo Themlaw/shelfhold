@@ -11,6 +11,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import Member, zip_bytes
 
 from shelfhold.i18n import t
 from shelfhold.infrastructure.content_trust.protection import (
@@ -29,7 +30,6 @@ from shelfhold.library.adapters.import_scan import (
     is_audio_head,
 )
 from shelfhold.library.adapters.pdf_store import NotAPdfError, check_pdf_shape
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import Member, zip_bytes
 from tests.import_env import (
     ADOBE_FONTS,
     AES,

@@ -6,14 +6,15 @@ gives the class under which `source_failure` counts an error; only `content` cou
 disabling of a source (EF-BIB-042), so an authentication, version or schema problem pauses instead.
 """
 
-from shelfhold.events.waiting_state import WaitingState
-from shelfhold.infrastructure.content_trust import UntrustedEntryError
-from shelfhold.sdk.source import (
+from shelfhold_sdk.source import (
     AuthRequired,
     ContentRemoved,
     SourceChanged,
     SourceError,
 )
+
+from shelfhold.events.waiting_state import WaitingState
+from shelfhold.infrastructure.content_trust import UntrustedEntryError
 
 AUTH_MODE_MESSAGE = "mode multi-comptes indisponible dans cette version"
 

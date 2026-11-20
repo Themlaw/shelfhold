@@ -14,18 +14,18 @@ from typing import Any
 
 import pytest
 import structlog
-
-from shelfhold.plugin_host.adapters.native.googlebooks import PACIFIC, GoogleBooksProvider
-from shelfhold.plugin_host.adapters.native.googlebooks import build_manifest as gb_manifest
-from shelfhold.plugin_host.adapters.native.hardcover import HardcoverProvider
-from shelfhold.plugin_host.adapters.native.hardcover import build_manifest as hc_manifest
-from shelfhold.sdk.metadata import (
+from shelfhold_sdk.metadata import (
     EntityRef,
     IdentifyResult,
     MatchHints,
     ProviderCapability,
     ProviderUnavailable,
 )
+
+from shelfhold.plugin_host.adapters.native.googlebooks import PACIFIC, GoogleBooksProvider
+from shelfhold.plugin_host.adapters.native.googlebooks import build_manifest as gb_manifest
+from shelfhold.plugin_host.adapters.native.hardcover import HardcoverProvider
+from shelfhold.plugin_host.adapters.native.hardcover import build_manifest as hc_manifest
 from tests.fakes.cassette_server import CassetteServer
 from tests.fakes.googlebooks import server as gb
 from tests.fakes.hardcover import server as hc

@@ -6,13 +6,13 @@ from typing import Any
 from urllib.parse import quote, quote_plus, urlencode
 
 import pytest
+from shelfhold_sdk.fetcher import CookieJarView, DownloadedFile, Response
+from shelfhold_sdk.models import AuthApiKey, AuthBasic, AuthForm, AuthInteractive
+from shelfhold_sdk.refs import ImageRequest
 
 from shelfhold.infrastructure.fetcher.errors import InvalidFetchUrl
 from shelfhold.infrastructure.logging import redact_value
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher, UnsupportedAuthFlow
-from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Response
-from shelfhold.sdk.models import AuthApiKey, AuthBasic, AuthForm, AuthInteractive
-from shelfhold.sdk.refs import ImageRequest
 from tests.redaction_support import forget_secret_values
 
 SECRET = "s3cr3t-value-for-tests"  # noqa: S105

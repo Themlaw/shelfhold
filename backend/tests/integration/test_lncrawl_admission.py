@@ -36,7 +36,7 @@ def test_lncrawl_rate_limit_is_one_request_per_second() -> None:
     manifest_path = (
         Path(__file__).resolve().parents[3] / "sources" / "meta_lncrawl" / "manifest.json"
     )
-    from shelfhold.sdk.source import SourceManifest
+    from shelfhold_sdk.source import SourceManifest
 
     on_disk = SourceManifest.model_validate_json(manifest_path.read_text())
     assert on_disk.rate_limit.requests_per_second == 1.0

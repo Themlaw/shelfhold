@@ -5,12 +5,12 @@ Unit, and which command the administrator runs: a command that exists, checked a
 of the CLI and the table of the waiting states."""
 
 import pytest
+from shelfhold_sdk import source as sdk
 
 from shelfhold.i18n import load_catalog
 from shelfhold.ops.health import action_of
 from shelfhold.plugin_host import errors as host_errors
 from shelfhold.plugin_host import health
-from shelfhold.sdk import source as sdk
 from tests.health_env import cli_exists
 
 

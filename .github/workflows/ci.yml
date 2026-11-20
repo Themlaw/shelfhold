@@ -67,6 +67,8 @@ jobs:
           predicate-quantifier: some-with-excludes
           filters: |
             core:
+              - 'pyproject.toml'
+              - 'uv.lock'
               - 'backend/**'
               - '!backend/tests/unit/**'
               - '!backend/tests/integration/**'
@@ -75,6 +77,7 @@ jobs:
               - '!backend/tests/property/**'
               - '!backend/tests/bench/**'
               - '!backend/**/*.md'
+              - 'sdk/**'
               - 'docker/**'
               - 'frontend/**'
               - 'open-api/**'
@@ -123,9 +126,11 @@ jobs:
               - 'e2e/**'
               - '.github/workflows/ci.yml'
             image:
+              - 'pyproject.toml'
+              - 'uv.lock'
               - 'backend/pyproject.toml'
-              - 'backend/uv.lock'
               - 'backend/src/**'
+              - 'sdk/**'
               - 'frontend/**'
               - 'docker/**'
               - 'open-api/**'
@@ -183,7 +188,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: ruff check
@@ -327,7 +332,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: pytest (shard, coverage data only)
@@ -362,7 +367,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: pytest (integration, coverage data only)
@@ -398,7 +403,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: pytest (suite, coverage data only)
@@ -430,7 +435,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --project backend --locked
       - name: pytest (bench)
@@ -456,7 +461,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Install dependencies
         run: uv sync --project backend --locked
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -492,7 +497,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - name: Regenerate synthetic fixtures and verify manifest
         working-directory: backend
         run: |
@@ -551,7 +556,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -591,7 +596,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -657,7 +662,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -710,7 +715,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -759,7 +764,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
@@ -805,7 +810,7 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          cache-dependency-glob: uv.lock
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"

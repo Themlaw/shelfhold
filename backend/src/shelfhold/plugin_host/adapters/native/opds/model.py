@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Final, Literal
 from urllib.parse import urljoin, urlsplit
 
-from shelfhold.sdk.source import SourceChanged
+from shelfhold_sdk.source import SourceChanged
 
 __all__ = [
     "ACCEPTED_TYPES",

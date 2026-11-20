@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from functools import cache
 from typing import Final, Literal
 
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import (
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import (
     CONTAINER,
     EPUB_NS,
     SVG_NS,

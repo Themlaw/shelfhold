@@ -24,6 +24,29 @@ from collections.abc import Mapping
 from typing import Any, Final
 from urllib.parse import unquote, urlsplit
 
+from shelfhold_sdk.fetcher import Fetcher, Response
+from shelfhold_sdk.models import API_VERSION as API
+from shelfhold_sdk.models import (
+    AuthApiKey,
+    AuthBasic,
+    Cursor,
+    FilterSpec,
+    Page,
+    PluginKind,
+    RateLimit,
+)
+from shelfhold_sdk.refs import FileAsset, ImageRequest, SeriesInfo, SeriesRef, UnitInfo
+from shelfhold_sdk.source import (
+    AuthRequired,
+    Capability,
+    ContentRemoved,
+    NotConfigured,
+    RateLimited,
+    SourceChanged,
+    SourceManifest,
+    TemporarilyUnavailable,
+)
+
 from shelfhold.plugin_host.adapters.native.opds import json as opds_json
 from shelfhold.plugin_host.adapters.native.opds import opensearch
 from shelfhold.plugin_host.adapters.native.opds.atom import ParseXml, parse_atom
@@ -34,28 +57,6 @@ from shelfhold.plugin_host.adapters.native.opds.model import (
     absolute,
     media_type,
     origin_of,
-)
-from shelfhold.sdk.fetcher import Fetcher, Response
-from shelfhold.sdk.models import API_VERSION as API
-from shelfhold.sdk.models import (
-    AuthApiKey,
-    AuthBasic,
-    Cursor,
-    FilterSpec,
-    Page,
-    PluginKind,
-    RateLimit,
-)
-from shelfhold.sdk.refs import FileAsset, ImageRequest, SeriesInfo, SeriesRef, UnitInfo
-from shelfhold.sdk.source import (
-    AuthRequired,
-    Capability,
-    ContentRemoved,
-    NotConfigured,
-    RateLimited,
-    SourceChanged,
-    SourceManifest,
-    TemporarilyUnavailable,
 )
 
 __all__ = ["KEY", "MAX_PAGES", "NotConfigured", "OpdsSource", "build_manifest"]
@@ -89,7 +90,7 @@ SETTINGS_SCHEMA: Final[dict[str, Any]] = {
 
 def build_manifest() -> SourceManifest:
     """Same content as `sources/opds/manifest.json` (a test keeps the two equal)."""
-    from shelfhold.sdk.models import DomainRule, Permissions
+    from shelfhold_sdk.models import DomainRule, Permissions
 
     return SourceManifest(
         key=KEY,

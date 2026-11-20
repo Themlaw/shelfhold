@@ -1,6 +1,7 @@
 """L08 (EF-BIB-037, EF-BIB-036, EF-BIB-055): age of a Work, of an Edition, admission."""
 
 import pytest
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.catalog.public import (
     Admission,
@@ -10,7 +11,6 @@ from shelfhold.catalog.public import (
     content_warning_age,
     effective_age,
 )
-from shelfhold.sdk.age import AgeRating
 
 ALL = AgeRating(0)
 TEEN = AgeRating(13)

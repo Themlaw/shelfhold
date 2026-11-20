@@ -10,11 +10,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import shelfhold_sdk as sdk_package
 from pydantic import ValidationError
-
-import shelfhold.sdk as sdk_package
-from shelfhold.sdk import export_target
-from shelfhold.sdk.api_call import (
+from shelfhold_sdk import export_target
+from shelfhold_sdk.api_call import (
     ApiCall,
     ApiCallError,
     ContentBody,
@@ -23,7 +22,7 @@ from shelfhold.sdk.api_call import (
     RawEncoding,
     check_api_call,
 )
-from shelfhold.sdk.export_target import (
+from shelfhold_sdk.export_target import (
     ExportTarget,
     MetadataUpdateSupport,
     TargetCapabilities,
@@ -31,7 +30,7 @@ from shelfhold.sdk.export_target import (
     copy_can_verify,
     metadata_change_route,
 )
-from shelfhold.sdk.fsops import (
+from shelfhold_sdk.fsops import (
     ContentRef,
     FsOp,
     FsOpPlan,
@@ -39,8 +38,8 @@ from shelfhold.sdk.fsops import (
     PlannedContent,
     check_destination_plan,
 )
-from shelfhold.sdk.models import SDK_VERSION, sdk_supports
-from shelfhold.sdk.testing.kit import run_destination_declaration_check
+from shelfhold_sdk.models import SDK_VERSION, sdk_supports, sdk_supports_n_minus_1
+from shelfhold_sdk.testing.kit import run_destination_declaration_check
 
 FAKE_SECRET = "fake-secret-0000-not-a-credential"  # noqa: S105 - a placeholder for the tests
 
@@ -380,10 +379,11 @@ class Legacy13Destination:
 
 
 @pytest.mark.req("EF-EXP-001", "EF-EXP-065", "ENF-QUAL-003")
-def test_export_target_sdk_1_4_is_n_minus_1_compatible() -> None:
-    assert SDK_VERSION == "1.4"
-    assert sdk_supports("1.3") and sdk_supports("1.4") and not sdk_supports("1.5")
-    assert not sdk_supports("2.0")
+def test_export_target_sdk_2_is_native_and_1_x_loads_in_the_shim_window() -> None:
+    assert SDK_VERSION == "2.0"  # M6 L02: the first published distribution
+    assert sdk_supports("2.0") and not sdk_supports("2.1")
+    assert not sdk_supports("1.4")  # strict: another major
+    assert sdk_supports_n_minus_1("1.4")  # api N-1 shim window (D11), until 2027-11
 
     legacy = Legacy13Destination()
     caps = legacy.capabilities  # loaded as it was, from its 1.3 JSON
@@ -398,10 +398,10 @@ def test_export_target_sdk_1_4_is_n_minus_1_compatible() -> None:
         assert call.body is None
     # the route of a metadata change for it is the rewrite proposal
     assert metadata_change_route(caps, {"title"}).rewrite_proposal == {"title"}
-    # the Kavita-only members stay in the Protocol (removed at SDK 2.0, not before)
+    # the Kavita-only members are gone from the Protocol since SDK 2.0 (M6 L02)
     for name in ("parse_name_call", "ensure_library_call", "resolve_remote_calls",
                  "event_subscription", "progress_calls"):  # fmt: skip
-        assert hasattr(ExportTarget, name)
+        assert not hasattr(ExportTarget, name)
 
 
 # --- review of #275: a frozen call, the host's own copy, the closed lists --------------------
@@ -411,7 +411,7 @@ def test_export_target_sdk_1_4_is_n_minus_1_compatible() -> None:
 def test_parse_api_call_returns_the_hosts_own_copy_and_refuses_what_it_does_not_know() -> None:
     from types import SimpleNamespace
 
-    from shelfhold.sdk.api_call import parse_api_call
+    from shelfhold_sdk.api_call import parse_api_call
 
     call = _content_call()
     copy = parse_api_call(call)
@@ -447,7 +447,7 @@ def test_delete_call_needs_a_destination_that_declares_can_purge() -> None:
 
 @pytest.mark.req("EF-EXP-001")
 def test_executor_entry_requires_planned_content() -> None:
-    from shelfhold.sdk.fsops import check_destination_plan_before_run
+    from shelfhold_sdk.fsops import check_destination_plan_before_run
 
     ref = ContentRef(kind="export_item", ref="x")
     plan = FsOpPlan(ops=(FsOp(op="write", rel_path="a.cbz", content_ref=ref),))
@@ -487,7 +487,7 @@ def test_kit_indexes_tree_requires_grouping_and_normalizer() -> None:
 
 @pytest.mark.req("EF-EXP-001", "EF-EXP-065")
 def test_kit_indexer_emits_no_fsop_write() -> None:
-    from shelfhold.sdk.testing.kit import run_indexer_plan_check
+    from shelfhold_sdk.testing.kit import run_indexer_plan_check
 
     writing = FsOpPlan(ops=(FsOp(op="mkdir", rel_path="Series"),))
     assert not run_indexer_plan_check(_caps(indexes_tree=True), writing).ok

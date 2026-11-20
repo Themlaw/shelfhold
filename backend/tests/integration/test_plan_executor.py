@@ -19,6 +19,8 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.api_call import ApiCall, ContentBody, RawEncoding
+from shelfhold_sdk.fsops import ContentRef, FsOpPlan, PlannedContent
 
 from shelfhold.export.application import plan_executor
 from shelfhold.export.application.plan_executor import PlanBinding, PlanRefusedError
@@ -32,8 +34,6 @@ from shelfhold.export.application.target_state import (
 from shelfhold.export.domain.bindings import TreeOverlapError
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import coherence
-from shelfhold.sdk.api_call import ApiCall, ContentBody, RawEncoding
-from shelfhold.sdk.fsops import ContentRef, FsOpPlan, PlannedContent
 from tests.export_env import export_env
 from tests.plan_executor_env import (
     BOOK_A,

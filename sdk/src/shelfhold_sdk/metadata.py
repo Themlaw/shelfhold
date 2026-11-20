@@ -26,9 +26,9 @@ from pydantic import (
     model_validator,
 )
 
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.lang import LanguageTag
-from shelfhold.sdk.models import (
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.lang import LanguageTag
+from shelfhold_sdk.models import (
     AuthFlow,
     PluginKind,
     PluginManifest,
@@ -37,7 +37,7 @@ from shelfhold.sdk.models import (
     flag_names,
     flag_parser,
 )
-from shelfhold.sdk.refs import ImageRequest
+from shelfhold_sdk.refs import ImageRequest
 
 EntityType = Literal["series", "work", "edition", "volume"]
 

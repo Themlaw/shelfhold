@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.models import (
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.models import (
     API_VERSION,
     DomainRule,
     Page,
@@ -19,7 +19,7 @@ from shelfhold.sdk.models import (
     PluginKind,
     RateLimit,
 )
-from shelfhold.sdk.refs import (
+from shelfhold_sdk.refs import (
     FileAsset,
     ImageRequest,
     SeriesInfo,
@@ -27,7 +27,7 @@ from shelfhold.sdk.refs import (
     UnitInfo,
     UnitPayload,
 )
-from shelfhold.sdk.source import Capability, SourceChanged, SourceManifest
+from shelfhold_sdk.source import Capability, SourceChanged, SourceManifest
 
 KEY = "gabarit"
 HOST = "catalogue.exemple.invalid"  # votre hôte réel : seul hôte joignable (permissions.domains)

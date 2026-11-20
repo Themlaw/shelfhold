@@ -13,6 +13,7 @@ import zipfile
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.fsops import ContentRef
 
 from shelfhold.acquisition.public import RootGuard
 from shelfhold.export.application.fan_out import FanOut, HostContentStore, planned_content
@@ -22,7 +23,6 @@ from shelfhold.export.targets.native_folder.source import NativeFolderSource
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.sdk.fsops import ContentRef
 from tests.byte_source_env import Unit, unit_with_item
 from tests.export_env import ExportEnv, Series, add_second_shelf, export_env
 from tests.fan_out_env import add_target, bind, records_of

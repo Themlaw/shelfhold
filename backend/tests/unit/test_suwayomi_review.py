@@ -6,6 +6,10 @@ from collections.abc import Awaitable
 from typing import Any
 
 import pytest
+from shelfhold_sdk.fetcher import CookieJarView, Response
+from shelfhold_sdk.models import AuthBasic
+from shelfhold_sdk.refs import FileAsset, UnitRef
+from shelfhold_sdk.source import AuthRequired, SourceChanged
 
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
@@ -14,10 +18,6 @@ from shelfhold.plugin_host.errors import (
     AuthModeUnsupported,
     failure_class_of,
 )
-from shelfhold.sdk.fetcher import CookieJarView, Response
-from shelfhold.sdk.models import AuthBasic
-from shelfhold.sdk.refs import FileAsset, UnitRef
-from shelfhold.sdk.source import AuthRequired, SourceChanged
 from tests.fakes.suwayomi import BASE_URL, PASSWORD, USER, FakeSuwayomi, FakeSuwayomiFetcher
 
 

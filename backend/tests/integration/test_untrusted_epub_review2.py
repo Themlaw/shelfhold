@@ -12,6 +12,17 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import (
+    CONTAINER,
+    NAV,
+    STYLE,
+    TINY_PNG,
+    Member,
+    epub_bytes,
+    opf,
+    xhtml,
+    zip_bytes,
+)
 
 import shelfhold.library.adapters.epub_derivative as mod
 from shelfhold.infrastructure.archives import safe_open_archive
@@ -28,17 +39,6 @@ from shelfhold.library.public import (
     OriginalNotServableError,
     StalePlanError,
     servable_epub,
-)
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import (
-    CONTAINER,
-    NAV,
-    STYLE,
-    TINY_PNG,
-    Member,
-    epub_bytes,
-    opf,
-    xhtml,
-    zip_bytes,
 )
 from tests.integration.test_untrusted_epub_pipeline import (
     CLEAN,

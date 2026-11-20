@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.metadata import FieldProposal, Provenance
 
 from shelfhold.catalog.public import (
     AttachRefusedError,
@@ -25,7 +26,6 @@ from shelfhold.infrastructure.schema import catalog, platform
 from shelfhold.library.public import CatalogScreenAdapter, WorkRef
 from shelfhold.library.tombstones import TombstoneService
 from shelfhold.library.tombstones.values import encode_plaintext
-from shelfhold.sdk.metadata import FieldProposal, Provenance
 from tests.export_env import ExportEnv, Series
 from tests.family_env import NOW, family_env, rate, rate_edition, suggest
 from tests.integration.test_schema_catalog import (

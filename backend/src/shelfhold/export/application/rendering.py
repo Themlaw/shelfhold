@@ -19,6 +19,7 @@ from typing import Any, BinaryIO
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.age import ADULT_MIN_AGE, AgeRating
 from sqlalchemy import Connection
 
 from shelfhold.catalog.public import ContributorName, NameKind, effective_age, parse_partial_date
@@ -42,7 +43,6 @@ from shelfhold.infrastructure.packaging.comicinfo import (
 from shelfhold.infrastructure.packaging.epub import OpfEdit, repackage_epub
 from shelfhold.infrastructure.schema import catalog, export
 from shelfhold.library.public import content_hash
-from shelfhold.sdk.age import ADULT_MIN_AGE, AgeRating
 
 __all__ = [
     "CbzRenderer",

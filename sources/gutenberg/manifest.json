@@ -2,7 +2,7 @@
   "key": "gutenberg",
   "kind": "source",
   "version": "0.1.0",
-  "api": 1,
+  "api": 2,
   "name": "Project Gutenberg (official catalogue and a mirror)",
   "permissions": {
     "domains": [

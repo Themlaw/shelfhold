@@ -16,11 +16,11 @@ from datetime import timedelta
 from typing import Any
 
 import structlog
+from shelfhold_sdk.connected import WakeError, WakeTimeout
+from shelfhold_sdk.fetcher import Fetcher
 
 from shelfhold.infrastructure.fetcher.errors import FetchTimeout
 from shelfhold.infrastructure.logging import elapsed_ms
-from shelfhold.sdk.connected import WakeError, WakeTimeout
-from shelfhold.sdk.fetcher import Fetcher
 
 log = structlog.get_logger(__name__)
 

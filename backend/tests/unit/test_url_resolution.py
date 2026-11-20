@@ -11,6 +11,8 @@ from typing import Any
 
 import pytest
 import structlog
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.testing.fakes import FakeRangedConnectedService
 
 from shelfhold.i18n import load_catalog
 from shelfhold.interfaces.http_api.catalog import all_error_codes
@@ -23,8 +25,6 @@ from shelfhold.plugin_host.registry import (
     UrlPatternError,
     compile_url_pattern,
 )
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.testing.fakes import FakeRangedConnectedService
 
 pytestmark = pytest.mark.req("EF-SRC-004")
 

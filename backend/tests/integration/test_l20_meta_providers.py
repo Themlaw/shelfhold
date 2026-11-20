@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.metadata import MatchHints
 from sqlalchemy import Engine
 
 from shelfhold.acquisition.application.staleness import stale_series
@@ -32,7 +33,6 @@ from shelfhold.plugin_host.adapters.native.mangaupdates import (
     build_manifest,
 )
 from shelfhold.plugin_host.provider_fetcher import ProviderFetcher, ProviderRuntime, open_provider
-from shelfhold.sdk.metadata import MatchHints
 from tests.fakes.mangaupdates.server import TITLE, fake_mangaupdates
 from tests.fakes_clock import ManualClock
 from tests.integration.test_schema_catalog import (

@@ -11,7 +11,7 @@ import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from shelfhold.sdk.age import AGE_TIERS
+from shelfhold_sdk.age import AGE_TIERS
 
 __all__ = [
     "SIZE_CONFIRM_BYTES",

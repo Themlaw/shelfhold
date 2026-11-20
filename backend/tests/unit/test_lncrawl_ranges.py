@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from shelfhold_sdk.refs import FileAsset, ImageRequest, RangedPayload, UnitInfo
 
 from shelfhold.acquisition.application.lncrawl_ranges import (
     MAX_COVERED,
@@ -22,7 +23,6 @@ from shelfhold.acquisition.application.lncrawl_ranges import (
 from shelfhold.acquisition.application.ranges import RangeUnit
 from shelfhold.infrastructure.content_trust import UntrustedEntryError
 from shelfhold.library.public import Received
-from shelfhold.sdk.refs import FileAsset, ImageRequest, RangedPayload, UnitInfo
 from tests.ranged_env import volume_epub
 
 ORIGIN = "http://lncrawl.lan:8080"

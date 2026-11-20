@@ -17,6 +17,7 @@ from typing import Any, Final
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.connected import Ticket
 from sqlalchemy import Connection
 
 from shelfhold.acquisition.public import FailureLedger
@@ -36,7 +37,6 @@ from shelfhold.library.public import (
     SafeguardInventory,
     UpstreamPurge,
 )
-from shelfhold.sdk.connected import Ticket
 from shelfhold.store_jobs import store_budget
 from shelfhold.work_locks import work_holder
 

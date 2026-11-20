@@ -9,6 +9,7 @@ import traceback
 from collections.abc import Awaitable
 
 import pytest
+from shelfhold_sdk.refs import SeriesRef, UnitRef
 
 from shelfhold.infrastructure.logging import _scrub_text
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
@@ -16,7 +17,6 @@ from shelfhold.plugin_host.adapters.meta.suwayomi import queries as q
 from shelfhold.plugin_host.adapters.meta.suwayomi.jwt import suwayomi_jwt_fetcher
 from shelfhold.plugin_host.authflow import JwtFetcher
 from shelfhold.plugin_host.errors import AuthExpired, AuthModeUnsupported
-from shelfhold.sdk.refs import SeriesRef, UnitRef
 from tests.fakes.suwayomi import (
     BASE_URL,
     PASSWORD,

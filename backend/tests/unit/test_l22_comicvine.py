@@ -14,15 +14,15 @@ from urllib.parse import parse_qs
 
 import pytest
 import structlog
-
-from shelfhold.plugin_host.adapters.native.comicvine import ComicVineProvider, build_manifest
-from shelfhold.sdk.metadata import (
+from shelfhold_sdk.metadata import (
     EntityRef,
     IdentifyResult,
     MatchHints,
     ProviderCapability,
     ProviderUnavailable,
 )
+
+from shelfhold.plugin_host.adapters.native.comicvine import ComicVineProvider, build_manifest
 from tests.fakes.cassette_server import CassetteServer
 from tests.fakes.comicvine.server import ABSENT, HOSTILE, TITLE, VOLUME_URL, fake_comicvine
 from tests.l21b_bench import EDITION, FakeTime, run, worker

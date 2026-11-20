@@ -8,15 +8,15 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from shelfhold.sdk.connected import (
+from shelfhold_sdk.connected import (
     ConnectedCapability,
     ServiceHealth,
     Ticket,
     TicketState,
 )
-from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Response
-from shelfhold.sdk.lang import LanguageTag
-from shelfhold.sdk.metadata import (
+from shelfhold_sdk.fetcher import CookieJarView, DownloadedFile, Response
+from shelfhold_sdk.lang import LanguageTag
+from shelfhold_sdk.metadata import (
     EntityRef,
     EntityType,
     FieldProposal,
@@ -28,7 +28,7 @@ from shelfhold.sdk.metadata import (
     ProviderQuota,
     RelationProposal,
 )
-from shelfhold.sdk.models import (
+from shelfhold_sdk.models import (
     API_VERSION,
     AuthFlow,
     Cursor,
@@ -38,7 +38,7 @@ from shelfhold.sdk.models import (
     RateLimit,
     SessionState,
 )
-from shelfhold.sdk.refs import (
+from shelfhold_sdk.refs import (
     FileAsset,
     ImageRequest,
     RangedPayload,
@@ -49,7 +49,7 @@ from shelfhold.sdk.refs import (
     UnitPayload,
     UnitRef,
 )
-from shelfhold.sdk.source import Capability, ContentRemoved, SourceManifest, SubSource
+from shelfhold_sdk.source import Capability, ContentRemoved, SourceManifest, SubSource
 
 
 class NetworkForbidden(Exception):

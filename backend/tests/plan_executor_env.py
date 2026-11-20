@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import sqlalchemy as sa
+from shelfhold_sdk.fsops import ContentRef, PlannedContent
 
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.export.application.plan_executor import (
@@ -22,7 +23,6 @@ from shelfhold.export.targets.kavita.destination import KavitaDestination
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
-from shelfhold.sdk.fsops import ContentRef, PlannedContent
 from tests.export_env import ROOT_SUBPATH, ExportEnv
 
 BOOK_A = "01JBZ3X5QH8M2N4P6R7S9T0V1A"

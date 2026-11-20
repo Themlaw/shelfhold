@@ -15,6 +15,8 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.source import ContentRemoved
 
 from shelfhold.acquisition.application.failures import FailureLedger, Pause
 from shelfhold.acquisition.application.follow_request import (
@@ -27,8 +29,6 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
 from shelfhold.plugin_host.errors import ServiceInstanceChanged
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.source import ContentRemoved
 from tests.fakes.suwayomi import BASE_URL, FakeSuwayomi, FakeSuwayomiFetcher
 from tests.follow_env import Bench, follow_bench
 

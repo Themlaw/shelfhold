@@ -1,6 +1,7 @@
-"""ExportTarget (SDK 1.1): the members that only describe Kavita are deprecated, not removed."""
+"""ExportTarget (SDK 2.0, M6 L02): the members that only described Kavita are removed, as the
+1.x series announced (ADR-0024, SDK 2.0 amendment)."""
 
-from shelfhold.sdk.export_target import DEPRECATED_SINCE, ExportTarget
+from shelfhold_sdk.export_target import ExportTarget
 
 KAVITA_ONLY = (
     "parse_name_call",
@@ -20,12 +21,11 @@ KEPT = (
 )
 
 
-def test_export_target_deprecated_members_still_resolve() -> None:
+def test_export_target_deprecated_members_are_removed_at_sdk_2() -> None:
     for name in KAVITA_ONLY:
-        member = getattr(ExportTarget, name)  # a destination written for SDK 1.0 still resolves
-        assert callable(member)
-        message = member.__deprecated__
-        assert DEPRECATED_SINCE in message and "SDK 2.0" in message, name
+        assert not hasattr(ExportTarget, name), (
+            name
+        )  # a 1.x destination loads through the api 1 shim
 
 
 def test_export_target_members_of_every_adapter_are_not_deprecated() -> None:

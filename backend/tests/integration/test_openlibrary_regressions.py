@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
+from shelfhold_sdk.metadata import ProviderQuota
 
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fetcher.errors import ProviderQuotaExceeded
@@ -18,7 +19,6 @@ from shelfhold.infrastructure.fetcher.limiter import ProviderBuckets
 from shelfhold.infrastructure.fetcher.quota_store import SqlBucketStore
 from shelfhold.infrastructure.schema import metadata
 from shelfhold.plugin_host.provider_fetcher import ProviderRuntime
-from shelfhold.sdk.metadata import ProviderQuota
 from tests.fakes.openlibrary.server import COVER_HOST, ISBN
 from tests.integration.test_openlibrary_enrich import Bench, FakeOpenLibrary, bench  # noqa: F401
 

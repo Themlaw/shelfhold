@@ -8,11 +8,11 @@ a file that only claims to be one meets the CBZ allowlist.
 from pathlib import Path
 
 import pytest
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import Member, epub_bytes, xhtml, zip_bytes
 
 from shelfhold.acquisition.public import oriented_name
 from shelfhold.composition import WriteContext
 from shelfhold.library.public import sniff_kind
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import Member, epub_bytes, xhtml, zip_bytes
 from tests.library_env import cbz_bytes
 
 EPUB = epub_bytes(xhtml("<p>x</p>"))

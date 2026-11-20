@@ -51,7 +51,8 @@ def _kavita_unreachable(tmp: Path) -> Observed:
 
 
 def _suwayomi_unreachable(tmp: Path) -> Observed:
-    from shelfhold.sdk.source import TemporarilyUnavailable
+    from shelfhold_sdk.source import TemporarilyUnavailable
+
     from tests.follow_env import follow_bench
 
     with follow_bench() as bench:

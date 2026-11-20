@@ -39,6 +39,9 @@ from typing import Any, BinaryIO, Literal, Protocol
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.api_call import ApiCall
+from shelfhold_sdk.export_target import TargetCapabilities, copy_can_verify
+from shelfhold_sdk.fsops import ContentRef, PlannedContent
 from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import Admission, RatingService
@@ -88,9 +91,6 @@ from shelfhold.library.public import (
     relocate_root_paths,
     variant_contents,
 )
-from shelfhold.sdk.api_call import ApiCall
-from shelfhold.sdk.export_target import TargetCapabilities, copy_can_verify
-from shelfhold.sdk.fsops import ContentRef, PlannedContent
 
 __all__ = [
     "AppliedFile",

@@ -18,6 +18,8 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef, UnitInfo
+from shelfhold_sdk.source import SourceError
 
 from shelfhold.acquisition.application.follow_request import FollowRequests
 from shelfhold.acquisition.public import FollowIntent
@@ -26,8 +28,6 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, export
 from shelfhold.infrastructure.schema import replica as replica_schema
-from shelfhold.sdk.refs import SeriesRef, UnitInfo
-from shelfhold.sdk.source import SourceError
 from tests.auth_env import CSRF_HEADER
 from tests.federated_env import FakeSource, api_key_of, hit, instance
 from tests.follow_env import Bench, follow_bench

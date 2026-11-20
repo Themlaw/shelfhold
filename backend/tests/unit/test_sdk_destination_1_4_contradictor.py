@@ -10,9 +10,7 @@ from typing import Any
 
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
-
-from shelfhold.export.targets.kavita import ProtocolError
-from shelfhold.sdk.api_call import (
+from shelfhold_sdk.api_call import (
     ApiCall,
     ApiCallError,
     ContentBody,
@@ -20,7 +18,7 @@ from shelfhold.sdk.api_call import (
     RawEncoding,
     check_api_call,
 )
-from shelfhold.sdk.fsops import (
+from shelfhold_sdk.fsops import (
     ContentRef,
     FsOp,
     FsOpPlan,
@@ -28,6 +26,8 @@ from shelfhold.sdk.fsops import (
     PlannedContent,
     check_destination_plan,
 )
+
+from shelfhold.export.targets.kavita import ProtocolError
 from tests.kavita_env import harness, run
 
 FAKE_SECRET = "fake-secret-0000-not-a-credential"  # noqa: S105 - a placeholder for the tests

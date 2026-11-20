@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from shelfhold_sdk.models import API_VERSION
+from shelfhold_sdk.testing.fakes import FakeRangedConnectedService
 
 from shelfhold.plugin_host.registry import (
     PluginCandidate,
@@ -15,8 +17,6 @@ from shelfhold.plugin_host.registry import (
     candidates_from_entry_points,
     negotiate_api,
 )
-from shelfhold.sdk.models import API_VERSION
-from shelfhold.sdk.testing.fakes import FakeRangedConnectedService
 
 
 def _raw(key: str, api: int, **extra: Any) -> dict[str, Any]:
@@ -155,7 +155,7 @@ REPO = Path(__file__).resolve().parents[3]
 
 @pytest.mark.req("EF-SRC-033", "EF-BIB-051")
 def test_meta_suwayomi_manifest_is_valid_untrusted_and_inactive() -> None:
-    from shelfhold.sdk.source import SourceManifest
+    from shelfhold_sdk.source import SourceManifest
 
     path = REPO / "sources" / "meta_suwayomi" / "manifest.json"
     manifest = SourceManifest.model_validate_json(path.read_text(encoding="utf-8"))

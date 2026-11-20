@@ -10,15 +10,15 @@ core runs. It writes nothing and holds no secret.
 from __future__ import annotations
 
 import pytest
-
-from shelfhold.export.targets.kavita import KavitaDestination
-from shelfhold.export.targets.komga import KomgaDestination
-from shelfhold.sdk.fsops import FsOpPlan
-from shelfhold.sdk.testing.destination_kit import (
+from shelfhold_sdk.fsops import FsOpPlan
+from shelfhold_sdk.testing.destination_kit import (
     DestinationScenario,
     assert_destination_conforms,
     run_destination_conformance,
 )
+
+from shelfhold.export.targets.kavita import KavitaDestination
+from shelfhold.export.targets.komga import KomgaDestination
 from tests.fakes.kavita.plugin_parse import simulate_parse
 
 LIBRARY = "0SYNTHMANGA01"
@@ -51,7 +51,7 @@ def test_komga_passes_destination_kit() -> None:
     )
     assert report.ok
     # an indexer that is given a plan that writes does not conform
-    from shelfhold.sdk.fsops import FsOp
+    from shelfhold_sdk.fsops import FsOp
 
     writing = FsOpPlan(ops=(FsOp(op="mkdir", rel_path="Synthetic Series"),))
     broken = run_destination_conformance(

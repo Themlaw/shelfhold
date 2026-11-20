@@ -16,18 +16,18 @@ from typing import Any
 
 import pytest
 import structlog
-
-from shelfhold.config import Settings
-from shelfhold.plugin_host.adapters.meta.lncrawl import LncrawlService, api
-from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
-from shelfhold.sdk.connected import ConnectedCapability
-from shelfhold.sdk.refs import FileAsset, RangedPayload, RangeRef, SeriesRef, UnitInfo, UnitRef
-from shelfhold.sdk.source import (
+from shelfhold_sdk.connected import ConnectedCapability
+from shelfhold_sdk.refs import FileAsset, RangedPayload, RangeRef, SeriesRef, UnitInfo, UnitRef
+from shelfhold_sdk.source import (
     Capability,
     SourceChanged,
     SourceManifest,
     TemporarilyUnavailable,
 )
+
+from shelfhold.config import Settings
+from shelfhold.plugin_host.adapters.meta.lncrawl import LncrawlService, api
+from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
 from tests.fakes.lncrawl import API_KEY, BASE_URL, CANARY, FakeLncrawl, FakeLncrawlFetcher
 
 REPO = Path(__file__).resolve().parents[3]
@@ -360,7 +360,7 @@ def test_lncrawl_api_key_never_reaches_a_ticket_a_reference_a_log_or_an_error() 
 
 @pytest.mark.req("EF-SRC-031", "ENF-SEC-009")
 def test_lncrawl_refused_credentials_are_auth_not_a_broken_source() -> None:
-    from shelfhold.sdk.source import AuthRequired
+    from shelfhold_sdk.source import AuthRequired
 
     service, _, _ = make()
     f = FakeLncrawlFetcher(FakeLncrawl(), key=None)  # the host injected nothing

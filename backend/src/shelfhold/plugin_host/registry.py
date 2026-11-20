@@ -14,9 +14,11 @@ never put on ``sys.path`` (so no ``.pth`` is processed and nothing in it is impo
 accident): a finder at the *end* of ``sys.meta_path`` resolves only the top-level modules of the
 plugins that were granted, from source files only, so the host's own modules always win.
 
-Compatibility (EF-SRC-001): the host accepts ``api == N`` natively and ``api == N-1`` through a shim
-that rewrites the old manifest into the current shape; any other value is refused with a reason and
-the remaining plugins still load.
+Compatibility (EF-SRC-001, D11): the host accepts ``api == N`` natively and ``api == N-1`` through
+a shim that rewrites the old manifest into the current shape; any other value is refused with a
+reason and the remaining plugins still load. With the SDK 2.0 (``api`` 2) the built-in shim
+``shim_api_1`` loads an ``api`` 1 manifest for 12 months after the publication of 2.0.0
+(until 2027-11, ADR-0024 SDK 2.0 amendment).
 
 Every loaded plugin is handed out behind the direct-I/O detector (``plugin_host.audit_hook``,
 EF-SRC-002), and a manifest whose DomainRules or ``url_patterns`` do not parse is refused: a
@@ -47,6 +49,10 @@ from typing import Any, Final, Protocol
 from urllib.parse import urlsplit
 
 import structlog
+from shelfhold_sdk.events import check_plugin_event, plugin_event_type
+from shelfhold_sdk.models import API_VERSION, PluginKind, PluginManifest
+from shelfhold_sdk.refs import SeriesRef, UnitInfo
+from shelfhold_sdk.source import Capability, SourceManifest
 
 from shelfhold.infrastructure.fetcher.guard import (
     DomainPattern,
@@ -57,10 +63,6 @@ from shelfhold.plugin_host.attestation import retain
 from shelfhold.plugin_host.audit_hook import allow_code_root, audited, host_io, importing
 from shelfhold.plugin_host.errors import NoSourceForUrl
 from shelfhold.plugin_host.settings import SettingsSchemaError, parse_settings_schema
-from shelfhold.sdk.events import check_plugin_event, plugin_event_type
-from shelfhold.sdk.models import API_VERSION, PluginKind, PluginManifest
-from shelfhold.sdk.refs import SeriesRef, UnitInfo
-from shelfhold.sdk.source import Capability, SourceManifest
 
 ENTRY_POINT_GROUP = "shelfhold.plugins"
 log = structlog.get_logger(__name__)
@@ -98,6 +100,22 @@ def negotiate_api(declared: int, current: int = API_VERSION) -> ApiVerdict:
         PluginStatus.INCOMPATIBLE,
         f"api {declared} is incompatible: this host accepts {current} and {current - 1}",
     )
+
+
+SHIM_UNTIL = "2027-11"  # 12 months after the publication of shelfhold-sdk 2.0.0 (D11, Q20)
+
+
+def shim_api_1(raw: dict[str, Any]) -> dict[str, Any]:
+    """Rewrite an ``api`` 1 manifest into the ``api`` 2 shape (D11, ADR-0024).
+
+    The 2.0 break is the removal of the deprecated Kavita-only members of ``ExportTarget``,
+    which a manifest never carried: the shim renumbers ``api`` and nothing else changes shape,
+    because ``SdkModel`` ignores the unknown fields of the 1.x manifests. Supported until
+    2027-11; after that the host refuses ``api`` 1 with a reason.
+    """
+    migrated = dict(raw)
+    migrated["api"] = 2
+    return migrated
 
 
 @dataclass(frozen=True)
@@ -411,7 +429,8 @@ class PluginRegistry:
     ) -> None:
         self._granted = frozenset(_normalise(n) for n in granted_distributions)
         self._api = api_version
-        self._shims = dict(shims or {})
+        builtin = {API_VERSION - 1: shim_api_1} if api_version == API_VERSION else {}
+        self._shims = {**builtin, **(shims or {})}
         self._active_keys = None if active_keys is None else frozenset(active_keys)
         self._records: list[PluginRecord] = []
 

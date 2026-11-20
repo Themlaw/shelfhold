@@ -12,9 +12,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final, Literal
 
+from shelfhold_sdk import source as sdk
+
 from shelfhold.events.waiting_state import WaitingState
 from shelfhold.plugin_host import errors as host
-from shelfhold.sdk import source as sdk
 
 __all__ = [
     "BY_CODE",

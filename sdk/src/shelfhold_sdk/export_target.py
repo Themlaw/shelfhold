@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: MIT
-"""ExportTarget contract v1 (02 section 4.2): destinations describe, the core calls.
+"""ExportTarget contract (02 section 4.2): destinations describe, the core calls.
+
+SDK 2.0 (the first published distribution, M6) removes the Kavita-only members that were
+deprecated since 1.1 (`parse_name_call`, `ensure_library_call`, `resolve_remote_calls`,
+`event_subscription`, `progress_calls`), as the 1.x series announced (ADR-0024).
 
 SDK 1.4 (M4 L03) adds, all optional with a safe default so a 1.3 destination loads unchanged:
-``ApiCall.body`` (`shelfhold.sdk.api_call`), the optional ``update_metadata`` capability, and the
+``ApiCall.body`` (`shelfhold_sdk.api_call`), the optional ``update_metadata`` capability, and the
 `content_body` declaration that opens the ``push`` transport (behind the kit). ``readback`` and
 ``can_purge`` keep their 1.3 default.
 
@@ -17,20 +21,12 @@ parts (version ranges, events, progress) are fixed by the lot that implements th
 from collections.abc import Iterable
 from fnmatch import fnmatchcase
 from typing import Any, Literal, Protocol
-from warnings import deprecated
 
 from pydantic import field_serializer
 
-from shelfhold.sdk.api_call import ApiCall
-from shelfhold.sdk.fsops import ContentRef, FsOp
-from shelfhold.sdk.models import SdkModel
-
-DEPRECATED_SINCE = "1.1"
-"""Members that only describe how Kavita works are deprecated from SDK 1.1: they stay in the
-contract (a destination written for SDK 1.0 still resolves, N-1 compatibility) and the SDK
-2.0, published in M6 with the kit, takes them out (PLAN-M1b D9, PLAN-M4 D7): none goes in 1.x."""
-
-KAVITA_ONLY = f"Kavita-specific: deprecated since SDK {DEPRECATED_SINCE}, removed by SDK 2.0 (M6)"
+from shelfhold_sdk.api_call import ApiCall
+from shelfhold_sdk.fsops import ContentRef, FsOp
+from shelfhold_sdk.models import SdkModel
 
 JsonObject = dict[str, Any]
 """Placeholder shape for the types the destination lot (M4) will refine: ExportItem, SidecarFile,
@@ -135,28 +131,13 @@ class ExportTarget(Protocol):
 
     def render_sidecars(self, item: JsonObject, cfg: JsonObject) -> list[JsonObject]: ...
 
-    @deprecated(KAVITA_ONLY)  # Kavita's `ParseSeriesName` check
-    def parse_name_call(self, name: str, lib_type: str) -> ApiCall | None: ...
-
     def inventory_calls(self, remote_library_id: str) -> list[ApiCall]: ...
 
-    @deprecated(KAVITA_ONLY)  # the creation of a Kavita library
-    def ensure_library_call(self, spec: JsonObject, current: JsonObject | None) -> ApiCall: ...
-
     def scan_calls(self, remote_paths: list[str]) -> list[ApiCall]: ...
-
-    @deprecated(KAVITA_ONLY)  # the lookup of a Kavita series by folder
-    def resolve_remote_calls(self, item: JsonObject) -> list[ApiCall]: ...
 
     def interpret(self, call: ApiCall, response: JsonObject) -> Any: ...
 
     def supported_versions(self) -> JsonObject: ...
-
-    @deprecated(KAVITA_ONLY)  # Kavita's SignalR hub
-    def event_subscription(self) -> JsonObject | None: ...
-
-    @deprecated(KAVITA_ONLY)  # Kavita's reading-progress API
-    def progress_calls(self, ref: JsonObject, p: JsonObject | None) -> list[ApiCall]: ...
 
 
 class MetadataUpdater(Protocol):
@@ -168,7 +149,6 @@ class MetadataUpdater(Protocol):
 
 
 __all__ = [
-    "DEPRECATED_SINCE",
     "ApiCall",
     "ContentRef",
     "ExportTarget",

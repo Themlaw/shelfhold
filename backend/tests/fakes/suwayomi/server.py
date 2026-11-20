@@ -26,9 +26,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx2
-
-from shelfhold.sdk.fetcher import CookieJarView, DownloadedFile, Response
-from shelfhold.sdk.refs import ImageRequest
+from shelfhold_sdk.fetcher import CookieJarView, DownloadedFile, Response
+from shelfhold_sdk.refs import ImageRequest
 
 TESTS = Path(__file__).resolve().parents[2]
 STATE = TESTS / "fixtures" / "suwayomi_states" / "library.json"
@@ -715,7 +714,7 @@ class FakeSuwayomi:
 class FakeSuwayomiFetcher:
     """The SDK `Fetcher` seen by the adapter, wired to the simulated server and nothing else.
 
-    Same surface as `shelfhold.sdk.testing.fakes.FakeFetcher`, so the conformance kit can run on
+    Same surface as `shelfhold_sdk.testing.fakes.FakeFetcher`, so the conformance kit can run on
     it: `record_mode` is `none` and `unscripted` lists everything outside the allow-list.
     """
 

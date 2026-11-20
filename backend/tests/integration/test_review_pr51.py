@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.refs import UnitInfo
 
 from shelfhold.acquisition.application.follow import _contested
 from shelfhold.acquisition.application.planning import known_units, pending
@@ -17,7 +18,6 @@ from shelfhold.acquisition.public import (
 from shelfhold.catalog.public import place_key
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import record_replica
-from shelfhold.sdk.refs import UnitInfo
 from tests.follow_env import START, follow_bench, new_chapter
 from tests.integration.test_follow_policy import _serve, _ticketed, _watermark
 from tests.integration.test_range_tickets import _bench

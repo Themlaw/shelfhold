@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.metadata import FieldProposal, Provenance
 
 from shelfhold.acquisition.application.team_switch import switch_to_preferred_team
 from shelfhold.catalog.application.dedup import REASON, open_suggestions, suggest_duplicates
@@ -21,7 +22,6 @@ from shelfhold.catalog.domain.provenance import FieldKey
 from shelfhold.catalog.public import Catalog, IncomingUnit
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, storage
-from shelfhold.sdk.metadata import FieldProposal, Provenance
 from tests.catalog_env import Harness, at, harness
 
 NOW = datetime(2026, 11, 12, 9, 0, tzinfo=UTC)

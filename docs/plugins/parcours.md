@@ -2,13 +2,13 @@
 
 Cette page dit dans quel ordre faire les choses pour écrire une **source** ou une **destination** pour
 Shelfhold, et ce que le projet promet en retour. Elle renvoie aux pages de détail ; chaque affirmation sur
-le SDK a été relue contre le code (`backend/src/shelfhold/sdk/`, version **SDK 1.4**).
+le SDK a été relu contre le code (`sdk/src/shelfhold_sdk/`, version **SDK 2.0**).
 
 Ce qui existe aujourd'hui et ce qui est à venir :
 
 | Étape | Sources | Destinations |
 | --- | --- | --- |
-| Contrat | stable, SDK 1.4 ([source.md](source.md)) | contrat 1.4 : plan `FsOp` et `ApiCall.body` figés, le reste **provisoire jusqu'à M4** ([destination.md](destination.md)) |
+| Contrat | stable, SDK 2.0 ([source.md](source.md), [compatibilite.md](compatibilite.md)) | contrat 2.0 : plan `FsOp` et `ApiCall.body` figés, le reste **provisoire** ([destination.md](destination.md)) ; `api` 1 accepté par le shim jusqu'en 2027-11 |
 | Kit de conformité | livré ([kit.md](kit.md)) | à venir en M4 : seuls le contrôle du plan d'opérations et celui des déclarations existent |
 | Index officiel, hébergement d'un index tiers, migrations d'état | à venir en M6 | à venir en M6 |
 
@@ -50,7 +50,7 @@ simulée** (`simulated_reinstall`) : un service connecté **doit** fournir la fa
 ## 5. La licence
 
 Le dépôt du projet est sous AGPL-3.0-or-later, avec une **exception de plugin provisoire** (ENF-LEG-010) :
-elle couvre l'utilisation de l'API publique du SDK (`shelfhold.sdk`, sous licence MIT) et rien d'interne. Son
+elle couvre l'utilisation de l'API publique du SDK (`shelfhold_sdk`, sous licence MIT) et rien d'interne. Son
 texte est **provisoire** : il sera relu avant la 1.0 et avant l'ouverture aux tiers de M6. Tant qu'il ne l'est
 pas, publiez votre plugin sous une licence **compatible AGPL**. Ne dépendez d'aucune API interne.
 [gabarit/NOTICE-LICENCE.md](gabarit/NOTICE-LICENCE.md) donne l'en-tête à copier.

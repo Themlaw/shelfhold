@@ -13,11 +13,11 @@ from typing import Any
 
 import httpx2
 import pytest
+from shelfhold_sdk.models import DomainRule
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 
 from shelfhold.infrastructure.fetcher.guard import DomainAllowlist
 from shelfhold.library.public import sniff_kind
-from shelfhold.sdk.models import DomainRule
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 from tests.acquire_env import EVIL, HOST, NativeBooks, acquire_bench
 from tests.library_env import cbz_bytes
 

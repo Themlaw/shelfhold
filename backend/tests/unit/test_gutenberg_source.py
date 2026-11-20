@@ -11,11 +11,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from shelfhold_sdk.fetcher import Response
+from shelfhold_sdk.testing.fakes import FakeFetcher
+from shelfhold_sdk.testing.kit import run_source_conformance
 
 from shelfhold.plugin_host.adapters.native.gutenberg import GutenbergSource, build_manifest
-from shelfhold.sdk.fetcher import Response
-from shelfhold.sdk.testing.fakes import FakeFetcher
-from shelfhold.sdk.testing.kit import run_source_conformance
 from tests.gutenberg_env import CATALOG_URL, CSV, MIRROR_URL
 
 ROOT = Path(__file__).resolve().parents[3]

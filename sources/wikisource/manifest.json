@@ -2,7 +2,7 @@
   "key": "wikisource",
   "kind": "source",
   "version": "0.1.0",
-  "api": 1,
+  "api": 2,
   "name": "Wikisource (one EPUB per book, with its attribution)",
   "permissions": {
     "domains": [

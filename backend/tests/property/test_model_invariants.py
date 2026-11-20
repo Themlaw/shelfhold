@@ -36,6 +36,8 @@ from hypothesis.stateful import (
     rule,
     run_state_machine_as_test,
 )
+from shelfhold_sdk.age import AGE_TIERS, AgeRating
+from shelfhold_sdk.refs import UnitInfo
 
 from shelfhold.catalog.domain.numbering import (
     NUMBER_NORMALIZER_ID,
@@ -67,8 +69,6 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.instance import WriteSessions
 from shelfhold.infrastructure.schema import catalog as catalog_tables
 from shelfhold.infrastructure.schema import export as export_tables
-from shelfhold.sdk.age import AGE_TIERS, AgeRating
-from shelfhold.sdk.refs import UnitInfo
 from tests.catalog_env import Harness, at, harness
 from tests.fsops_env import Env, make_env
 from tests.restore_env import RestoreEnv, restore_env
