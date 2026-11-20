@@ -1,5 +1,5 @@
 ---
-status: proposée (en attente du porteur : D-P1 à confirmer ; D-P2, D-P3, D-P4 et D-P6 ouvertes)
+status: "proposée (en attente du porteur : D-P1 à confirmer ; D-P2, D-P3, D-P4 et D-P6 ouvertes)"
 date: 2026-11-20
 decision-makers: porteur (D-P1 à D-P6), mainteneur (D10 à D16, D24)
 ---
