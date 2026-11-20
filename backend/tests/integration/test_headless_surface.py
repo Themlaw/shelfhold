@@ -83,6 +83,7 @@ def test_headless_methods_are_whitelisted_with_their_reserved_actions() -> None:
         "config.get": None, "config.list": None, "config.set": None, "config.apply": None,
         "target.add": "admin_risk.accept", "source.add": "source.set_secret",
         "target.add_komga": "target.add_komga", "target.add_cwa": "config.path_map",
+        "target.add_kobo": "config.path_map",
         "destination.sync_progress": "destination.sync_progress",
         "source.confirm_roles": "source.set_secret",
         "shelf.create": "shelf.max_age_rating",
