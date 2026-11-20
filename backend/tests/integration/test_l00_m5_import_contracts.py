@@ -74,3 +74,12 @@ def test_velocite_m4_row_filled() -> None:
     row = next(line for line in text.splitlines() if line.startswith("| M4 |"))
     assert row.count("|") >= 6
     assert "47 sur 47" in row or "PR" in row
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_ci_traceability_reports_m6_without_blocking() -> None:
+    """M6 L00: the matrix of M6 is built and shown in the summary, in a step of its own that
+    never fails the job; the loop of the delivered milestones stays M0 to M5 (L28 joins M6)."""
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert 'python3 tools/traceability.py --milestone M6 --output "$RUNNER_TEMP/M6.md"' in text
+    assert "for ms in M0 M1a M1b M2 M3 M4 M5; do" in text

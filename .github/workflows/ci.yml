@@ -915,14 +915,10 @@ jobs:
         run: |
           set +e
           status=0
-          for ms in M0 M1a M1b M2 M3 M4 M5 M6; do
+          for ms in M0 M1a M1b M2 M3 M4 M5; do
             python3 tools/traceability.py --milestone "$ms" --output "$RUNNER_TEMP/$ms.md" 2> "$RUNNER_TEMP/errors-$ms.txt"
             code=$?
-            if [ "$ms" = M6 ]; then
-              [ $code -eq 0 ] || echo "::warning::traceability M6 (non-blocking report): exit $code"
-            else
-              [ $code -eq 0 ] || status=1
-            fi
+            [ $code -eq 0 ] || status=1
             {
               cat "$RUNNER_TEMP/$ms.md"
               echo
@@ -933,6 +929,22 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           done
           exit $status
+      - name: Report the traceability matrix of M6 (not blocking until its closure, L28)
+        if: always()
+        run: |
+          set +e
+          python3 tools/traceability.py --milestone M6 --output "$RUNNER_TEMP/M6.md" 2> "$RUNNER_TEMP/errors-M6.txt"
+          code=$?
+          [ $code -eq 0 ] || echo "::warning::traceability M6 (report only): exit $code"
+          {
+            cat "$RUNNER_TEMP/M6.md"
+            echo
+            echo "## Erreurs et avertissements (M6, exit $code)"
+            echo '```'
+            cat "$RUNNER_TEMP/errors-M6.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
