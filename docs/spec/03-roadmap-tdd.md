@@ -520,7 +520,7 @@ Les EF de la partie famille (EF-USR-010, EF-UX-004/005/006, EF-INT-021) portent 
 **Objectif.** Ouvrir aux plugins tiers sans compromettre la sécurité : SDK `shelfhold-sdk` **2.0.0** publié (`api` 2 + shim `api` 1 pendant 12 mois, Q20 tranchée), isolation via le compagnon `plugin-runner` (`rpc_protocol` 1, ADR-0056), index signé, Kobo sync, trackers. L'application sort en **`v1.3.0`** (D24), pas `v2.0.0`.
 
 **Exigences couvertes.**
-- EF : EF-SRC-016, EF-SRC-017, EF-SRC-019 (isolation), EF-SRC-020, EF-SRC-030 (index, migrations d'état) ; EF-BIB-018 ; EF-EXP-021 (**destination « dossier Kobo »**, D19) ; EF-INT-010, EF-INT-012 (**conditionnelle**, critère écrit D-P5 : seulement si aucune version publiée de Kavita ne livre la sync Kobo avec le contrôle de profil à l'entrée de M6, Q21).
+- EF : EF-SRC-016, EF-SRC-017, EF-SRC-019 (isolation), EF-SRC-020, EF-SRC-030 (index, migrations d'état) ; EF-BIB-018 ; EF-EXP-021 (**destination « dossier Kobo »**, D19) ; EF-INT-010, EF-INT-012 (**conditionnelle**, critère D-P5 : non construite si Kavita `0.9.2` est publiée avec la sync Kobo filtrée par bibliothèque et par plafond d'âge **et** que le porteur juge le filtre par bibliothèque suffisant ; contrôlé à la V1 et à l'entrée de V10, Q21).
 - ENF : ENF-SEC-009 (volet tiers isolés), ENF-SEC-007 (publication de confiance OIDC), ENF-QUAL-003 (kit publié avec le SDK), ENF-OPS-018.
 - Passe 8 : EF-SRC-017 (clé de plugin épinglée à son index et à son signataire).
 
@@ -541,7 +541,7 @@ Les EF de la partie famille (EF-USR-010, EF-UX-004/005/006, EF-INT-021) portent 
 - Passe 8 : `test_plugin_key_pinned_to_signer`.
 - Passe 4 : `test_plugin_state_migration_required_when_payload_schema_changes`, `test_rollback_refused_when_persisted_state_newer`, `test_plugin_incompatible_event_after_host_upgrade`, `test_index_fields_deprecated_replaced_by_min_host`, workflow `publish-sdk` sans jeton longue durée (OIDC).
 
-**Definition of done.** `shelfhold-sdk` **2.0.0** publié sur PyPI par publication de confiance OIDC, avec matrice de compatibilité `api` 2/1 (shim `api` 1, 12 mois) et kit de conformité ; un plugin tiers d'exemple s'installe depuis un index signé et tourne isolé via `plugin-runner` ; une Kobo synchronise ses livres (ou la sync Kobo de Kavita est constatée, critère D-P5).
+**Definition of done.** `shelfhold-sdk` **2.0.0** publié sur PyPI par publication de confiance OIDC (D-P2, action du porteur ; sinon `[[partial]]` ENF-SEC-007), avec matrice de compatibilité `api` 2/1 (shim `api` 1, 12 mois) et kit de conformité ; un plugin tiers d'exemple s'installe depuis un index signé et tourne isolé via `plugin-runner` ; une Kobo synchronise ses livres (ou EF-INT-012 passe en « Jamais » selon le critère D-P5).
 
 **Risques.** Protocole Kobo non documenté (→ surface minimale, proxy magasin opt-in) ; charge de maintenance de l'écosystème (→ GOVERNANCE.md, facteur bus).
 
@@ -924,7 +924,7 @@ Marqueur pytest : `@pytest.mark.req("EF-EXP-028")` ; le rapport CI liste, par ja
 | Parseurs purs | pytest + `tests/fixtures/synthetic/<source>/` | Le gros des tests ; aucune I/O |
 | Propriétés | Hypothesis (backend), fast-check (front si utile) | Assainissement des noms, numéros, écriture ZIP, normaliseur d'URL, LWW, garde SSRF, `fsops`, **invariants du modèle I1–I15** (ENF-QUAL-006), kill -9 à chaque étape d'un plan (journal d'intentions) |
 | HTTP enregistré | pytest-recording (VCR.py), `record_mode=none` en CI | Cassette manquante = échec ; liste blanche d'en-têtes ; gitleaks sur `cassettes/` |
-| **Kit de conformité** | `shelfhold.sdk.testing` (plugin pytest ; publié avec `shelfhold-sdk` en M6) | Obligatoire pour toute source/destination ; passe hors ligne sur fixtures synthétiques |
+| **Kit de conformité** | `shelfhold.sdk.testing` (plugin pytest ; publié avec `shelfhold-sdk` en M6 sous `shelfhold_sdk.testing`, D10, ADR-0056) | Obligatoire pour toute source/destination ; passe hors ligne sur fixtures synthétiques |
 | Golden files | syrupy + `xmllint` XSD ComicInfo (EPUBCheck seulement si génération EPUB, réservée) | Horodatages figés ; mise à jour des snapshots **interdite en CI** |
 | Intégration base | SQLite réel (fichier temporaire) | Pas de mock de la base ; **pas de Postgres** (ENF-PORT-002 retirée) |
 | Front | Vitest + Testing Library + MSW | Client OpenAPI généré, jamais écrit à la main |

@@ -44,8 +44,8 @@ Texte provisoire trop large, qui autoriserait des plugins propriétaires dépend
 ## Réversibilité
 Moyenne : l'exception peut être resserrée ou retirée dans les versions suivantes ; les versions déjà distribuées la gardent. Le DCO peut être abandonné à tout moment, mais les commits déjà signés restent tracés.
 
-## Amendement M6 (2026-11-20, ADR-0056)
-**D-P4 tranchée : relecture avant la publication de M6, pas de levée.** La relecture juridique de l'exception (Q17) est faite et consignée par écrit avant la publication du SDK 2.0.0 et de l'index signé ; l'exception reste provisoire jusque-là. Les plugins tiers isolés (compagnon `plugin-runner`, hors processus) ne dépendent pas de l'exception, ce qui rend la relecture sûre : un resserrement (voire une levée ultérieure) n'empêche pas les plugins tiers isolés de fonctionner.
+## Amendement M6 (2026-11-20, ADR-0056, proposée)
+**D-P4, recommandation en attente du porteur** : relecture par un juriste avant `v1.3.0`, ou levée écrite de l'exigence de relecture (risque accepté, comme Q27a). Le plan recommande de découpler : les plugins tiers isolés ne dépendent pas de l'exception, qui ne sert qu'au mode en processus ; l'exception reste provisoire jusqu'à la décision du porteur.
 
 ## Exigences liées
 ENF-LEG-010, ENF-GOV-001, EF-SRC-030.

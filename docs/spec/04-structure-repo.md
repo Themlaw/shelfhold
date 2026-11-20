@@ -31,7 +31,7 @@ shelfhold/
 │   │                             # passe 6 (M1a) : meta rebuild (ENF-OPS-020) | adopt set-follow-from <série> <chapitre> (coverage_unknown) | adopt set-coverage <tome> <premier> <dernier>
 │   │                             #           edition set-lang <édition|liaison> <étiquette BCP 47> (language_unknown) | target recheck (racine physique)
 │   │   ├── config.py                 # pydantic-settings : env > config.toml > base
-│   │   ├── sdk/                      # SDK en V1 (ADR-0024) → publié comme shelfhold-sdk 2.0.0 (MIT, nom d'import shelfhold.sdk, D10) en M6 (ADR-0056) ; passe 11 (GAP-11-15) : sous-arbre sous LICENSE MIT propre
+│   │   ├── sdk/                      # SDK en V1 (ADR-0024) → publié comme shelfhold-sdk 2.0.0 (MIT, nom d'import shelfhold_sdk, D10) en M6 (ADR-0056) ; passe 11 (GAP-11-15) : sous-arbre sous LICENSE MIT propre
 │   │   │   ├── LICENSE               # MIT (le reste du dépôt est AGPL) ; chaque fichier porte « SPDX-License-Identifier: MIT »
 │   │   │   ├── age.py                # passe 11 : AgeRating = {min_age: int, x: bool} (EF-EXP-011)
 │   │   │   ├── models.py             # SeriesRef, UnitInfo, PageRef (paresseux), ImageRequest, Cursor, FilterSpec, AuthFlow…
@@ -165,7 +165,7 @@ shelfhold/
 ```
 
 Notes :
-- Le SDK vit **dans** l'application en V1 (`backend/src/shelfhold/sdk/`) : un seul contrat, compatibilité `api` N-1 via un shim (ADR-0024). Il est extrait et publié sur PyPI sous le nom `shelfhold-sdk` **2.0.0** (MIT, nom d'import `shelfhold.sdk`, D10) en M6 (ADR-0056), avec la matrice de compatibilité `api` 2/1 (shim `api` 1 pendant 12 mois, D11, Q20 tranchée) ; l'application sort en `v1.3.0` à M6 (D24).
+- Le SDK vit **dans** l'application en V1 (`backend/src/shelfhold/sdk/`) : un seul contrat, compatibilité `api` N-1 via un shim (ADR-0024). Il est extrait et publié sur PyPI sous le nom `shelfhold-sdk` **2.0.0** (MIT, nom d'import `shelfhold_sdk`, D10 ; publication selon D-P2) en M6 (ADR-0056), avec la matrice de compatibilité `api` 2/1 (shim `api` 1 pendant 12 mois, D11, Q20 tranchée) ; l'application sort en `v1.3.0` à M6 (D24).
 - **Frontière de licence du SDK (passe 11, GAP-11-15, ENF-LEG-010, dès le premier commit)** : `sdk/` porte sa propre `LICENSE` MIT et un en-tête `SPDX-License-Identifier: MIT` dans chaque fichier (`test_sdk_files_have_mit_spdx_header`) ; contrat import-linter **« le SDK n'importe jamais le cœur »** (`shelfhold.sdk` ne dépend d'aucun autre module `shelfhold.*`, `test_sdk_never_imports_core`) ; règle de `CONTRIBUTING.md` : aucun code ne passe du cœur AGPL au SDK MIT sans l'accord de ses auteurs (un changement de `sdk/` qui recopie du code du cœur est refusé en revue). L'extraction en paquet séparé en M6 ne demande ainsi aucun audit de provenance.
 - **Lint des exportateurs (passe 11, Z3-c, ENF-I18N-003)** : aucun appel `t()` du catalogue i18n dans `exporters/` (les jetons lus par Kavita — `Specials`, `Vol.`, `Ch.` — ne se traduisent jamais) ; aucun âge écrit dans un EPUB (`test_epub_export_writes_no_age_subject_nor_tool_meta`).
 - Les sources first-party restent dans le monorepo ; un dépôt séparé `shelfhold-sources` avec index signé n'est envisagé qu'en M6.
@@ -203,7 +203,7 @@ Toutes les actions sont **épinglées par SHA complet** avec commentaire `# vX.Y
 | `docs.yml` | M3 | PR (build) ; `main` (déploiement) | Site Zensical sur GitHub Pages ; référence de config générée |
 | `mutation.yml` | facultatif | mensuel | mutmut sur domaine + assainisseurs, non bloquant |
 | `cleanup.yml` | M1b | hebdo | Purge des **seuls** tags GHCR `pr-*` de plus de 30 jours ; jamais les digests non étiquetés (manifestes de plate-forme d'une image multi-arch, signatures cosign, attestations), jamais `sha-*`, `edge` ni une version (ENF-QUAL-007, `test_ghcr_cleanup_policy_only_pr_tags`) |
-| `publish-sdk.yml` | M6 | tag `sdk-v2.0.0` | Publication de `shelfhold-sdk` **2.0.0** sur PyPI (et paquet npm éventuel) par **publication de confiance OIDC** : environnement protégé, aucun jeton longue durée, attestations PEP 740 (ENF-SEC-007, ADR-0056) ; l'index signé des plugins reste hors PyPI (URL + clé minisign épinglées) |
+| `publish-sdk.yml` | M6 | étiquettes `sdk-v*` | Publication de `shelfhold-sdk` **2.0.0** sur PyPI (et paquet npm éventuel) par **publication de confiance OIDC** : environnement protégé, aucun jeton longue durée, attestations PEP 740 (ENF-SEC-007, ADR-0056) ; l'index signé des plugins reste hors PyPI (URL + clé minisign épinglées) ; publication réelle selon D-P2 (action du porteur) |
 
 Retirés par rapport à la v1 du document : Postgres en nightly (ENF-PORT-002 retirée), mutation hebdomadaire obligatoire, benchmarks nocturnes, variante d'image `:full`.
 
