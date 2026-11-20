@@ -2,7 +2,9 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
-## 1.2.0 - non publié
+## 1.2.0 - à compléter (date de la release)
+
+Clôture de M5 : un lecteur intégré (images et EPUB) pour le contenu non exporté et pour « Lire un extrait », des liseuses mieux servies (jetons d'appareil enregistrés, kosync pour EPUB, OPDS-PSE, OPDS 2.0, KEPUB, page `/lite` sans JavaScript), la connexion OpenID Connect, l'application installable avec copies hors ligne. Reprend les changements de la candidate `1.2.0-rc.1`. **La date est celle de la release**, qui attend les essais sur appareil réel du porteur.
 
 ### Ajouté
 
@@ -22,6 +24,44 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 - **Sélections enregistrées (M5 L21)** : une requête enregistrée (état de lecture, type, étagère, langue, ajout récent), recalculée à chaque lecture dans la portée du profil qui la lit, jamais un résultat figé ; privée au profil, exportée avec lui, une entrée par sélection dans OPDS et un écran dans la bibliothèque. Migration `0105`.
 
 - **Lecture page à page dans la liseuse, OPDS-PSE (M5 L18)** : la page d'une Œuvre du flux OPDS offre un lien `pse:stream` par tome exporté, et chaque page se lit avec le jeton d'appareil (`GET /opds/pse/{tome}/{page}`, pages comptées depuis 0). Le profil est revérifié à chaque page : un enfant ne voit jamais une page d'une Œuvre cachée, ni son existence. Le format suit l'en-tête `Accept` : la page native si l'appli l'accepte, sinon un JPEG ou un PNG (rendus de L20a), sinon `406`. Lecture seule : aucune position n'est écrite.
+
+- **Contenu servi par une route à part (M5 L05a)** : tout octet d'un livre sort par `GET /content/{ticket}/{path}`, sous un ticket signé de dix minutes lié au profil, au support, à la portée et à la session. La visibilité est revérifiée à chaque octet (un plafond abaissé ou une Œuvre reclassée coupent au prochain), jamais l'original, jamais une clé d'API ni un jeton d'appareil ; réponse en `Content-Security-Policy: sandbox`, `nosniff`, `Referrer-Policy: no-referrer`, types par une liste fermée ; tout refus est un seul `404`. Une origine séparée est possible par `SHELFHOLD_CONTENT_ORIGIN` (`docs/admin/origine-du-contenu.md`).
+- **Manifeste de publication (M5 L06)** : la liste des pages d'un livre d'images et le *spine* d'un EPUB, lus dans la copie neutralisée ; « Lire un extrait » borne la publication côté serveur ; une liaison `pull` n'est servie que depuis `/store` ou une copie d'arbre lisible.
+- **Positions du lecteur (M5 L07)** : un locator versionné (`cfi` et progression pour un EPUB, index de page pour les images), fusionné par `client_ts` borné par l'heure du serveur, historique borné, et un conflit entre deux appareils proposé **une seule fois** (« Reprendre à la page… »). Un extrait n'écrit aucune position et n'est jamais poussé vers Kavita.
+- **« Continuer la lecture » sur l'accueil (M5 L14, EF-LEC-008)** : la série en cours de chaque profil, nourrie par Kavita et par le lecteur ; un clic ouvre Kavita (livre exporté) ou le lecteur (copie conservée) ; un enfant ne voit rien d'une Œuvre reclassée.
+- **Tourne-page sous 150 ms (M5 L15, ENF-PERF-006)** : banc de référence qui bloque la release en cas de régression de plus de 20 %, et mesure Playwright dans la CI en rapport seul.
+- **Application installable, PWA (M5 L16a)** : manifeste et service worker sous la politique de sécurité par empreinte ; aucune réponse d'API en cache par défaut, `/lire` n'est jamais remplacé par la coquille de l'application, `/content/*` n'est jamais mis en cache.
+- **Copies hors ligne (M5 L16b, EF-LEC-012)** : « Lire hors ligne » garde une copie par profil (jamais partagée sur un navigateur) ; les positions lues sans réseau sont envoyées au retour avec leur `client_ts` ; à la reconnexion, `?since=` évince toute Œuvre supprimée, purgée ou devenue invisible ; la déconnexion efface les copies du profil. Une copie déjà téléchargée n'est pas révocable à distance (R66, documenté).
+- **Redirection par capacités vers `/lite`, couvertures grises, rendu e-ink (M5 L17b)** : l'application envoie vers `/lite` un navigateur qui ne lit pas les modules JavaScript ou dont le script est coupé, **jamais d'après le `User-Agent`** ; les couvertures de `/lite` sont servies en niveaux de gris ; le thème e-ink de l'application est « au mieux ».
+- **Flux OPDS 2.0 (M5 L19)** : le même catalogue en JSON à côté de la 1.2, avec les mêmes jetons, les mêmes filtres de profil et aucune entrée absente de la 1.2.
+- **Parcours de bout en bout sur l'image de la version (M5 L24)** : les six parcours de la définition de fini (extrait sans export, EPUB piégé, KOReader, `/lite` sans JavaScript, copie hors ligne et éviction, connexion OpenID Connect) jouent sur l'image avec un contrôle d'accessibilité bloquant ; aucun trafic sortant.
+- **Documentation et textes (M5 L23)** : pages d'administration sur le lecteur, les appareils, OpenID Connect, `/lite`, l'origine du contenu et les liseuses avec TLS ; gabarit de rapport d'appareil ; causes et actions en français et en anglais pour chaque code ajouté.
+
+### Modifié
+
+- **Kosync (M5 L08, L09)** : les noms de tests de la spécification portent maintenant le comportement livré en M4 (quatre routes, en-têtes, `users/create` fermé, empreinte du fichier exporté, jamais de devinette) ; l'EPUB est traité (voir « Passage d'EPUB »).
+- **Dettes de M5 (L22b)** : six entrées « jusqu'à M5 » de l'allowlist de joignabilité sont redatées M6 par écrit, chacune avec sa raison ; les choix « à valider » de M4 sont clos ou redatés dans `docs/decisions/M5.md`.
+- **Traçabilité de M5 bloquante (L25)** : le job `traceability` échoue désormais si une exigence de M5 n'a pas de test, comme pour M0 à M4.
+
+### Sécurité
+
+- Le lecteur est une page à part (`/lire`) sous sa propre politique de sécurité : iframe `sandbox` sans `allow-scripts` ni `allow-same-origin`, ressources lues par `blob:`, `font-src`, `media-src` et `frame-src blob:` déclarés ; un script d'un EPUB ne s'exécute jamais (filtre en liste blanche à chaque document, neutraliseur `xhtml-neutralizer@v2`). foliate-js est un sous-module épinglé par commit, importé par un seul adaptateur.
+- Jetons d'appareil : secret changé sans réappairer (l'ancien est refusé à la requête suivante), retrait d'un appareil = révocation de tous ses jetons, aucun secret ni `x-auth-key` dans les journaux.
+- OpenID Connect : liaison par `(issuer, sub)` à un compte **existant**, aucune création de compte, jamais un profil enfant ; une action réservée exige une session fraîche (`prompt=login`, `max_age`, `auth_time`). La découverte et les clés passent par le Fetcher et sa garde contre les requêtes vers le réseau interne.
+- Chaque route neuve (`/content`, `/lite`, OPDS-PSE, OPDS 2.0, sélections, positions, renditions, copies hors ligne) est entrée dans le méta-test des surfaces d'un enfant ; les copies et les renditions sont revérifiées contre la visibilité du profil à chaque service.
+
+### Reporté en M6
+
+Détail et raisons dans `docs/decisions/M5.md` (section de clôture) : relais de scan et audit de Komga ; annulation d'une marque « lu » posée par une traversée d'appareil ; étagère de l'enfant remplie à l'arrivée d'un livre demandé ; « Lire hors ligne » pour un profil qui n'est pas administrateur ; rotation du secret d'un webhook et écran des webhooks ; écran « Même œuvre ? » (EF-BIB-029) ; synchronisation Kobo (EF-INT-012, **conditionnelle** : Kavita la garde tant qu'elle la livre).
+
+### Limites connues
+
+- **Essais sur appareil réel** : KOReader, `/lite` depuis une Kobo et la lecture d'un EPUB sur téléphone ne sont prouvés en CI que par des vecteurs de requêtes et un navigateur sans JavaScript ; le porteur les fait sur la candidate avant la release.
+- **Second registre et miroir (ENF-GOV-004)** : le code est livré (1.1.0), la poussée réelle attend le compte et le secret ; la release part sur GHCR seul.
+- **Lecteur EPUB** : exige Safari 16.4 ou plus (héritage de la politique de sécurité par les `blob:`) ; un navigateur plus ancien est refusé par le registre du moteur.
+- **Copies hors ligne** : pas de verrou entre onglets (une base orpheline d'un profil est possible, jamais ouverte par un autre profil) ; `/hors-ligne` lit sa liste à l'ouverture seulement.
+
+Migration : oui (0100 à 0108 depuis la 1.1.0), réversible : non (`shelfhold migrate` sauvegarde la base avant de migrer).
 
 ## 1.1.0 - 2026-11-18
 
