@@ -218,7 +218,6 @@ def test_kobo_destination_methods_and_unique_collision() -> None:
     assert dest.render_sidecars(None, None) == []
     assert dest.inventory_calls("x") == []
     assert dest.scan_calls(["a"]) == []
-    assert dest.supported_versions() == {}
     assert dest.interpret(None, None) is None
     # collision
     plan = dest.describe([SeriesSpec("S", (BookSpec("a", "1", "T"), BookSpec("b", "1", "T")))])

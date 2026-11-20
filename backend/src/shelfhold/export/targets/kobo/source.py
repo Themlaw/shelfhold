@@ -22,13 +22,13 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.api_call import ApiCall
+from shelfhold_sdk.export_target import TargetCapabilities
 from sqlalchemy import Connection, Engine
 
 from shelfhold.export.application.plan_executor import PlanBinding
 from shelfhold.export.targets.kobo.destination import BookSpec, KoboDestination, SeriesSpec
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.sdk.api_call import ApiCall
-from shelfhold.sdk.export_target import TargetCapabilities
 
 __all__ = ["KIND", "KoboSource", "kobo_series"]
 
