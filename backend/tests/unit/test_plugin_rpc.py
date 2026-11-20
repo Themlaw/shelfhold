@@ -455,9 +455,10 @@ def test_rpc_plugin_cannot_call_host_outside_a_host_call() -> None:
 
     run(unknown)
     assert Spy.calls == 0
-    assert frozenset(
-        {"fetcher.get", "fetcher.post", "fetcher.download", "events.publish"}
-    ) == protocol.PLUGIN_TO_HOST_METHODS
+    assert (
+        frozenset({"fetcher.get", "fetcher.post", "fetcher.download", "events.publish"})
+        == protocol.PLUGIN_TO_HOST_METHODS
+    )
 
 
 @pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
