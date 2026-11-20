@@ -6,12 +6,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from shelfhold_sdk.refs import UnitInfo
 
 from shelfhold.acquisition.application.ranges import RangeTickets, RangeUnit
 from shelfhold.acquisition.application.volume_cut import cut_volumes
 from shelfhold.acquisition.domain.requests import RequestBudget
 from shelfhold.library.public import DEFAULT_VOLUME_SIZE
-from shelfhold.sdk.refs import UnitInfo
 
 pytestmark = pytest.mark.req("EF-SRC-032", "EF-BIB-040")
 

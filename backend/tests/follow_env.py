@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import sqlalchemy as sa
+from shelfhold_sdk.connected import ConnectedCapability
 
 from shelfhold.acquisition.public import FollowCycle, FollowReport, bounded_receiver
 from shelfhold.events.bus import EventBus, PublishedEvent
@@ -26,7 +27,6 @@ from shelfhold.infrastructure.schema import acquisition, catalog, export
 from shelfhold.infrastructure.wake import Wakes
 from shelfhold.library.public import PassthroughStore
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
-from shelfhold.sdk.connected import ConnectedCapability
 from tests.fakes.suwayomi import BASE_URL, FakeSuwayomi, FakeSuwayomiFetcher
 from tests.fakes_clock import ManualClock
 from tests.fakes_fetcher import FakeResolver

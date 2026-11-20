@@ -23,8 +23,8 @@ from typing import Annotated, Any, Final, Literal
 
 from pydantic import ConfigDict, Field, model_validator
 
-from shelfhold.sdk.fsops import ContentRef, FsOpPlanError, PlannedContent, check_content_ref
-from shelfhold.sdk.models import StrictSdkModel
+from shelfhold_sdk.fsops import ContentRef, FsOpPlanError, PlannedContent, check_content_ref
+from shelfhold_sdk.models import StrictSdkModel
 
 _CONTENT_TYPE: Final = re.compile(
     r"[A-Za-z0-9][\w.+-]{0,126}/[A-Za-z0-9][\w.+-]{0,126}", re.ASCII

@@ -10,9 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import sqlalchemy as sa
+from shelfhold_sdk.testing.fakes import FakeRangedConnectedService
 
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.sdk.testing.fakes import FakeRangedConnectedService
 
 CODE = "import sys; from shelfhold.interfaces.cli import main; sys.exit(main(sys.argv[1:]))"
 PHRASE = "mêmes droits que Shelfhold"

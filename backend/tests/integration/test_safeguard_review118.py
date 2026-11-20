@@ -12,12 +12,12 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.connected import ReleaseResult
 
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, export, storage
 from shelfhold.library.public import PassthroughStore
-from shelfhold.sdk.connected import ReleaseResult
 from tests.integration.test_schema_catalog import add_variant
 from tests.library_env import JPEG, PNG, cbz_bytes, lib_env
 from tests.locks_env import work_lock

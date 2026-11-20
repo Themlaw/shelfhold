@@ -10,9 +10,10 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from shelfhold_sdk.export_target import ApiCall, NamingConstraints, TargetCapabilities
+
 from shelfhold.export.domain.kavita_compat import MAXIMUM_EXCLUSIVE, MINIMUM_VERSION
 from shelfhold.export.targets.kavita import dto, routes
-from shelfhold.sdk.export_target import ApiCall, NamingConstraints, TargetCapabilities
 
 
 class KavitaDestination:

@@ -14,6 +14,8 @@ import re
 from collections.abc import Iterable
 from typing import Final
 
+from shelfhold_sdk.refs import SECRET_PLACEHOLDER
+
 from shelfhold.infrastructure.secret_text import (
     SecretIndex,
     contains_secret,
@@ -23,7 +25,6 @@ from shelfhold.infrastructure.secret_text import (
     sensitive_name,
     tokenlike,
 )
-from shelfhold.sdk.refs import SECRET_PLACEHOLDER
 
 __all__ = [
     "SECRET_PLACEHOLDER",

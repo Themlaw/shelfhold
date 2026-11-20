@@ -13,6 +13,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from shelfhold_sdk.connected import ConnectedCapability
+from shelfhold_sdk.models import AuthBasic
+from shelfhold_sdk.refs import FileAsset, ImageRequest, SeriesRef, UnitInfo, UnitRef
+from shelfhold_sdk.source import AuthRequired
 from sqlalchemy import Engine
 
 from shelfhold.events.waiting_state import WaitingState
@@ -29,10 +33,6 @@ from shelfhold.plugin_host.errors import (
     ServiceVersionMismatch,
     failure_class_of,
 )
-from shelfhold.sdk.connected import ConnectedCapability
-from shelfhold.sdk.models import AuthBasic
-from shelfhold.sdk.refs import FileAsset, ImageRequest, SeriesRef, UnitInfo, UnitRef
-from shelfhold.sdk.source import AuthRequired
 from tests.fakes.suwayomi import BASE_URL, PASSWORD, USER, FakeSuwayomi, FakeSuwayomiFetcher
 from tests.fakes.suwayomi.server import ALLOWED_ROUTES
 from tests.fakes_clock import ManualClock

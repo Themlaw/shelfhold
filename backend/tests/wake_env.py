@@ -7,10 +7,10 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 
 import sqlalchemy as sa
+from shelfhold_sdk.connected import WakeError, WakeTimeout
 
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.wake import Wakes
-from shelfhold.sdk.connected import WakeError, WakeTimeout
 from tests.fakes_clock import ManualClock
 
 

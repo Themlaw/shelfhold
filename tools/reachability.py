@@ -508,7 +508,7 @@ def _matches(symbol: str, pattern: str) -> bool:
 
 def _covered(symbol: str, patterns: set[str]) -> bool:
     """An entry covers its symbol, the members of a class (`mod:Class.attr`), and, with `*`, a
-    module prefix (`shelfhold.sdk.*`)."""
+    module prefix (`shelfhold_sdk.*`)."""
     while symbol:
         if any(_matches(symbol, p) for p in patterns):
             return True

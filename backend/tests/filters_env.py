@@ -7,11 +7,11 @@ from datetime import timedelta
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef, UnitInfo
+from shelfhold_sdk.source import RateLimited
 
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
-from shelfhold.sdk.refs import SeriesRef, UnitInfo
-from shelfhold.sdk.source import RateLimited
 from tests.fakes.suwayomi import BASE_URL
 from tests.follow_env import START, Bench, follow_bench
 from tests.multi_source_env import ALPHA, bind_beta, watermark

@@ -21,6 +21,7 @@ from typing import Any, Final, Protocol
 
 import httpx2
 import structlog
+from shelfhold_sdk.fetcher import Response
 
 from shelfhold import __version__
 from shelfhold.infrastructure.fetcher.cache import CacheEntry, HttpCache, cacheable_request
@@ -54,7 +55,6 @@ from shelfhold.infrastructure.logging import (
     route_of,
 )
 from shelfhold.infrastructure.secret_text import contains_secret, sensitive_name
-from shelfhold.sdk.fetcher import Response
 
 # ENF-LEG-007: who is calling, and where to reach its maintainers.
 REPOSITORY_URL: Final = "https://github.com/Themlaw/shelfhold"

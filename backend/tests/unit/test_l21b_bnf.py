@@ -10,18 +10,18 @@ from datetime import UTC, datetime, timedelta
 
 import httpx2
 import pytest
-
-from shelfhold.infrastructure.fetcher.errors import DomainNotAllowed, FetchTimeout, FetchUnreachable
-from shelfhold.plugin_host.adapters.native.bnf import BnFProvider, build_manifest
-from shelfhold.plugin_host.bnf_sru import read_sru
-from shelfhold.plugin_host.provider_fetcher import ProviderRuntime, open_provider
-from shelfhold.sdk.metadata import (
+from shelfhold_sdk.metadata import (
     EntityRef,
     IdentifyResult,
     MatchHints,
     ProviderCapability,
     ProviderUnavailable,
 )
+
+from shelfhold.infrastructure.fetcher.errors import DomainNotAllowed, FetchTimeout, FetchUnreachable
+from shelfhold.plugin_host.adapters.native.bnf import BnFProvider, build_manifest
+from shelfhold.plugin_host.bnf_sru import read_sru
+from shelfhold.plugin_host.provider_fetcher import ProviderRuntime, open_provider
 from tests.fakes.bnf.server import ABSENT, ISBN, SPARQL_ISBN, TITLE, fake_bnf
 from tests.fakes.cassette_server import CassetteServer
 from tests.fakes_fetcher import FakeResolver

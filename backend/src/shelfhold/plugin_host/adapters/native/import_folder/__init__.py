@@ -8,8 +8,8 @@ storage). `content_trust` is `untrusted`: an import is `publisher` only when the
 a purchase, per import, never by this manifest.
 """
 
-from shelfhold.sdk.models import API_VERSION, Permissions, PluginKind, RateLimit
-from shelfhold.sdk.source import Capability, SourceManifest
+from shelfhold_sdk.models import API_VERSION, Permissions, PluginKind, RateLimit
+from shelfhold_sdk.source import Capability, SourceManifest
 
 KEY = "import_folder"
 

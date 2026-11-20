@@ -8,22 +8,22 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
-from shelfhold.export.targets.kavita.destination import KavitaDestination
-from shelfhold.sdk.api_call import ApiCall, ContentBody
-from shelfhold.sdk.export_target import MetadataUpdateSupport, TargetCapabilities
-from shelfhold.sdk.fsops import ContentRef, FsOp, FsOpPlan
-from shelfhold.sdk.testing.destination_kit import (
+from shelfhold_sdk.api_call import ApiCall, ContentBody
+from shelfhold_sdk.export_target import MetadataUpdateSupport, TargetCapabilities
+from shelfhold_sdk.fsops import ContentRef, FsOp, FsOpPlan
+from shelfhold_sdk.testing.destination_kit import (
     SYNTHETIC_ITEM,
     SYNTHETIC_WATERMARKED,
     DestinationScenario,
     assert_destination_conforms,
     run_destination_conformance,
 )
-from shelfhold.sdk.testing.fixtures.reserved_targets import (
+from shelfhold_sdk.testing.fixtures.reserved_targets import (
     AudiobookshelfReservedTarget,
     CalibreReservedTarget,
 )
+
+from shelfhold.export.targets.kavita.destination import KavitaDestination
 
 _ITEM = ContentRef(kind="export_item", ref=SYNTHETIC_ITEM)
 _PLAN = FsOpPlan(
@@ -294,8 +294,8 @@ def test_kavita_passes_destination_kit() -> None:
 
 @pytest.mark.req("ENF-QUAL-003")
 def test_pytest_tool_and_public_exports_for_plugin_authors() -> None:
-    import shelfhold.sdk.testing as public
-    from shelfhold.sdk.testing.pytest_plugin import check_destination
+    import shelfhold_sdk.testing as public
+    from shelfhold_sdk.testing.pytest_plugin import check_destination
 
     run = check_destination.__wrapped__()  # type: ignore[attr-defined]
     assert run(_Dest(_caps()), _scenario()).ok
@@ -310,15 +310,15 @@ def test_destination_kit_imports_nothing_of_the_host() -> None:
     import ast
     from pathlib import Path
 
-    import shelfhold.sdk.testing.destination_kit as module
+    import shelfhold_sdk.testing.destination_kit as module
 
     tree = ast.parse(Path(module.__file__ or "").read_text())
     imported = [
         n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.level == 0
     ]
-    own = [m for m in imported if m.split(".")[0] == "shelfhold"]
+    own = [m for m in imported if m.split(".")[0] in ("shelfhold", "shelfhold_sdk")]
     assert own, "the kit builds on the SDK"
-    assert all(m.startswith("shelfhold.sdk.") for m in own), own
+    assert all(m.startswith("shelfhold_sdk.") for m in own), own
 
 
 @pytest.mark.req("ENF-QUAL-003")

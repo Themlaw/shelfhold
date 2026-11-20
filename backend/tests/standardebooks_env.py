@@ -21,13 +21,13 @@ from unittest.mock import patch
 
 import httpx2
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
 
 from shelfhold.acquisition.public import NativeAcquirer
 from shelfhold.plugin_host import attestation
 from shelfhold.plugin_host.native_sources import first_party_native_candidates
 from shelfhold.plugin_host.registry import PluginRegistry
 from shelfhold.plugin_host.source_fetcher import SourceFetchers
-from shelfhold.sdk.refs import SeriesRef
 from tests.fakes.opds import ATOM, OPENSEARCH
 from tests.fakes.standardebooks import (
     FEED_ROOT,

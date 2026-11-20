@@ -19,6 +19,7 @@ import unicodedata
 from dataclasses import dataclass
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import X_MIN_AGE, AgeRating
 from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.public import (
@@ -32,7 +33,6 @@ from shelfhold.catalog.public import (
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.schema import acquisition, catalog, storage
 from shelfhold.library.public import SeriesBindingRef, TombstoneGate
-from shelfhold.sdk.age import X_MIN_AGE, AgeRating
 
 __all__ = [
     "SUWAYOMI_PLUGIN",

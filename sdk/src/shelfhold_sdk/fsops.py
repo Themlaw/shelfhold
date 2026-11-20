@@ -35,7 +35,7 @@ from typing import Final, Literal
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from shelfhold.sdk.models import StrictSdkModel
+from shelfhold_sdk.models import StrictSdkModel
 
 HOST_PREFIX: Final = ".shelfhold"
 MAX_PLAN_OPS: Final = 10_000

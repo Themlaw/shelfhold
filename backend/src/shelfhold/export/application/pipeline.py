@@ -17,6 +17,8 @@ from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.age import AgeRating
+from shelfhold_sdk.api_call import ApiCall
 from sqlalchemy import Engine
 from structlog.contextvars import bound_contextvars
 
@@ -120,8 +122,6 @@ from shelfhold.library.public import (
     require_servable_derivative,
     servable_epub,
 )
-from shelfhold.sdk.age import AgeRating
-from shelfhold.sdk.api_call import ApiCall
 
 __all__ = [
     "ApplyReport",

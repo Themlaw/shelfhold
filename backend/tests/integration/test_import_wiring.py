@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 from pydantic import ValidationError
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import Member
 
 from shelfhold.config import Settings
 from shelfhold.import_jobs import IMPORT_KIND, import_handler, register_import_job
@@ -21,7 +22,6 @@ from shelfhold.infrastructure.schema import acquisition, catalog, storage
 from shelfhold.library.adapters.import_scan import QUARANTINE
 from shelfhold.library.adapters.storage import sha256_file
 from shelfhold.main import LOGGED_SETTINGS
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import Member
 from tests.auth_env import run_cli
 from tests.import_env import (
     AES,

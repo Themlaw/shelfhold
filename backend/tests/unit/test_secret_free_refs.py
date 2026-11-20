@@ -16,6 +16,14 @@ import pytest
 import structlog
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
+from shelfhold_sdk.refs import (
+    FileAsset,
+    ImageRequest,
+    RangedPayload,
+    RangeRef,
+    SeriesRef,
+    UnitInfo,
+)
 
 from shelfhold.infrastructure.fetcher.refs import (
     SECRET_PLACEHOLDER,
@@ -38,14 +46,6 @@ from shelfhold.infrastructure.write_guard import (
 )
 from shelfhold.plugin_host.errors import RefHasSecret
 from shelfhold.plugin_host.refs_guard import RefsGuard
-from shelfhold.sdk.refs import (
-    FileAsset,
-    ImageRequest,
-    RangedPayload,
-    RangeRef,
-    SeriesRef,
-    UnitInfo,
-)
 from tests.redaction_support import forget_secret_values, synthetic_text
 
 pytestmark = pytest.mark.req("EF-SRC-035")

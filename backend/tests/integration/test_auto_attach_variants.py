@@ -6,6 +6,7 @@ Edition rated 16+ where it came from ever enters the shelf capped at 13.
 """
 
 import pytest
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.catalog.public import (
     Arrival,
@@ -16,7 +17,6 @@ from shelfhold.catalog.public import (
     add_external_id,
     suggest_age,
 )
-from shelfhold.sdk.age import AgeRating
 from tests.export_env import ExportEnv, Series
 from tests.family_env import NOW, admin, family_env, rate
 from tests.integration.test_auto_attach import (

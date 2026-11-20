@@ -5,9 +5,9 @@ from datetime import timedelta
 
 import pytest
 import structlog
+from shelfhold_sdk.connected import WakeError, WakeHook, WakeTimeout
 
 from shelfhold.integrations.sablier import SablierHook, SablierTarget
-from shelfhold.sdk.connected import WakeError, WakeHook, WakeTimeout
 from tests.fakes.sablier import BASE_URL, FakeSablier
 
 TARGETS = {

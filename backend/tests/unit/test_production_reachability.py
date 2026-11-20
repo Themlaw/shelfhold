@@ -303,9 +303,9 @@ def test_reference_from_an_entry_point_clears_the_orphan(tmp_path: Path) -> None
 
 
 def test_allowlist_entry_covers_members_and_needs_reason_and_until() -> None:
-    allowed = {"shelfhold.m:Klass", "shelfhold.sdk.*"}
+    allowed = {"shelfhold.m:Klass", "shelfhold_sdk.*"}
     assert reach._covered("shelfhold.m:Klass.attr", allowed)
-    assert reach._covered("shelfhold.sdk.testing.kit:run", allowed)
+    assert reach._covered("shelfhold_sdk.testing.kit:run", allowed)
     assert not reach._covered("shelfhold.m:Other", allowed)
     good = {"category": "c", "symbols": ["a:b"], "reason": "why", "until": "M1b L24"}
     assert reach.check_allowlist([good, {**good, "symbols": ["a:c"], "until": "M2"}]) == []

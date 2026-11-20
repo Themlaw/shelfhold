@@ -12,16 +12,7 @@ from pathlib import Path
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-
-from shelfhold.infrastructure.archives import safe_open_archive
-from shelfhold.infrastructure.content_trust import (
-    DERIVED_BY,
-    DERIVED_HASH_BY,
-    NeutralizationError,
-    neutralize,
-    neutralize_epub,
-)
-from shelfhold.sdk.testing.corpus.trapped_epubs import (
+from shelfhold_sdk.testing.corpus.trapped_epubs import (
     CHAPTER,
     STYLESHEET,
     VECTOR_FAMILIES,
@@ -35,6 +26,15 @@ from shelfhold.sdk.testing.corpus.trapped_epubs import (
     find_remote_references,
     mutation_traps,
     xhtml,
+)
+
+from shelfhold.infrastructure.archives import safe_open_archive
+from shelfhold.infrastructure.content_trust import (
+    DERIVED_BY,
+    DERIVED_HASH_BY,
+    NeutralizationError,
+    neutralize,
+    neutralize_epub,
 )
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "shelfhold"
@@ -369,7 +369,7 @@ def test_property_no_standalone_svg_keeps_an_active_pattern(fragments: list[str]
 
 @pytest.mark.req("EF-BIB-051", "ENF-SEC-015")
 def test_corpus_green_under_the_kit() -> None:
-    from shelfhold.sdk.testing import run_trapped_epub_corpus
+    from shelfhold_sdk.testing import run_trapped_epub_corpus
 
     def derive(epub: bytes) -> dict[str, bytes]:
         out = BytesIO()
@@ -457,7 +457,7 @@ def test_entry_routing_is_a_closed_list_of_categories(
 @pytest.mark.parametrize("chapter", ["Text/ch1.xhtml", "Part%201%3A%20Intro.xhtml", "a%20b.xhtml"])
 def test_a_standard_epub3_still_passes(chapter: str) -> None:
     """Non-regression (counter-review): nav, NCX, cover SVG, fonts, css urls, encoded names."""
-    from shelfhold.sdk.testing.corpus.trapped_epubs import standard_epub3
+    from shelfhold_sdk.testing.corpus.trapped_epubs import standard_epub3
 
     derived, result = _run(standard_epub3(chapter))
     entries = _entries(derived)

@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
 
 from shelfhold.acquisition.public import FollowCycle, FollowReport, bounded_receiver
 from shelfhold.events.bus import EventBus
@@ -25,7 +26,6 @@ from shelfhold.infrastructure.fetcher.client import IntegrationFetcher
 from shelfhold.infrastructure.fetcher.lan import LanTargets
 from shelfhold.library.public import PassthroughStore
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
-from shelfhold.sdk.refs import SeriesRef
 from tests.adopt_env import Adoption, adoption, comicinfo
 from tests.export_env import ExportEnv, export_env
 from tests.fakes.suwayomi import BASE_URL, FakeSuwayomi, FakeSuwayomiFetcher

@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import EPUB_NS, XHTML_NS, Member, zip_bytes
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import EPUB_NS, XHTML_NS, Member, zip_bytes
 
 X = XHTML_NS
 E = EPUB_NS

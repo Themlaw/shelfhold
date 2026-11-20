@@ -14,8 +14,9 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
+from shelfhold_sdk.age import X_MIN_AGE, AgeRating, max_rating
+
 from shelfhold.export.domain.kavita_access import age_of_rating
-from shelfhold.sdk.age import X_MIN_AGE, AgeRating, max_rating
 
 
 class FieldAction(StrEnum):

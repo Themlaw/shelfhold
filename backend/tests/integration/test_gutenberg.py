@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from shelfhold_sdk.io_guard import ForbiddenIOError, GuardedPlugin
 
 from shelfhold.acquisition.public import AcquireRefused
 from shelfhold.catalog.public import RightsService
@@ -22,7 +23,6 @@ from shelfhold.infrastructure.fetcher import DomainNotAllowed
 from shelfhold.library.public import servable_epub
 from shelfhold.plugin_host.adapters.native.gutenberg import GutenbergSource
 from shelfhold.plugin_host.errors import NoSourceForUrl
-from shelfhold.sdk.io_guard import ForbiddenIOError, GuardedPlugin
 from tests.gutenberg_env import (
     CATALOG_HOST,
     CATALOG_PATH,

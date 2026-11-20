@@ -18,6 +18,11 @@ from unittest.mock import patch
 
 import httpx2
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating  # noqa: F401 (the SDK surface a plugin imports)
+from shelfhold_sdk.models import API_VERSION as API
+from shelfhold_sdk.models import Cursor, DomainRule, Page, Permissions, PluginKind, RateLimit
+from shelfhold_sdk.refs import FileAsset, ImageRequest, SeriesInfo, SeriesRef, UnitInfo
+from shelfhold_sdk.source import Capability, SourceManifest
 
 from shelfhold.acquisition.public import NativeAcquirer
 from shelfhold.events.bus import EventBus
@@ -28,11 +33,6 @@ from shelfhold.plugin_host import attestation
 from shelfhold.plugin_host.attestation import FIRST_PARTY_PLUGIN_KEYS
 from shelfhold.plugin_host.registry import PluginRegistry
 from shelfhold.plugin_host.source_fetcher import SourceFetchers
-from shelfhold.sdk.age import AgeRating  # noqa: F401 (the SDK surface a plugin imports)
-from shelfhold.sdk.models import API_VERSION as API
-from shelfhold.sdk.models import Cursor, DomainRule, Page, Permissions, PluginKind, RateLimit
-from shelfhold.sdk.refs import FileAsset, ImageRequest, SeriesInfo, SeriesRef, UnitInfo
-from shelfhold.sdk.source import Capability, SourceManifest
 from tests.fakes_fetcher import Recorder
 from tests.follow_env import empty_catalog
 from tests.library_env import LibEnv, lib_env
@@ -80,7 +80,7 @@ class NativeBooks:
         object.__setattr__(self.manifest, "content_warning", content_warning)
 
     def filters(self) -> list[Any]:
-        from shelfhold.sdk.models import FilterSpec
+        from shelfhold_sdk.models import FilterSpec
 
         return [FilterSpec(key=k, kind="text", label=k) for k in self._filters]
 

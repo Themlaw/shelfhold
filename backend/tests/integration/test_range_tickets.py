@@ -11,12 +11,12 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.refs import RangedPayload, SeriesRef, UnitInfo
+from shelfhold_sdk.testing import FakeRangedConnectedService, fake_ranged_fetcher
+from shelfhold_sdk.testing.fakes import FAKE_KEY
 
 from shelfhold.acquisition.public import RangeTickets, RangeUnit, RequestBudget
 from shelfhold.library.public import Received
-from shelfhold.sdk.refs import RangedPayload, SeriesRef, UnitInfo
-from shelfhold.sdk.testing import FakeRangedConnectedService, fake_ranged_fetcher
-from shelfhold.sdk.testing.fakes import FAKE_KEY
 from tests.fakes_clock import ManualClock
 from tests.follow_env import START
 from tests.integration.test_schema_catalog import add_unit, add_variant

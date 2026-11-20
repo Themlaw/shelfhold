@@ -45,7 +45,7 @@ Tests, fixtures et cassettes sont **synthétiques ou du domaine public**. Jamais
 
 ## Écrire une source
 
-Une source passe le kit de conformité (`shelfhold.sdk.testing`), déclare ses conditions (`terms_url`, robots, limites) et passe par la **liste d'admission** : preuve d'autorisation ou licence libre. Toute PR visant une source non autorisée est fermée (voir [ADR-0015](docs/adr/0015-posture-legale.md)).
+Une source passe le kit de conformité (`shelfhold_sdk.testing`), déclare ses conditions (`terms_url`, robots, limites) et passe par la **liste d'admission** : preuve d'autorisation ou licence libre. Toute PR visant une source non autorisée est fermée (voir [ADR-0015](docs/adr/0015-posture-legale.md)).
 
 ## Tests découpés en shards
 
@@ -61,7 +61,7 @@ Sur une **PR**, chaque job ne tourne que si ce qu'il teste a pu changer (job `ch
 
 | Fichier changé | Jobs lancés (en plus des toujours-actifs) |
 | --- | --- |
-| `backend/src/**`, `backend/pyproject.toml`, `backend/uv.lock`, `backend/tests/conftest.py`, modules d'aide à la racine de `backend/tests/`, `backend/tests/fixtures/**` (et `fakes`, `support`, `cassettes`), `docker/**`, `frontend/**`, `open-api/**`, `ci.yml` | tout : `backend-unit`, `backend-integration`, `backend-suites` (property, golden, faults), `backend-bench`, `coverage` (+ diff 85 %), `fixtures` ; `frontend`, `openapi`, `client-drift`, e2e front, image + e2e image selon les dossiers touchés |
+| `pyproject.toml`, `uv.lock`, `backend/src/**`, `backend/pyproject.toml`, `sdk/**`, `backend/tests/conftest.py`, modules d'aide à la racine de `backend/tests/`, `backend/tests/fixtures/**` (et `fakes`, `support`, `cassettes`), `docker/**`, `frontend/**`, `open-api/**`, `ci.yml` | tout : `backend-unit`, `backend-integration`, `backend-suites` (property, golden, faults), `backend-bench`, `coverage` (+ diff 85 %), `fixtures` ; `frontend`, `openapi`, `client-drift`, e2e front, image + e2e image selon les dossiers touchés |
 | `backend/tests/unit/**` | `backend-unit`, `fixtures` |
 | `backend/tests/integration/**` | `backend-integration` |
 | `backend/tests/golden/**`, `faults/**`, `property/**` | `backend-suites`, uniquement la suite touchée |

@@ -10,6 +10,7 @@ from datetime import timedelta
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
 
 from shelfhold.acquisition.application.upstream import (
     Detacher,
@@ -20,7 +21,6 @@ from shelfhold.acquisition.application.upstream import (
 )
 from shelfhold.export.application.intents import IntentJournal
 from shelfhold.infrastructure.schema import acquisition
-from shelfhold.sdk.refs import SeriesRef
 from tests.adopt_env import tree_state
 from tests.pairing_env import SERIES, Paired, paired_env
 

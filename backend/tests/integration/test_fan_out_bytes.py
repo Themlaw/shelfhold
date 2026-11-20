@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.export_target import TargetCapabilities
+from shelfhold_sdk.fsops import ContentRef
 
 from shelfhold.export.application.fan_out import (
     ContentNeedsDownloadError,
@@ -31,8 +33,6 @@ from shelfhold.export.domain.planner import (
 from shelfhold.export.targets.kavita.destination import KavitaDestination
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.library.public import independent_copies
-from shelfhold.sdk.export_target import TargetCapabilities
-from shelfhold.sdk.fsops import ContentRef
 from tests.byte_source_env import (
     add_format,
     drop_library_copy,

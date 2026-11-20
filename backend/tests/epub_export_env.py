@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.export.domain.physical_roots import RECEIVED_DIR
@@ -25,7 +26,6 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
 from shelfhold.library.public import UntrustedEpubStore
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, xhtml
 from tests.export_env import ExportEnv, Series
 from tests.fakes.kavita import API_KEY, BASE_URL, build_fetcher
 from tests.integration.test_schema_catalog import add_unit, add_variant

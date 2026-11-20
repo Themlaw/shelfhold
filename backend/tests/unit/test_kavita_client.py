@@ -8,6 +8,7 @@ import json
 from datetime import timedelta
 
 import pytest
+from shelfhold_sdk.export_target import ApiCall
 
 from shelfhold.events.waiting_state import WaitingState
 from shelfhold.export.application.target_health import TargetHealth
@@ -29,7 +30,6 @@ from shelfhold.export.targets.kavita import (
     TargetDegraded,
     TargetForbidden,
 )
-from shelfhold.sdk.export_target import ApiCall
 from tests.fakes.kavita import API_KEY, BASE_URL, build_fetcher
 from tests.kavita_env import NOW, OPENAPI_DIR, harness, run
 

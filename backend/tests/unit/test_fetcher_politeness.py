@@ -9,6 +9,7 @@ from collections.abc import Awaitable
 
 import httpx2
 import pytest
+from shelfhold_sdk.models import DomainRule
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.fetcher import (
@@ -21,7 +22,6 @@ from shelfhold.infrastructure.fetcher.cache import HttpCache, cache_for
 from shelfhold.infrastructure.fetcher.client import USER_AGENT
 from shelfhold.infrastructure.fetcher.guard import DomainAllowlist
 from shelfhold.infrastructure.fetcher.robots import RobotsPolicy
-from shelfhold.sdk.models import DomainRule
 from tests.fakes_fetcher import FakeResolver, Recorder
 
 PUBLIC = "93.184.216.34"

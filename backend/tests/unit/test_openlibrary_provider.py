@@ -13,14 +13,8 @@ from collections.abc import Awaitable
 from pathlib import Path
 
 import pytest
-
-from shelfhold.plugin_host.adapters.native import openlibrary as package
-from shelfhold.plugin_host.adapters.native.openlibrary import (
-    OpenLibraryProvider,
-    build_manifest,
-)
-from shelfhold.sdk.fetcher import Response
-from shelfhold.sdk.metadata import (
+from shelfhold_sdk.fetcher import Response
+from shelfhold_sdk.metadata import (
     EntityRef,
     MatchHints,
     MetadataManifest,
@@ -28,7 +22,13 @@ from shelfhold.sdk.metadata import (
     ProviderQuota,
     ProviderUnavailable,
 )
-from shelfhold.sdk.testing import FakeFetcher, run_metadata_conformance
+from shelfhold_sdk.testing import FakeFetcher, run_metadata_conformance
+
+from shelfhold.plugin_host.adapters.native import openlibrary as package
+from shelfhold.plugin_host.adapters.native.openlibrary import (
+    OpenLibraryProvider,
+    build_manifest,
+)
 from tests.fakes.openlibrary.server import API_HOST, COVER_HOST, ISBN, OL_ID, record
 
 REPO = Path(__file__).resolve().parents[3]
@@ -201,6 +201,6 @@ def test_the_adapter_imports_only_the_sdk_and_nothing_that_decodes_or_connects()
     own -= {
         m for m in own if m.startswith("shelfhold.plugin_host.adapters.native.openlibrary")
     }  # itself
-    assert own and all(m.startswith("shelfhold.sdk") for m in own), own
+    assert own and all(m.startswith("shelfhold_sdk") for m in own), own
     forbidden = ("PIL", "httpx", "httpx2", "socket", "requests", "urllib.request", "aiohttp")
     assert not {m for m in imported if m.split(".")[0] in forbidden or m in forbidden}, imported

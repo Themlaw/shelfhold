@@ -17,6 +17,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import X_MIN_AGE, AgeRating
 from sqlalchemy import Connection
 
 from shelfhold.catalog.public import BOOK_KINDS, Admission, RatingService
@@ -55,7 +56,6 @@ from shelfhold.library.public import (
     export_sources,
     parse_policy,
 )
-from shelfhold.sdk.age import X_MIN_AGE, AgeRating
 
 _HOLDING = ("written", "scanned", "resolved")  # a record whose file is in the library
 _DONE = ("written", "scanned", "resolved", "adopted")

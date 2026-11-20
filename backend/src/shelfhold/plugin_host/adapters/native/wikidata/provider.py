@@ -23,8 +23,8 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode
 
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.metadata import (
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.metadata import (
     EntityRef,
     IdentifyResult,
     MatchHints,
@@ -35,8 +35,8 @@ from shelfhold.sdk.metadata import (
     ProviderUnavailable,
     RelationProposal,
 )
-from shelfhold.sdk.models import API_VERSION, AuthFlow, DomainRule, Permissions, SessionState
-from shelfhold.sdk.refs import ImageRequest
+from shelfhold_sdk.models import API_VERSION, AuthFlow, DomainRule, Permissions, SessionState
+from shelfhold_sdk.refs import ImageRequest
 
 KEY = "wikidata"
 SPARQL_HOST = "query.wikidata.org"

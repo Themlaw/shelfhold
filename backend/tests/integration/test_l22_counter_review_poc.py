@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.catalog.public import (
     apply_work_merge,
@@ -24,7 +25,6 @@ from shelfhold.identity.public import Credential, Principal
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, identity
 from shelfhold.ops.work_merge import WorkMergeOps
-from shelfhold.sdk.age import AgeRating
 from tests.export_env import ExportEnv, Series
 from tests.family_env import NOW, RATING, admin, family_env
 from tests.l50_env import seeded

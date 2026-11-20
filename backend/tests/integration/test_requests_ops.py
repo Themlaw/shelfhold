@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.acquisition.application.family_search import FamilyRef
 from shelfhold.acquisition.application.requests import (
@@ -21,7 +22,6 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.ops import requests as ops_requests
 from shelfhold.ops.errors import CodedRefusal
 from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
-from shelfhold.sdk.age import AgeRating
 from tests.federated_env import FakeSource
 from tests.request_env import (
     MEMBER_ID,

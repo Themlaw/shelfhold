@@ -12,10 +12,9 @@ import typing
 from pathlib import Path
 
 import pytest
-
-from shelfhold.sdk.fsops import FsOp
-from shelfhold.sdk.models import SDK_VERSION
-from shelfhold.sdk.testing import FakeFetcher, assert_conforms
+from shelfhold_sdk.fsops import FsOp
+from shelfhold_sdk.models import SDK_VERSION
+from shelfhold_sdk.testing import FakeFetcher, assert_conforms
 
 ROOT = Path(__file__).resolve().parents[3]
 PLUGINS = ROOT / "docs" / "plugins"

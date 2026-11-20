@@ -23,6 +23,7 @@ from typing import Any, Final
 from urllib.parse import urlencode
 
 import structlog
+from shelfhold_sdk.api_call import ApiCall
 
 from shelfhold.export.domain.komga_access import KomgaAccount, restriction_age
 from shelfhold.export.domain.scan_debounce import DEFAULT_QUIET, ScanDebouncer
@@ -39,7 +40,6 @@ from shelfhold.export.targets.komga.target import KomgaDestination
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.fetcher import FetchError, GuardedFetcher
 from shelfhold.infrastructure.logging import elapsed_ms
-from shelfhold.sdk.api_call import ApiCall
 
 MAX_LIBRARIES: Final = 500
 MAX_ACCOUNTS: Final = 5000

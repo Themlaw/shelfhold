@@ -10,8 +10,9 @@ import re
 from dataclasses import dataclass
 from typing import Final
 
+from shelfhold_sdk.api_call import Method
+
 from shelfhold.export.targets.komga.errors import KomgaRouteNotAllowed
-from shelfhold.sdk.api_call import Method
 
 LIBRARY_ID: Final = re.compile(r"[A-Za-z0-9]{1,64}", re.ASCII)
 _PARAMETER: Final = "{library_id}"

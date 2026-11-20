@@ -15,12 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
-
-from shelfhold.config import Settings
-from shelfhold.identity.public import local_auth
-from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
-from shelfhold.sdk.models import (
+from shelfhold_sdk.models import (
     API_VERSION,
     Cursor,
     Page,
@@ -28,8 +23,13 @@ from shelfhold.sdk.models import (
     PluginKind,
     RateLimit,
 )
-from shelfhold.sdk.refs import SeriesRef, UnitInfo
-from shelfhold.sdk.source import Capability, SourceManifest
+from shelfhold_sdk.refs import SeriesRef, UnitInfo
+from shelfhold_sdk.source import Capability, SourceManifest
+
+from shelfhold.config import Settings
+from shelfhold.identity.public import local_auth
+from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
 from tests.auth_env import AuthEnv, auth_env, db_rows
 
 Hit = tuple[str, str, Mapping[str, str], Mapping[str, Any]]  # id, title, external ids, memo

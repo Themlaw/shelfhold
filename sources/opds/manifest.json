@@ -2,7 +2,7 @@
   "key": "opds",
   "kind": "source",
   "version": "0.1.0",
-  "api": 1,
+  "api": 2,
   "name": "OPDS catalogue (Kavita, Komga, Calibre-web, ...)",
   "permissions": {
     "domains": [

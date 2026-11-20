@@ -26,6 +26,8 @@ from typing import Any, cast
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.connected import ConnectedCapability
+from shelfhold_sdk.models import AuthApiKey, AuthBasic
 from sqlalchemy import Engine
 
 from shelfhold.composition_errors import KeyringUnavailableError, NoLibraryError
@@ -66,8 +68,6 @@ from shelfhold.library.public import (
 from shelfhold.ops.events import BusTargetEvents
 from shelfhold.plugin_host.authflow import AuthInjectingFetcher
 from shelfhold.plugin_host.refs_guard import screened, secret_of, values_of
-from shelfhold.sdk.connected import ConnectedCapability
-from shelfhold.sdk.models import AuthApiKey, AuthBasic
 
 __all__ = [
     "Composition",

@@ -637,8 +637,9 @@ def test_an_age_applied_by_an_approved_request_is_tracked_like_a_rating(world: W
     unrated becomes visible, and a later raise is a loss that the token tells."""
     from datetime import UTC, datetime
 
+    from shelfhold_sdk.age import AgeRating
+
     from shelfhold.catalog.application.rating import RatingService
-    from shelfhold.sdk.age import AgeRating
 
     work_id = world.work("unrated")
     now = datetime(2026, 11, 13, tzinfo=UTC)

@@ -21,10 +21,10 @@ from dataclasses import dataclass
 from typing import Final, Literal, Protocol
 
 import structlog
+from shelfhold_sdk.fetcher import Response
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.fetcher import FetchLimits, GuardedFetcher, Network
-from shelfhold.sdk.fetcher import Response
 
 log = structlog.get_logger()
 

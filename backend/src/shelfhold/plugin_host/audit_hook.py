@@ -1,6 +1,6 @@
 """The plugin I/O detector in the host (EF-SRC-002): every refusal is logged with the plugin id.
 
-The detector itself is `shelfhold.sdk.io_guard` (shared with the conformance kit, which runs it in
+The detector itself is `shelfhold_sdk.io_guard` (shared with the conformance kit, which runs it in
 `raise` mode). The host runs it in `report` mode: each loaded plugin is wrapped with `audited`, and
 its import goes through `importing`; while its code runs, a socket, a name lookup, a process, a
 thread start or a file outside its sandbox is logged as `plugin.forbidden_io` with the plugin id,
@@ -14,9 +14,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import structlog
-
-from shelfhold.infrastructure.logging import escaped
-from shelfhold.sdk.io_guard import (
+from shelfhold_sdk.io_guard import (
     GuardedPlugin,
     IoViolation,
     allow_code_root,
@@ -24,7 +22,9 @@ from shelfhold.sdk.io_guard import (
     installed,
     plugin_io,
 )
-from shelfhold.sdk.io_guard import install as _install
+from shelfhold_sdk.io_guard import install as _install
+
+from shelfhold.infrastructure.logging import escaped
 
 __all__ = ["allow_code_root", "audited", "host_io", "importing", "install", "installed"]
 

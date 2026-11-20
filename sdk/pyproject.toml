@@ -1,0 +1,38 @@
+[project]
+name = "shelfhold-sdk"
+version = "2.0.0"
+description = "SDK de Shelfhold (MIT) : contrat de données `api` 2 des plugins et kit de conformité, publiés avec la 2.0 (ADR-0024, D10, D11)."
+requires-python = ">=3.13,<3.14"
+license = "MIT"
+# Closed list: the SDK never imports the host core (ENF-LEG-010); pydantic is its only
+# runtime dependency, so the wheel installs and runs without the host.
+dependencies = [
+    "pydantic>=2.14.1",
+]
+
+# The conformance kit (ENF-QUAL-003) is delivered as a pytest plugin: a plugin author's
+# `pytest` run loads it automatically once `shelfhold-sdk` is installed.
+[project.entry-points.pytest11]
+shelfhold_sdk_testing = "shelfhold_sdk.testing.pytest_plugin"
+
+[build-system]
+requires = ["uv_build>=0.8,<0.14"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101"]  # the SDK's own tests assert
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "req(*ids): requirement IDs (EF-/ENF-) the test verifies; see tools/traceability.py",
+]

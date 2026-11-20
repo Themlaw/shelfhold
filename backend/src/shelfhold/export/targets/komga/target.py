@@ -19,8 +19,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
+from shelfhold_sdk.export_target import ApiCall, NamingConstraints, TargetCapabilities
+
 from shelfhold.export.targets.komga import routes
-from shelfhold.sdk.export_target import ApiCall, NamingConstraints, TargetCapabilities
 
 NO_FOLDER: Final = "the destination describes no scan of a folder: Komga rescans a library"
 _EXTENSION: Final = re.compile(r"\.(cbz|cbr|epub|pdf|zip)$", re.IGNORECASE)

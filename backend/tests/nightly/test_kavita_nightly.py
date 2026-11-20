@@ -215,7 +215,7 @@ def _epub(title: str) -> bytes:
     of an EPUB series is never written in the file)."""
     import hashlib
 
-    from shelfhold.sdk.testing.corpus.trapped_epubs.build import epub_bytes, opf, xhtml
+    from shelfhold_sdk.testing.corpus.trapped_epubs.build import epub_bytes, opf, xhtml
 
     ident = hashlib.sha256(title.encode()).hexdigest()[:32]
     package = (

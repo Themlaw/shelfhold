@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 import httpx2
 import pytest
 import structlog
+from shelfhold_sdk.models import DomainRule
 
 from shelfhold.infrastructure.fetcher import GuardedFetcher
 from shelfhold.infrastructure.fetcher.errors import DomainNotAllowed
@@ -24,7 +25,6 @@ from shelfhold.infrastructure.fetcher.guard import (
     compile_domain_pattern,
 )
 from shelfhold.infrastructure.logging import register_secret_value
-from shelfhold.sdk.models import DomainRule
 from tests.fakes_fetcher import FakeResolver, Recorder
 from tests.redaction_support import forget_secret_values, synthetic_text
 

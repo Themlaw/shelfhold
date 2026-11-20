@@ -15,6 +15,7 @@ from urllib.parse import parse_qs
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.metadata import MatchHints
 from sqlalchemy import Engine
 
 from shelfhold.catalog.application.enrich import EnrichReport, EnrichService
@@ -30,7 +31,6 @@ from shelfhold.plugin_host.adapters.native.wikidata import WikidataProvider
 from shelfhold.plugin_host.adapters.native.wikidata import build_manifest as wikidata_manifest
 from shelfhold.plugin_host.bnf_sru import read_sru
 from shelfhold.plugin_host.provider_fetcher import ProviderFetcher
-from shelfhold.sdk.metadata import MatchHints
 from tests.fakes.bnf import server as bnf_server
 from tests.fakes.cassette_server import CassetteServer
 from tests.fakes.wikidata import server as wikidata_server

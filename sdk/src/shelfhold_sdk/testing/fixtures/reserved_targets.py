@@ -9,14 +9,14 @@ strings in `supported_versions()`, since the SDK has no generic version type.
 from typing import Any
 from urllib.parse import quote
 
-from shelfhold.sdk.api_call import ApiCall, ContentBody
-from shelfhold.sdk.export_target import (
+from shelfhold_sdk.api_call import ApiCall, ContentBody
+from shelfhold_sdk.export_target import (
     JsonObject,
     MetadataUpdateSupport,
     NamingConstraints,
     TargetCapabilities,
 )
-from shelfhold.sdk.fsops import ContentRef
+from shelfhold_sdk.fsops import ContentRef
 
 _NAMING = NamingConstraints(
     max_segment_bytes=255, max_path_bytes=4096, forbidden='<>:"|?*', case_insensitive=False

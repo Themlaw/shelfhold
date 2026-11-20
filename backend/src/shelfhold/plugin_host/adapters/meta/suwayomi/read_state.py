@@ -13,14 +13,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.refs import SeriesRef
+
 from shelfhold.acquisition.application.read_state_push import (
     RemoteChapter,
     RemoteRefused,
     RemoteUnavailable,
 )
 from shelfhold.plugin_host.errors import failure_class_of
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.refs import SeriesRef
 
 __all__ = ["SuwayomiReadState"]
 

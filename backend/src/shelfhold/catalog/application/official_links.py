@@ -22,13 +22,13 @@ from datetime import datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import sqlalchemy as sa
+from shelfhold_sdk.metadata import IdentifyResult, Provenance
 
 from shelfhold.catalog.application.queries import ReaderScope, visible_edition_ids
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.infrastructure.schema.catalog import EXTERNAL_LINK_KINDS
-from shelfhold.sdk.metadata import IdentifyResult, Provenance
 
 __all__ = [
     "AFFILIATE_PARAMS",

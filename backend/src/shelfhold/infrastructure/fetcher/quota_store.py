@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
+from shelfhold_sdk.metadata import AdaptiveLimit
 from sqlalchemy import Engine, exc
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -21,7 +22,6 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher.day_window import day_key
 from shelfhold.infrastructure.fetcher.errors import ProviderQuotaExceeded
 from shelfhold.infrastructure.schema import platform
-from shelfhold.sdk.metadata import AdaptiveLimit
 
 __all__ = ["SqlBucketStore"]
 

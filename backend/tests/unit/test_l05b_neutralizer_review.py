@@ -33,15 +33,15 @@ import re
 import zipfile
 
 import pytest
-
-from shelfhold.infrastructure.content_trust import NeutralizationError, neutralize, neutralize_epub
-from shelfhold.sdk.testing.corpus.trapped_epubs import (
+from shelfhold_sdk.testing.corpus.trapped_epubs import (
     Member,
     epub_bytes,
     find_active_css,
     find_active_patterns,
     xhtml,
 )
+
+from shelfhold.infrastructure.content_trust import NeutralizationError, neutralize, neutralize_epub
 
 pytestmark = pytest.mark.req("EF-LEC-005", "ENF-SEC-004")
 

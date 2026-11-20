@@ -25,7 +25,7 @@ import pytest
 import yaml
 
 from shelfhold.platform.update_check import check_for_update
-from shelfhold.sdk.fetcher import Response
+from shelfhold_sdk.fetcher import Response
 
 pytestmark = pytest.mark.req("ENF-GOV-004")
 

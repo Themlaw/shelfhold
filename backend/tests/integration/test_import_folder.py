@@ -15,6 +15,8 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.source import SourceManifest
+from shelfhold_sdk.testing.corpus.trapped_epubs.build import Member, epub_bytes, xhtml, zip_bytes
 
 from shelfhold.i18n import t
 from shelfhold.library.adapters import import_scan
@@ -26,8 +28,6 @@ from shelfhold.library.adapters.import_scan import (
 )
 from shelfhold.ops.diagnostic import Vocabulary, _content
 from shelfhold.plugin_host.adapters.native.import_folder import build_manifest
-from shelfhold.sdk.source import SourceManifest
-from shelfhold.sdk.testing.corpus.trapped_epubs.build import Member, epub_bytes, xhtml, zip_bytes
 from tests.import_env import (
     ADOBE_FONTS,
     AES,

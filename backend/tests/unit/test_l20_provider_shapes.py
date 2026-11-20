@@ -6,12 +6,12 @@ from __future__ import annotations
 import json
 
 import pytest
+from shelfhold_sdk.fetcher import Response
+from shelfhold_sdk.metadata import EntityRef, MatchHints, ProviderUnavailable
+from shelfhold_sdk.testing import FakeFetcher
 
 from shelfhold.plugin_host.adapters.native.anilist import AniListProvider
 from shelfhold.plugin_host.adapters.native.mangaupdates import MangaUpdatesProvider
-from shelfhold.sdk.fetcher import Response
-from shelfhold.sdk.metadata import EntityRef, MatchHints, ProviderUnavailable
-from shelfhold.sdk.testing import FakeFetcher
 from tests.fakes.anilist.server import TITLE
 from tests.fakes.mangaupdates.server import SERIES_ID
 from tests.unit.test_l20_providers import EDITION, run

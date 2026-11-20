@@ -19,6 +19,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import AGE_TIERS, AgeRating
 
 from shelfhold.catalog.public import (
     EditionSuggestion,
@@ -37,7 +38,6 @@ from shelfhold.ops.errors import (
     StalePreviewError,
     UnknownSubjectError,
 )
-from shelfhold.sdk.age import AGE_TIERS, AgeRating
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine

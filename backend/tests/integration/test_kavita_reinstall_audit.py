@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.events.waiting_state import WaitingState
 from shelfhold.export.application.field_guard import FieldGuard
@@ -25,7 +26,6 @@ from shelfhold.export.targets.kavita.reinstall import InstanceService
 from shelfhold.export.targets.kavita.series import SeriesResolver
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
-from shelfhold.sdk.age import AgeRating
 from tests.export_env import ExportEnv, export_env, state_of
 from tests.fakes.kavita import default_libraries, member
 from tests.kavita_env import run

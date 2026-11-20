@@ -8,10 +8,10 @@ while the admin's `enabled` is never touched.
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from shelfhold_sdk.source import SubSource
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.infrastructure.schema import acquisition
-from shelfhold.sdk.source import SubSource
 
 __all__ = ["upsert_sub_sources"]
 

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.acquisition.application.requests import (
     Estimate,
@@ -27,7 +28,6 @@ from shelfhold.infrastructure.db import create_db_engine, write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.schema import acquisition
-from shelfhold.sdk.age import AgeRating
 from tests.auth_env import T0, ManualClock
 
 ADMIN_ID = "01J0000000000000000000ADMX"

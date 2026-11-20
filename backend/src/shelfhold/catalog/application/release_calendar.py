@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Final, Literal
 
 import sqlalchemy as sa
+from shelfhold_sdk.metadata import EntityRef, MatchHints, MetadataProvider
 from sqlalchemy import Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -22,7 +23,6 @@ from shelfhold.catalog.application.queries import ReaderScope, visible_editions_
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import catalog
-from shelfhold.sdk.metadata import EntityRef, MatchHints, MetadataProvider
 
 __all__ = ["CALENDAR_TTL", "CalendarRefresh", "ReleaseCalendar", "ReleaseEntry"]
 

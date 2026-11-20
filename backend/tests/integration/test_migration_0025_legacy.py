@@ -6,10 +6,10 @@ from collections.abc import Iterator
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.catalog.domain.age import Admission
 from shelfhold.infrastructure.schema import catalog
-from shelfhold.sdk.age import AgeRating
 from tests.catalog_env import Harness, harness
 from tests.integration.test_rating_service import (
     NOW,

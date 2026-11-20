@@ -22,6 +22,7 @@ from typing import Any, Protocol
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.age import AgeRating, is_family_ceiling
 from sqlalchemy import Connection, Engine
 
 from shelfhold.acquisition.domain.request_target import (
@@ -61,7 +62,6 @@ from shelfhold.infrastructure.requesters import still_a_user
 from shelfhold.infrastructure.schema import acquisition, catalog, identity
 from shelfhold.infrastructure.schema.identity import REQUEST_ELSEWHERE_STATES
 from shelfhold.library.public import open_request_matches
-from shelfhold.sdk.age import AgeRating, is_family_ceiling
 
 __all__ = [
     "MAX_PENDING",

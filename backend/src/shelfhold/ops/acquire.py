@@ -13,6 +13,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.source import Capability, SourceError, SourceManifest
 
 from shelfhold.acquisition.application.family_search import (
     FamilyPage,
@@ -51,8 +53,6 @@ from shelfhold.ops.tombstone_screens import CatalogScreens
 from shelfhold.plugin_host.errors import NoSourceForUrl, RefHasSecret
 from shelfhold.plugin_host.settings import SourceSettings
 from shelfhold.plugin_host.trust_card import trust_card
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.source import Capability, SourceError, SourceManifest
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition

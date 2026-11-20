@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 """The destination chapter of the conformance kit (ENF-QUAL-003, EF-EXP-058, EF-EXP-065).
 
-Same kit, same `ConformanceReport` as `shelfhold.sdk.testing.kit`: this module holds what only a
+Same kit, same `ConformanceReport` as `shelfhold_sdk.testing.kit`: this module holds what only a
 destination needs. It replays a destination on synthetic fixtures, offline, and touches neither the
 disk nor the network: a destination describes (`FsOpPlan`, `ApiCall`), the host executes.
 
@@ -24,10 +24,10 @@ from typing import Any, Final, Literal
 
 from pydantic import ValidationError
 
-from shelfhold.sdk.api_call import ApiCall, ApiCallError, check_api_call, parse_api_call
-from shelfhold.sdk.events import PluginEventError, check_plugin_event, plugin_event_type
-from shelfhold.sdk.export_target import TargetCapabilities, sidecar_forbidden
-from shelfhold.sdk.fsops import (
+from shelfhold_sdk.api_call import ApiCall, ApiCallError, check_api_call, parse_api_call
+from shelfhold_sdk.events import PluginEventError, check_plugin_event, plugin_event_type
+from shelfhold_sdk.export_target import TargetCapabilities, sidecar_forbidden
+from shelfhold_sdk.fsops import (
     FsOp,
     FsOpPlan,
     FsOpPlanError,
@@ -36,7 +36,7 @@ from shelfhold.sdk.fsops import (
     check_destination_plan_before_run,
     parse_destination_plan,
 )
-from shelfhold.sdk.testing.kit import (
+from shelfhold_sdk.testing.kit import (
     ConformanceReport,
     run_destination_declaration_check,
     run_indexer_plan_check,

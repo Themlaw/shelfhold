@@ -9,8 +9,8 @@ from typing import Any, Protocol
 
 from pydantic import Field
 
-from shelfhold.sdk.models import SdkModel
-from shelfhold.sdk.refs import ImageRequest
+from shelfhold_sdk.models import SdkModel
+from shelfhold_sdk.refs import ImageRequest
 
 
 class Response(SdkModel):

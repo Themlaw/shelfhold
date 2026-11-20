@@ -1,18 +1,18 @@
-# Le kit de conformité (SDK 1.4)
+# Le kit de conformité (SDK 2.0)
 
-Le kit est livré **dans le SDK** (`shelfhold.sdk.testing`, licence MIT) comme outil pytest. Il tourne hors
+Le kit est livré **dans le SDK** (`shelfhold_sdk.testing`, licence MIT) comme outil pytest. Il tourne hors
 réseau (`record_mode = "none"`) sur des cassettes synthétiques : toute requête non scriptée échoue.
 
 ## Sources
 
 ```python
-from shelfhold.sdk.testing import FakeFetcher, assert_conforms
+from shelfhold_sdk.testing import FakeFetcher, assert_conforms
 
 report = assert_conforms(MySource(), FakeFetcher.from_cassette(cassette), reinstall=lambda: MySource())
 ```
 
 `assert_conforms` lève `AssertionError` au premier échec ; `run_source_conformance` (asynchrone) rend le rapport
-complet. La fixture `check_conformance` du plugin pytest (`pytest_plugins = ["shelfhold.sdk.testing.pytest_plugin"]`)
+complet. La fixture `check_conformance` du plugin pytest (`pytest_plugins = ["shelfhold_sdk.testing.pytest_plugin"]`)
 l'enveloppe. Les contrôles, par nom :
 
 | Contrôle | Ce qu'il vérifie |

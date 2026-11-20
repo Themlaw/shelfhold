@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from shelfhold_sdk.refs import SeriesRef
 
 from shelfhold.acquisition.application.follow_request import FollowRequests
 from shelfhold.acquisition.application.requests import RequestService
@@ -20,7 +21,6 @@ from shelfhold.identity.domain.credentials import Credential, Principal
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.jobs.control import QueueControl
-from shelfhold.sdk.refs import SeriesRef
 from tests.auth_env import PASSWORD, AuthEnv, auth_env, db_rows
 from tests.integration.test_user_delete_export import (
     PROFILES,

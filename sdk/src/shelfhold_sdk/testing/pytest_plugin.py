@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: MIT
-"""pytest tool for plugin authors: `pytest_plugins = ["shelfhold.sdk.testing.pytest_plugin"]`."""
+"""pytest tool for plugin authors: `pytest_plugins = ["shelfhold_sdk.testing.pytest_plugin"]`."""
 
 from collections.abc import Callable
 
 import pytest
 
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.source import Source
-from shelfhold.sdk.testing.destination_kit import assert_destination_conforms
-from shelfhold.sdk.testing.fakes import FakeFetcher
-from shelfhold.sdk.testing.kit import ConformanceReport, assert_conforms
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.source import Source
+from shelfhold_sdk.testing.destination_kit import assert_destination_conforms
+from shelfhold_sdk.testing.fakes import FakeFetcher
+from shelfhold_sdk.testing.kit import ConformanceReport, assert_conforms
 
 
 @pytest.fixture

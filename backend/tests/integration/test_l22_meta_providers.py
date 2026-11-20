@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.metadata import MatchHints
 from sqlalchemy import Engine
 
 from shelfhold.catalog.application.enrich import EnrichReport, EnrichService
@@ -28,7 +29,6 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.imaging import WorkerLimits
 from shelfhold.infrastructure.schema import metadata
 from shelfhold.plugin_host.adapters.native.comicvine import ComicVineProvider, build_manifest
-from shelfhold.sdk.metadata import MatchHints
 from tests.fakes.cassette_server import CassetteServer
 from tests.fakes.comicvine.server import ABSENT, TITLE, VOLUME_URL, fake_comicvine
 from tests.fakes_clock import ManualClock

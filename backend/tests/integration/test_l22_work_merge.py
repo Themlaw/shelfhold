@@ -10,6 +10,7 @@ from datetime import timedelta
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating
 
 from shelfhold.catalog.application.rating import RatingService
 from shelfhold.catalog.public import (
@@ -32,7 +33,6 @@ from shelfhold.export.application.export_items import (
 from shelfhold.export.domain.planner import SeriesRef
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, identity, platform
-from shelfhold.sdk.age import AgeRating
 from tests.export_env import ExportEnv
 from tests.family_env import NOW, family_env, rate
 from tests.integration.test_schema_catalog import add_edition, add_unit

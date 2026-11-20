@@ -13,6 +13,8 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.refs import SeriesRef
+from shelfhold_sdk.source import SourceError
 
 from shelfhold.acquisition.application.gap_watch import acknowledge, unacknowledge
 from shelfhold.acquisition.public import (
@@ -39,8 +41,6 @@ from shelfhold.ops.errors import (
     UnknownSubjectError,
 )
 from shelfhold.ops.reclaim import estimate_units, require_space
-from shelfhold.sdk.refs import SeriesRef
-from shelfhold.sdk.source import SourceError
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition

@@ -23,7 +23,7 @@ def _read(rel: str) -> str:
 def test_license_has_provisional_plugin_exception() -> None:
     text = _read("LICENSE")
     assert "Additional permission (provisional plugin exception)" in text
-    sdk_license = _read("backend/src/shelfhold/sdk/LICENSE")
+    sdk_license = _read("sdk/LICENSE")
     assert "MIT License" in sdk_license.splitlines()[0]
 
 

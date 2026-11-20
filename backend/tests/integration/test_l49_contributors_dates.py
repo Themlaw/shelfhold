@@ -12,12 +12,12 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 import structlog.testing
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.refs import SeriesRef, UnitInfo
 
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog
 from shelfhold.plugin_host.adapters.meta.suwayomi import SuwayomiService
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.refs import SeriesRef, UnitInfo
 from tests.export_env import export_env_on
 from tests.fakes.suwayomi import BASE_URL
 from tests.follow_env import Bench, follow_bench, new_chapter

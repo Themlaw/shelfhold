@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating, max_rating, to_columns
 from sqlalchemy import Connection, exc
 
 from shelfhold.catalog.application.changes import track_work_changes
@@ -40,7 +41,6 @@ from shelfhold.catalog.application.tombstone_screen import MergedPlace, Tombston
 from shelfhold.catalog.domain.external_ids import ExternalId
 from shelfhold.infrastructure.schema import acquisition, catalog
 from shelfhold.infrastructure.schema._base import metadata as _METADATA
-from shelfhold.sdk.age import AgeRating, max_rating, to_columns
 
 __all__ = [
     "EDITION_KEY",

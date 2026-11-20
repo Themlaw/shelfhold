@@ -13,6 +13,7 @@ from collections.abc import Awaitable
 from pathlib import Path
 
 import pytest
+from shelfhold_sdk.metadata import ProviderQuota
 
 from shelfhold import __version__
 from shelfhold.config import Settings
@@ -26,7 +27,6 @@ from shelfhold.infrastructure.fetcher.errors import ProviderQuotaExceeded, UserA
 from shelfhold.infrastructure.fetcher.limiter import ProviderBuckets, TokenBucket
 from shelfhold.plugin_host.adapters.native.openlibrary import build_manifest
 from shelfhold.plugin_host.provider_fetcher import ProviderFetcher, ProviderRuntime, open_provider
-from shelfhold.sdk.metadata import ProviderQuota
 from tests.fakes.openlibrary.server import API_HOST, ISBN, FakeOpenLibrary
 
 CONTACT = "owner@example.org"
@@ -368,8 +368,9 @@ def test_a_bucket_needs_a_positive_rate() -> None:
 
 @pytest.mark.req("ENF-SEC-003")
 def test_the_host_downloads_a_cover_bounded_and_only_by_get() -> None:
+    from shelfhold_sdk.refs import ImageRequest
+
     from shelfhold.infrastructure.fetcher import FetchTooLarge
-    from shelfhold.sdk.refs import ImageRequest
 
     fake = FakeOpenLibrary()
     f = provider_fetcher(fake, contact=CONTACT)

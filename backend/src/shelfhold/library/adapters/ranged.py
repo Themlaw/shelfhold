@@ -21,10 +21,10 @@ from shelfhold.infrastructure.schema import export
 from shelfhold.infrastructure.volumes import erase_data_path, write_data_file
 
 if TYPE_CHECKING:
+    from shelfhold_sdk.refs import RangedPayload
     from sqlalchemy import Engine
 
     from shelfhold.library.adapters.receive import Received
-    from shelfhold.sdk.refs import RangedPayload
 
 __all__ = ["RangedKeeper"]
 

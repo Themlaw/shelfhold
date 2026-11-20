@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.age import AgeRating
+from shelfhold_sdk.source import SourceManifest
 
 from shelfhold.acquisition.application.requests import (
     Estimate,
@@ -33,8 +35,6 @@ from shelfhold.infrastructure.schema import acquisition, export
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.errors import CodedRefusal
 from shelfhold.ops.follows import FollowOps
-from shelfhold.sdk.age import AgeRating
-from shelfhold.sdk.source import SourceManifest
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition

@@ -14,11 +14,11 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
-from shelfhold.sdk.connected import ConnectedCapability, ConnectedService
-from shelfhold.sdk.events import PluginEventError, plugin_event_type
-from shelfhold.sdk.fetcher import Fetcher
-from shelfhold.sdk.io_guard import ForbiddenIOError, GuardedPlugin, IoViolation, unwrap
-from shelfhold.sdk.metadata import (
+from shelfhold_sdk.connected import ConnectedCapability, ConnectedService
+from shelfhold_sdk.events import PluginEventError, plugin_event_type
+from shelfhold_sdk.fetcher import Fetcher
+from shelfhold_sdk.io_guard import ForbiddenIOError, GuardedPlugin, IoViolation, unwrap
+from shelfhold_sdk.metadata import (
     ISBN_SCHEMES,
     EntityRef,
     IdentifyResult,
@@ -27,16 +27,16 @@ from shelfhold.sdk.metadata import (
     MetadataProvider,
     ProviderCapability,
 )
-from shelfhold.sdk.models import API_VERSION, WAITING_EXITS, sdk_supports
-from shelfhold.sdk.refs import (
+from shelfhold_sdk.models import API_VERSION, WAITING_EXITS, sdk_supports_n_minus_1
+from shelfhold_sdk.refs import (
     RangedPayload,
     RangeRef,
     SeriesRef,
     UnitInfo,
     UnitRef,
 )
-from shelfhold.sdk.source import Capability, Source, SourceManifest
-from shelfhold.sdk.testing.fakes import NetworkForbidden
+from shelfhold_sdk.source import Capability, Source, SourceManifest
+from shelfhold_sdk.testing.fakes import NetworkForbidden
 
 _USERINFO = re.compile(r"://[^/\s@]*@")
 _SECRET_PARAM = re.compile(r"[?&;](?:token|key|secret|password|passwd|apikey|api_key|sig)=", re.I)
@@ -506,7 +506,7 @@ async def run_metadata_conformance(
     report.add("manifest", valid, "" if valid else "manifest is not a valid MetadataManifest")
     api_ok = manifest.api in (API_VERSION, API_VERSION - 1)
     report.add("api_compatible", api_ok, "" if api_ok else f"api {manifest.api} is not N or N-1")
-    sdk_ok = sdk_supports(manifest.min_sdk)
+    sdk_ok = sdk_supports_n_minus_1(manifest.min_sdk)  # api N-1 shim window (D11)
     report.add("sdk_compatible", sdk_ok, "" if sdk_ok else f"needs SDK {manifest.min_sdk}")
     terms_ok = bool(manifest.terms_url) and str(manifest.terms_url).startswith("https://")
     report.add("terms_url", terms_ok, "" if terms_ok else "terms_url must be an https URL")
@@ -622,7 +622,7 @@ def run_trapped_epub_corpus(
     (`{name: bytes}`), or raises to refuse the EPUB. A trap that must be neutralized has to come
     out without an active pattern in any entry; a trap that must be refused has to raise.
     """
-    from shelfhold.sdk.testing.corpus.trapped_epubs import (
+    from shelfhold_sdk.testing.corpus.trapped_epubs import (
         all_traps,
         find_active_css,
         find_active_patterns,

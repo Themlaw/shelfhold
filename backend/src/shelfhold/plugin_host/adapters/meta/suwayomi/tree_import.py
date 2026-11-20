@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Final, cast
 
+from shelfhold_sdk.age import X_MIN_AGE, AgeRating, from_comicinfo
+
 from shelfhold.acquisition.public import (
     SeriesBinding,
     TreeTargets,
@@ -68,7 +70,6 @@ from shelfhold.library.adapters.import_scan import (
     collision_key,
     display_path,
 )
-from shelfhold.sdk.age import X_MIN_AGE, AgeRating, from_comicinfo
 
 # A key the import folder never makes: its keys are percent-encoded, so a raw backslash cannot
 # start one (a folder of the import folder named like our prefix gets another key).

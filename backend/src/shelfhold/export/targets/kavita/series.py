@@ -19,6 +19,7 @@ from typing import Any
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.age import AgeRating
 from sqlalchemy import Engine
 from sqlalchemy.exc import IntegrityError
 
@@ -52,7 +53,6 @@ from shelfhold.export.targets.kavita.errors import ListingIncomplete, ProtocolEr
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import export
-from shelfhold.sdk.age import AgeRating
 
 __all__ = [
     "RemoteSeries",

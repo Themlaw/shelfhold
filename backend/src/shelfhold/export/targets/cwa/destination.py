@@ -17,10 +17,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Final
 
+from shelfhold_sdk.api_call import ApiCall
+from shelfhold_sdk.export_target import NamingConstraints, TargetCapabilities
+from shelfhold_sdk.fsops import ContentRef, FsOp, FsOpPlan
+
 from shelfhold.export.domain.naming import MAX_COMPONENT_BYTES, sanitize_name
-from shelfhold.sdk.api_call import ApiCall
-from shelfhold.sdk.export_target import NamingConstraints, TargetCapabilities
-from shelfhold.sdk.fsops import ContentRef, FsOp, FsOpPlan
 
 __all__ = ["CwaDestination", "DropSpec", "drop_name"]
 

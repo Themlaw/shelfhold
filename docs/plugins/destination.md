@@ -1,7 +1,7 @@
-# Écrire une destination (SDK 1.4, contrat partiellement provisoire)
+# Écrire une destination (SDK 2.0, contrat partiellement provisoire)
 
 Une **destination** reçoit des fichiers rangés par Shelfhold (une bibliothèque Kavita, un dossier surveillé).
-Le contrat vit dans `shelfhold.sdk.export_target`, `shelfhold.sdk.api_call` et `shelfhold.sdk.fsops` (licence MIT).
+Le contrat vit dans `shelfhold_sdk.export_target`, `shelfhold_sdk.api_call` et `shelfhold_sdk.fsops` (licence MIT).
 
 > **Partiellement provisoire.** Le plan d'opérations (`FsOp`, SDK 1.3) et le corps d'`ApiCall` (SDK 1.4) sont figés. Le reste du contrat
 > (éléments d'export, plages de versions, événements, progression) est encore décrit sans type : `ExportItem`, `VersionRange`,
@@ -31,7 +31,7 @@ Sont refusés quoi que dise le plugin :
   un plan qui nomme deux fois une même cible, quelle que soit la casse, est refusé avant exécution.
 
 ```python
-from shelfhold.sdk.fsops import FsOp, FsOpPlan, parse_destination_plan
+from shelfhold_sdk.fsops import FsOp, FsOpPlan, parse_destination_plan
 
 plan = FsOpPlan(ops=(FsOp(op="mkdir", rel_path="Serie A"),))
 host_copy = parse_destination_plan(plan.model_dump_json())  # la copie que l'hôte exécute

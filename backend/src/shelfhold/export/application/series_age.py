@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating, max_rating
 from sqlalchemy import Connection
 
 from shelfhold.catalog.public import RatingService
@@ -29,7 +30,6 @@ from shelfhold.export.application.snapshot import barrier_holds, edition_age, lo
 from shelfhold.export.domain.field_owner import OwnedField
 from shelfhold.export.domain.kavita_access import age_of_rating, rating_for_age
 from shelfhold.infrastructure.schema import catalog, export
-from shelfhold.sdk.age import AgeRating, max_rating
 
 __all__ = ["SeriesAgeTask", "due_ages", "verified_age"]
 

@@ -16,6 +16,8 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.api_call import ApiCall
+from shelfhold_sdk.export_target import TargetCapabilities
 
 from shelfhold.export.application import fan_out as fan_out_module
 from shelfhold.export.application.export_items import create_export_item
@@ -24,8 +26,6 @@ from shelfhold.export.application.plan_executor import PlanBinding
 from shelfhold.export.application.target_state import save_fingerprint
 from shelfhold.export.targets.kavita.destination import KavitaDestination
 from shelfhold.infrastructure.db import write_transaction
-from shelfhold.sdk.api_call import ApiCall
-from shelfhold.sdk.export_target import TargetCapabilities
 from tests.export_env import ExportEnv, export_env
 from tests.family_env import family_env, rate
 from tests.fan_out_env import bind, records_of, service

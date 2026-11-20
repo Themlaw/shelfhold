@@ -30,6 +30,18 @@ from pathlib import Path
 from typing import Any, Final, Literal, Protocol
 
 import sqlalchemy as sa
+from shelfhold_sdk.age import AgeRating
+from shelfhold_sdk.metadata import (
+    EntityRef,
+    FieldProposal,
+    MatchHints,
+    MetadataManifest,
+    MetadataProvider,
+    Provenance,
+    ProviderCapability,
+    ProviderUnavailable,
+)
+from shelfhold_sdk.refs import ImageRequest
 from sqlalchemy import Connection, Engine
 
 from shelfhold.catalog.application.external_ids import external_ids_of, holder_of
@@ -69,18 +81,6 @@ from shelfhold.infrastructure.imaging import (
     make_thumbnail,
 )
 from shelfhold.infrastructure.schema import catalog, platform
-from shelfhold.sdk.age import AgeRating
-from shelfhold.sdk.metadata import (
-    EntityRef,
-    FieldProposal,
-    MatchHints,
-    MetadataManifest,
-    MetadataProvider,
-    Provenance,
-    ProviderCapability,
-    ProviderUnavailable,
-)
-from shelfhold.sdk.refs import ImageRequest
 
 __all__ = [
     "COVER_FIELD",

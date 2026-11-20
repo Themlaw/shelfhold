@@ -10,6 +10,8 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from shelfhold_sdk.models import API_VERSION
+from shelfhold_sdk.testing.fakes import FakeRangedConnectedService
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.db import create_db_engine
@@ -17,8 +19,6 @@ from shelfhold.infrastructure.migrate import migrate
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.plugin_host.attestation import InstalledVersion
 from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
-from shelfhold.sdk.models import API_VERSION
-from shelfhold.sdk.testing.fakes import FakeRangedConnectedService
 from tests.auth_env import run_cli
 from tests.redaction_support import forget_secret_values
 
