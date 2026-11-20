@@ -41,7 +41,7 @@ def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in pairs:
         if key in out:
-            raise FrameError(f"duplicate key {key!r}")
+            raise FrameError(f"duplicate key {key[:40]!r}")
         out[key] = value
     return out
 

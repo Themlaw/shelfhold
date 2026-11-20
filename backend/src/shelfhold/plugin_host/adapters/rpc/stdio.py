@@ -75,19 +75,23 @@ async def spawn_stdio(
     if stdin is None or stdout is None:  # pragma: no cover - PIPE always gives both
         raise RuntimeError("the plugin process has no standard streams")
 
+    def kill_group() -> None:
+        # the plugin's own session: its pid is its group's id, and a child it left behind is in it
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(process.pid, signal.SIGKILL)
+
     async def exit_reason() -> str | None:
         try:
             code = await asyncio.wait_for(process.wait(), 2.0)
         except TimeoutError:
             return "the plugin closed the connection"
+        kill_group()  # the plugin is gone: whatever it started goes with it
         return _describe(code)
 
     async def close() -> None:
         with contextlib.suppress(Exception):
             stdin.close()
-        if process.returncode is None:
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGKILL)  # the plugin's own group, by its pid
+        kill_group()  # also once the plugin has exited: its children may not have
         with contextlib.suppress(Exception):
             await asyncio.wait_for(process.wait(), 5.0)
 

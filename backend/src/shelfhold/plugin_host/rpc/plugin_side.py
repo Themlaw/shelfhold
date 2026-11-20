@@ -170,7 +170,7 @@ async def publish_event(name: str, payload: Mapping[str, Any] | None = None) -> 
 
 
 def _kind_table(instance: Any) -> Mapping[str, MethodSpec]:
-    return protocol.host_methods(instance.manifest.kind)
+    return protocol.host_methods(instance.manifest.kind, protocol.OPTIONAL_METHODS)
 
 
 async def _call_method(instance: Any, spec: MethodSpec, params: Any, fetcher: RpcFetcher) -> Any:
@@ -238,7 +238,7 @@ async def serve(instance: Any, reader: asyncio.StreamReader, writer: Any) -> Non
     async def handle(request: dict[str, Any]) -> None:
         number, method, params = request["id"], request["method"], request.get("params")
         spec = table.get(method)
-        if spec is None:
+        if spec is None or not hasattr(instance, spec.name):  # an optional one it does not have
             unknown = {"code": protocol.METHOD_NOT_FOUND, "message": f"{method}: unknown"}
             await answer(number, error=unknown)
             return

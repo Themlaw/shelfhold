@@ -570,6 +570,11 @@ class PluginRegistry:
                     f"rpc_protocol {named!r} in the manifest differs from the agreed "
                     f"{session.protocol}",
                 )
+            if manifest is not None and manifest.kind is PluginKind.TRACKER:
+                manifest = None  # no contract to call until L13: nothing could be asked of it
+                verdict = ApiVerdict(
+                    PluginStatus.INCOMPATIBLE, "tracker plugins have no contract before L13"
+                )
             if manifest is None:
                 record = PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, verdict.reason)
             else:

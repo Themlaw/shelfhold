@@ -192,9 +192,22 @@ def _table() -> dict[PluginKind, dict[str, MethodSpec]]:
     return table
 
 
-def host_methods(kind: PluginKind) -> MappingProxyType[str, MethodSpec]:
-    """The methods the host may call on a plugin of this kind. `Tracker`: none yet (L13)."""
-    return MappingProxyType(_table()[kind])
+OPTIONAL_METHODS: Final = frozenset({"update_metadata"})  # the contract's optional capability
+
+
+def host_methods(
+    kind: PluginKind, optional: frozenset[str] | set[str] = frozenset()
+) -> MappingProxyType[str, MethodSpec]:
+    """The methods the host may call on a plugin of this kind. `Tracker`: none yet (L13). An
+    optional capability (`update_metadata`) is there only when the plugin declares it."""
+    table = _table()[kind]
+    return MappingProxyType(
+        {
+            wire: spec
+            for wire, spec in table.items()
+            if spec.name not in OPTIONAL_METHODS or spec.name in optional
+        }
+    )
 
 
 def deadline_of(wire: str, limits: RpcLimits) -> float:
@@ -292,7 +305,11 @@ def exception_from_wire(error: dict[str, Any]) -> Exception:
         cls = _SDK_ERRORS.get(str(data.get("type")))
         if cls is RateLimited:
             retry = data.get("retry_after")
-            return RateLimited(message, retry if isinstance(retry, int | float) else None)
+            bounded: float | None = None
+            # a delay the plugin names is its word: never negative, never more than an hour
+            if isinstance(retry, int | float) and not isinstance(retry, bool) and retry == retry:
+                bounded = min(max(float(retry), 0.0), 3600.0)
+            return RateLimited(message, bounded)
         if cls is not None:
             return cls(message)
-    return RemoteError(code if isinstance(code, int) else INVALID_REQUEST, message, data)
+    return RemoteError(code if isinstance(code, int) else INVALID_REQUEST, message[:500], data)
