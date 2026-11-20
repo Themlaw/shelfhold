@@ -54,10 +54,10 @@ def test_allowlist_m5_entries_are_commented() -> None:
 
 
 @pytest.mark.req("ENF-SEC-007")
-def test_ci_traceability_includes_m5_report_only() -> None:
+def test_ci_traceability_includes_m5_and_blocks() -> None:
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "for ms in M0 M1a M1b M2 M3 M4 M5; do" in text
-    assert 'if [ "$ms" = M5 ]; then' in text
+    assert 'if [ "$ms" = M5 ]; then' not in text  # blocking since L25
 
 
 @pytest.mark.req("ENF-GOV-005")
