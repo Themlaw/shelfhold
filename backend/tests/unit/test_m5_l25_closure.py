@@ -57,7 +57,9 @@ def test_velocity_records_the_m5_milestone() -> None:
 
 @pytest.mark.req("ENF-GOV-006")
 def test_portes_journal_has_the_m5_review() -> None:
-    assert re.search(r"^\| M5 \(revue de jalon\) \| 2026-11-20 \|", _read("docs/governance/portes.md"), re.M)
+    assert re.search(
+        r"^\| M5 \(revue de jalon\) \| 2026-11-20 \|", _read("docs/governance/portes.md"), re.M
+    )
 
 
 @pytest.mark.req("ENF-GOV-003")
@@ -112,7 +114,15 @@ def test_changelog_1_2_0_is_ready_for_the_release_date() -> None:
     head = re.search(r"^## 1\.2\.0 - (.*)$", text, re.M)
     assert head and "à compléter" in head.group(1), "the date is left to the release"
     block = _section(text, "## 1.2.0")
-    for word in ("/content", "kosync", "OPDS 2.0", "PWA", "hors ligne", "Continuer la lecture", "OpenID Connect"):
+    for word in (
+        "/content",
+        "kosync",
+        "OPDS 2.0",
+        "PWA",
+        "hors ligne",
+        "Continuer la lecture",
+        "OpenID Connect",
+    ):
         assert word in block, word
     for heading in ("### Ajouté", "### Modifié", "### Sécurité", "### Reporté en M6"):
         assert heading in block, heading
