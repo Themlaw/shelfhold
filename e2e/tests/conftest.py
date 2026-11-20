@@ -93,6 +93,8 @@ M1B_FILES = ["compose.yaml", "journey.yaml", "m1b.yaml"]
 M2_FILES = ["compose.yaml", "journey.yaml", "m2.yaml"]
 M3_FILES = [*M2_FILES, "m3.yaml"]
 M4_FILES = [*M2_FILES, "m4.yaml"]
+M5_FILES = [*M4_FILES, "m5.yaml"]
+M5_OIDC_FILES = [*M5_FILES, "m5-oidc.yaml"]
 
 
 @pytest.fixture
@@ -128,11 +130,33 @@ def journey_m4(tmp_path: Path) -> Iterator["Journey"]:
     yield from _journey(M4_FILES, extra_env=_m2_env(tmp_path))
 
 
+@pytest.fixture
+def journey_m5(tmp_path: Path) -> Iterator["Journey"]:
+    """The M4 stack with the M5 overlay: the door of a browser published (18080), the e-reader
+    routes open on the stack's own loopback, for the reader, `/lite` and the e-reader journeys."""
+    yield from _journey(M5_FILES, extra_env=_m2_env(tmp_path))
+
+
+@pytest.fixture
+def journey_m5_oidc(tmp_path: Path) -> Iterator["Journey"]:
+    """The M5 stack with the simulated OpenID Connect provider and the instance set to ask it. The
+    secret of the client is drawn here for the run and given to both; the person who signs in at the
+    provider is `E2E_OIDC_SUB`."""
+    import secrets
+
+    env = {
+        **_m2_env(tmp_path),
+        "E2E_OIDC_SECRET": secrets.token_urlsafe(24),
+        "E2E_OIDC_SUB": "e2e-person-" + secrets.token_hex(4),
+    }
+    yield from _journey(M5_OIDC_FILES, extra_env=env)
+
+
 def _m2_env(tmp_path: Path) -> dict[str, str]:
     from pki import make
 
     folder = tmp_path / "pki"
-    make(folder, ["fr.wikisource.org", "ws-export.wmcloud.org", "standardebooks.org"])
+    make(folder, ["fr.wikisource.org", "ws-export.wmcloud.org", "standardebooks.org", "idp.e2e.test"])
     return {
         "E2E_PKI_DIR": str(folder),
         **({"E2E_LOG_LEVEL": os.environ["E2E_LOG_LEVEL"]} if "E2E_LOG_LEVEL" in os.environ else {}),

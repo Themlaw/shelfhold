@@ -74,7 +74,7 @@ def exported(world: World, edition: str = "ok") -> tuple[str, str]:
     return item, unit
 
 
-def read_there(world: World, who: str, item: str) -> None:
+def read_there(world: World, who: str, item: str, state: str = "written") -> None:
     """The profile has a live, verified account on a destination that holds `item`, written."""
     import os
     from datetime import UTC, datetime
@@ -89,7 +89,7 @@ def read_there(world: World, who: str, item: str) -> None:
         connection.execute(
             sa.insert(export.export_record).values(
                 shelf_destination_id=destination, export_item_id=item, locator_type="path",
-                rel_path="a/b.cbz", state="written",
+                rel_path="a/b.cbz", state=state,
             )
         )  # fmt: skip
         if not connection.execute(sa.text("SELECT 1 FROM secret_key WHERE kid = 'k1'")).first():
@@ -211,6 +211,19 @@ def test_continue_reading_opens_kavita_for_an_exported_unit(world: World) -> Non
     ]
     assert "kavita_url" in world.admin.get(HOME).json()
     assert (got[0]["carrier_type"], got[0]["carrier_id"]) == (None, None)  # no reader to open
+
+
+@pytest.mark.parametrize("state", ["scanned", "resolved", "adopted"])
+def test_continue_reading_opens_kavita_once_the_destination_has_scanned_the_file(
+    world: World, state: str
+) -> None:
+    """A file the destination has since scanned (`scanned`, `resolved`, `adopted`) is still there:
+    the book read where it was sent stays one to continue (the E2E of M5 L24 found it dropped)."""
+    item, unit = exported(world)
+    pulled(world, "admin", "export_item", item, done=False)
+    read_there(world, "admin", item, state)
+    got = items(world.admin.get(HOME))
+    assert [(i["unit_id"], i["target"]) for i in got] == [(unit, "kavita")]
 
 
 def test_continue_reading_a_unit_with_no_file_is_not_offered(world: World) -> None:

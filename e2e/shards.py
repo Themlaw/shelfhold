@@ -59,4 +59,12 @@ SHARDS: dict[str, tuple[str, ...]] = {
     "m4-progress": ("test_m4_journey_progress_both_ways",),
     "m4-rename": ("test_m4_journey_rename_keeps_each_member_progress",),
     "m4-hash": ("test_m4_journey_hash_vectors_green",),
+    # M5 (L24): one journey per runner. Those that drive a browser (`m5-excerpt`, `m5-epub-script`,
+    # `m5-lite`, `m5-offline`) install Playwright's Chromium in the job (image.yml)
+    "m5-excerpt": ("test_m5_journey_read_excerpt_without_export",),
+    "m5-epub-script": ("test_m5_journey_epub_script_blocked",),
+    "m5-koreader": ("test_m5_journey_koreader_sync",),
+    "m5-lite": ("test_m5_journey_lite_without_javascript",),
+    "m5-offline": ("test_m5_journey_offline_eviction",),
+    "m5-oidc": ("test_m5_journey_oidc_login",),
 }

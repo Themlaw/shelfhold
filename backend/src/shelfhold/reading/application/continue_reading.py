@@ -25,6 +25,7 @@ import sqlalchemy as sa
 
 from shelfhold.catalog.public import visible_editions_clause
 from shelfhold.identity.public import reader_scope
+from shelfhold.infrastructure.export_states import LIVE_STATES
 from shelfhold.infrastructure.schema import catalog, export, identity, reading
 from shelfhold.reading.application.content_access import ContentAccess, NoReadableCopyError
 from shelfhold.reading.application.progress import UnknownCarrierError
@@ -266,7 +267,7 @@ class ContinueReading:
             )
             .where(
                 export.unit_coverage.c.unit_id == unit_id,
-                record.c.state == "written",
+                record.c.state.in_(LIVE_STATES),
                 account.c.user_id == user_id,
                 account.c.revoked_at.is_(None),
                 account.c.verified_at.is_not(None),

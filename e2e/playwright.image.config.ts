@@ -1,11 +1,11 @@
 import { defineConfig } from '@playwright/test';
 
-// The journeys of the image (M3 L57): a browser on the runner, the stack of `m3.yaml` behind the
+// The journeys of the image (M3 L57, M5 L24: `m5_journeys.spec.ts` on the stack of `m5.yaml`): a browser on the runner, the stack of `m3.yaml` behind the
 // published port. No web server is started here: `test_m3_journey.py` brings the stack up and
 // sets E2E_BASE_URL and E2E_COMPOSE. Never part of `e2e-front` (see playwright.config.ts).
 export default defineConfig({
   testDir: 'tests',
-  testMatch: 'test_m3_journey.spec.ts',
+  testMatch: ['test_m3_journey.spec.ts', 'm5_journeys.spec.ts'],
   reporter: 'list',
   workers: 1,
   fullyParallel: false,

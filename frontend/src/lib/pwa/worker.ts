@@ -141,7 +141,9 @@ export function installPwa(scope: PwaScope, manifest: PrecacheEntry[], version: 
     // The reader opens with no network: its page and its assets are kept as served, with their headers
     // (never the shell of the SPA in their place). Only with an offline store, i.e. in the SPA's worker.
     if (offline && !isOdd(url.pathname)) {
-      if (request.mode === 'navigate' && isReaderPage(url.pathname)) {
+      // a navigation, and the reader's own read of its page (the guard of its policy asks for the header
+      // the page came with: a `fetch` of the same address, which must find the same kept page)
+      if ((request.mode === 'navigate' || request.mode === 'same-origin' || request.mode === 'cors') && isReaderPage(url.pathname)) {
         event.respondWith(readerPage(scope, offline, request));
         return;
       }
