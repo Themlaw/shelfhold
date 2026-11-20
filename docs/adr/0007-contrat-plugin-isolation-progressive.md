@@ -1,7 +1,7 @@
 ---
 status: accepté
 date: 2026-11-02
-amended: 2026-11-02 (passe 1)
+amended: 2026-11-02 (passe 1) ; 2026-11-20 (M6, ADR-0056)
 decision-makers: mainteneur
 ---
 # ADR-0007 — Contrat de plugin unique et isolation progressive
@@ -56,6 +56,13 @@ Moyenne : le contrat isole les plugins de l'hôte, mais une rupture du contrat `
 - **Index signé** (A28, EF-SRC-017) : minisign, `version` monotone (anti-rollback), `expires`, sha256 par wheel, révocation, rotation par double signature ; **zéro dépôt préconfiguré** ; l'index officiel **ne liste aucun module de retrait de mesure technique de protection** (ADR-0015).
 - **Fetcher V1** = httpx/httpx2 + `httpx-secure` (A13) ; curl_cffi et solveurs passent en M2+ derrière la même garde SSRF. Les deux liens FlareSolverr/Byparr ci-dessous sont des références d'architecture, non des dépendances.
 - **Cycle de vie** (EF-SRC-020) : mise à jour, épinglage, retour arrière, désinstallation, liaisons orphelines.
+
+## Amendement M6 (2026-11-20, ADR-0056, proposée)
+L'isolation de M6 est précisée par l'ADR-0056, qui prime sur les formulations générales ci-dessus dès son acceptation :
+- **Forme de l'isolation (D-P1, recommandation, en attente du porteur)** : conteneur compagnon `plugin-runner` (même image, `uid 1001`, `network_mode: none`, lecture seule, `cap_drop: [ALL]`, sans `/data`, `/store`, `/library` ni socket CLI) ; le cœur se connecte au socket du compagnon, jamais l'inverse, et ne fait confiance à rien de ce qu'il renvoie. Le compagnon refuse de démarrer si l'auto-contrôle échoue.
+- **Mode par défaut (D13)** : un plugin tiers est isolé et installé désactivé ; l'activer est une action réservée ; le mode en processus reste derrière la garde de M1b et n'est jamais choisi par le plugin.
+- **`rpc_protocol` 1 (D12)** : JSON-RPC 2.0 en trames préfixées par leur longueur, message ≤ 8 Mio, poignée de main avant le manifeste, délais et plafonds, versionné séparément de `api` et sans code commun avec le socket CLI.
+- **Index signé (D14)**, **épinglage `(clé, index, signataire)`** (passe 8), **cycle de vie (D15)** et **ABI (D16)** : voir ADR-0056.
 
 ## Exigences liées
 EF-SRC-001, EF-SRC-002, EF-SRC-003, EF-SRC-016, EF-SRC-017, EF-SRC-018, EF-SRC-019, EF-SRC-020, EF-SRC-021, EF-SRC-023, ENF-SEC-001, ENF-SEC-009, ENF-QUAL-003, ENF-LEG-001.

@@ -1,6 +1,7 @@
 ---
 status: accepté
 date: 2026-11-03
+amended: 2026-11-20 (M6, ADR-0056)
 decision-makers: mainteneur
 ---
 # ADR-0036 — DCO et politique de contribution ; exception de plugin dès le premier commit public
@@ -42,6 +43,9 @@ Texte provisoire trop large, qui autoriserait des plugins propriétaires dépend
 
 ## Réversibilité
 Moyenne : l'exception peut être resserrée ou retirée dans les versions suivantes ; les versions déjà distribuées la gardent. Le DCO peut être abandonné à tout moment, mais les commits déjà signés restent tracés.
+
+## Amendement M6 (2026-11-20, ADR-0056, proposée)
+**D-P4, recommandation en attente du porteur** : relecture par un juriste avant `v1.3.0`, ou levée écrite de l'exigence de relecture (risque accepté, comme Q27a). Le plan recommande de découpler : les plugins tiers isolés ne dépendent pas de l'exception, qui ne sert qu'au mode en processus ; l'exception reste provisoire jusqu'à la décision du porteur.
 
 ## Exigences liées
 ENF-LEG-010, ENF-GOV-001, EF-SRC-030.

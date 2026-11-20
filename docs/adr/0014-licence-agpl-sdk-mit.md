@@ -1,7 +1,7 @@
 ---
 status: accepté
 date: 2026-11-02
-amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 6) ; 2026-11-03 (passe 11)
+amended: 2026-11-02 (passe 1) ; 2026-11-02 (passe 2) ; 2026-11-03 (passe 6) ; 2026-11-03 (passe 11) ; 2026-11-20 (M6, ADR-0056)
 decision-makers: mainteneur
 ---
 # ADR-0014 — Licence : AGPL-3.0-or-later pour l'app, MIT pour le SDK, exception plugins
@@ -62,6 +62,10 @@ F12 (GAP-6-20).
 
 ## Amendement passe 11 (2026-11-03)
 GAP-11-15, M0. Frontière outillée entre le SDK MIT et le cœur AGPL : `sdk/` est un paquet séparé avec sa propre `LICENSE` MIT et des en-têtes SPDX par fichier ; un contrat import-linter interdit au SDK d'importer le cœur ; `CONTRIBUTING.md` : aucun code ne passe du cœur au SDK sans l'accord de ses auteurs (une contribution AGPL versée au paquet MIT exigerait leur accord).
+
+## Amendement M6 (2026-11-20, ADR-0056, proposée)
+- **D-P4 (recommandation, en attente du porteur)** : le SDK est sous MIT et sa publication n'a pas besoin de l'exception ; un plugin isolé ne parle au cœur que par `rpc_protocol` et ne se lie à aucun code AGPL ; l'exception ne sert qu'au mode en processus. Deux options pour le porteur : relecture par un juriste avant `v1.3.0`, ou levée écrite de l'exigence de relecture, comme Q27a (risque accepté, consigné dans 06 Q17 et `docs/legal/`). *Recommandation du plan* : découpler — M6 avance sans attendre ; la décision ne conditionne que le texte définitif de l'exception et l'annonce des plugins tiers en processus. *Repli* : l'en-tête « provisoire » reste.
+- **SDK** : distribution `shelfhold-sdk` 2.0.0 sous MIT, nom d'import `shelfhold_sdk` (D10) ; sa publication sur PyPI dépend de D-P2 (en attente du porteur).
 
 ## Exigences liées
 ENF-DOC-001, ENF-SEC-007, ENF-LEG-001, ENF-LEG-004, ENF-GOV-001, ENF-LEG-010, ENF-LEG-012, EF-SRC-001.
