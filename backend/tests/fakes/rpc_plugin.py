@@ -44,7 +44,13 @@ class Plugin:
         return (old_source_key, old_remote_id.lower())
 
     async def search(
-        self, f: Any, q: str, filters: dict[str, Any], cursor: Cursor | None, *, sub: str | None = None
+        self,
+        f: Any,
+        q: str,
+        filters: dict[str, Any],
+        cursor: Cursor | None,
+        *,
+        sub: str | None = None,
     ) -> Page[SeriesRef]:
         global _RUNNING, _PEAK
         if q == "crash":
@@ -85,3 +91,9 @@ def _ref(title: str) -> SeriesRef:
 
 def make() -> Plugin:
     return Plugin()
+
+
+def make_other() -> Plugin:
+    plugin = Plugin()
+    plugin.manifest = manifest(key="rpc-demo-2")
+    return plugin

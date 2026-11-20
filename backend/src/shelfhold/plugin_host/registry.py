@@ -38,14 +38,14 @@ import os
 import re
 import sys
 import threading
-from collections.abc import Callable, Collection, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from importlib import metadata
 from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import CodeType
-from typing import Any, Final, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
 from urllib.parse import urlsplit
 
 import structlog
@@ -63,6 +63,9 @@ from shelfhold.plugin_host.attestation import retain
 from shelfhold.plugin_host.audit_hook import allow_code_root, audited, host_io, importing
 from shelfhold.plugin_host.errors import NoSourceForUrl
 from shelfhold.plugin_host.settings import SettingsSchemaError, parse_settings_schema
+
+if TYPE_CHECKING:
+    from shelfhold.plugin_host.rpc.host_side import RpcSession
 
 ENTRY_POINT_GROUP = "shelfhold.plugins"
 log = structlog.get_logger(__name__)
@@ -82,6 +85,7 @@ class PluginStatus(StrEnum):
     LOADED_SHIM = "loaded_shim"  # api N-1, translated by the shim
     DISABLED = "disabled"  # third party without the guard's grant
     INCOMPATIBLE = "incompatible"  # api out of range, invalid manifest, load failure
+    ERROR = "error"  # an isolated plugin that crashed, timed out or broke the protocol (D12)
 
 
 @dataclass(frozen=True)
@@ -497,6 +501,18 @@ class PluginRegistry:
             manifest, status = self._manifest(getattr(instance, "manifest", None))
         except Exception as exc:  # a broken plugin is reported, never raised
             return PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, f"load failed: {exc}")
+        return self._admit(key, origin, instance, manifest, status, lambda i: audited(i, key))
+
+    def _admit(
+        self,
+        key: str,
+        origin: PluginOrigin,
+        instance: Any,
+        manifest: PluginManifest | None,
+        status: ApiVerdict,
+        wrap: Callable[[Any], Any],
+    ) -> PluginRecord:
+        """The checks every plugin passes once its manifest is read, whichever way it was loaded."""
         if manifest is None:
             return PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, status.reason)
         if manifest.key != key:
@@ -512,9 +528,78 @@ class PluginRegistry:
         kept = retain(origin, _trust_values(manifest), {})
         if kept.proposed:
             manifest = manifest.model_copy(update=kept.values)
-        return PluginRecord(
-            key, origin, status.status, None, manifest, audited(instance, key), kept.proposed
-        )
+        instance = wrap(instance)
+        return PluginRecord(key, origin, status.status, None, manifest, instance, kept.proposed)
+
+    async def load_isolated(
+        self,
+        key: str,
+        origin: PluginOrigin,
+        connect: Callable[[], Awaitable["RpcSession"]],
+    ) -> PluginRecord:
+        """Load a plugin that runs in its own process, behind `rpc_protocol` (D12, EF-SRC-016).
+
+        `connect` opens the session: the `hello` handshake comes first and a plugin outside our
+        protocols is refused before its manifest is read. `api` is negotiated afterwards, from the
+        manifest, as for any plugin; the manifest may not name another `rpc_protocol` than the one
+        agreed. The caller decides *whether* the plugin may run (enabling is a reserved action,
+        L06); nothing here lifts a refusal. From then on a plugin that fails is marked in error
+        (`mark_error`) and the registry goes on without it."""
+        from shelfhold.plugin_host.adapters.rpc.proxy import RpcPluginProxy  # no import cycle
+        from shelfhold.plugin_host.rpc.protocol import ProtocolOutOfRange
+
+        taken = next((r for r in self._records if _normalise(r.key) == _normalise(key)), None)
+        if taken is not None and taken.status in _LOADED:
+            why = f"duplicate_key: {key!r} is already held by a loaded plugin"
+            return self._keep(PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, why))
+        try:
+            session = await connect()
+        except ProtocolOutOfRange as exc:
+            return self._keep(
+                PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, f"rpc_protocol: {exc}")
+            )
+        except Exception as exc:  # it did not start, or died while greeting
+            return self._keep(PluginRecord(key, origin, PluginStatus.ERROR, f"start failed: {exc}"))
+        try:
+            manifest, verdict = self._manifest(session.manifest)
+            named = session.manifest.get("rpc_protocol", session.protocol)
+            if manifest is not None and named != session.protocol:
+                manifest = None
+                verdict = ApiVerdict(
+                    PluginStatus.INCOMPATIBLE,
+                    f"rpc_protocol {named!r} in the manifest differs from the agreed "
+                    f"{session.protocol}",
+                )
+            if manifest is None:
+                record = PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, verdict.reason)
+            else:
+                record = self._admit(
+                    key, origin, RpcPluginProxy(session, manifest), manifest, verdict, lambda i: i
+                )
+        except Exception as exc:  # a manifest that does not validate
+            record = PluginRecord(key, origin, PluginStatus.INCOMPATIBLE, f"load failed: {exc}")
+        if record.status not in _LOADED:
+            await session.close()
+            return self._keep(record)
+        self._keep(record)
+        session.on_failure = lambda reason: self.mark_error(key, reason)
+        if session.state != "ready":  # it failed between the handshake and now
+            self.mark_error(key, session.reason or "the plugin stopped")
+        return self.get(key) or record
+
+    def _keep(self, record: PluginRecord) -> PluginRecord:
+        self._records.append(record)
+        return record
+
+    def mark_error(self, key: str, reason: str) -> None:
+        """A loaded plugin that failed in service: out of `active()`, the reason kept; the other
+        plugins and the host are not touched."""
+        self._records = [
+            replace(r, status=PluginStatus.ERROR, reason=reason)
+            if r.key == key and r.status in _LOADED
+            else r
+            for r in self._records
+        ]
 
     def apply_attestations(self, attested: Mapping[str, Mapping[str, str]]) -> None:
         """Give each withheld value back where the admin attested it (`AttestationStore.valid()`,

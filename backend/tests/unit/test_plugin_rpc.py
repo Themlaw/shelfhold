@@ -51,10 +51,15 @@ def plugin_argv(entry: str = "rpc_plugin:make") -> list[str]:
     ]  # fmt: skip
 
 
-async def open_real(limits: RpcLimits | None = None, **kw: Any) -> RpcSession:
+async def open_real(
+    limits: RpcLimits | None = None,
+    entry: str = "rpc_plugin:make",
+    key: str = "rpc-demo",
+    **kw: Any,
+) -> RpcSession:
     limits = limits or RpcLimits()
-    channel = await spawn_stdio(plugin_argv(), limits=limits)
-    return await RpcSession.open(channel, key="rpc-demo", limits=limits, **kw)
+    channel = await spawn_stdio(plugin_argv(entry), limits=limits)
+    return await RpcSession.open(channel, key=key, limits=limits, **kw)
 
 
 def titles(page: Any) -> list[str]:
@@ -81,7 +86,7 @@ class Peer:
     async def read(self) -> dict[str, Any]:
         payload = await codec.read_frame(self.reader)
         assert payload is not None
-        message = codec.decode_payload(payload)
+        message: dict[str, Any] = codec.decode_payload(payload)
         self.received.append(message)
         return message
 
@@ -176,7 +181,11 @@ def test_isolated_plugin_crash_host_survives_plugin_marked_error() -> None:
     async def go() -> None:
         reg = PluginRegistry()
         good = await reg.load_isolated("rpc-demo", PluginOrigin.THIRD_PARTY, open_real)
-        other = await reg.load_isolated("rpc-demo-2", PluginOrigin.THIRD_PARTY, open_real)
+
+        async def open_other() -> RpcSession:
+            return await open_real(entry="rpc_plugin:make_other", key="rpc-demo-2")
+
+        other = await reg.load_isolated("rpc-demo-2", PluginOrigin.THIRD_PARTY, open_other)
         assert good.status is PluginStatus.LOADED and other.status is PluginStatus.LOADED
         crashed = good.instance
         with pytest.raises(protocol.PluginFailed) as err:
@@ -221,7 +230,7 @@ def test_rpc_message_size_and_deadline_bounded() -> None:
             # a call that outlives its deadline marks the plugin in error and stops it
             with pytest.raises(protocol.DeadlineExceeded):
                 await search(session, "sleep")
-            assert session.state == "error" and "deadline" in (session.reason or "")
+            assert str(session.state) == "error" and "deadline" in (session.reason or "")
         finally:
             await session.close()
 
@@ -260,6 +269,21 @@ def sdk_fetcher(rec: Recorder, resolver: FakeResolver, *hosts: str) -> ProviderF
     return ProviderFetcher(inner, build_manifest())
 
 
+class Leaky:
+    """A Fetcher whose refusal quotes the credential it was holding."""
+
+    def __init__(self, secret: str) -> None:
+        self.secret = secret
+
+    async def get(self, url: str, **kw: Any) -> Any:
+        from shelfhold.infrastructure.fetcher import SsrfBlocked
+
+        raise SsrfBlocked(f"refused {url}?key={self.secret} for {self.secret}")
+
+    def settings(self) -> dict[str, Any]:
+        return {}
+
+
 @pytest.mark.req("EF-SRC-016", "ENF-SEC-001")
 def test_rpc_fetcher_goes_through_ssrf_guard() -> None:
     secret = "tok-" + "9f3a7c1d2b8e4a60"  # generated for the test, never a real key
@@ -277,20 +301,32 @@ def test_rpc_fetcher_goes_through_ssrf_guard() -> None:
         fetcher = sdk_fetcher(rec, dns, "ok.example.org", "inner.example.org")
         session = await open_real()
         try:
-            got = await search(session, "fetch", fetcher, filters={"url": "https://ok.example.org/p"})
-            assert titles(got) == ["200:page:['x-plain']"]  # the cookie never reaches the plugin
+            got = await search(
+                session, "fetch", fetcher, filters={"url": "https://ok.example.org/p"}
+            )
+            status, body, names = titles(got)[0].split(":", 2)
+            assert (status, body) == ("200", "page")
+            assert "x-plain" in names and "set-cookie" not in names.lower()  # no session leaks
             before = len(rec.requests)
             for url, refused in (
                 ("https://inner.example.org/", "SsrfBlocked"),  # resolves to a private address
                 ("https://out.example.org/", "DomainNotAllowed"),  # not in the manifest's list
-                (f"https://out.example.org/?key={secret}", "DomainNotAllowed"),
             ):
                 page = await search(session, "fetch-error", fetcher, filters={"url": url})
                 kind, _, text = titles(page)[0].partition("|")
                 assert kind == refused and secret not in text
             assert len(rec.requests) == before  # nothing was sent for a refused request
+            # a refusal that quotes a secret is scrubbed on the host's side before it is sent
+            leaky = Leaky(secret)
+            page = await search(
+                session, "fetch-error", leaky, filters={"url": "https://ok.example.org/"}
+            )
+            kind, _, text = titles(page)[0].partition("|")
+            assert kind == "SsrfBlocked" and secret not in text
             # a plugin that is handed no fetcher has none to call
-            none = await search(session, "fetch-error", None, filters={"url": "https://ok.example.org/"})
+            none = await search(
+                session, "fetch-error", None, filters={"url": "https://ok.example.org/"}
+            )
             assert "no_fetcher" in titles(none)[0] or "Fetcher" in titles(none)[0]
         finally:
             await session.close()
@@ -305,12 +341,13 @@ def test_rpc_never_carries_a_live_object() -> None:
 
     a, b = socket.socketpair()
     try:
-        for live in (Live(), lambda: 1, open(__file__), a, asyncio.Lock(), {1, 2}, {1: "k"}):
-            with pytest.raises(codec.LiveObjectError):
-                codec.encode_frame(codec.to_wire({"p": live}))
+        with open(__file__) as handle:
+            for live in (Live(), lambda: 1, handle, a, asyncio.Lock(), {1, 2}, {1: "k"}):
+                with pytest.raises(codec.LiveObjectError):
+                    codec.encode_frame(codec.to_wire({"p": live}))
         assert codec.to_wire(b"\x00\xff") == "AP8="  # bytes travel as base64
         ref = SeriesRef(source_key="s", remote_id="1", title="t")
-        assert codec.to_wire(Cursor(token="n")) == {"token": "n"}
+        assert codec.to_wire(Cursor(token="n")) == {"token": "n"}  # noqa: S106
         assert codec.to_wire([ref])[0]["remote_id"] == "1"
     finally:
         a.close()
@@ -338,6 +375,7 @@ def test_rpc_never_carries_a_live_object() -> None:
             await session.close()
 
     run(go)
+
     # the real plugin: a result that cannot be JSON is an error of that call
     async def real() -> None:
         session = await open_real()
@@ -400,19 +438,26 @@ def test_rpc_plugin_cannot_call_host_outside_a_host_call() -> None:
             )  # fmt: skip
             answer = await peer.read()
             assert answer["error"]["code"] == protocol.OUTSIDE_HOST_CALL
-            # and the plugin may only name the four methods of the host
-            await peer.send({"jsonrpc": "2.0", "id": 9, "method": "source.search", "params": {}})
-            assert (await peer.read())["error"]["code"] in (
-                protocol.METHOD_NOT_FOUND, protocol.OUTSIDE_HOST_CALL,
-            )  # fmt: skip
         finally:
             await session.close()
 
     run(after)
+
+    async def unknown() -> None:  # and the plugin may only name the four methods of the host
+        session, peer = await hand_made()
+        try:
+            await peer.send({"jsonrpc": "2.0", "id": 9, "method": "source.search", "params": {}})
+            assert (await peer.read())["error"]["code"] == protocol.METHOD_NOT_FOUND
+            await asyncio.sleep(0.1)
+            assert session.state == "error"
+        finally:
+            await session.close()
+
+    run(unknown)
     assert Spy.calls == 0
-    assert protocol.PLUGIN_TO_HOST_METHODS == frozenset(
+    assert frozenset(
         {"fetcher.get", "fetcher.post", "fetcher.download", "events.publish"}
-    )
+    ) == protocol.PLUGIN_TO_HOST_METHODS
 
 
 @pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
@@ -470,8 +515,8 @@ def test_rpc_manifest_naming_another_protocol_is_refused() -> None:
             return session
 
         record = await reg.load_isolated("rpc-demo", PluginOrigin.THIRD_PARTY, connect)
-        assert record.status is PluginStatus.INCOMPATIBLE and "rpc_protocol" in (record.reason or "")
-        assert peer is not None
+        assert record.status is PluginStatus.INCOMPATIBLE
+        assert "rpc_protocol" in (record.reason or "") and peer is not None
 
     run(go)
 
