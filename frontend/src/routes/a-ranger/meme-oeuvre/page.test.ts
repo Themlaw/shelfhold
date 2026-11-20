@@ -130,7 +130,7 @@ describe('Même œuvre ?', () => {
     await user.click(screen.getByRole('button', { name: 'Plan de fusion des éditions' }));
     // the M4 door: the plan says what a tombstone covers, and nothing can be applied
     expect(
-      await screen.findByText(/1 unité couverte par une pierre tombale/)
+      await screen.findByText(/1 fichier couvert par une pierre tombale/)
     ).toBeInTheDocument();
     expect(seen[0]).toEqual({ keep_id: 'EA', drop_id: 'EB' });
     expect(

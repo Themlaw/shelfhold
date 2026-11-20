@@ -295,9 +295,9 @@
         {#if editionPlan}
           <p>
             {t('sameWork.editions.moves', {
-              units: editionPlan.units.length,
+              files: editionPlan.units.length,
               volumes: editionPlan.volumes.length,
-              bindings: editionPlan.bindings.length
+              sendings: editionPlan.bindings.length
             })}
           </p>
           {#if editionPlan.blockers.length > 0}
