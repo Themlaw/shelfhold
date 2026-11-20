@@ -45,6 +45,22 @@ def test_a_paged_file_closed_far_apart_by_kosync_at_a_human_speed_is_marked_read
     """KOReader pushes when the book is closed: page 1, then page 30 an hour later (the door keeps
     the first and the last position of a window, the speed of the move is what counts)."""
     item, digest = volume(lab, count=30)
+    with lab.seed.engine.begin() as c:  # a scan knows its page count: a share is judged by pages
+        c.execute(
+            sa.text(
+                "INSERT INTO content (id, unit_id, kind, media_type, format, retention, "
+                "original_sha256, store_provenance, size, page_count) VALUES "
+                "('01J5K0SYNC00000000000000A1', :u, 'images', 'application/vnd.comicbook+zip', "
+                "'cbz', 'adopted_ref', :h, 'received', 1, 30)"
+            ),
+            {"u": item.unit_id, "h": "sha256:" + "0" * 64},
+        )
+        c.execute(
+            sa.text(
+                "UPDATE export_item SET content_id = '01J5K0SYNC00000000000000A1' WHERE id = :i"
+            ),
+            {"i": item.item_id},
+        )
     assert push(lab.mum, digest, "1", 1 / 30).status_code == 200
     _back_by(lab, timedelta(hours=1))
     assert push(lab.mum, digest, "30", 1.0).status_code == 200
