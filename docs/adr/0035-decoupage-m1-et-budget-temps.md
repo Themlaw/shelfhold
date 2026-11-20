@@ -86,3 +86,7 @@ Lot M2 L33. 03 ne listait aucun élément coupable pour M2, ce qui, d'après la 
 ## Amendement M5 (2026-11-17) : coupables de M5 (D-P2)
 
 Les trois éléments reportés de M4 (thèmes B, C et D avec le sélecteur, plugin ComicVine, transport WebSocket des événements de Kavita, EF-EXP-034) sont les coupables de M5 : au-delà de 150 % de la boîte de 235 h, seuls ils glissent, sans débat (~17 h). Aucun nouveau coupable n'est ajouté en M5 ; les thèmes A ne sont jamais coupés ; aucun coupable ne touche à la sécurité, au contrôle parental ni à l'intégrité.
+
+## Amendement M6 (2026-11-20) : coupables de M6 (D-P2)
+
+Les éléments reportés de M5 (Komga : relais de scan de la passe et audit quotidien des comptes, annulation d'une marque « lu » posée par une traversée d'appareil, étagère de l'enfant remplie à l'arrivée d'un livre demandé, « lu ailleurs » en une seule requête et étiquette de « Reprendre » par type de destination, rotation du secret et écran des webhooks, « Lire hors ligne » pour les profils non administrateurs, EF-BIB-029, EF-INT-012 conditionnelle, `plan_migration` et `Deprecation`) sont les coupables de M6 : au-delà de 150 % de la boîte de 120 à 200 h, seuls ils glissent, sans débat. Aucun ne touche à la sécurité, au contrôle parental ni à l'intégrité. La synchronisation Kobo (EF-INT-012) reste conditionnelle selon le critère d'entrée de M6 (publication de Kavita 0.9.2).
