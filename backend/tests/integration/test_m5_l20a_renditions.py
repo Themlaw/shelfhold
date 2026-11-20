@@ -23,6 +23,7 @@ from shelfhold.library.application.renditions import (
     RenditionService,
     SourceTombstones,
     UnknownSourceError,
+    collect_orphans,
 )
 from shelfhold.library.domain.rendition import (
     LOCAL_PROCESSOR,
@@ -371,10 +372,11 @@ def test_orphans_are_collected_after_minutes_and_named_files_never() -> None:
         odd = folder / "notes.txt"
         odd.write_bytes(b"not ours")
         os.utime(stray, (NOW.timestamp(), NOW.timestamp()))
-        assert service.collect_orphans() == 0  # younger than the grace by the clock
+        # younger than the grace by the clock
+        assert collect_orphans(env.engine, env.lib.data, clock) == 0
         old = NOW.timestamp() - 11 * 60  # minutes, not a day: a render takes seconds
         os.utime(stray, (old, old))
-        assert service.collect_orphans() == 1
+        assert collect_orphans(env.engine, env.lib.data, clock) == 1
         assert not stray.exists() and odd.exists()  # only a name this module writes
         assert service.read(made) is not None  # the file a row names stays
 

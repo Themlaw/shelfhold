@@ -263,7 +263,7 @@ Ce que l'utilisateur fait chez lui de son côté ne regarde pas le projet. Le pr
 | Destination Kobo par fichiers (EF-EXP-021, kepubify) seulement | Simple | Pas de progression |
 
 **Décision (passe 2, B18).** **Laisser la synchronisation Kobo à Kavita**, qui l'a annoncée pour 2026 ; la revue de chevauchement de chaque jalon (ENF-GOV-003) suit son avancement. Shelfhold ne l'émule en M6 (EF-INT-012, conditionnelle) **que si Kavita ne l'a pas livrée** d'ici là ; dans ce cas : surface minimale, modèle SyncPoint, jeton par appareil, proxy magasin **désactivé par défaut, opt-in par appareil**, avec avertissement (les CGU du magasin Kobo n'ont pas pu être lues, `research/10-closure-C.md` §6).
-**Statut.** Tranché (B18) ; condition réévaluée à la sortie de M5.
+**Statut.** Tranché (B18). **Révisée à la sortie de M5 (2026-11-20, `docs/decisions/M5.md`, « Révision de Q21 »)** : la décision tient, sans élément nouveau. Établi par les sources du dépôt : Kavita a annoncé la synchronisation Kobo et la corrigeait dans ses commits du 2026-11-15, sans version publiée. Non établi (relecture faite sans réseau) : une version publiée depuis, et son respect du contrôle de profil. EF-INT-012 reste conditionnelle et non planifiée en M6 ; condition à relire dans les notes de version de Kavita à l'entrée de M6 ([chevauchement-M5](../governance/chevauchement-M5.md)).
 
 ## Q22 — Rôle du lecteur intégré en M5
 

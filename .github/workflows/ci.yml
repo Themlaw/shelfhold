@@ -898,7 +898,7 @@ jobs:
           category: grype
 
   traceability:
-    # Blocking for every delivered milestone (M0, M1a, M1b, M2, M3, M4), report only for M5: every requirement of the milestone has a test, every test has a marker.
+    # Blocking for every delivered milestone (M0, M1a, M1b, M2, M3, M4, M5): every requirement of the milestone has a test, every test has a marker.
     # The matrix is not committed: it is an artifact and the job summary.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -906,25 +906,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Every delivered milestone blocks (M2 and M3 since the closure of M3, L58). A requirement
-      # moved to a later milestone by the maintainer (ENF-GOV-004, M4) leaves the matrix of the
-      # milestone it left, in 01 and 03: it is never hidden here. M4 blocks since its closure (L45
-      # of M4); M5 is reported without blocking (L25 of M5 makes it blocking at the closure); M6
-      # and later are not built yet.
+      # Every delivered milestone blocks (M2 and M3 since the closure of M3, L58; M4 since its
+      # closure, L45 of M4; M5 since its closure, L25 of M5). A requirement moved to a later
+      # milestone by the maintainer leaves the matrix of the milestone it left, in 01 and 03: it
+      # is never hidden here. M6 and later are not built yet.
       - name: Build the traceability matrix of every delivered milestone
         run: |
           set +e
           status=0
-          # M5 is built: it is reported in the summary and never fails the job (L25 of M5 makes it
-          # blocking at the closure).
           for ms in M0 M1a M1b M2 M3 M4 M5; do
             python3 tools/traceability.py --milestone "$ms" --output "$RUNNER_TEMP/$ms.md" 2> "$RUNNER_TEMP/errors-$ms.txt"
             code=$?
-            if [ "$ms" = M5 ]; then
-              [ $code -eq 0 ] || echo "::warning::traceability M5 (non-blocking report): exit $code"
-            else
-              [ $code -eq 0 ] || status=1
-            fi
+            [ $code -eq 0 ] || status=1
             {
               cat "$RUNNER_TEMP/$ms.md"
               echo
