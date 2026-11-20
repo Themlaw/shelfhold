@@ -31,6 +31,10 @@
 <main>
   <h1>{t('toShelve.title')}</h1>
   <p class="muted">{t('toShelve.explain')}</p>
+  <p>
+    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+    <a href="/a-ranger/meme-oeuvre">{t('toShelve.same_work')}</a>
+  </p>
 
   {#if signedOut}
     <p role="alert" class="err">{t('toRate.signed_out')}</p>
