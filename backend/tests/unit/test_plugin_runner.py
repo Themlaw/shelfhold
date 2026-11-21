@@ -247,7 +247,7 @@ def test_plugin_runner_reads_the_core_uid_from_the_kernel_by_default(short_dir: 
     async def scenario() -> None:
         server = RunnerServer(
             RunnerConfig(socket_path=short_dir / "runner.sock", plugins_root=short_dir / "plugins"),
-            own_uid=RUNNER_UID,
+            own_uid=os.getuid() + 7,
             observe=lambda: replace(CLEAN, uid=os.getuid() + 1),
         )
         async with running(server):

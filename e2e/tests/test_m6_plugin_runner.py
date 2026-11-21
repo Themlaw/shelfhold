@@ -30,7 +30,7 @@ except OSError:
     writable = False
 print(json.dumps({
     'uid': os.getuid(),
-    'visible': [p for p in paths if os.path.exists(p)],
+    'visible': [p for p in paths if any(os.access(p, m) for m in (os.R_OK, os.W_OK, os.X_OK))],
     'interfaces': sorted(os.listdir('/sys/class/net')),
     'root_writable': writable,
     'env': sorted(os.environ),
