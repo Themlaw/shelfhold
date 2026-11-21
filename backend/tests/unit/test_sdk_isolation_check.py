@@ -185,3 +185,11 @@ def test_sandbox_view_reads_as_json_for_the_companion() -> None:
     data = json.loads(done.stdout)
     assert data["uid"] == os.getuid()
     assert set(data) == {"uid", "visible", "env_names"}
+
+
+@pytest.mark.req("EF-USR-024", "ENF-SEC-009")
+def test_sandbox_main_prints_the_observation(capsys: pytest.CaptureFixture[str]) -> None:
+    from shelfhold_sdk.testing.isolation import main
+
+    assert main() == 0
+    assert json.loads(capsys.readouterr().out)["uid"] == os.getuid()

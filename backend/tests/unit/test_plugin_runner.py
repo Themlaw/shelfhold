@@ -11,6 +11,7 @@ observations a test makes up (the compose of the e2e stack plays the real one).
 
 from __future__ import annotations
 
+import argparse
 import ast
 import asyncio
 import contextlib
@@ -18,6 +19,7 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import socket
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
@@ -33,6 +35,7 @@ from shelfhold.plugin_host.adapters.rpc.runner_socket import (
     RunnerUnavailable,
     connect_runner,
 )
+from shelfhold.plugin_host.rpc import codec
 from shelfhold.plugin_host.rpc.host_side import RpcSession
 from shelfhold.plugin_host.rpc.protocol import Channel, RpcLimits
 from shelfhold.plugin_host.runner.selfcheck import (
@@ -45,7 +48,7 @@ from shelfhold.plugin_host.runner.selfcheck import (
     problems_of,
     self_check,
 )
-from shelfhold.plugin_host.runner.server import RunnerConfig, RunnerServer
+from shelfhold.plugin_host.runner.server import RunnerConfig, RunnerServer, serve
 
 FAKES = Path(__file__).resolve().parent.parent / "fakes"
 SRC = Path(__file__).resolve().parents[2] / "src/shelfhold"
@@ -699,3 +702,166 @@ def test_plugin_runner_close_stops_every_plugin_and_removes_its_socket(short_dir
         await session.close()
 
     run(scenario)
+
+
+# -- the rest of the companion's edges ------------------------------------------------------------
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_plugin_runner_serves_until_sigterm_and_leaves_nothing_behind(short_dir: Path) -> None:
+    make_plugins(short_dir)
+    server = make_server(short_dir)
+    said: list[str] = []
+
+    async def scenario() -> None:
+        async def ready() -> None:
+            said.append("ready")
+            session = await open_session(server)
+            assert titles(await search(session, "up")) == ["echo:up"]
+            await session.close()
+            os.kill(os.getpid(), signal.SIGTERM)  # the container's stop: the loop's handler
+
+        await serve(server.config, ready=ready, server=server)
+
+    run(scenario)
+    assert said == ["ready"]
+    assert not server.config.socket_path.exists() and server.pids() == {}
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_plugin_runner_refuses_start_without_binding_through_serve(short_dir: Path) -> None:
+    server = make_server(short_dir, observation=replace(CLEAN, interfaces=("lo", "eth0")))
+    with pytest.raises(SelfCheckFailed, match="eth0"):
+        run(lambda: serve(server.config, server=server))
+    assert not server.config.socket_path.exists()
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_plugin_runner_replaces_a_stale_socket_and_never_a_stray_file(short_dir: Path) -> None:
+    make_plugins(short_dir)
+
+    async def scenario() -> None:
+        stale = socket.socket(socket.AF_UNIX)
+        stale.bind(str(short_dir / "runner.sock"))
+        stale.close()  # a companion that died: its socket file is still there
+        server = make_server(short_dir)
+        async with running(server):
+            session = await open_session(server)
+            await session.close()
+        (short_dir / "runner.sock").write_text("mine", encoding="utf-8")
+        with pytest.raises(OSError):  # a file that is not a socket is not the companion's to remove
+            await make_server(short_dir).start()
+        assert (short_dir / "runner.sock").read_text(encoding="utf-8") == "mine"
+
+    run(scenario)
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_plugin_runner_says_so_when_the_process_cannot_start(
+    short_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    make_plugins(short_dir)
+
+    async def broken(*_a: Any, **_k: Any) -> Channel:
+        raise OSError("no fork")
+
+    monkeypatch.setattr("shelfhold.plugin_host.runner.server.spawn_stdio", broken)
+
+    async def scenario() -> None:
+        server = make_server(short_dir)
+        async with running(server):
+            with pytest.raises(RunnerRefused, match="could not be started"):
+                await open_session(server)
+            assert server.pids() == {}
+            monkeypatch.undo()
+            session = await open_session(server)  # and the key was given back
+            await session.close()
+
+    run(scenario)
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_plugin_runner_without_a_plugins_folder_holds_no_plugin(short_dir: Path) -> None:
+    async def scenario() -> None:
+        server = make_server(short_dir)  # nothing was ever installed: no site-packages
+        async with running(server):
+            with pytest.raises(RunnerRefused, match="not installed"):
+                await open_session(server)
+
+    run(scenario)
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_the_core_end_names_what_it_cannot_do_when_the_companion_misbehaves(
+    short_dir: Path,
+) -> None:
+    """A companion that hangs up, speaks nonsense or answers with something else than a result is
+    `RunnerUnavailable`, never an exception of another kind and never a started plugin."""
+    path = short_dir / "odd.sock"
+
+    async def scenario() -> None:
+        async def odd(answer: bytes | None) -> None:
+            async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+                await codec.read_frame(reader)
+                if answer is not None:
+                    writer.write(answer)
+                    await writer.drain()
+                writer.close()
+
+            server = await asyncio.start_unix_server(handle, path=str(path))
+            try:
+                with pytest.raises(RunnerUnavailable):
+                    await connect_runner(
+                        path, key="a", entry="a:b", limits=RpcLimits(), core_uid=CORE_UID
+                    )
+            finally:
+                server.close()
+                await server.wait_closed()
+
+        await odd(None)  # hangs up without a word
+        await odd(b"\x00\x00\x00\x03abc")  # a frame that is not JSON
+        await odd(codec.encode_frame({"jsonrpc": "2.0", "id": 1, "result": 5}))  # not an ack
+
+    run(scenario)
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_the_observation_reads_what_is_there_and_says_so_when_it_cannot(tmp_path: Path) -> None:
+    gone = tmp_path / "net"
+    assert observe(paths=(), proc_net_dev=gone).interfaces == ("?",)  # unreadable: not vouched for
+    assert problems_of(observe(paths=(), proc_net_dev=gone))
+    seen = self_check(replace(CLEAN))  # a clean observation is returned as it is
+    assert seen == CLEAN
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_the_cli_command_serves_what_it_was_given(
+    short_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from shelfhold.interfaces.cli import plugin_runner
+
+    seen: dict[str, Any] = {}
+
+    async def fake_serve(config: RunnerConfig, *, ready: Any = None) -> None:
+        seen["config"] = config
+        ready()
+
+    monkeypatch.setattr(plugin_runner, "self_check", lambda: CLEAN)
+    monkeypatch.setattr(plugin_runner, "serve", fake_serve)
+    args = argparse.Namespace(socket=str(short_dir / "s.sock"), plugins=str(short_dir), check=False)
+    assert plugin_runner.run(args) == 0
+    assert seen["config"].socket_path == short_dir / "s.sock"
+    assert str(short_dir / "s.sock") in capsys.readouterr().err
+
+    # it changed between the two looks: refused all the same
+    async def refusing(config: RunnerConfig, *, ready: Any = None) -> None:
+        raise SelfCheckFailed(["it can see /data"])
+
+    monkeypatch.setattr(plugin_runner, "serve", refusing)
+    assert plugin_runner.run(args) == plugin_runner.REFUSED
+    assert "/data" in capsys.readouterr().err
+    # and --check never serves
+    monkeypatch.setattr(plugin_runner, "serve", fake_serve)
+    seen.clear()
+    assert plugin_runner.run(argparse.Namespace(**{**vars(args), "check": True})) == 0
+    assert seen == {}

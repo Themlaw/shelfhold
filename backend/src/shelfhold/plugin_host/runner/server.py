@@ -129,6 +129,9 @@ class RunnerServer:
         for task in list(self._handlers):
             task.cancel()
         await asyncio.gather(*self._handlers, return_exceptions=True)
+        for channel in [c for c in self._active.values() if c is not None]:
+            await channel.close()  # a handler that was cut short leaves no process behind
+        self._active.clear()
         if self._server is not None:
             await self._server.wait_closed()
             self._server = None
@@ -152,14 +155,16 @@ class RunnerServer:
         except Exception as exc:  # whatever else: this plugin ends, the companion goes on
             log.warning("plugin runner: a connection ended badly: %s", type(exc).__name__)
         finally:
-            if channel is not None:
-                await asyncio.shield(channel.close())
-            if key is not None:
-                self._active.pop(key, None)
-            with contextlib.suppress(Exception):
-                writer.close()
-            if task is not None:
-                self._handlers.discard(task)
+            try:
+                if channel is not None:
+                    await asyncio.shield(channel.close())  # the group is killed before it waits
+            finally:  # even when the stop itself cancels this handler: the key is given back
+                if key is not None:
+                    self._active.pop(key, None)
+                with contextlib.suppress(Exception):
+                    writer.close()
+                if task is not None:
+                    self._handlers.discard(task)
 
     async def _refuse(self, writer: asyncio.StreamWriter, number: int, reason: str) -> None:
         log.warning("plugin runner: greeting refused: %s", reason)
@@ -278,10 +283,11 @@ async def serve(
     config: RunnerConfig,
     *,
     ready: Callable[[], Awaitable[object] | object] | None = None,
+    server: RunnerServer | None = None,
 ) -> None:
     """Run the companion until SIGTERM or SIGINT. `SelfCheckFailed` out of here is a refusal to
-    start: nothing was bound."""
-    server = RunnerServer(config)
+    start: nothing was bound. `server` is what a test gives to describe the sandbox."""
+    server = server or RunnerServer(config)
     await server.start()
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
