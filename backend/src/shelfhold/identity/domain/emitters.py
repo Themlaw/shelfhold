@@ -89,6 +89,10 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 "shelfhold/plugin_host/install.py::install_wheel",
                 "shelfhold/plugin_host/install.py::remove_plugin",
                 "shelfhold/plugin_host/install.py::_undo",
+                # the socket file the plugin runner bound on its own volume (a stale one at start,
+                # its own at close): never a library path, the companion sees no other
+                "shelfhold/plugin_host/runner/server.py::RunnerServer.close",
+                "shelfhold/plugin_host/runner/server.py::RunnerServer.start",
                 # the probe folder the write check made itself (EF-UX-002)
                 f"{_FSOPS}/probe.py::_remove_probe_dir",
             }

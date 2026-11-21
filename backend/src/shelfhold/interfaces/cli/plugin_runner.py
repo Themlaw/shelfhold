@@ -47,7 +47,14 @@ def run(args: argparse.Namespace, resolved: object = None) -> int:
         return 0
     config = RunnerConfig(socket_path=Path(args.socket), plugins_root=Path(args.plugins))
     try:
-        asyncio.run(serve(config))
+        asyncio.run(
+            serve(
+                config,
+                ready=lambda: print(
+                    t("plugin.runner_listening", socket=args.socket), file=sys.stderr
+                ),
+            )
+        )
     except SelfCheckFailed as exc:  # it changed between the two looks
         print(t("plugin.runner_refused", problems=str(exc)), file=sys.stderr)
         return REFUSED
