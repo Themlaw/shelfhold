@@ -183,6 +183,8 @@ EXPECTED_CLOSED = {
         # the companion's socket file: a stale one removed at start, its own removed at close
         "shelfhold/plugin_host/runner/server.py::RunnerServer.close",
         "shelfhold/plugin_host/runner/server.py::RunnerServer.start",
+        # a plugin's scratch folder in the companion's /tmp, removed when its connection ends
+        "shelfhold/plugin_host/runner/server.py::RunnerServer._drop_scratch",
         f"{FSOPS}/probe.py::_remove_probe_dir",
         f"{FSOPS}/facade.py::Fsops.same_path_discard",  # L16: the staged copy, never served
     },

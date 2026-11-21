@@ -17,8 +17,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from shelfhold.plugin_host.runner.confine import landlock_abi
+
 __all__ = [
+    "DOCKER_SOCKETS",
     "FORBIDDEN_PATHS",
+    "PLUGINS_ENTRIES",
     "Observation",
     "SelfCheckFailed",
     "interfaces_of",
@@ -29,6 +33,9 @@ __all__ = [
 ]
 
 FORBIDDEN_PATHS: Final = ("/data", "/store", "/library", "/data/shelfhold.sock")
+DOCKER_SOCKETS: Final = ("/var/run/docker.sock", "/run/docker.sock")  # the engine is the host's
+PLUGINS_ENTRIES: Final = ("site-packages", "state.json")  # all that `/plugins` is meant to hold
+_TRANSIENT: Final = ".staging-"  # what the core is installing, while it is
 # Documentation address (RFC 5737), never routed: a connection that goes anywhere is a network.
 OUTBOUND_PROBE: Final = ("192.0.2.1", 9)
 _NO_ROUTE: Final = {
@@ -49,6 +56,8 @@ class Observation:
     interfaces: tuple[str, ...]
     outbound_possible: bool
     root_read_only: bool
+    landlock_abi: int | None = None  # None: not looked at (a test's description of a sandbox)
+    stray_entries: tuple[str, ...] = ()  # of the plugins volume: what is not meant to be there
 
 
 class SelfCheckFailed(Exception):
@@ -90,11 +99,24 @@ def _reachable(path: str) -> bool:
     return any(os.access(path, mode) for mode in (os.R_OK, os.W_OK, os.X_OK))
 
 
+def stray_entries(plugins_root: str | Path) -> tuple[str, ...]:
+    """What the plugins volume holds besides the installed wheels and the core's state: a mount of
+    the core's data folder (`./data:/plugins`) shows up here, whatever it is called."""
+    try:
+        names = os.listdir(plugins_root)
+    except OSError:  # no such volume: the companion has no plugin to run, and nothing to see
+        return ()
+    return tuple(
+        sorted(n for n in names if n not in PLUGINS_ENTRIES and not n.startswith(_TRANSIENT))
+    )
+
+
 def observe(
     *,
-    paths: Sequence[str] = FORBIDDEN_PATHS,
+    paths: Sequence[str] = (*FORBIDDEN_PATHS, *DOCKER_SOCKETS),
     probe: tuple[str, int] = OUTBOUND_PROBE,
     proc_net_dev: str | Path = "/proc/net/dev",
+    plugins_root: str | Path = "/plugins",
 ) -> Observation:
     """Look at this process's surroundings, as they are now."""
     try:
@@ -107,6 +129,8 @@ def observe(
         interfaces=interfaces,
         outbound_possible=probe_outbound(probe),
         root_read_only=bool(os.statvfs("/").f_flag & os.ST_RDONLY),
+        landlock_abi=landlock_abi(),
+        stray_entries=stray_entries(plugins_root),
     )
 
 
@@ -126,6 +150,14 @@ def problems_of(seen: Observation, *, core_uid: int | None = None) -> list[str]:
         problems.append("an outbound connection is possible")
     if not seen.root_read_only:
         problems.append("its root filesystem is not read-only")
+    if seen.landlock_abi is not None and seen.landlock_abi < 1:
+        problems.append(
+            "the kernel offers no Landlock (it is needed to keep a plugin from writing "
+            "beside its own scratch folder): use a kernel 5.13 or later with Landlock enabled"
+        )
+    if seen.stray_entries:
+        strays = ", ".join(seen.stray_entries)
+        problems.append(f"the plugins volume holds more than the installed plugins: {strays}")
     return problems
 
 

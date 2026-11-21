@@ -11,6 +11,7 @@ CLI's socket is used here.
 import asyncio
 import contextlib
 import os
+import stat
 from pathlib import Path
 
 from shelfhold.plugin_host.rpc import codec, runner_wire
@@ -41,6 +42,14 @@ async def connect_runner(
     """Ask the companion to start plugin `key` (`entry` is `module:attr`) and return the channel to
     it. `core_uid` is this process's own uid (read here, never given by a caller in production)."""
     uid = os.getuid() if core_uid is None else core_uid
+    try:
+        kind = os.lstat(socket_path).st_mode  # not followed: a link is somebody's, not the socket
+    except OSError as exc:
+        raise RunnerUnavailable(
+            f"the plugin runner is not reachable: {type(exc).__name__}"
+        ) from exc
+    if not stat.S_ISSOCK(kind):
+        raise RunnerUnavailable("the plugin runner's socket is not a socket: nothing was sent")
     try:
         reader, writer = await asyncio.wait_for(
             asyncio.open_unix_connection(str(socket_path)), timeout

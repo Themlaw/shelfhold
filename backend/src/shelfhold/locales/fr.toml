@@ -118,6 +118,7 @@ plugin_runner_help = "Compagnon qui exécute les plugins isolés (uid propre, ni
 plugin_runner_socket_help = "Socket unix où le cœur se connecte (sur le volume partagé avec le cœur)."
 plugin_runner_plugins_help = "Dossier où le cœur installe les plugins, en lecture seule ici (son site-packages est parcouru)."
 plugin_runner_check_help = "Vérifie seulement le bac à sable, affiche le résultat et s'arrête (0 : prêt à démarrer)."
+plugin_runner_core_uid_help = "L'uid du cœur, le seul dont les demandes sont servies (1000 par défaut)."
 plugin_key_help = "Clé du plugin (celle de son manifeste)."
 plugin_attest_help = "Atteste une valeur de confiance déclarée par un plugin tiers, pour sa version installée (audité)."
 plugin_attest_value_help = "Valeur attestée : publisher, library, user ou foyer selon le champ."

@@ -11,7 +11,11 @@ and `umask 077` (`adapters.rpc.stdio`). After the answer, the connection is the 
 standard streams, byte for byte: the companion carries `rpc_protocol` 1 without reading it.
 
 A plugin's process lasts as long as its connection: when the core hangs up, or the plugin exits,
-the process group is killed and the key is free again.
+the process group is killed, then every process that lost its parent on the way (the companion is
+the subreaper of its container) and the key is free again. A plugin runs under the companion's own
+uid, so the companion binds it: Landlock (`runner.confine`) leaves it a scratch folder of its own to
+write in and nothing else, in particular not the socket's folder, and the companion is not
+dumpable, so that no plugin reads its memory or its environment.
 
 Imports the SDK, `plugin_host.rpc`, the `rpc_stdio` spawn and the standard library: the import
 contract of the runner keeps everything else of the host out.
@@ -20,11 +24,13 @@ contract of the runner keeps everything else of the host out.
 import asyncio
 import contextlib
 import os
+import shutil
 import signal
 import socket
 import stat
 import struct
 import sys
+import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -34,6 +40,7 @@ import structlog
 from shelfhold.plugin_host.adapters.rpc.stdio import spawn_stdio
 from shelfhold.plugin_host.rpc import codec, runner_wire
 from shelfhold.plugin_host.rpc.protocol import Channel, RpcLimits
+from shelfhold.plugin_host.runner import confine
 from shelfhold.plugin_host.runner.selfcheck import (
     Observation,
     SelfCheckFailed,
@@ -47,6 +54,7 @@ log = structlog.get_logger("shelfhold.plugin_runner")
 
 _FLOOR_MEMORY = 32 * 1024 * 1024
 _GREETING_TIMEOUT = 10.0
+CORE_UID = 1000  # the core's uid in the image: the only peer the companion serves
 
 
 @dataclass(frozen=True)
@@ -55,6 +63,7 @@ class RunnerConfig:
     plugins_root: Path  # the volume: `site-packages` holds the installed wheels
     limits: RpcLimits = field(default_factory=RpcLimits)  # the ceilings; the core asks for less
     max_plugins: int = 16
+    core_uid: int = CORE_UID  # the one uid whose connections are served (`--core-uid`)
 
     @property
     def site(self) -> Path:
@@ -100,6 +109,10 @@ class RunnerServer:
         self._server: asyncio.Server | None = None
         self._active: dict[str, Channel | None] = {}
         self._handlers: set[asyncio.Task[None]] = set()
+        self._scratch: dict[str, Path] = {}
+        self._spawning = asyncio.Lock()  # a spawn and a sweep of orphans never overlap
+        self._was: tuple[int, int] | None = None  # the process flags `start` changed
+        self._beside: set[int] = set()  # children this process had before it listened
 
     @property
     def config(self) -> RunnerConfig:
@@ -119,12 +132,19 @@ class RunnerServer:
         with contextlib.suppress(FileNotFoundError):
             if stat.S_ISSOCK(path.lstat().st_mode):
                 path.unlink()  # a socket a crashed companion left: ours to remove, nothing else is
-        old = os.umask(0)  # created world-writable: the core is another uid and must connect
+        self._was = confine.harden_process()  # not dumpable; the subreaper of what it starts
+        self._beside = confine.children_of(os.getpid())
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
-            self._server = await asyncio.start_unix_server(self._handle, path=str(path))
-        finally:
-            os.umask(old)
-        path.chmod(0o666)
+            listener.bind(str(path))
+            path.chmod(
+                0o666
+            )  # the core is another uid and must connect (it is the only one let in)
+            listener.setblocking(False)
+            self._server = await asyncio.start_unix_server(self._handle, sock=listener)
+        except BaseException:
+            listener.close()
+            raise
         log.info("plugin_runner.listening", uid=self._own_uid)
 
     async def close(self) -> None:
@@ -138,11 +158,18 @@ class RunnerServer:
         for channel in [c for c in self._active.values() if c is not None]:
             await channel.close()  # a handler that was cut short leaves no process behind
         self._active.clear()
+        await self._sweep()
+        for folder in self._scratch.values():
+            shutil.rmtree(folder, ignore_errors=True)
+        self._scratch.clear()
         if self._server is not None:
             await self._server.wait_closed()
             self._server = None
         with contextlib.suppress(FileNotFoundError):
             self._config.socket_path.unlink()
+        if self._was is not None:
+            confine.restore_process(self._was)
+            self._was = None
 
     # -- one connection, one plugin --------------------------------------------------------
 
@@ -164,9 +191,11 @@ class RunnerServer:
             try:
                 if channel is not None:
                     await asyncio.shield(channel.close())  # the group is killed before it waits
+                    await asyncio.shield(self._sweep())  # and whatever it left, adopted by us
             finally:  # even when the stop itself cancels this handler: the key is given back
                 if key is not None:
                     self._active.pop(key, None)
+                    self._drop_scratch(key)
                 with contextlib.suppress(Exception):
                     writer.close()
                 if task is not None:
@@ -201,9 +230,11 @@ class RunnerServer:
         key = request.key
         self._active[key] = None  # taken before anything is awaited: two greetings cannot race
         try:
-            channel = await spawn_stdio(self._argv(request.entry), limits=self._limits(request))
+            async with self._spawning:
+                channel = await self._spawn(request)
         except Exception as exc:
             self._active.pop(key, None)
+            self._drop_scratch(key)
             await self._refuse(
                 writer, number, f"the plugin could not be started: {type(exc).__name__}"
             )
@@ -213,11 +244,50 @@ class RunnerServer:
         await codec.write_frame(writer, runner_wire.ack_message(number, self._own_uid))
         return key, channel
 
+    async def _spawn(self, request: runner_wire.StartRequest) -> Channel:
+        """The plugin's process: bound by Landlock to a scratch folder of its own."""
+        scratch = Path(tempfile.mkdtemp(prefix="plugin-"))
+        self._scratch[request.key] = scratch
+        rules = confine.Ruleset([scratch])
+        try:
+            return await spawn_stdio(
+                self._argv(request.entry),
+                limits=self._limits(request),
+                extra_env={"TMPDIR": str(scratch)},
+                confine=rules.restrict,
+            )
+        finally:
+            rules.close()
+
+    def _drop_scratch(self, key: str) -> None:
+        folder = self._scratch.pop(key, None)
+        if folder is not None:
+            shutil.rmtree(folder, ignore_errors=True)
+
+    async def _sweep(self) -> None:
+        """Kill what a plugin left behind by leaving its parent (a double fork, a `setsid`): it was
+        adopted by this process, which is not one of its plugins' processes and not what it had
+        beside it at the start."""
+        async with self._spawning:
+            await asyncio.to_thread(self._sweep_now)
+
+    def _sweep_now(self) -> None:
+        keep = {*self.pids().values(), *self._beside}
+        for _ in range(5):  # what a killed orphan had started is adopted in turn
+            found = confine.orphans(keep)
+            if not found:
+                return
+            for pid in found:
+                confine.kill_tree(pid)
+            confine.reap(found)
+
     async def _admit(self, request: runner_wire.StartRequest, writer: asyncio.StreamWriter) -> None:
         sock = writer.get_extra_info("socket")
         peer = self._peer_uid(sock)
         if peer == self._own_uid:
             raise _Refused("uid: the peer has the companion's own uid; only the core may ask")
+        if peer != self._config.core_uid:
+            raise _Refused(f"uid: only the core's uid {self._config.core_uid} may ask")
         if request.core_uid != peer:
             raise _Refused("uid: the core's uid is not the one the kernel reports for the peer")
         problems = problems_of(await asyncio.to_thread(self._observe), core_uid=peer)

@@ -63,6 +63,7 @@ def assert_companion(svc: dict[str, Any]) -> None:
             assert source.rstrip("/") not in (forbidden, "." + forbidden), mount
         assert source not in ("./data", "./store", "data", "store"), mount  # nor the core's volumes
     assert svc["ulimits"]["core"] == 0
+    assert any(str(t).split(":")[0] == "/tmp" for t in svc["tmpfs"])  # noqa: S108  # the plugins' scratch folders
     assert svc["mem_limit"] and int(svc["pids_limit"]) > 0
 
 

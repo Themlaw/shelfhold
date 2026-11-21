@@ -71,5 +71,8 @@ SHARDS: dict[str, tuple[str, ...]] = {
     "m6-plugin-runner": (
         "test_the_compose_of_the_stack_starts_the_companion_and_it_sees_nothing_of_the_core",
         "test_the_core_runs_a_plugin_in_the_companion_and_the_plugin_sees_nothing",
+        "test_a_plugin_cannot_write_in_the_socket_folder_nor_take_the_socket_over",
+        "test_the_kit_in_isolated_mode_passes_for_a_shipped_plugin_in_the_companion",
+        "test_what_a_plugin_started_and_abandoned_is_killed_with_its_connection",
     ),
 }

@@ -119,6 +119,7 @@
   plugin_runner_socket_help = "Unix socket the core connects to (on the volume shared with the core)."
   plugin_runner_plugins_help = "Folder the core installs plugins in, read-only here (its site-packages is searched)."
   plugin_runner_check_help = "Only checks the sandbox, prints the result, and exits (0: ready to start)."
+  plugin_runner_core_uid_help = "The uid of the core, the only one whose requests are served (default 1000)."
   plugin_key_help = "Plugin key (that of its manifest)."
   plugin_attest_help = "Attests to a trust value declared by a third-party plugin, for its installed version (audited)."
   plugin_attest_value_help = "Attested value: publisher, library, user or household depending on the field."

@@ -16,7 +16,7 @@ from pathlib import Path
 from shelfhold.i18n import t
 from shelfhold.plugin_host.adapters.rpc.runner_socket import DEFAULT_SOCKET
 from shelfhold.plugin_host.runner.selfcheck import SelfCheckFailed, self_check
-from shelfhold.plugin_host.runner.server import RunnerConfig, configure_logging, serve
+from shelfhold.plugin_host.runner.server import CORE_UID, RunnerConfig, configure_logging, serve
 
 __all__ = ["REFUSED", "register", "run"]
 
@@ -30,6 +30,9 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     parser.add_argument(
         "--plugins", default=DEFAULT_PLUGINS, help=t("cli.plugin_runner_plugins_help")
     )
+    parser.add_argument(
+        "--core-uid", type=int, default=CORE_UID, help=t("cli.plugin_runner_core_uid_help")
+    )
     parser.add_argument("--check", action="store_true", help=t("cli.plugin_runner_check_help"))
     parser.set_defaults(handler=run, standalone=True)
 
@@ -38,14 +41,16 @@ def run(args: argparse.Namespace, resolved: object = None) -> int:
     """`resolved` is never given: this command runs before any setting is read."""
     configure_logging()
     try:
-        seen = self_check()
+        seen = self_check(core_uid=args.core_uid)
     except SelfCheckFailed as exc:
         print(t("plugin.runner_refused", problems=str(exc)), file=sys.stderr)
         return REFUSED
     print(t("plugin.runner_ready", uid=seen.uid), file=sys.stderr)
     if args.check:
         return 0
-    config = RunnerConfig(socket_path=Path(args.socket), plugins_root=Path(args.plugins))
+    config = RunnerConfig(
+        socket_path=Path(args.socket), plugins_root=Path(args.plugins), core_uid=args.core_uid
+    )
     try:
         asyncio.run(
             serve(

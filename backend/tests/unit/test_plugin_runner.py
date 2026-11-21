@@ -846,9 +846,11 @@ def test_the_cli_command_serves_what_it_was_given(
         seen["config"] = config
         ready()
 
-    monkeypatch.setattr(plugin_runner, "self_check", lambda: CLEAN)
+    monkeypatch.setattr(plugin_runner, "self_check", lambda **_kw: CLEAN)
     monkeypatch.setattr(plugin_runner, "serve", fake_serve)
-    args = argparse.Namespace(socket=str(short_dir / "s.sock"), plugins=str(short_dir), check=False)
+    args = argparse.Namespace(
+        socket=str(short_dir / "s.sock"), plugins=str(short_dir), check=False, core_uid=1000
+    )
     assert plugin_runner.run(args) == 0
     assert seen["config"].socket_path == short_dir / "s.sock"
     assert str(short_dir / "s.sock") in capsys.readouterr().err

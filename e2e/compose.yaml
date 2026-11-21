@@ -74,6 +74,7 @@ services:
     volumes:
       - plugins:/plugins:ro   # the wheels, read-only: the core writes them
       - plugin-rpc:/plugin-rpc
+    tmpfs: ["/tmp:size=64m"]   # each plugin's scratch folder: the one place its process may write
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s = socket.socket(socket.AF_UNIX); s.settimeout(3); s.connect('/plugin-rpc/runner.sock')"]
       interval: 1s
