@@ -58,7 +58,7 @@ def _c() -> ctypes.CDLL:
     return _libc
 
 
-def _syscall(number: int, *args: int | ctypes.c_void_p | None) -> int:
+def _syscall(number: int, *args: object) -> int:
     return int(_c().syscall(number, *args))
 
 
