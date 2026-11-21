@@ -18,7 +18,7 @@ from shelfhold_sdk.testing.isolation import observe_sandbox, run_isolation_check
 
 
 def _outbound() -> bool:
-    probe = socket.socket()
+    probe = socket.socket()  # noqa: TID251 - a connection that must fail
     probe.settimeout(1.0)
     try:
         probe.connect(("192.0.2.1", 80))
@@ -47,7 +47,13 @@ class Plugin:
         return []
 
     async def search(
-        self, f: Any, q: str, filters: dict[str, Any], cursor: Cursor | None, *, sub: str | None = None
+        self,
+        f: Any,
+        q: str,
+        filters: dict[str, Any],
+        cursor: Cursor | None,
+        *,
+        sub: str | None = None,
     ) -> Page[SeriesRef]:
         core_uid = int(filters.get("core_uid", -1))
         view = observe_sandbox()

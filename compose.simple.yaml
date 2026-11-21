@@ -24,6 +24,10 @@ services:
     volumes:
       - ./data:/data     # database, config, thumbnails (local disk, not NFS)
       - ./store:/store   # kept copies, a separate folder from ./data
+    # >>> plugin-runner core
+    # volumes:
+    #   - ./plugin-rpc:/plugin-rpc
+    # <<< plugin-runner
     init: true
     ports:
       - "8080:8080"
@@ -31,3 +35,36 @@ services:
       test: ["CMD", "python", "/usr/local/bin/shelfhold-healthcheck"]
       start_period: 10m  # migration budget (ENF-OPS-002)
     restart: unless-stopped
+
+  # Isolated third-party plugins (D-P1, docs/admin/plugins-isoles.md): optional, off by default.
+  # Steps, in this order (the companion refuses to start when it can see /data or has a network):
+  #   1. mkdir -p plugin-rpc data/plugins && sudo chown 1001:1001 plugin-rpc && sudo chmod 755 plugin-rpc data/plugins
+  #   2. uncomment the `plugin-runner` service below (same indentation as `shelfhold:`);
+  #   3. add the `./plugin-rpc:/plugin-rpc` line to the `volumes:` of `shelfhold`;
+  #   4. docker compose up -d, then docker compose logs plugin-runner (it prints that its sandbox is as required).
+  # >>> plugin-runner service
+  # plugin-runner:
+  #   image: ghcr.io/themlaw/shelfhold:1.1   # the same image as the core: always the same tag
+  #   container_name: shelfhold-plugin-runner
+  #   command: ["shelfhold", "plugin-runner"]
+  #   user: "1001:1001"                      # another uid than the core's (1000)
+  #   network_mode: none                     # no network, not even a private one
+  #   read_only: true
+  #   cap_drop: [ALL]
+  #   security_opt: ["no-new-privileges:true"]
+  #   ulimits:
+  #     core: 0
+  #   init: true
+  #   mem_limit: 512m
+  #   pids_limit: 128
+  #   volumes:
+  #     - ./data/plugins:/plugins:ro         # the wheels the core installs: read-only here
+  #     - ./plugin-rpc:/plugin-rpc           # the socket the core connects to: nothing else
+  #   healthcheck:
+  #     test: ["CMD", "python", "-c", "import socket; s = socket.socket(socket.AF_UNIX); s.settimeout(3); s.connect('/plugin-rpc/runner.sock')"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 20s
+  #   restart: unless-stopped
+  # <<< plugin-runner

@@ -115,6 +115,10 @@
   plugin_name_help = "Name of the plugin distribution."
   plugin_list_help = "Lists installed third-party plugins and why they are inactive."
   plugin_load_help = "Loads authorized plugins, as on startup, and shows the result."
+  plugin_runner_help = "Companion that runs isolated plugins (own uid, no /data, no network): started by its own container, never by hand."
+  plugin_runner_socket_help = "Unix socket the core connects to (on the volume shared with the core)."
+  plugin_runner_plugins_help = "Folder the core installs plugins in, read-only here (its site-packages is searched)."
+  plugin_runner_check_help = "Only checks the sandbox, prints the result, and exits (0: ready to start)."
   plugin_key_help = "Plugin key (that of its manifest)."
   plugin_attest_help = "Attests to a trust value declared by a third-party plugin, for its installed version (audited)."
   plugin_attest_value_help = "Attested value: publisher, library, user or household depending on the field."
@@ -246,6 +250,9 @@
   setting_refused = "Setting refused ({field}): {reason}"
   assignment_invalid = "“{name}” does not have the form NAME=VALUE."
   cookies_unreadable = "Cookies must be a name → value, readable JSON object."
+  runner_refused = "The plugin runner refuses to start: {problems}"
+  runner_ready = "The plugin runner's sandbox is as required (uid {uid}, no /data, no network, read-only root)."
+  runner_listening = "The plugin runner listens on {socket}."
 
 [secrets]
   exported = "Exported keychain (age, scrypt): {path}"

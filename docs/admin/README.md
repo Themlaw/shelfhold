@@ -52,6 +52,7 @@ et ne change rien à l'installation (voir [vérifier les images](verifier-les-im
 | Retrouver l'accès (`admin reset-password`), fermer des sessions, imprimer le kit de secours | [secours.md](secours.md) |
 | Durcir, exposer sur Internet | [durcir.md](durcir.md), [exposition-publique.md](exposition-publique.md) |
 | Plugins tiers (désactivés par défaut, installation, activation, attestation) | [plugins-tiers.md](plugins-tiers.md) |
+| Plugins isolés (compagnon `plugin-runner` : autre uid, ni `/data` ni réseau) | [plugins-isoles.md](plugins-isoles.md) |
 | Réglages d'une source (secrets et cookies chiffrés, réglages réservés) | [sources.md](sources.md) |
 | Laisser des enfants lire : étagère famille, un compte Kavita par lecteur, appareil partagé | [famille.md](famille.md) |
 | Règles du contrôle parental, âge dans Kavita, retrait, livres EPUB (âge de série poussé verrouillé, omnibus) | [controle-parental.md](controle-parental.md) |

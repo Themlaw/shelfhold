@@ -15,6 +15,7 @@ import socket
 from pathlib import Path
 
 import pytest
+from shelfhold_sdk.metadata import MatchHints
 from shelfhold_sdk.testing import (
     FakeMetadataProvider,
     FakeRangedConnectedService,
@@ -41,6 +42,11 @@ ISOLATION = {
 }
 
 
+CLOSED = {"PATH": "/usr/bin"}
+CORE = 1000  # the core's uid, for the views a test makes up (theirs is 1001)
+OTHER = os.getuid() + 1  # a uid that is not this process's, for the observed ones
+
+
 def failed(report: object) -> set[str]:
     return {c.name for c in report.failures}  # type: ignore[attr-defined]
 
@@ -55,18 +61,18 @@ def test_plugin_subprocess_never_sees_data_socket(tmp_path: Path) -> None:
     """The check of the kit (pass 13): the subprocess sees neither `/data` nor the socket."""
     assert set(SANDBOX_PATHS) == {"/data", "/store", "/library", "/data/shelfhold.sock"}
     # what a clean sandbox shows: the paths are absent, nothing of Shelfhold's in the environment
-    clean = run_isolation_check(view(), core_uid=1000)
+    clean = run_isolation_check(view(), core_uid=CORE)
     assert clean.ok and {c.name for c in clean.checks} == ISOLATION, clean.failures
     # observed for real, on names a test makes up, absent
     gone = tuple(str(tmp_path / n) for n in ("data", "store", "library", "data/shelfhold.sock"))
-    seen = observe_sandbox(paths=gone)
+    seen = observe_sandbox(paths=gone, environ=CLOSED)
     assert seen.visible == () and seen.uid == os.getuid()
     # `/data`, `/store` or `/library` there, readable: the check fails and names which
     for name in ("data", "store", "library"):
         (tmp_path / name).mkdir()
-        looked = observe_sandbox(paths=gone)
+        looked = observe_sandbox(paths=gone, environ=CLOSED)
         assert str(tmp_path / name) in looked.visible
-        report = run_isolation_check(looked, core_uid=1000)
+        report = run_isolation_check(looked, core_uid=OTHER)
         assert failed(report) == {"isolation_no_data"}, report.checks
         assert name in next(c.detail for c in report.failures)
         (tmp_path / name).rmdir()
@@ -76,25 +82,25 @@ def test_plugin_subprocess_never_sees_data_socket(tmp_path: Path) -> None:
     listener.bind(str(tmp_path / "data/shelfhold.sock"))
     listener.listen()
     try:
-        looked = observe_sandbox(paths=gone)
-        assert failed(run_isolation_check(looked, core_uid=1000)) >= {"isolation_no_cli_socket"}
+        looked = observe_sandbox(paths=gone, environ=CLOSED)
+        assert failed(run_isolation_check(looked, core_uid=OTHER)) >= {"isolation_no_cli_socket"}
     finally:
         listener.close()
 
 
 @pytest.mark.req("EF-USR-024", "ENF-SEC-009")
 def test_isolation_check_uid_and_environment() -> None:
-    same = run_isolation_check(view(uid=1000), core_uid=1000)
+    same = run_isolation_check(view(uid=CORE), core_uid=CORE)
     assert failed(same) == {"isolation_uid_distinct"}
-    assert run_isolation_check(view(uid=0), core_uid=1000).failures  # root is nobody's sandbox
+    assert run_isolation_check(view(uid=0), core_uid=CORE).failures  # root is nobody's sandbox
     # without the core's uid the check says so (it cannot compare), it does not guess
     unknown = run_isolation_check(view(), core_uid=None)
     assert unknown.ok and "isolation_uid_distinct" not in {c.name for c in unknown.checks}
-    leaky = run_isolation_check(view(env_names=("PATH", "SHELFHOLD_SETUP_TOKEN")), core_uid=1000)
+    leaky = run_isolation_check(view(env_names=("PATH", "SHELFHOLD_SETUP_TOKEN")), core_uid=CORE)
     assert failed(leaky) == {"isolation_env_closed"}
     assert "SHELFHOLD_SETUP_TOKEN" in next(c.detail for c in leaky.failures)
     assert "isolation_env_closed" in failed(
-        run_isolation_check(view(env_names=("DB_PASSWORD",)), core_uid=1000)
+        run_isolation_check(view(env_names=("DB_PASSWORD",)), core_uid=CORE)
     )
 
 
@@ -104,15 +110,18 @@ def test_the_kit_plays_the_isolation_check_in_isolated_mode_only() -> None:
 
     async def run(**kw: object) -> object:
         return await run_source_conformance(
-            service, fake_ranged_fetcher(), reinstall=service.reinstall, **kw  # type: ignore[arg-type]
+            service,
+            fake_ranged_fetcher(),
+            reinstall=service.reinstall,
+            **kw,  # type: ignore[arg-type]
         )
 
     plain = asyncio.run(run())
     assert ISOLATION.isdisjoint({c.name for c in plain.checks})  # type: ignore[attr-defined]
-    clean = asyncio.run(run(isolated=True, sandbox=view(), core_uid=1000))
-    assert ISOLATION <= {c.name for c in clean.checks}  # type: ignore[attr-defined]
+    clean = asyncio.run(run(isolated=True, sandbox=view(), core_uid=CORE))
+    assert {c.name for c in clean.checks} >= ISOLATION  # type: ignore[attr-defined]
     assert clean.ok, clean.failures  # type: ignore[attr-defined]
-    seen = asyncio.run(run(isolated=True, sandbox=view(visible=("/data",)), core_uid=1000))
+    seen = asyncio.run(run(isolated=True, sandbox=view(visible=("/data",)), core_uid=CORE))
     assert failed(seen) == {"isolation_no_data"}
     # and the plugin author's own entry point raises on it
     with pytest.raises(AssertionError, match="isolation_no_data"):
@@ -136,16 +145,14 @@ def test_the_isolation_check_is_played_by_every_chapter_of_the_kit() -> None:
             FakeMetadataProvider(),
             fake_metadata_fetcher(),
             targets=[],
-            hints=None,  # type: ignore[arg-type]
+            hints=MatchHints(title="Synthetic title"),
             isolated=True,
             sandbox=bad,
         )
     )
     assert "isolation_no_data" in failed(metadata)
     scenario = DestinationScenario(key="demo")
-    destination = run_destination_conformance(
-        object(), scenario, isolated=True, sandbox=bad
-    )
+    destination = run_destination_conformance(object(), scenario, isolated=True, sandbox=bad)
     assert "isolation_no_data" in {c.name for c in destination.checks}
 
 
@@ -168,7 +175,7 @@ def test_sandbox_view_reads_as_json_for_the_companion() -> None:
     import subprocess
     import sys
 
-    done = subprocess.run(  # noqa: S603
+    done = subprocess.run(
         [sys.executable, "-I", "-m", "shelfhold_sdk.testing.isolation"],
         capture_output=True,
         text=True,

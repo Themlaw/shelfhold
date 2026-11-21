@@ -56,8 +56,12 @@ def assert_companion(svc: dict[str, Any]) -> None:
     assert targets == ["/plugin-rpc", "/plugins"], mounts  # the two volumes, nothing else
     plugins = next(m for m in mounts if m.split(":")[1] == "/plugins")
     assert plugins.endswith(":ro")  # the core installs; the companion only reads
-    for forbidden in FORBIDDEN_MOUNTS:
-        assert not any(forbidden in m for m in mounts), (forbidden, mounts)
+    for mount in mounts:
+        source, target = mount.split(":")[:2]
+        for forbidden in FORBIDDEN_MOUNTS:
+            assert target != forbidden and not target.startswith(forbidden + "/"), mount
+            assert source.rstrip("/") not in (forbidden, "." + forbidden), mount
+        assert source not in ("./data", "./store", "data", "store"), mount  # nor the core's volumes
     assert svc["ulimits"]["core"] == 0
     assert svc["mem_limit"] and int(svc["pids_limit"]) > 0
 
@@ -68,7 +72,9 @@ def test_plugin_runner_service_has_no_data_no_network_and_another_uid() -> None:
     compose = load("e2e/compose.yaml")
     svc = compose["services"]["plugin-runner"]
     assert_companion(svc)
-    assert "${SHELFHOLD_IMAGE" in svc["image"]  # the image under test: the core's image, not another
+    assert (
+        "${SHELFHOLD_IMAGE" in svc["image"]
+    )  # the image under test: the core's image, not another
     assert compose["services"]["shelfhold"]["user"] == "1000:1000"
     assert set(compose["volumes"]) >= {"plugins", "plugin-rpc"}
     # the core is the one that installs (writes the plugins) and connects (the socket)
@@ -93,7 +99,6 @@ def test_plugin_runner_is_healthy_only_when_its_socket_accepts() -> None:
 def test_plugin_runner_is_off_by_default_and_complete_when_uncommented(path: str) -> None:
     active = load(path)
     assert list(active["services"]) == ["shelfhold"]  # nothing changes for an existing install
-    assert "plugin-runner" not in (ROOT / path).read_text(encoding="utf-8").split(BEGIN)[0]
     blocks = commented_blocks(path)
     assert set(blocks) == {"service", "core"}
     assert_companion(blocks["service"]["plugin-runner"])

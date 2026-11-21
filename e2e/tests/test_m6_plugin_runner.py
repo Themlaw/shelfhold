@@ -65,7 +65,10 @@ def install_probe() -> None:
         f"chmod 644 {SITE}/e2e_probe.py"
     )
     subprocess.run(  # noqa: S603
-        ["docker", "compose", "-f", str(COMPOSE_FILE), "exec", "-T", "shelfhold", "sh", "-c", script],  # noqa: S607
+        [  # noqa: S607
+            "docker", "compose", "-f", str(COMPOSE_FILE), "exec", "-T", "shelfhold",
+            "sh", "-c", script,
+        ],
         input=PROBE, text=True, check=True, capture_output=True, timeout=60,
     )  # fmt: skip
 
@@ -102,7 +105,5 @@ def test_the_core_runs_a_plugin_in_the_companion_and_the_plugin_sees_nothing(sta
     # the kit's isolation check, played in the plugin's own process: every line is green
     assert seen["isolation"] and all(seen["isolation"].values()), seen["isolation"]
     # and the core, for its part, listens nowhere on the volume: it connected
-    listening = exec_python(
-        "shelfhold", "import os; print(sorted(os.listdir('/plugin-rpc')))"
-    )
+    listening = exec_python("shelfhold", "import os; print(sorted(os.listdir('/plugin-rpc')))")
     assert "runner.sock" in listening

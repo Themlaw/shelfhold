@@ -59,7 +59,7 @@ def test_first_party_source_passes_the_kit_in_isolated_mode(tmp_path: Path) -> N
         )
     )
     assert report.ok, report.failures
-    assert ISOLATION <= {c.name for c in report.checks}
+    assert {c.name for c in report.checks} >= ISOLATION
 
 
 @pytest.mark.req("EF-USR-024", "EF-SRC-016", "ENF-QUAL-003")
@@ -78,7 +78,7 @@ def test_first_party_metadata_provider_passes_the_kit_in_isolated_mode(tmp_path:
         )
     )
     report.assert_ok()
-    assert ISOLATION <= {c.name for c in report.checks}
+    assert {c.name for c in report.checks} >= ISOLATION
 
 
 @pytest.mark.req("EF-USR-024", "EF-SRC-016", "ENF-QUAL-003")
@@ -101,7 +101,7 @@ def test_first_party_connected_service_passes_the_kit_in_isolated_mode(tmp_path:
         )
     )
     assert report.ok, report.failures
-    assert ISOLATION <= {c.name for c in report.checks}
+    assert {c.name for c in report.checks} >= ISOLATION
 
 
 @pytest.mark.req("EF-USR-024", "EF-SRC-016", "ENF-QUAL-003")

@@ -67,7 +67,7 @@ def run[T](make: Callable[[], Awaitable[T]]) -> T:
 @pytest.fixture
 def short_dir() -> AsyncIterator[Path]:  # type: ignore[misc]
     """A short path: a unix socket's address is at most 107 bytes, which pytest's paths exceed."""
-    path = Path(tempfile.mkdtemp(prefix="rn", dir="/tmp"))  # noqa: S108
+    path = Path(tempfile.mkdtemp(prefix="rn", dir="/tmp"))
     try:
         yield path  # type: ignore[misc]
     finally:
@@ -245,11 +245,13 @@ def test_plugin_runner_reads_the_core_uid_from_the_kernel_by_default(short_dir: 
         server = RunnerServer(
             RunnerConfig(socket_path=short_dir / "runner.sock", plugins_root=short_dir / "plugins"),
             own_uid=RUNNER_UID,
-            observe=lambda: CLEAN,
+            observe=lambda: replace(CLEAN, uid=os.getuid() + 1),
         )
         async with running(server):
             with pytest.raises(RunnerRefused, match="uid"):
-                await open_session(server, core_uid=os.getuid() + 1)  # the claim is not the kernel's
+                await open_session(
+                    server, core_uid=os.getuid() + 1
+                )  # the claim is not the kernel's
             session = await open_session(server, core_uid=os.getuid())
             await session.close()
 
@@ -258,11 +260,12 @@ def test_plugin_runner_reads_the_core_uid_from_the_kernel_by_default(short_dir: 
 
 # -- the network --------------------------------------------------------------------------------
 
-PROC_NET_DEV = """Inter-|   Receive                                                |  Transmit
- face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-    lo:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
-  eth0:    1234      10    0    0    0     0          0         0      999       8    0    0    0     0       0          0
-"""
+PROC_NET_DEV = (
+    "Inter-|   Receive   |  Transmit\n"
+    " face |bytes packets errs|bytes packets errs\n"
+    "    lo:  0  0  0  0  0\n"
+    "  eth0:  1234  10  0  999  8\n"
+)
 
 
 @pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
@@ -441,7 +444,7 @@ class Tap:
 @pytest.mark.req("EF-SRC-016", "EF-SRC-019", "ENF-SEC-009")
 def test_no_secret_passed_to_plugin(short_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Isolated mode: no message, no environment variable, no argument carries a value of the
-    keyring. The host holds the secret; a Fetcher on its side injects it; the plugin never has it."""
+    keyring. The host holds the secret and a Fetcher on its side injects it: the plugin has none."""
     make_plugins(short_dir)
     secret = secrets.token_urlsafe(24)
     register_secret_value(secret)
@@ -494,9 +497,7 @@ def test_core_never_listens_on_the_runner_volume(short_dir: Path) -> None:
         decoy = volume / "runner.sock"
         decoy.write_text("not a socket", encoding="utf-8")  # a file where the socket should be
         with pytest.raises(RunnerUnavailable):
-            await connect_runner(
-                decoy, key="a", entry="a:b", limits=RpcLimits(), core_uid=CORE_UID
-            )
+            await connect_runner(decoy, key="a", entry="a:b", limits=RpcLimits(), core_uid=CORE_UID)
         assert decoy.read_text(encoding="utf-8") == "not a socket"
 
     run(scenario)
@@ -505,36 +506,24 @@ def test_core_never_listens_on_the_runner_volume(short_dir: Path) -> None:
     # the data directory, and the companion's, on the volume the companion owns
     listeners: set[str] = set()
     for path in sorted(SRC.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and node.attr in {
-                "start_unix_server",
-                "create_unix_server",
-                "listen",
-                "bind",
-            }:
+        text = path.read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(text)):
+            if not isinstance(node, ast.Attribute):
+                continue
+            serves = node.attr in {"start_unix_server", "create_unix_server"}
+            binds = node.attr in {"bind", "listen"} and "AF_UNIX" in text
+            if serves or binds:
                 listeners.add(path.relative_to(SRC).as_posix())
     allowed = {
         "infrastructure/local_socket/server.py",  # the CLI socket, in the data directory
         "plugin_host/runner/server.py",  # the companion's
     }
-    assert listeners - allowed - _unrelated_binders() == set(), listeners
-    assert "plugin_host/runner/server.py" in listeners
+    assert listeners == allowed, listeners
     core_side = (SRC / "plugin_host/adapters/rpc/runner_socket.py").read_text(encoding="utf-8")
     assert "bind(" not in core_side and "start_unix_server" not in core_side
     assert "local_socket" not in core_side  # nor the CLI's socket, nor its code
     cli_socket = (SRC / "infrastructure/local_socket/server.py").read_text(encoding="utf-8")
     assert "plugin" not in cli_socket.lower().replace("plugins", "")  # no shared methods
-
-
-def _unrelated_binders() -> set[str]:
-    """Modules that call `.bind(` on something that is not a socket (a SQL statement, a binder)."""
-    found: set[str] = set()
-    for path in sorted(SRC.rglob("*.py")):
-        text = path.read_text(encoding="utf-8")
-        if "socket" not in text and "asyncio" not in text:
-            found.add(path.relative_to(SRC).as_posix())
-    return found
 
 
 # -- what the companion refuses to start ----------------------------------------------------------
@@ -589,7 +578,7 @@ def test_plugin_runner_refuses_garbage_and_oversized_hellos(short_dir: Path) -> 
             body = b'{"jsonrpc":"2.0","id":1,"method":"fetcher.get","params":{}}'
             assert b"refused" in await raw(server, len(body).to_bytes(4, "big") + body)
             # a client that leaves without a word costs it nothing
-            reader, writer = await asyncio.open_unix_connection(str(server.config.socket_path))
+            _, writer = await asyncio.open_unix_connection(str(server.config.socket_path))
             writer.close()
             await asyncio.sleep(0.1)
             session = await open_session(server)  # and it still serves

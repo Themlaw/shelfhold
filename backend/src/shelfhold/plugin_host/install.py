@@ -456,6 +456,7 @@ def install_wheel(
                     raise PluginInstallError("conflict", f"{entry!r} already exists")
                 os.replace(target / entry, layout.site / entry)
                 moved.append(layout.site / entry)
+            open_for_runner(layout, moved)
         except OSError as exc:
             _undo(moved)
             raise PluginInstallError("bad_wheel", f"cannot place the files: {exc}") from exc
@@ -472,6 +473,23 @@ def install_wheel(
         return installed
     finally:
         shutil.rmtree(staging, ignore_errors=True)
+
+
+def open_for_runner(layout: Layout, placed: Sequence[Path]) -> None:
+    """Make what the core put down readable by the plugin runner (D-P1). The core runs with
+    `umask 077` and the companion is another uid: without this the companion could not enter the
+    folder. Others get to read and traverse, never to write; the state file stays the core's own."""
+    layout.root.chmod(0o755)
+    layout.site.chmod(0o755)
+    for entry in placed:
+        paths = [entry, *entry.rglob("*")] if entry.is_dir() and not entry.is_symlink() else [entry]
+        for path in paths:
+            if path.is_symlink():
+                continue  # a link is never followed: its own mode is not the point
+            if path.is_dir():
+                path.chmod(0o755)
+            else:
+                path.chmod(0o755 if path.stat().st_mode & 0o100 else 0o644)
 
 
 def _undo(moved: Sequence[Path]) -> None:

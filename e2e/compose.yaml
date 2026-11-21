@@ -5,6 +5,12 @@
 # SHELFHOLD_APP_IMAGE, when set, is the image of the `shelfhold` service alone
 # (the rollback journey runs the previous release on the volumes of this one); the simulated servers
 # stay on SHELFHOLD_IMAGE.
+#
+# `plugin-runner` is the companion of the isolated plugins (D-P1, M6 L05): the same image under uid
+# 1001, no network at all, a read-only root, and two volumes only (the plugins, read-only, and the
+# socket the core connects to). It checks its own sandbox at start and refuses to start otherwise;
+# the core waits for it to be healthy (`tests/test_m6_plugin_runner.py` reads the three properties
+# from inside).
 name: shelfhold-e2e
 
 x-hardened: &hardened
@@ -38,9 +44,12 @@ services:
     init: true
     depends_on:
       egress-watch: { condition: service_healthy }
+      plugin-runner: { condition: service_healthy }
     volumes:
       - data:/data
       - store:/store
+      - plugins:/data/plugins   # the core installs the wheels here
+      - plugin-rpc:/plugin-rpc  # and connects to the companion's socket
     tmpfs: ["/tmp:size=256m"]
     healthcheck:
       test: ["CMD", "python", "/usr/local/bin/shelfhold-healthcheck"]
@@ -49,9 +58,33 @@ services:
       retries: 30
       start_period: 5s
 
+  plugin-runner:
+    image: ${SHELFHOLD_IMAGE:?set SHELFHOLD_IMAGE to the image under test}
+    command: ["shelfhold", "plugin-runner"]
+    user: "1001:1001"      # not the core's uid
+    network_mode: none     # no network, not even a private one
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ulimits:
+      core: 0
+    init: true
+    mem_limit: 512m
+    pids_limit: 128
+    volumes:
+      - plugins:/plugins:ro   # the wheels, read-only: the core writes them
+      - plugin-rpc:/plugin-rpc
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s = socket.socket(socket.AF_UNIX); s.settimeout(3); s.connect('/plugin-rpc/runner.sock')"]
+      interval: 1s
+      timeout: 5s
+      retries: 30
+
 networks:
   isolated:
 
 volumes:
   data:
   store:
+  plugins:
+  plugin-rpc:

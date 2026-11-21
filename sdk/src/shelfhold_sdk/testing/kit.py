@@ -107,6 +107,13 @@ class ConformanceReport:
             seen.add(str(name))
         self.add("waiting_states_declare_exit", not problems, "; ".join(problems))
 
+    def add_isolation(self, view: Any, core_uid: int | None = None) -> None:
+        """The isolation checks (EF-USR-024, pass 13) for what a process sees: `view` is a
+        `SandboxView`, observed from the process when it is `None`."""
+        from shelfhold_sdk.testing.isolation import add_isolation_checks, observe_sandbox
+
+        add_isolation_checks(self, view if view is not None else observe_sandbox(), core_uid)
+
     def assert_ok(self) -> None:
         """AssertionError on any failure; ForbiddenIOError first when the plugin did direct I/O."""
         if self.io_violations:
@@ -257,14 +264,23 @@ async def run_source_conformance(
     *,
     reinstall: Callable[[], Source] | None = None,
     series_ref: SeriesRef | None = None,
+    isolated: bool = False,
+    sandbox: Any = None,
+    core_uid: int | None = None,
 ) -> ConformanceReport:
     """Run every check against `source`; `fetcher` must be scripted (no network is possible).
+
+    `isolated` plays the kit as it runs inside an isolated plugin's process: the isolation checks
+    (no `/data`, no CLI socket, a closed environment, a uid that is not the core's) look at the
+    process (`sandbox`, a `SandboxView`, replaces the observation; `core_uid` is the core's).
 
     Every call into the plugin runs under the direct-I/O detector (EF-SRC-002): a socket, a
     process or a file the plugin opens itself raises `ForbiddenIOError` and fails `no_direct_io`,
     even if the plugin catches the error.
     """
     report = ConformanceReport()
+    if isolated:
+        report.add_isolation(sandbox, core_uid)
     plugin_id = str(getattr(getattr(source, "manifest", None), "key", "") or "plugin")
     source = cast(
         Source, GuardedPlugin(source, plugin_id, report=report.io_violations.append, mode="raise")
@@ -479,10 +495,21 @@ def assert_conforms(
     *,
     reinstall: Callable[[], Source] | None = None,
     series_ref: SeriesRef | None = None,
+    isolated: bool = False,
+    sandbox: Any = None,
+    core_uid: int | None = None,
 ) -> ConformanceReport:
     """Synchronous entry point for a plugin's own tests: raises AssertionError on any failure."""
     report = asyncio.run(
-        run_source_conformance(source, fetcher, reinstall=reinstall, series_ref=series_ref)
+        run_source_conformance(
+            source,
+            fetcher,
+            reinstall=reinstall,
+            series_ref=series_ref,
+            isolated=isolated,
+            sandbox=sandbox,
+            core_uid=core_uid,
+        )
     )
     report.assert_ok()
     return report
@@ -494,13 +521,19 @@ async def run_metadata_conformance(
     *,
     targets: list[EntityRef],
     hints: MatchHints,
+    isolated: bool = False,
+    sandbox: Any = None,
+    core_uid: int | None = None,
 ) -> ConformanceReport:
     """Run every check against a metadata provider on a scripted `fetcher` (EF-BIB-013).
 
     `targets` are synthetic questions; give at least one ISBN target (an Edition) to exercise the
     typing rule. A target whose type the manifest does not declare is reported and not asked.
+    `isolated`, `sandbox` and `core_uid` are those of `run_source_conformance`.
     """
     report = ConformanceReport()
+    if isolated:
+        report.add_isolation(sandbox, core_uid)
     manifest = provider.manifest
     valid = isinstance(manifest, MetadataManifest) and bool(manifest.key) and _roundtrips(manifest)
     report.add("manifest", valid, "" if valid else "manifest is not a valid MetadataManifest")

@@ -26,11 +26,12 @@ def modes(root: Path) -> dict[str, int]:
 
 @pytest.mark.req("EF-SRC-019", "EF-SRC-016", "ENF-SEC-009")
 def test_installed_wheels_are_readable_by_the_runner_and_writable_by_nobody_else(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The core runs with `umask 077`; the companion is another uid and reads what the core put
     down. Nothing is writable by a group or others; the guard (hashes, no dependencies, the
     digest of what was installed) is the same."""
+    monkeypatch.chdir(tmp_path)  # the installer reads the project settings of its working folder
     old = os.umask(0o077)
     try:
         layout = guard.Layout.of(tmp_path / "data")
@@ -69,7 +70,7 @@ def test_plugin_runner_command_refuses_to_start_outside_a_sandbox(tmp_path: Path
     assert not socket_path.exists()
     assert not (tmp_path / "nope").exists()  # it did not read the data folder's settings
     assert CANARY not in done.stdout + done.stderr
-    assert "plugin-runner" in done.stderr or "companion" in done.stderr.lower()
+    assert "compagnon" in done.stderr.lower() or "plugin runner" in done.stderr.lower()
 
 
 @pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
