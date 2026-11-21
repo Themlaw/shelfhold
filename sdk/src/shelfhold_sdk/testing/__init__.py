@@ -18,6 +18,11 @@ from shelfhold_sdk.testing.fakes import (
     fake_metadata_fetcher,
     fake_ranged_fetcher,
 )
+from shelfhold_sdk.testing.isolation import (
+    SandboxView,
+    observe_sandbox,
+    run_isolation_check,
+)
 from shelfhold_sdk.testing.kit import (
     CheckResult,
     ConformanceReport,
@@ -37,13 +42,16 @@ __all__ = [
     "FakeMetadataProvider",
     "FakeRangedConnectedService",
     "NetworkForbidden",
+    "SandboxView",
     "assert_conforms",
     "assert_destination_conforms",
     "fake_metadata_fetcher",
     "fake_ranged_fetcher",
+    "observe_sandbox",
     "run_destination_conformance",
     "run_destination_declaration_check",
     "run_indexer_plan_check",
+    "run_isolation_check",
     "run_metadata_conformance",
     "run_source_conformance",
     "run_trapped_epub_corpus",

@@ -455,6 +455,7 @@ WRITERS_ALLOWED = (
     "shelfhold/infrastructure/secrets/atomic.py",  # keyring and export file, owner-only
     "shelfhold/infrastructure/cover_store.py",  # /data/covers: covers the decode worker re-encoded
     "shelfhold/plugin_host/install.py",  # /data/plugins: staging, site-packages, state file
+    "shelfhold/plugin_host/runner/server.py",  # the companion's socket file, on its own volume
     "shelfhold/infrastructure/local_socket/server.py",  # the CLI socket (and staging dir), /data
     "shelfhold/docgen/release_assets.py",  # release tooling: two files in a directory it is given
     "shelfhold/ops/backup/store.py",  # the backup directory (EF-INT-015), outside /data and /store

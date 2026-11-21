@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1.24@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 # Shelfhold image: multi-stage, base pinned by digest (Dependabot bumps the digests), uid 1000.
+# /data and /store are 0700: the companion (same image) finds them unreadable, as it must.
+# A second user, uid 1001, exists for the plugin runner (the companion container of isolated
+# plugins, command `shelfhold plugin-runner`): the core never runs as that uid, nor it as the core's.
 #
 # Frontend: the SPA is built only when the context has frontend/package.json. The CI passes
 # --build-arg WITH_FRONTEND=true in that case (the default); false builds an API-only image.
@@ -67,8 +70,12 @@ LABEL org.opencontainers.image.title="Shelfhold" \
 
 RUN groupadd --gid 1000 shelfhold \
  && useradd --uid 1000 --gid 1000 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin shelfhold \
- && mkdir /data /store \
- && chown 1000:1000 /data /store
+ && groupadd --gid 1001 plugin-runner \
+ && useradd --uid 1001 --gid 1001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin plugin-runner \
+ && mkdir /data /store /data/plugins /plugins /plugin-rpc \
+ && chown 1000:1000 /data /store /data/plugins \
+ && chmod 0700 /data /store \
+ && chown 1001:1001 /plugin-rpc
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=frontend / /app/frontend/

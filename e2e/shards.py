@@ -67,4 +67,9 @@ SHARDS: dict[str, tuple[str, ...]] = {
     "m5-lite": ("test_m5_journey_lite_without_javascript",),
     "m5-offline": ("test_m5_journey_offline_eviction",),
     "m5-oidc": ("test_m5_journey_oidc_login",),
+    # M6 (L05): the companion of the isolated plugins, on the stack's own compose
+    "m6-plugin-runner": (
+        "test_the_compose_of_the_stack_starts_the_companion_and_it_sees_nothing_of_the_core",
+        "test_the_core_runs_a_plugin_in_the_companion_and_the_plugin_sees_nothing",
+    ),
 }

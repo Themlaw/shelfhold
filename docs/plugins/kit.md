@@ -61,3 +61,22 @@ copié d'un site, aucune adresse réelle : utilisez des hôtes `.invalid`. Le te
 
 Un transport `push` passe par le kit, jamais par un accès réseau de l'adaptateur : l'adaptateur décrit des
 `ApiCall`, l'hôte les exécute par son `Fetcher` et sa garde SSRF.
+
+## Mode isolé : ce que le sous-processus voit
+
+Un plugin tiers isolé tourne dans le conteneur compagnon (`plugin-runner`, [../admin/plugins-isoles.md](../admin/plugins-isoles.md)).
+Le kit rejoue, avec `isolated=True` (`run_source_conformance`, `run_metadata_conformance`,
+`run_destination_conformance`, `assert_conforms`, la fixture `check_conformance`), un contrôle de plus sur
+**le processus qui le joue** :
+
+| Contrôle | Ce qu'il vérifie |
+| --- | --- |
+| `isolation_no_data` | ni `/data`, ni `/store`, ni `/library` ne sont joignables |
+| `isolation_no_cli_socket` | `/data/shelfhold.sock` n'est pas joignable |
+| `isolation_env_closed` | aucune variable `SHELFHOLD_*` ni de nom qui évoque un secret (`SECRET`, `PASSWORD`, `TOKEN`, `KEY`, `*_FILE`…) |
+| `isolation_uid_distinct` | l'uid n'est ni celui du cœur (`core_uid=`, lu dans la poignée de main) ni root ; non joué sans `core_uid` |
+
+`sandbox=SandboxView(...)` remplace l'observation du processus (un test décrit un bac à sable sans conteneur) ;
+`python -m shelfhold_sdk.testing.isolation` imprime l'observation en JSON, pour la jouer dans le sous-processus
+d'un plugin. Le kit du dépôt le joue ainsi sur les plugins first-party, et la pile e2e le rejoue dans le vrai
+compagnon.

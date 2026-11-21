@@ -95,4 +95,4 @@ async def spawn_stdio(
         with contextlib.suppress(Exception):
             await asyncio.wait_for(process.wait(), 5.0)
 
-    return Channel(stdout, stdin, close, exit_reason)
+    return Channel(stdout, stdin, close, exit_reason, pid=process.pid)
