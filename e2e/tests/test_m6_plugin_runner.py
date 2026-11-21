@@ -1,0 +1,108 @@
+"""M6 L05 (D-P1, EF-SRC-016, EF-USR-024, ENF-SEC-009): the companion on the image under test.
+
+The stack of `e2e/compose.yaml` runs the core (uid 1000) and the companion `plugin-runner` (uid
+1001, no network, read-only root, only the plugins' folder and the socket's). The three properties
+of pass 13 are read from inside the companion, then from inside a plugin's own process, which the
+core starts through the companion's socket: another uid than the core's, neither `/data` nor the
+CLI socket, no interface but `lo`, no outbound connection, and an environment without a
+`SHELFHOLD_*` variable. Synthetic data only; nothing leaves the stack.
+"""
+
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from conftest import COMPOSE_FILE, compose, exec_python
+
+E2E = Path(__file__).resolve().parents[1]
+PROBE = (E2E / "fakes" / "m6" / "probe_plugin.py").read_text(encoding="utf-8")
+SITE = "/data/plugins/site-packages"
+
+SEES = """
+import json, os
+paths = ['/data', '/store', '/library', '/data/shelfhold.sock']
+try:
+    open('/runner-write-probe', 'w')
+    writable = True
+except OSError:
+    writable = False
+print(json.dumps({
+    'uid': os.getuid(),
+    'visible': [p for p in paths if os.path.exists(p)],
+    'interfaces': sorted(os.listdir('/sys/class/net')),
+    'root_writable': writable,
+    'env': sorted(os.environ),
+}))
+"""
+
+CONNECT = """
+import asyncio, json, os, sys
+from shelfhold.plugin_host.adapters.rpc.runner_socket import connect_runner
+from shelfhold.plugin_host.rpc.host_side import RpcSession
+from shelfhold.plugin_host.rpc.protocol import RpcLimits
+
+async def main():
+    limits = RpcLimits()
+    channel = await connect_runner('/plugin-rpc/runner.sock', key='e2e-probe',
+                                   entry='e2e_probe:make', limits=limits)
+    session = await RpcSession.open(channel, key='e2e-probe', limits=limits)
+    page = await session.call('source.search', {'q': 'probe', 'filters': {'core_uid': os.getuid()},
+                                                'cursor': None}, fetcher=None)
+    await session.close()
+    print(json.dumps({'core_uid': os.getuid(), 'seen': json.loads(page.items[0].title)}))
+
+asyncio.run(main())
+"""
+
+
+def install_probe() -> None:
+    """The administrator's side of the volume: the core writes the plugin where the companion
+    reads (through the `plugins` volume; the core's own write permission, nothing else)."""
+    script = (
+        f"umask 022; mkdir -p {SITE}; cat > {SITE}/e2e_probe.py; chmod 755 /data/plugins {SITE}; "
+        f"chmod 644 {SITE}/e2e_probe.py"
+    )
+    subprocess.run(  # noqa: S603
+        ["docker", "compose", "-f", str(COMPOSE_FILE), "exec", "-T", "shelfhold", "sh", "-c", script],  # noqa: S607
+        input=PROBE, text=True, check=True, capture_output=True, timeout=60,
+    )  # fmt: skip
+
+
+@pytest.mark.req("EF-SRC-016", "EF-USR-024", "ENF-SEC-009")
+def test_the_compose_of_the_stack_starts_the_companion_and_it_sees_nothing_of_the_core(
+    stack: None,
+) -> None:
+    ps = compose("ps", "--format", "json", "plugin-runner").stdout
+    assert json.loads(ps.splitlines()[0])["Health"] == "healthy"
+    seen = json.loads(exec_python("plugin-runner", SEES))
+    assert seen["uid"] == 1001
+    assert seen["visible"] == []  # no /data, no /store, no /library, no CLI socket
+    assert seen["interfaces"] == ["lo"]
+    assert seen["root_writable"] is False
+    assert not [n for n in seen["env"] if n.startswith("SHELFHOLD_")]
+    core = json.loads(exec_python("shelfhold", "import os; print(os.getuid())"))
+    assert core == 1000 and core != seen["uid"]
+    check = compose("exec", "-T", "plugin-runner", "shelfhold", "plugin-runner", "--check")
+    assert check.returncode == 0  # the self-check passes again, from the outside
+
+
+@pytest.mark.req("EF-SRC-016", "EF-USR-024", "ENF-SEC-009", "EF-SRC-019")
+def test_the_core_runs_a_plugin_in_the_companion_and_the_plugin_sees_nothing(stack: None) -> None:
+    install_probe()
+    done = compose("exec", "-T", "shelfhold", "python", "-c", CONNECT)
+    answer = json.loads(done.stdout)
+    seen = answer["seen"]
+    assert seen["uid"] == 1001 and seen["uid"] != answer["core_uid"]
+    assert seen["visible"] == []
+    assert seen["interfaces"] == ["lo"]
+    assert seen["outbound"] is False
+    assert not [n for n in seen["env_names"] if n.startswith("SHELFHOLD_")]
+    # the kit's isolation check, played in the plugin's own process: every line is green
+    assert seen["isolation"] and all(seen["isolation"].values()), seen["isolation"]
+    # and the core, for its part, listens nowhere on the volume: it connected
+    listening = exec_python(
+        "shelfhold", "import os; print(sorted(os.listdir('/plugin-rpc')))"
+    )
+    assert "runner.sock" in listening
