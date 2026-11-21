@@ -20,7 +20,7 @@ import secrets
 import shutil
 import socket
 import tempfile
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -65,11 +65,11 @@ def run[T](make: Callable[[], Awaitable[T]]) -> T:
 
 
 @pytest.fixture
-def short_dir() -> AsyncIterator[Path]:  # type: ignore[misc]
+def short_dir() -> Iterator[Path]:
     """A short path: a unix socket's address is at most 107 bytes, which pytest's paths exceed."""
     path = Path(tempfile.mkdtemp(prefix="rn", dir="/tmp"))
     try:
-        yield path  # type: ignore[misc]
+        yield path
     finally:
         shutil.rmtree(path, ignore_errors=True)
 

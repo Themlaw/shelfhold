@@ -40,7 +40,7 @@ from shelfhold.plugin_host.runner.selfcheck import (
     problems_of,
 )
 
-__all__ = ["RunnerConfig", "RunnerServer", "peer_uid_of", "serve"]
+__all__ = ["RunnerConfig", "RunnerServer", "configure_logging", "peer_uid_of", "serve"]
 
 log = logging.getLogger("shelfhold.plugin_runner")
 
@@ -66,6 +66,12 @@ def peer_uid_of(connection: socket.socket) -> int:
         socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")
     )
     return int(struct.unpack("3i", credentials)[1])
+
+
+def configure_logging() -> None:
+    """The companion's log: plain lines on standard error, which the log driver keeps."""
+    line = "%(levelname)s %(message)s"
+    logging.basicConfig(stream=sys.stderr, level=logging.INFO, format=line)
 
 
 class _Refused(Exception):
