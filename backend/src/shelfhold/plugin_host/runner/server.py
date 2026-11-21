@@ -19,7 +19,6 @@ contract of the runner keeps everything else of the host out.
 
 import asyncio
 import contextlib
-import logging
 import os
 import signal
 import socket
@@ -29,6 +28,8 @@ import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+
+import structlog
 
 from shelfhold.plugin_host.adapters.rpc.stdio import spawn_stdio
 from shelfhold.plugin_host.rpc import codec, runner_wire
@@ -42,7 +43,7 @@ from shelfhold.plugin_host.runner.selfcheck import (
 
 __all__ = ["RunnerConfig", "RunnerServer", "configure_logging", "peer_uid_of", "serve"]
 
-log = logging.getLogger("shelfhold.plugin_runner")
+log = structlog.get_logger("shelfhold.plugin_runner")
 
 _FLOOR_MEMORY = 32 * 1024 * 1024
 _GREETING_TIMEOUT = 10.0
@@ -69,9 +70,14 @@ def peer_uid_of(connection: socket.socket) -> int:
 
 
 def configure_logging() -> None:
-    """The companion's log: plain lines on standard error, which the log driver keeps."""
-    line = "%(levelname)s %(message)s"
-    logging.basicConfig(stream=sys.stderr, level=logging.INFO, format=line)
+    """The companion's log: one line per event on standard error, which the log driver keeps."""
+    structlog.configure(
+        processors=[
+            structlog.processors.add_log_level,
+            structlog.processors.KeyValueRenderer(key_order=["level", "event"]),
+        ],
+        logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
+    )
 
 
 class _Refused(Exception):
@@ -119,11 +125,11 @@ class RunnerServer:
         finally:
             os.umask(old)
         path.chmod(0o666)
-        log.info("plugin runner listening: uid=%d", self._own_uid)
+        log.info("plugin_runner.listening", uid=self._own_uid)
 
     async def close(self) -> None:
         if self._active:
-            log.info("plugin runner stopping: %s", ", ".join(sorted(self.pids())) or "no plugin")
+            log.info("plugin_runner.stopping", plugins=sorted(self.pids()))
         if self._server is not None:
             self._server.close()
         for task in list(self._handlers):
@@ -153,7 +159,7 @@ class RunnerServer:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # whatever else: this plugin ends, the companion goes on
-            log.warning("plugin runner: a connection ended badly: %s", type(exc).__name__)
+            log.warning("plugin_runner.connection_failed", error=type(exc).__name__)
         finally:
             try:
                 if channel is not None:
@@ -167,7 +173,7 @@ class RunnerServer:
                     self._handlers.discard(task)
 
     async def _refuse(self, writer: asyncio.StreamWriter, number: int, reason: str) -> None:
-        log.warning("plugin runner: greeting refused: %s", reason)
+        log.warning("plugin_runner.greeting_refused", reason=reason)
         with contextlib.suppress(Exception):
             await codec.write_frame(writer, runner_wire.refusal_message(number, reason))
 
@@ -203,7 +209,7 @@ class RunnerServer:
             )
             return None, None
         self._active[key] = channel
-        log.info("plugin runner: %s started (pid %s)", key, channel.pid)
+        log.info("plugin_runner.plugin_started", plugin=key, pid=channel.pid)
         await codec.write_frame(writer, runner_wire.ack_message(number, self._own_uid))
         return key, channel
 
