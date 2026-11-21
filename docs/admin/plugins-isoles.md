@@ -29,6 +29,13 @@ Sans lui, aucun plugin isolé ne démarre ; l'ancien mode (en processus, derriè
 - Le **cœur se connecte** au socket du compagnon ; le compagnon ne se connecte jamais à rien, et
   rien du cœur (port, base, socket) n'est joignable depuis lui.
 
+## Ce que le compagnon ne fait pas
+
+Tous les plugins isolés d'une instance tournent dans **le même conteneur compagnon**, sous le même uid :
+un plugin ne voit rien du cœur, mais il n'est pas cloisonné des autres plugins que vous avez activés
+(il peut lire la mémoire d'un autre ou l'arrêter). Aucun secret n'y circule. N'activez que les plugins
+dont vous acceptez qu'ils se voient entre eux.
+
 ## Ce que le compagnon vérifie, et ce qui l'arrête
 
 Au démarrage, puis à chaque connexion du cœur, il regarde son propre bac à sable. Il **refuse de
