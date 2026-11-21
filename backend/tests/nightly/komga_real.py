@@ -35,7 +35,7 @@ from shelfhold.infrastructure.clock import SystemClock
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "komga" / "bootstrap"
 COMPOSE_FILE = FIXTURES / "compose.yaml"
 BOOTSTRAP: dict[str, Any] = json.loads((FIXTURES / "bootstrap.json").read_text("utf-8"))
-PORT = 8080
+PORT = 25600
 
 # The DTO of `POST /api/v1/libraries` as Komga's OpenAPI document writes it: every field is
 # required, whatever the defaults of a screen. The scan is the test's to ask for, never the

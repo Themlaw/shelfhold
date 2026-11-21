@@ -10,7 +10,7 @@ import pytest
 from .kavita_real import RealKavita
 from .komga_real import RealKomga
 
-DEFAULT_KOMGA_IMAGE = "docker.io/gotson/komga:1.12.0"
+DEFAULT_KOMGA_IMAGE = "docker.io/gotson/komga:1.30.1"
 DEFAULT_IMAGE = "docker.io/jvmilazz0/kavita:0.9.1"
 
 
