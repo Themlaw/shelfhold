@@ -84,7 +84,8 @@ def test_the_compose_of_the_stack_starts_the_companion_and_it_sees_nothing_of_th
     assert seen["visible"] == []  # no /data, no /store, no /library, no CLI socket
     assert seen["interfaces"] == ["lo"]
     assert seen["root_writable"] is False
-    assert not [n for n in seen["env"] if n.startswith("SHELFHOLD_")]
+    # the companion keeps the image's own SHELFHOLD_* settings (paths, no secret); what the
+    # plugins get is a closed environment, read below from inside a plugin's process
     core = json.loads(exec_python("shelfhold", "import os; print(os.getuid())"))
     assert core == 1000 and core != seen["uid"]
     check = compose("exec", "-T", "plugin-runner", "shelfhold", "plugin-runner", "--check")
