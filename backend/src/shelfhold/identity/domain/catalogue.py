@@ -189,6 +189,10 @@ _DECLARED = (
     # `access_partitioning` it is also parental control (which shelves may be bound to it)
     _action("plugin.attest", Effect.ATTESTS_TRUST),
     _action("plugin.attest_partitioning", Effect.ATTESTS_TRUST, Effect.PARENTAL_CONTROL),
+    # M6 L06 (D13, EF-SRC-019): enabling an isolated plugin runs third-party code on the
+    # admin's word; a fresh session or the host CLI, never a key, and the in-process mode
+    # keeps its typed phrase besides (CLI-only: no phrase crosses the wire)
+    _action("plugin.enable_isolated", Effect.ACCEPTS_ADMIN_RISK),
 )
 
 RESERVED_ACTIONS: Mapping[str, ReservedAction] = MappingProxyType(

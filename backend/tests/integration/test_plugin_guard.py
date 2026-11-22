@@ -1,4 +1,8 @@
-"""EF-SRC-019 / ENF-SEC-009 (M1b L07): the third-party plugin guard, through the real CLI."""
+"""EF-SRC-019 / ENF-SEC-009 (M1b L07): the third-party plugin guard, through the real CLI.
+
+M6 L06 (D13): these are the tests of the **in-process** mode, which since L06 is the admin's
+explicit choice (`--in-process`); the isolated mode is the default and has its own file
+(`test_m6_plugin_guard.py`)."""
 
 import json
 import subprocess
@@ -41,7 +45,7 @@ def install(
 
 
 def enable(cli: Cli, name: str = "demo-plug") -> None:
-    done = cli.run("plugin", "enable", name, typed=PHRASE + "\n", **ENABLE)
+    done = cli.run("plugin", "enable", name, "--in-process", typed=PHRASE + "\n", **ENABLE)
     assert done.returncode == 0, done.stderr
 
 
@@ -74,19 +78,23 @@ def test_third_party_plugin_requires_env_and_typed_confirmation(
     cli: Cli, tmp_path: Path, probe: Path
 ) -> None:
     wheel = install(cli, tmp_path, probe)
-    # installed: not loaded, the reason is shown
+    # installed: isolated by default (D13), not loaded, the reserved reason is shown
     started = cli.run("plugin", "list", "--load")
-    assert "disabled" in started.stdout and "ALLOW_UNSANDBOXED_PLUGINS" in started.stdout
+    assert "disabled" in started.stdout and "reserved" in started.stdout
     assert snapshots(probe) == []
+    # the admin asks for the in-process mode: the variable is required, the reason says so
+    refused = cli.run("plugin", "enable", "demo-plug", "--in-process", typed=PHRASE + "\n")
+    assert refused.returncode == 1 and "SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS" in refused.stderr
+    started = cli.run("plugin", "list", "--load")
+    assert "ALLOW_UNSANDBOXED_PLUGINS" in started.stdout
     # the variable alone is not enough
     started = cli.run("plugin", "list", "--load", **ENABLE)
     assert "no typed confirmation" in started.stdout and snapshots(probe) == []
-    # a confirmation needs the variable, and the right sentence
-    refused = cli.run("plugin", "enable", "demo-plug", typed=PHRASE + "\n")
-    assert refused.returncode == 1 and "SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS" in refused.stderr
-    wrong = cli.run("plugin", "enable", "demo-plug", typed="yes\n", **ENABLE)
+    wrong = cli.run("plugin", "enable", "demo-plug", "--in-process", typed="yes\n", **ENABLE)
     assert wrong.returncode == 1
-    assert cli.run("plugin", "enable", "demo-plug", typed="", **ENABLE).returncode == 1  # no stdin
+    assert (
+        cli.run("plugin", "enable", "demo-plug", "--in-process", typed="", **ENABLE).returncode == 1
+    )  # no stdin
     assert snapshots(probe) == []
     enable(cli)
     # the confirmation alone is not enough either: without the variable nothing loads
@@ -109,6 +117,11 @@ def test_third_party_plugin_requires_env_and_typed_confirmation(
     assert wheel.exists()
     done = cli.run("plugin", "install", str(wheel), "--sha256", _sha(wheel))
     assert done.returncode == 0
+    # a removed plugin is a new one: isolated again by default (D13), nothing confirmed
+    assert "reserved" in cli.run("plugin", "list", "--load").stdout
+    # the admin re-chooses the in-process mode: the reinstall voided the confirmation
+    again = cli.run("plugin", "enable", "demo-plug", "--in-process", typed=PHRASE + "\n")
+    assert again.returncode == 1
     assert "no typed confirmation" in cli.run("plugin", "list", "--load", **ENABLE).stdout
     state = cli.data / "plugins" / "state.json"
     raw = json.loads(state.read_text(encoding="utf-8"))

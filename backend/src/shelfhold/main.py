@@ -550,6 +550,7 @@ def create_app(
             lambda: SourceSettings(engine, composition.vault, now=clock.now),
             lambda: AttestationStore(engine, clock=clock),
             schema_for,
+            lambda: resolved.data_dir,
         ),
     )
 

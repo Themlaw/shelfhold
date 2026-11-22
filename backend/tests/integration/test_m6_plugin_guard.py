@@ -423,14 +423,15 @@ def test_isolated_plugin_enable_is_reserved_action(
         # a stale session reauthenticates: the action is reserved to a fresh one
         api.clock.advance(timedelta(hours=1))
         stale = api.post(path)
-        assert stale.status_code == 403 and stale.json()["code"] == "reauth_required"
+        assert stale.status_code == 401 and stale.json()["code"] == "reauth_required"
         # a member and a child are refused: reserved means admin
         api.client.cookies.clear()
         assert api.login().status_code == 200
         for username, role in (("member1", "member"), ("kid", "child")):
-            made = api.post(
-                "/api/v1/profiles", json={"username": username, "password": PASSWORD, "role": role}
-            )
+            body = {"username": username, "password": PASSWORD, "role": role}
+            if role == "child":
+                body["max_age_rating"] = 10
+            made = api.post("/api/v1/profiles", json=body)
             assert made.status_code in {200, 201}, made.text
         for username in ("member1", "kid"):
             other = TestClient(api.app, base_url=HTTPS)

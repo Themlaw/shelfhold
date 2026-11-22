@@ -322,6 +322,7 @@ FRESHNESS_LINE = {
             "oidc.link_account",  # M5 L03: the admin adds one for another account
             "oidc.unlink_own",  # M5 L04: a stolen session must not cut the owner off
             "oidc.unlink_account",  # M5 L04: nor an admin do it unseen
+            "plugin.enable_isolated",  # M6 L06 (D13): third-party code runs on the admin's word
         ),
         "p3",
     ),
