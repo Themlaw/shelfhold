@@ -24,7 +24,16 @@ from shelfhold.identity.public import RESERVED_ACTIONS
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.migrate import migrate
 from shelfhold.plugin_host.index import PluginIndexError, RepoStore
-from tests.auth_env import ADMIN, CSRF_COOKIE, CSRF_HEADER, PASSWORD, AuthEnv, auth_env, run_cli
+from tests.auth_env import (
+    ADMIN,
+    CSRF_COOKIE,
+    CSRF_HEADER,
+    PASSWORD,
+    AuthEnv,
+    auth_env,
+    db_rows,
+    run_cli,
+)
 from tests.plugin_index_env import (
     WHEEL_URL,
     FakeFetcher,
@@ -446,3 +455,52 @@ def test_index_add_is_reserved_and_needs_key_fingerprint(
             )
     finally:
         engine.dispose()
+
+
+@pytest.mark.req("EF-SRC-017", "ENF-OBS-003", "EF-USR-024")
+def test_index_add_and_remove_audited_over_http(api: AuthEnv, settings: Settings) -> None:
+    """ENF-OBS-003: over HTTP too the pin and its removal leave their audit row — the action,
+    the repository and its key fingerprint, the account that acted."""
+    base = "/api/v1/plugin-repos"
+    key = make_key()
+    made = api.post(base, json={"url": URL, "pubkey": key.public_b64})
+    assert made.status_code == 201, made.text
+    actor = db_rows(settings, 'SELECT id FROM "user" WHERE username = ?', ADMIN)[0][0]
+    rows = db_rows(
+        settings, "SELECT action, target, actor_id FROM audit WHERE action = 'plugin.index_add'"
+    )
+    assert rows == [("plugin.index_add", f"{URL}:{key.key_id}", actor)], rows
+    assert _send(api, api.client, "DELETE", f"{base}/{URL}").status_code == 200
+    rows = db_rows(
+        settings, "SELECT action, target, actor_id FROM audit WHERE action = 'plugin.index_remove'"
+    )
+    assert rows == [("plugin.index_remove", URL, actor)], rows
+
+
+@pytest.mark.req("EF-SRC-017", "ENF-OBS-003", "EF-USR-024")
+def test_index_refusals_audited_over_http(
+    api: AuthEnv, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refusal over HTTP leaves its trace like the CLI's: the address and the closed code."""
+    base = "/api/v1/plugin-repos"
+    actor = db_rows(settings, 'SELECT id FROM "user" WHERE username = ?', ADMIN)[0][0]
+    # no signer key: the typed refusal, and its audit row
+    refused = api.post(base, json={"url": URL})
+    assert refused.status_code == 422
+    assert "fingerprint" in refused.json()["type"]
+    rows = db_rows(
+        settings,
+        "SELECT action, target, actor_id FROM audit WHERE action = 'plugin.index_add_refused'",
+    )
+    assert rows == [("plugin.index_add_refused", f"{URL}:fingerprint_required", actor)], rows
+    # a refresh that fails is audited too: the address and the closed code, never a body
+    key = make_key()
+    assert api.post(base, json={"url": URL, "pubkey": key.public_b64}).status_code == 201
+    monkeypatch.setattr("shelfhold.main.index_fetcher", lambda _network: FakeFetcher())
+    answer = api.post(f"{base}/{URL}/refresh")
+    assert answer.status_code == 422, answer.text
+    rows = db_rows(
+        settings,
+        "SELECT action, target, actor_id FROM audit WHERE action = 'plugin.index_refresh_refused'",
+    )
+    assert rows == [("plugin.index_refresh_refused", f"{URL}:unreachable", actor)], rows

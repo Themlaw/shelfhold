@@ -276,6 +276,7 @@
   index_refreshed = "Index of {url} applied: version {version}{rotated, plural, =0 {} other { (key rotated)}}."
   index_unchanged = "Index of {url} unchanged: version {version} already applied."
   index_removed = "Repository {url} removed; a new add starts from zero."
+  index_not_found_detail = "No index repository is pinned at this address."
 
 [secrets]
   exported = "Exported keychain (age, scrypt): {path}"

@@ -58,7 +58,8 @@ _SECRET = reserved_action(RESERVED_ACTIONS["source.set_secret"])
 _ATTEST = reserved_action(RESERVED_ACTIONS["plugin.attest"])
 _ATTEST_PARTITIONING = reserved_action(RESERVED_ACTIONS["plugin.attest_partitioning"])
 # the audit line of the index actions carries its target (`url:key_id`), like the CLI: the
-# route writes it, in the transaction that pins or unpins (audit=False)
+# route writes it, in the transaction that pins or unpins (audit=False) — and writes the
+# refusal's own line (`plugin.index_*_refused`, `url:code`) when the store refuses
 _INDEX_ADD = reserved_action(RESERVED_ACTIONS["plugin.index_add"], audit=False)
 _INDEX_REMOVE = reserved_action(RESERVED_ACTIONS["plugin.index_remove"], audit=False)
 # M6 L06: the gate checks the credentials and writes no line — the route writes its own, with
@@ -318,6 +319,16 @@ def build_plugins_router(
 
     # -- the repositories of signed plugin indexes (M6 L07, EF-SRC-017, D14) ---------------------
 
+    def _audit(principal: Principal, action: str, target: str) -> None:
+        guard.audit(
+            engine(),
+            action,
+            target,
+            actor_id=audit_actor(principal),
+            session_id=principal.session_id,
+            auth_time=principal.auth_time,
+        )
+
     def _repo(record: Any) -> RepoOut:
         return RepoOut(
             url=record.url,
@@ -342,6 +353,8 @@ def build_plugins_router(
         try:
             record = repos().add(body.url, body.pubkey or "", principal=principal)
         except PluginIndexError as error:
+            # a refusal leaves its trace too, like the CLI: the address and the closed code
+            _audit(principal, "plugin.index_add_refused", f"{body.url}:{error.code}")
             raise _index_problem(error) from None
         return _repo(record)
 
@@ -359,17 +372,24 @@ def build_plugins_router(
     @router.post("/plugin-repos/{url:path}/refresh")
     async def refresh_plugin_repo(
         url: str,
+        request: Request,
         principal: Principal = Depends(admin_only),  # noqa: B008
     ) -> RefreshOut:
         record = next((r for r in repos().list() if r.url == url), None)
         if record is None:
             raise ProblemError(
-                "plugin.index_not_found", detail="no pinned repository at this address"
+                "plugin.index_not_found",
+                detail=t_lang(
+                    "plugin.index_not_found_detail",
+                    language=negotiate(request.headers.get("accept-language")),
+                ),
             )
         fetcher = index_fetcher_for()
         try:
             outcome = await repos().refresh(record, fetcher, principal=principal)
         except PluginIndexError as error:
+            # a refusal leaves its trace too, like the CLI: the address and the closed code
+            _audit(principal, "plugin.index_refresh_refused", f"{url}:{error.code}")
             raise _index_problem(error) from None
         finally:
             await fetcher.aclose()
@@ -405,16 +425,6 @@ def build_plugins_router(
     @router.get("/plugins")
     def read_plugins(_principal: Principal = Depends(admin_only)) -> PluginsOut:  # noqa: B008
         return _plugins()
-
-    def _audit(principal: Principal, action: str, target: str) -> None:
-        guard.audit(
-            engine(),
-            action,
-            target,
-            actor_id=audit_actor(principal),
-            session_id=principal.session_id,
-            auth_time=principal.auth_time,
-        )
 
     def _one(layout: guard.Layout, name: str, *, notice: str | None = None) -> PluginOut:
         state = guard.read_state(layout)
