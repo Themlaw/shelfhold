@@ -1590,3 +1590,17 @@ params = "What else was asked (the page of the archive, the JPEG quality), as ca
 content_hash = "Hash of the converted bytes (`sha256:<hex>`); it names the file, so two sources may share one."
 size = "Size of the converted file in bytes."
 created_at = "When it was made (UTC)."
+
+[tables.plugin_repo]
+description = "A repository of signed plugin indexes the admin pinned (M6 L07, EF-SRC-017, D14): by its URL and the public key of its signer, never without the key, and none is preconfigured."
+[tables.plugin_repo.columns]
+url = "Address of the index document; the row's identity, and what a refresh fetches through the host's Fetcher."
+pubkey = "Public key of the signer (minisign format, base64), pinned when the repository was added: every index is verified against exactly this key."
+key_id = "Fingerprint of the signer's key (16 uppercase hex characters), what the admin sees and the audit line carries."
+last_version = "Highest index version applied (the monotone floor): a document behind it is a rollback and is refused."
+expires = "Expiry of the last applied index (UTC); NULL before the first refresh."
+content_sha256 = "Hash of the last applied index document (`sha256:<hex>`): the same version number must keep the same words."
+added_at = "When the repository was pinned (UTC)."
+
+[tables.plugin_revocation]
+description = "A revocation seen in a signed index stays seen, even if a later index omits it (M6 L07, D14): a plugin by its key, a wheel by its sha256. One row per revocation."
