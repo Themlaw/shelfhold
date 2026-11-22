@@ -2,9 +2,12 @@
 set-cookies`` and ``plugin index add|list|refresh|remove`` (EF-SRC-019, ENF-SEC-009, EF-SRC-013,
 EF-EXP-065, EF-SRC-017).
 
-Third-party plugins are off by default. ``install`` only unpacks a local wheel whose sha256 you
-give; ``enable`` needs ``SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS=1`` in the environment and a sentence
-typed on standard input; every step is written to the audit log, and a refusal too.
+Third-party plugins are off by default and isolated is their mode (D13, M6 L06). ``install`` only
+unpacks a local wheel whose sha256 you give; ``enable`` is a **reserved action** — the host CLI is
+one of its two credentials — and activates the plugin in its mode: isolated needs nothing else,
+the in-process mode (``--in-process``) needs ``SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS=1`` in the
+environment and a sentence typed on standard input, and no phrase ever crosses the network. Every
+step is written to the audit log, and a refusal too; ``list`` says why a plugin is not loaded.
 
 ``attest`` gives the admin's word for a trust value a third-party plugin declares
 (``content_trust publisher``, ``access_partitioning library|user``, ``egress foyer``), for its
@@ -71,6 +74,15 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     ):
         sub = actions.add_parser(name, help=help_text, allow_abbrev=False)
         sub.add_argument("name", help=t("cli.plugin_name_help"))
+        if name == "enable":  # D13 (M6 L06): the admin chooses the mode, never the plugin
+            sub.add_argument(
+                "--in-process",
+                action="store_true",
+                help=t("cli.plugin_enable_in_process_help"),
+            )
+            sub.add_argument(
+                "--isolated", action="store_true", help=t("cli.plugin_enable_isolated_help")
+            )
         sub.set_defaults(handler=handler)
 
     listing = actions.add_parser("list", help=t("cli.plugin_list_help"), allow_abbrev=False)
@@ -180,33 +192,70 @@ def run_install(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
 
 
 def run_enable(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    """Enable a plugin in its mode (D13): isolated by default — a reserved action, no variable,
+    no typed sentence; in process only with ``--in-process``, the variable of M1b and the phrase
+    typed on standard input. A change of mode voids both activations, and a refusal — missing
+    variable, wrong phrase — changes nothing: neither the mode nor the grants of the other mode."""
     layout = guard.Layout.of(resolved.values.data_dir)
-    if not guard.env_allows(os.environ):
-        _audited(resolved, "plugin.enable_refused", f"{args.name}:env")
-        return _fail(t("plugin.env_required", variable=guard.ENV_ALLOW))
-    print(t("plugin.warning", phrase=guard.CONFIRMATION), file=sys.stderr)
-    typed = sys.stdin.readline()
+    if args.in_process and args.isolated:
+        return _fail(t("plugin.mode_exclusive"))
     state = guard.read_state(layout)
     plugin = state.installed.get(guard.normalise_name(args.name))
+    mode = (
+        guard.MODE_IN_PROCESS
+        if args.in_process
+        else guard.MODE_ISOLATED
+        if args.isolated
+        else plugin.mode
+        if plugin is not None
+        else guard.MODE_ISOLATED
+    )
+    typed = ""
+    if mode == guard.MODE_IN_PROCESS:
+        # the in-process ladder comes first, before anything is written: a refusal
+        # must leave the recorded mode and the isolated grant exactly as they were
+        if not guard.env_allows(os.environ):
+            _audited(resolved, "plugin.enable_refused", f"{args.name}:env")
+            return _fail(t("plugin.env_required", variable=guard.ENV_ALLOW))
+        print(t("plugin.warning", phrase=guard.CONFIRMATION), file=sys.stderr)
+        typed = sys.stdin.readline()
+        if typed.strip() != guard.CONFIRMATION:
+            _audited(resolved, "plugin.enable_refused", f"{args.name}:confirmation")
+            return _fail(t("plugin.confirmation_mismatch"))
     target = f"{args.name}@{plugin.wheel_sha256}" if plugin else args.name
-    if plugin is not None and typed.strip() != guard.CONFIRMATION:
-        _audited(resolved, "plugin.enable_refused", f"{target}:confirmation")
-        return _fail(t("plugin.confirmation_mismatch"))
     if not _audited(resolved, "plugin.enable", target):  # before the change, not after
         return 1
     try:
-        guard.confirm(layout, args.name, typed)
+        if mode == guard.MODE_IN_PROCESS:
+            guard.set_mode(layout, args.name, guard.MODE_IN_PROCESS)
+            guard.confirm(layout, args.name, typed)
+            print(t("plugin.enabled", name=args.name))
+        else:
+            if args.isolated:  # back to the default: the in-process grant counts for nothing
+                guard.set_mode(layout, args.name, guard.MODE_ISOLATED)
+            guard.enable_isolated(layout, args.name)
+            print(t("plugin.enabled_isolated", name=args.name))
     except guard.PluginInstallError as exc:
         return _fail(t("plugin.enable_refused", code=exc.code, detail=exc.detail))
-    print(t("plugin.enabled", name=args.name))
     return 0
 
 
 def run_disable(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    layout = guard.Layout.of(resolved.values.data_dir)
+    state = guard.read_state(layout)
+    plugin = state.installed.get(guard.normalise_name(args.name))
+    loaded = (
+        plugin is not None
+        and plugin.mode == guard.MODE_IN_PROCESS
+        and plugin.name in state.confirmed
+    )
     if not _audited(resolved, "plugin.disable", args.name):
         return 1
-    guard.unconfirm(guard.Layout.of(resolved.values.data_dir), args.name)
+    guard.unconfirm(layout, args.name)
     print(t("plugin.disabled", name=args.name))
+    if loaded:
+        # the host process loaded it at start-up: it goes on running until the next restart
+        print(t("plugin.disable_restart_notice"))
     return 0
 
 
@@ -267,7 +316,12 @@ def run_list(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             if verdict.granted
             else t("plugin.status_disabled", reason=verdict.reason)
         )
-        print(t("plugin.row", name=plugin.name, version=plugin.version, status=status))
+        mode = (
+            t("plugin.mode_isolated")
+            if verdict.mode == guard.MODE_ISOLATED
+            else t("plugin.mode_in_process")
+        )
+        print(t("plugin.row", name=plugin.name, version=plugin.version, mode=mode, status=status))
     return 0
 
 

@@ -14,11 +14,13 @@ covers it, the one that got the furthest wins:
    as the date the server received the position);
 5. then the highest position id, so that the answer is total.
 
-`furthest` gives `last_position_id`, the position to hand to a reader that asks where the furthest
-point is (the kosync answer, ADR-0053 section 5). `latest` gives `latest_position_id`: the last
-position written, which is where the reader is now, even if it went back (resume, "continue
-reading"). A relay that needs the furthest point reads the first; one that needs the current point
-reads the second.
+The rule is the SQL view `reading_progress` (`last_position_id` is the furthest position, the one
+to hand to a reader that asks where the furthest point is, the kosync answer of ADR-0053 section
+5; `latest_position_id` is the last position written, which is where the reader is now, even if
+it went back — resume, « continue reading »), and the view's tests prove it
+(`tests/integration/test_reading_progress.py`): every consumer reads the view, none recomputes
+it. `winner` below is the same rule for the reports of one file, where the reader's conflicts are
+proposed.
 
 The rule never marks a Unit that no position reaches: a relay that records a position on the
 chapter it falls in marks nothing in the chapters it skipped (ADR-0053).
@@ -29,43 +31,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
 
-from shelfhold.reading.domain.projection import STATE_RANK, Projected
-
 
 def bounded_ts(client_ts: datetime, server_ts: datetime) -> datetime:
     """The date a position counts for: the client's, never later than the server's."""
     return min(client_ts, server_ts)
-
-
-@dataclass(frozen=True)
-class Observation:
-    """What one position says about one Unit."""
-
-    position_id: str
-    projected: Projected
-    client_ts: datetime
-    server_ts: datetime
-
-
-def furthest(observations: Sequence[Observation]) -> Observation:
-    if not observations:
-        raise ValueError("no position to merge")
-    return max(
-        observations,
-        key=lambda o: (
-            STATE_RANK[o.projected.state],
-            not o.projected.approximate,
-            -1.0 if o.projected.within is None else o.projected.within,
-            bounded_ts(o.client_ts, o.server_ts),
-            o.position_id,
-        ),
-    )
-
-
-def latest(observations: Sequence[Observation]) -> Observation:
-    if not observations:
-        raise ValueError("no position to merge")
-    return max(observations, key=lambda o: (bounded_ts(o.client_ts, o.server_ts), o.position_id))
 
 
 # D8 (ADR-0055, Q47): a conflict is proposed only if the position that lost is further than the one

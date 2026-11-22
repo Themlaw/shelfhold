@@ -6478,6 +6478,73 @@
         "title": "PlanOut",
         "type": "object"
       },
+      "PluginOut": {
+        "description": "One installed third-party plugin: its mode (D13) and why it is not loaded.",
+        "properties": {
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "mode",
+          "status"
+        ],
+        "title": "PluginOut",
+        "type": "object"
+      },
+      "PluginsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PluginOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PluginsOut",
+        "type": "object"
+      },
       "PolicyIn": {
         "additionalProperties": false,
         "properties": {
@@ -7706,6 +7773,63 @@
           "withdrawals"
         ],
         "title": "RatedOut",
+        "type": "object"
+      },
+      "ReadMarkOut": {
+        "description": "One read mark as the screen that undoes them shows it: whose it is, and the Unit it\nmarks.",
+        "properties": {
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "unit_id": {
+            "title": "Unit Id",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "unit_id",
+          "number",
+          "title"
+        ],
+        "title": "ReadMarkOut",
+        "type": "object"
+      },
+      "ReadMarksOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReadMarkOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ReadMarksOut",
         "type": "object"
       },
       "ReaderSettingsOut": {
@@ -11776,6 +11900,19 @@
         "title": "TypedIn",
         "type": "object"
       },
+      "UndoOut": {
+        "properties": {
+          "undone": {
+            "title": "Undone",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "undone"
+        ],
+        "title": "UndoOut",
+        "type": "object"
+      },
       "UnfollowIn": {
         "additionalProperties": false,
         "properties": {
@@ -14424,6 +14561,204 @@
           }
         },
         "summary": "Put Position",
+        "tags": [
+          "reader"
+        ]
+      }
+    },
+    "/api/reader/read-marks": {
+      "get": {
+        "description": "The read marks on the Units of an Edition, for the screen that undoes them: the\nprofile's own, and for an administrator the child profiles'. Another member's marks are\nnever listed; an Edition the profile may not see answers like one with no mark.",
+        "operationId": "reader_read_marks",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "maxLength": 26,
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadMarksOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Marks List",
+        "tags": [
+          "reader"
+        ]
+      }
+    },
+    "/api/reader/read-marks/{unit_id}/undo": {
+      "post": {
+        "description": "Undo the profile's own read mark on the Unit: a dated line of history, nothing\ndeleted. A Unit the profile may not see, and a mark that is not there, answer alike.",
+        "operationId": "reader_undo_read_mark",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "unit_id",
+            "required": true,
+            "schema": {
+              "title": "Unit Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Undo Own",
+        "tags": [
+          "reader"
+        ]
+      }
+    },
+    "/api/reader/read-marks/{unit_id}/undo/for-child/{user_id}": {
+      "post": {
+        "description": "The administrator's door: undo the read mark of a child profile. The mark of another\nadult is not there for the administrator either, and the answer never tells which.",
+        "operationId": "reader_undo_read_mark_for_child",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "unit_id",
+            "required": true,
+            "schema": {
+              "title": "Unit Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "description": "forbidden"
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Undo For Child",
         "tags": [
           "reader"
         ]
@@ -24174,6 +24509,57 @@
         ]
       }
     },
+    "/api/v1/plugins": {
+      "get": {
+        "operationId": "read_plugins",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Read Plugins",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
     "/api/v1/plugins/{key}/attestations": {
       "get": {
         "operationId": "read_attestations",
@@ -24372,6 +24758,128 @@
           }
         },
         "summary": "Withdraw",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
+    "/api/v1/plugins/{name}/enabled": {
+      "delete": {
+        "operationId": "disable_plugin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Disable Plugin",
+        "tags": [
+          "sources"
+        ]
+      },
+      "post": {
+        "operationId": "enable_plugin",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Enable Plugin",
         "tags": [
           "sources"
         ]
@@ -35299,6 +35807,10 @@
       "code": "plugin.attestation_not_needed",
       "status": 409
     },
+    "/api/v1/problems/plugin.enable-refused": {
+      "code": "plugin.enable_refused",
+      "status": 422
+    },
     "/api/v1/problems/plugin.index-expired": {
       "code": "plugin.index_expired",
       "status": 409
@@ -35317,6 +35829,10 @@
     },
     "/api/v1/problems/plugin.index-rollback": {
       "code": "plugin.index_rollback",
+      "status": 409
+    },
+    "/api/v1/problems/plugin.not-isolated": {
+      "code": "plugin.not_isolated",
       "status": 409
     },
     "/api/v1/problems/plugin.unknown": {

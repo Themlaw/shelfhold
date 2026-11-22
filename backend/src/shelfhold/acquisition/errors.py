@@ -50,6 +50,9 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("plugin.index_expired", 409, "admin"),
     ErrorCode("plugin.index_not_found", 404, "admin"),
     ErrorCode("plugin.index_fingerprint_required", 422, "admin"),
+    # M6 L06 (D13): the in-process mode keeps its typed phrase, which never crosses the wire
+    ErrorCode("plugin.not_isolated", 409, "admin"),
+    ErrorCode("plugin.enable_refused", 422, "admin"),  # the guard refused (files, state)
     # EF-SRC-003: a plugin's Fetcher asked for a host outside its DomainRules
     ErrorCode("source.domain_not_allowed", 403, "admin"),
     # EF-SRC-002: a plugin did network, disk or process I/O itself (the audit-hook detector)

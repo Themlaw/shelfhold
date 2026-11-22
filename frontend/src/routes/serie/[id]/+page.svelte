@@ -33,6 +33,7 @@
   import BundleSlices from './BundleSlices.svelte';
   import OfflineButton from './OfflineButton.svelte';
   import ReadButton from './ReadButton.svelte';
+  import ReadMarks from './ReadMarks.svelte';
   import RelatedWorks from './RelatedWorks.svelte';
   import SupportAuthor from './SupportAuthor.svelte';
   import SwitchReport from './SwitchReport.svelte';
@@ -258,6 +259,7 @@
     {/if}
 
     <BundleSlices editionId={sheet.edition_id} />
+    <ReadMarks editionId={sheet.edition_id} />
     <RelatedWorks workId={sheet.work_id} canEdit />
     <SupportAuthor editionId={sheet.edition_id} />
 

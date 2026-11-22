@@ -109,7 +109,16 @@ def audit_rows(env: AuthEnv, action: str) -> list[tuple[object, ...]]:
 # transaction that demotes the root, so a refused HTTP call (the host holds the lock) leaves none;
 # the queue routes (M3 L13) leave their line, with its target (`pause:<source>`), to the service:
 # one for a change made, none for a refusal or a job that does not exist
-SELF_AUDITED = {"request.unmask", "reconcile.forget_root", "request.approve"}
+# M6 L06: the doors of the third-party plugins write their own line too, after the guard agreed
+# and with the plugin as its target (`plugin.enable` / `plugin.disable`, as the CLI); the generic
+# call below meets an unknown plugin (404): nothing was done, no line
+SELF_AUDITED = {
+    "request.unmask",
+    "reconcile.forget_root",
+    "request.approve",
+    "plugin.enable_isolated",
+    "plugin.disable_isolated",
+}
 SERVICE_AUDITED = {"queue.control"}
 # M3 L07: the session revocations leave one line per session closed, by the service, and none when
 # nothing was (the calls below close nothing: an id that does not exist, no other session)

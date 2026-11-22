@@ -338,10 +338,6 @@ def _reserved_routes(app: object) -> list[tuple[str, str, str]]:
 def test_reserved_routes_of_create_app_refuse_api_keys(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], settings: Settings
 ) -> None:
-    # every reserved route is asked twice below (a key, then an anonymous call), and the app has
-    # more of them than the anonymous budget of one address (120/min): the budget is not what
-    # this test is about, so it is widened here, not in the product
-    settings = settings.model_copy(update={"http_public_rate_per_minute": 10_000})
     with auth_env(monkeypatch, settings) as env:
         routes = _reserved_routes(env.app)
         guards = {name for _method, _path, name in routes}
@@ -349,12 +345,16 @@ def test_reserved_routes_of_create_app_refuse_api_keys(
         assert {"purge.now", "admin_risk.accept", "request.unmask"} <= guards
         assert len(routes) >= 6
         key = _create_key(monkeypatch, capsys, settings)
-        for method, path, name in routes:
+        for index, (method, path, name) in enumerate(routes):
             url = re.sub(r"\{[^}]+\}", "x", path)
             refused = env.client.request(method, url, headers=_bearer(key), json={})
             assert refused.status_code == 403, (method, path, name, refused.text)
             assert refused.json()["type"] == "/api/v1/problems/credential-not-allowed", path
-            anonymous = env.client.request(method, url, json={})
+            # the anonymous probe comes from its own address: the public limit is real (a window
+            # per address, ENF-SEC-008) and this scan makes more anonymous calls than one address
+            # may — the limit is not relaxed for it, each probe just has a budget of its own
+            probe = env.other_client(f"198.51.100.{index % 200 + 1}")
+            anonymous = probe.request(method, url, json={})
             assert anonymous.status_code in {401, 403}, (method, path)
 
 

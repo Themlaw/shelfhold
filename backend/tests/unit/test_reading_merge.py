@@ -1,74 +1,22 @@
-"""The merge rule of reading positions and the projection of a file position on the Units it
-covers (EF-LEC-014, EF-LEC-007, ADR-0053 "une seule règle de position"). Pure functions: the SQL
-view `reading_progress` is proved equal to them in `tests/integration/test_reading_progress.py`."""
+"""The merge of reading positions and the projection of a file position on the Units it covers
+(EF-LEC-014, EF-LEC-007, ADR-0053 "une seule règle de position"). The furthest-position rule
+itself is the SQL view `reading_progress`, proved in `tests/integration/test_reading_progress.py`;
+what is left here is the bounded date and the projection, pure functions."""
 
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from shelfhold.reading.domain.merge import Observation, bounded_ts, furthest, latest
-from shelfhold.reading.domain.projection import Bounds, Projected, State, project
+from shelfhold.reading.domain.merge import bounded_ts
+from shelfhold.reading.domain.projection import Bounds, Projected, project
 
 T = datetime(2026, 11, 1, 10, 0, tzinfo=UTC)
-
-
-def seen(
-    pid: str,
-    state: State,
-    within: float | None = None,
-    *,
-    approximate: bool = False,
-    client: float = 0,
-    server: float = 0,
-) -> Observation:
-    return Observation(
-        pid,
-        Projected(state, approximate, within),
-        T + timedelta(hours=client),
-        T + timedelta(hours=server),
-    )
 
 
 @pytest.mark.req("EF-LEC-007")
 def test_client_ts_is_bounded_by_server_ts() -> None:
     assert bounded_ts(T + timedelta(days=400), T) == T  # a date in the future is the server's
     assert bounded_ts(T - timedelta(hours=2), T) == T - timedelta(hours=2)
-
-
-@pytest.mark.req("EF-LEC-014")
-def test_furthest_state_wins_over_the_latest_one() -> None:
-    older_read = seen("a", "read", 1.0, client=0, server=0)
-    newer_start = seen("b", "unread", 0.0, client=5, server=5)  # reopened at the beginning
-    assert furthest([newer_start, older_read]).position_id == "a"
-    assert latest([newer_start, older_read]).position_id == "b"  # where the reader is now
-
-
-@pytest.mark.req("EF-LEC-014")
-def test_same_state_exact_first_then_the_fraction_of_the_unit_then_the_bounded_date() -> None:
-    low = seen("low", "in_progress", 0.2, client=9, server=9)
-    high = seen("high", "in_progress", 0.7, client=1, server=1)
-    assert furthest([low, high]).position_id == "high"
-    guess = seen("guess", "in_progress", 0.9, approximate=True, client=9, server=9)
-    assert furthest([guess, low]).position_id == "low"  # exact before approximate
-    no_share = seen("none", "in_progress", None, client=9, server=9)
-    assert furthest([no_share, low]).position_id == "low"  # nothing known ranks below anything
-    tie_old = seen("old", "in_progress", 0.5, client=1, server=1)
-    tie_new = seen("new", "in_progress", 0.5, client=2, server=2)
-    assert furthest([tie_old, tie_new]).position_id == "new"
-    ahead = seen("ahead", "in_progress", 0.5, client=900, server=3)  # bounded: 3, not 900
-    assert furthest([ahead, tie_new]).position_id == "ahead"
-    assert (
-        furthest([seen("x", "in_progress", 0.5, client=900, server=1), tie_new]).position_id
-        == "new"
-    )
-
-
-@pytest.mark.req("EF-LEC-014")
-def test_furthest_and_latest_of_nothing_are_errors() -> None:
-    with pytest.raises(ValueError, match="no position"):
-        furthest([])
-    with pytest.raises(ValueError, match="no position"):
-        latest([])
 
 
 @pytest.mark.req("EF-LEC-014")
