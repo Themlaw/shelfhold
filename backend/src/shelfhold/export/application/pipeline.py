@@ -24,10 +24,10 @@ from structlog.contextvars import bound_contextvars
 
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application import blocked_memo, fan_out, waiting_marks
-from shelfhold.export.application.export_alias import complete_hashes
+from shelfhold.export.application.export_alias import complete_hashes_of_destination
 from shelfhold.export.application.export_items import create_export_item, ensure_export_series
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
-from shelfhold.export.application.locks import ResourceLocks, library_resource
+from shelfhold.export.application.locks import HeldLocks, ResourceLocks, library_resource
 from shelfhold.export.application.manifest_write import complete_write
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.naming_preview import NAMING_BLOCKS, NamingItem
@@ -711,7 +711,7 @@ class ExportPipeline:
         _ctx, wanted, first = self._compute(destination_id, disk=False)
         if not first.ops:
             log.debug("export.nothing_to_write", destination_id=destination_id)
-            return ApplyReport(None, ())
+            return ApplyReport(None, ())  # no disk read (ENF-OPS-014): the window sweeps aliases
         if blocked_memo.known(self._engine, destination_id, wanted.version):
             log.debug("export.blocked_memo", destination_id=destination_id)
             return ApplyReport(None, ())  # the disk said "taken" for these inputs: ask no more
@@ -757,8 +757,9 @@ class ExportPipeline:
         return self._sessions.open(root) if root else nullcontext()
 
     def heal_mirror(self, destination_id: str) -> None:
-        """The mirror of a destination projected again if a file is lost or out of date. A job of
-        the maintenance window, since looking for a lost file reads the disk (ENF-OPS-014): a run
+        """The mirror of a destination projected again if a file is lost or out of date, and the
+        aliases a stopped plan left without their hashes swept in the same pass. A job of the
+        maintenance window, since looking for a lost file reads the disk (ENF-OPS-014): a run
         with nothing to write does not, a run with something to write heals it on its way.
 
         A door like the others: the mirror is written on the disks, so a restored instance
@@ -767,6 +768,7 @@ class ExportPipeline:
         with self._engine.connect() as connection:
             ctx = load_context(connection, destination_id)
         self._heal_mirror(ctx)
+        self._complete_alias_hashes(ctx)  # L47: the sweep of the window, bounded to the destination
 
     def _heal_mirror(self, ctx: DestinationContext) -> None:
         """A mirror file lost, or never written because a run stopped after its file: the
@@ -783,6 +785,44 @@ class ExportPipeline:
                 self.mirror.sync_destination(ctx.destination_id, writer=writer)
         except Exception:  # a mirror never stops an export; the next run tries again
             log.warning("mirror_heal_failed", destination=ctx.destination_id)
+
+    def _sync_mirrors(self, ctx: DestinationContext, folders: set[str]) -> None:
+        """The mirror of every series folder a plan wrote, once each, once the plan is over
+        (EF-EXP-063, ENF-PERF-007). A series that takes five hundred chapters in one run is
+        one projection of five hundred lines, not five hundred projections that each read and
+        wrote the whole file again — the shape the nightly of the contention bench broke on.
+        The write is the one of every mirror write (`ProvenanceMirror._put`: the folder's
+        `path` lock, the projection made again under it, intent, atomic replace, intent
+        closed), under the root's write session like the healing, and best effort: a file
+        placed is never unwritten by a mirror that lags, and the next run, or `rebuild`,
+        projects it again."""
+        if not folders:
+            return
+        opened = (
+            self._sessions.open(ctx.local("."))
+            if self._sessions and ctx.root_local
+            else nullcontext(self._fsops)
+        )
+        try:
+            with opened as writer:
+                for folder in sorted(folders):
+                    self.mirror.sync_destination(ctx.destination_id, folder=folder, writer=writer)
+        except Exception:  # the files are placed and committed: the next run heals it
+            log.warning("mirror_write_failed", destination=ctx.destination_id)
+
+    def _complete_alias_hashes(self, ctx: DestinationContext) -> None:
+        """L47 after an operation: the aliases of the destination that are still empty — the
+        file the operation just placed and committed, and what the operations before it did not
+        get to fill — filled in one bounded pass (`complete_hashes_of_destination`), right here
+        and never inside a transaction. Best effort: a failure leaves the aliases without
+        hashes, and the sweep of the maintenance window (`heal_mirror`) fills them — a run with
+        nothing to write reads no disk and sweeps nothing (ENF-OPS-014)."""
+        if ctx.root_local is None:
+            return  # no folder on this machine: no file to read, no alias to fill
+        try:
+            complete_hashes_of_destination(self._engine, ctx.destination_id, ctx.local)
+        except Exception:  # never an exception towards the export (L47)
+            log.warning("export.alias_hashes_failed", destination=ctx.destination_id)
 
     # -- applying --------------------------------------------------------------------------------
 
@@ -843,15 +883,38 @@ class ExportPipeline:
 
         done: list[PlannedOp] = []
         folders: set[str] = set()
+        written_folder: str | None = None  # the series folder the plan is writing into
+        behind: set[str] = set()  # folders the plan owes a mirror to, written or attempted
 
         def run(op: PlanOp) -> None:
+            nonlocal written_folder
             planned = decode_op(op.payload or {})
-            folder = self._execute(ctx, planned, plan_id, job_id)
-            if folder is REFUSED:
+            # the plan is sorted by path, so its operations are grouped by series folder: once
+            # the plan moves past a folder, that folder's mirror is written once, right there —
+            # not after every file placed, and not all of them in one burst at the end either
+            # (ENF-PERF-007: the sustained cost of a run must not depend on its shape)
+            folder = str(planned.rel_path).split("/", 1)[0] if planned.rel_path else None
+            if folder is not None and folder != written_folder:
+                if written_folder is not None and written_folder in behind:
+                    self._sync_mirrors(ctx, {written_folder})
+                    behind.discard(written_folder)
+                written_folder = folder
+            if folder is not None:
+                # due before the operation: a failure after its commit leaves the file placed
+                # and its line committed, and the folder still owed its mirror (L47, EF-EXP-063)
+                behind.add(folder)
+            try:
+                outcome = self._execute(ctx, planned, plan_id, job_id)
+            finally:
+                # L47: the aliases of what the operation committed are filled right here —
+                # the operation's own file, and anything a stopped run left behind — never
+                # later than the operation the plan is at
+                self._complete_alias_hashes(ctx)
+            if outcome is REFUSED:
                 return  # a last look refused it: not written, not reported as done
             done.append(planned)
-            if isinstance(folder, str):
-                folders.add(folder)
+            if isinstance(outcome, str):
+                folders.add(outcome)
 
         store = PlanStore(
             self._engine, clock=self._clock, current_version=current, step_version=inputs
@@ -862,6 +925,7 @@ class ExportPipeline:
             if self._request_scan is not None:
                 for folder in sorted(folders):  # one targeted scan per series folder
                     self._request_scan(ctx.remote_folder(folder))
+            self._sync_mirrors(ctx, behind)
         log.info(
             "export.applied",
             plan_id=plan_id,
@@ -954,7 +1018,7 @@ class ExportPipeline:
                 if planned.kind == "register":
                     self._register(ctx, planned)
                     return None
-                if not self._write(ctx, planned, plan_id, held.ensure):
+                if not self._write(ctx, planned, plan_id, held):
                     return REFUSED  # a volume the last look left as it was: nothing written
             except SeriesAgeGateClosedError:
                 log.warning("export.series_age_unverified", edition_id=planned.series.edition_id)
@@ -1051,18 +1115,18 @@ class ExportPipeline:
         return source, served is not None
 
     def _write(
-        self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, guard: Callable[[], None]
+        self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, held: HeldLocks
     ) -> bool:
         """Write one operation; False when a last look left the destination as it was (only a
         volume does: the file kept is refused, or the policy keeps what is served)."""
         if planned.rel_path is None:
             raise ValueError("a write operation has a path")
         if planned.unit_id is None:
-            return self._write_volume(ctx, planned, plan_id, guard)
+            return self._write_volume(ctx, planned, plan_id, held)
         source, is_epub = self._source_of(planned.unit_id)
         series_name = str(planned.frozen["series"])
         if is_epub:
-            self._write_epub(ctx, planned, plan_id, source, guard)
+            self._write_epub(ctx, planned, plan_id, source, held)
             return True
         with self._engine.connect() as connection:
             xml = comicinfo_xml(connection, planned.unit_id, series_name)
@@ -1088,7 +1152,7 @@ class ExportPipeline:
             if rendered.content_hash != planned.content_hash:
                 raise SourceMissingError(f"{planned.unit_id}: the archive changed since the plan")
             self._place(
-                ctx, planned, plan_id, source, rendered, guard, self._reserved(planned, rendered)
+                ctx, planned, plan_id, source, rendered, held, self._reserved(planned, rendered)
             )
         finally:
             rendered.file.close()
@@ -1103,7 +1167,7 @@ class ExportPipeline:
         log.warning("export.pages_not_normalized", unit_id=unit_id, code=code)
 
     def _write_volume(
-        self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, guard: Callable[[], None]
+        self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, held: HeldLocks
     ) -> bool:
         """A volume (an EPUB of a range) through `RangedExporter`, which decides again, from the
         database and the file kept, what the plan only forecast: the policy, the coverage of the
@@ -1129,7 +1193,7 @@ class ExportPipeline:
             rendered = self._render_volume(prepared, planned)
             try:
                 self._place(
-                    ctx, planned, plan_id, None, rendered, guard,
+                    ctx, planned, plan_id, None, rendered, held,
                     self._reserved_volume(planned, prepared, rendered),
                 )  # fmt: skip
             finally:
@@ -1144,7 +1208,7 @@ class ExportPipeline:
                 return
             rendered = self._render_volume(prepared, planned)
             try:
-                result = self._replace_volume(ctx, planned, prepared, rendered, guard)
+                result = self._replace_volume(ctx, planned, prepared, rendered, held)
             finally:
                 rendered.file.close()
             if result is UpgradeOutcome.UPGRADED:
@@ -1190,11 +1254,13 @@ class ExportPipeline:
 
     def _replace_volume(
         self, ctx: DestinationContext, planned: PlannedOp, prepared: PreparedRange,
-        rendered: RenderedEpub, guard: Callable[[], None],
+        rendered: RenderedEpub, held: HeldLocks,
     ) -> UpgradeOutcome:  # fmt: skip
         target = ctx.local(str(planned.rel_path))
         opened = (
-            self._sessions.open(target, guard=guard) if self._sessions else nullcontext(self._fsops)
+            self._sessions.open(target, guard=held.ensure)
+            if self._sessions
+            else nullcontext(self._fsops)
         )
         with opened as writer:
             upgrade = SamePathUpgrade(
@@ -1206,6 +1272,7 @@ class ExportPipeline:
                 file_hash=rendered.file_hash,
                 content_hash=prepared.payload_hash or prepared.source_hash,
                 source_hash=prepared.source_hash, spine_count=prepared.spine_count,
+                held=held,
             )  # fmt: skip
         return result.outcome
 
@@ -1231,7 +1298,7 @@ class ExportPipeline:
 
     def _write_epub(
         self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, source: ExportSource,
-        guard: Callable[[], None],
+        held: HeldLocks,
     ) -> None:  # fmt: skip
         """The passthrough of L08: the OPF edited (no age, D1), every other entry byte for byte;
         the original OPF kept in /data/meta once the file is placed (EF-BIB-048)."""
@@ -1244,7 +1311,7 @@ class ExportPipeline:
         rendered = self._epub_renderer.render(str(source.local_path), edit)
         try:
             self._place(
-                ctx, planned, plan_id, source, rendered, guard,
+                ctx, planned, plan_id, source, rendered, held,
                 self._reserved_epub(planned, source, rendered),
             )  # fmt: skip
         finally:
@@ -1324,7 +1391,7 @@ class ExportPipeline:
         plan_id: str,
         source: ExportSource | None,
         rendered: RenderedCbz | RenderedEpub,
-        guard: Callable[[], None],
+        held: HeldLocks,
         reserved: dict[str, Any],
     ) -> None:
         """02 section 5: the series and the manifest line are reserved and the intent committed
@@ -1345,7 +1412,9 @@ class ExportPipeline:
         )
         journal.mark_applying(intent)
         opened = (
-            self._sessions.open(target, guard=guard) if self._sessions else nullcontext(self._fsops)
+            self._sessions.open(target, guard=held.ensure)
+            if self._sessions
+            else nullcontext(self._fsops)
         )
         try:
             with opened as writer:
@@ -1363,19 +1432,8 @@ class ExportPipeline:
                         identity=identity,
                     )  # fmt: skip
                     journal.mark_done(intent, within=connection)
-                # L47: the hashes of the alias, once the line is committed (never inside it)
-                complete_hashes(
-                    self._engine, export_item_id=item_id, file_hash=rendered.file_hash,
-                    path=Path(target),
-                )  # fmt: skip
-                # same write session, after the file and its manifest line (EF-EXP-063, I33)
-                try:
-                    self.mirror.sync_destination(
-                        ctx.destination_id, folder=str(planned.rel_path).split("/", 1)[0],
-                        writer=writer,
-                    )  # fmt: skip
-                except Exception:  # the file is placed and committed: the next run heals it
-                    log.warning("mirror_write_failed", destination=ctx.destination_id)
+                # L47: the alias of the file is made in the transaction above (without hashes);
+                # the hashes are filled right after the operation, never inside a transaction
         except BaseException:
             if self._fsops.observe(target) is None:  # nothing was placed: nothing to settle
                 journal.cancel(intent)

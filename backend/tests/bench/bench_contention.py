@@ -162,8 +162,8 @@ def measure_contention(
 ) -> Contention:
     """The p95 of the library list at rest, then while `chapters` chapters are exported, on the
     database file the export writes. `one_series`: all the chapters belong to one series (its
-    mirror file is then rewritten for each of them); otherwise one new chapter per series, the
-    shape of a night's catch-up over the followed series of the profile."""
+    mirror file is one projection that grows with them, written once per run); otherwise one new
+    chapter per series, the shape of a night's catch-up over the followed series of the profile."""
     with export_env() as env, pytest.MonkeyPatch.context() as patch:
         generate_catalog(env.engine, profile)
         if one_series:
