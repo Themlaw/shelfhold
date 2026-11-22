@@ -14,7 +14,7 @@ NON_CONTENT_ID_KEYS: Final = frozenset({
     "pending_item_id", "trash_item_id", "plan_id", "migration_id", "key_id", "public_id",
     "profile_id", "subject_user_id", "actor_id", "owner_id", "requester_user_id",
     "install_id", "instance_id", "template_id", "version_id", "binding_id", "from_binding_id",
-    "to_binding_id", "source_id", "subscription_id",
+    "to_binding_id", "source_id", "subscription_id", "event_id",
 })  # fmt: skip
 
 # Keys that end like a content key and name something else: a row of the destination's own
