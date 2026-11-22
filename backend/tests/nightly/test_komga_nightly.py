@@ -36,6 +36,13 @@ def test_komga_nightly_client_contract(komga: RealKomga) -> None:
     komga.write("beta/Series Beta/Series Beta - Ch.1.cbz", cbz(comicinfo("Series Beta", "1")))
     alpha = komga.create_library("Alpha", komga.remote("alpha"))
     beta = komga.create_library("Beta", komga.remote("beta"))
+    # the server scans a library it has just created, of its own accord: what a scan asked for
+    # reads is only seen once those first scans are over, on series written after them
+    komga.wait_series(
+        "Series",
+        lambda s: {"Series Alpha", "Series Gamma", "Series Beta"} <= set(s),
+        "the scans of the libraries just created",
+    )
 
     # what the connection reads: the version, the libraries, the accounts of the audit
     assert run(client.probe()), "the server said no version"
@@ -55,14 +62,15 @@ def test_komga_nightly_client_contract(komga: RealKomga) -> None:
     with pytest.raises(KomgaNoLibrary):
         run(client.library_of("/elsewhere/Series Alpha"))
 
-    # a scan is the scan of a library: one folder asked for, both series of the library read,
-    # the other library left alone
+    # a scan is the scan of a library: one folder asked for, a new series elsewhere in the same
+    # library read, the new series of the other library left alone
+    for series in ("alpha/Series Epsilon", "beta/Series Delta"):
+        name = series.split("/")[1]
+        komga.write(f"{series}/{name} - Ch.1.cbz", cbz(comicinfo(name, "1")))
     run(client.request_scan_for_path(komga.remote("alpha/Series Alpha")))
     assert run(client.flush_scans(now=True)) == [alpha]
-    found = komga.wait_series(
-        "Series", lambda s: {"Series Alpha", "Series Gamma"} <= set(s), "the scanned library"
-    )
-    assert "Series Beta" not in found, "the other library was scanned too"
+    found = komga.wait_series("Series", lambda s: "Series Epsilon" in s, "the scanned library")
+    assert "Series Delta" not in found, "the other library was scanned too"
     assert found["Series Alpha"]["deleted"] is False
 
     # the host removed a book: the library is scanned, then its trash emptied (the scan runs at
@@ -84,7 +92,8 @@ def test_komga_nightly_client_contract(komga: RealKomga) -> None:
         "Series", lambda s: "Series Alpha" in s, "the series the library keeps"
     )
     assert "Series Gamma" not in settled
-    assert "Series Beta" not in settled
+    assert "Series Delta" not in settled, "the other library was scanned too"
+    assert settled["Series Beta"]["deleted"] is False, "the other library lost its own"
     assert settled["Series Alpha"]["deleted"] is False
 
 
