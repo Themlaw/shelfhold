@@ -53,10 +53,18 @@ def enable(cli: Cli, name: str = "demo-plug") -> None:
 def test_plugin_install_only_binary_require_hashes_no_deps(
     cli: Cli, tmp_path: Path, probe: Path
 ) -> None:
-    # the command line that runs: binary only, hashes required, no resolution, no index
-    argv = guard.install_command(["pip", "install"], tmp_path / "t", tmp_path / "r.txt")
-    for flag in ("--only-binary", ":all:", "--require-hashes", "--no-deps", "--no-index"):
+    # the command line that runs: binary only, hashes required, no resolution, no index,
+    # and no configuration of the machine it runs on (uv.toml, pip.conf, the environment)
+    argv = guard.install_command(
+        [sys.executable, "-m", "pip", "install"], tmp_path / "t", tmp_path / "r.txt"
+    )
+    for flag in ("--only-binary", ":all:", "--require-hashes", "--no-deps", "--no-index",
+                 "--isolated"):  # fmt: skip
         assert flag in argv
+    uv_argv = guard.install_command(
+        ["uv", "pip", "install", "--python", sys.executable], tmp_path / "t", tmp_path / "r.txt"
+    )
+    assert "--no-config" in uv_argv
     # a real offline install from a local wheel with its hash; nothing of the plugin runs
     install(cli, tmp_path, probe)
     site = cli.data / "plugins" / "site-packages"
@@ -82,14 +90,18 @@ def test_third_party_plugin_requires_env_and_typed_confirmation(
     started = cli.run("plugin", "list", "--load")
     assert "disabled" in started.stdout and "reserved" in started.stdout
     assert snapshots(probe) == []
-    # the admin asks for the in-process mode: the variable is required, the reason says so
-    refused = cli.run("plugin", "enable", "demo-plug", "--in-process", typed=PHRASE + "\n")
-    assert refused.returncode == 1 and "SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS" in refused.stderr
+    # the in-process mode is chosen by a successful enable; a disable drops the confirmation
+    # and keeps the mode: each missing piece then has its own reason
+    enable(cli)
+    assert cli.run("plugin", "disable", "demo-plug").returncode == 0
     started = cli.run("plugin", "list", "--load")
-    assert "ALLOW_UNSANDBOXED_PLUGINS" in started.stdout
+    assert "ALLOW_UNSANDBOXED_PLUGINS" in started.stdout and snapshots(probe) == []
     # the variable alone is not enough
     started = cli.run("plugin", "list", "--load", **ENABLE)
     assert "no typed confirmation" in started.stdout and snapshots(probe) == []
+    # a refused enable changes nothing: neither the mode nor the grants (variable first)
+    refused = cli.run("plugin", "enable", "demo-plug", "--in-process", typed=PHRASE + "\n")
+    assert refused.returncode == 1 and "SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS" in refused.stderr
     wrong = cli.run("plugin", "enable", "demo-plug", "--in-process", typed="yes\n", **ENABLE)
     assert wrong.returncode == 1
     assert (
@@ -106,7 +118,8 @@ def test_third_party_plugin_requires_env_and_typed_confirmation(
     # every step is audited, refusals included
     actions = [a for a, _ in cli.audit_actions()]
     assert actions.count("plugin.enable_refused") == 3
-    assert actions.count("plugin.enable") == 1 and actions.count("plugin.install") == 1
+    assert actions.count("plugin.enable") == 2 and actions.count("plugin.install") == 1
+    assert actions.count("plugin.disable") == 1
     # the confirmation is bound to the files: edited after the fact, it no longer counts
     site = cli.data / "plugins" / "site-packages" / "demo_plug" / "__init__.py"
     site.write_text(site.read_text(encoding="utf-8") + "\n# edited\n", encoding="utf-8")
@@ -119,10 +132,8 @@ def test_third_party_plugin_requires_env_and_typed_confirmation(
     assert done.returncode == 0
     # a removed plugin is a new one: isolated again by default (D13), nothing confirmed
     assert "reserved" in cli.run("plugin", "list", "--load").stdout
-    # the admin re-chooses the in-process mode: the reinstall voided the confirmation
-    again = cli.run("plugin", "enable", "demo-plug", "--in-process", typed=PHRASE + "\n")
-    assert again.returncode == 1
-    assert "no typed confirmation" in cli.run("plugin", "list", "--load", **ENABLE).stdout
+    # the admin re-chooses the in-process mode: nothing of the old plugin was carried over
+    enable(cli)
     state = cli.data / "plugins" / "state.json"
     raw = json.loads(state.read_text(encoding="utf-8"))
     raw["confirmed"] = {"demo-plug": {"digest": "0" * 64, "at": "2026-01-01"}}

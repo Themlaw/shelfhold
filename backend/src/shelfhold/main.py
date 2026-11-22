@@ -551,6 +551,7 @@ def create_app(
             lambda: AttestationStore(engine, clock=clock),
             schema_for,
             lambda: resolved.data_dir,
+            lambda: engine,
         ),
     )
 

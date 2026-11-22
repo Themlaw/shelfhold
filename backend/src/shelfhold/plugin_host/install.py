@@ -68,6 +68,12 @@ NO_COMPILE = {
     "pip": "--no-compile",
     "uv": "--no-compile-bytecode",
 }  # nothing is compiled at install
+# the installer reads no configuration of the machine it runs on (uv.toml, pip.conf, the
+# environment): the command says everything, the machine nothing
+NO_CONFIG = {
+    "pip": "--isolated",
+    "uv": "--no-config",
+}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _DIST_INFO = re.compile(r"^(?P<name>.+)-(?P<version>[^-]+)\.dist-info$")
 
@@ -413,7 +419,16 @@ def installer_prefix() -> list[str]:
 
 def install_command(prefix: Sequence[str], target: Path, requirements: Path) -> list[str]:
     tool = "pip" if "-m" in prefix else "uv"
-    return [*prefix, "--target", str(target), *PIP_FLAGS, NO_COMPILE[tool], "-r", str(requirements)]
+    return [
+        *prefix,
+        "--target",
+        str(target),
+        *PIP_FLAGS,
+        NO_COMPILE[tool],
+        NO_CONFIG[tool],
+        "-r",
+        str(requirements),
+    ]
 
 
 def requirement_line(name: str, wheel: Path, sha256: str) -> str:
@@ -484,14 +499,9 @@ def install_wheel(
             _undo(moved)
             raise
         digest = tree_digest(layout.site, on_disk(layout.site, info.top_levels, info.dist_info))
-        # a reinstall is new code nobody vouched for (both activations are voided below) but the
-        # administrator's choice of mode survives it: D13 made the mode the household's, not the
-        # plugin's, and a reinstall of the same plugin does not silently revert it.
-        previous = state.installed.get(info.name)
         installed = Installed(
-            info.name, info.version, expected, info.top_levels, info.dist_info, digest,
-            mode=previous.mode if previous is not None else MODE_ISOLATED,
-        )  # fmt: skip
+            info.name, info.version, expected, info.top_levels, info.dist_info, digest
+        )
         state.installed[info.name] = installed
         state.confirmed.pop(info.name, None)  # a reinstall is new code nobody vouched for
         state.enabled.pop(info.name, None)
@@ -727,12 +737,27 @@ def verdicts(layout: Layout, environ: dict[str, str] | os._Environ[str]) -> list
 # -- audit -------------------------------------------------------------------------------------
 
 
-def audit(engine: Engine, action: str, target: str) -> None:
-    """One row of the `audit` table; the actor is the host user that ran the command."""
+def audit(
+    engine: Engine,
+    action: str,
+    target: str,
+    *,
+    actor_id: str | None = None,
+    session_id: str | None = None,
+    auth_time: datetime | None = None,
+) -> None:
+    """One row of the `audit` table. The actor is the host user that ran the command, unless a
+    caller with a principal names its own (the HTTP routes: the session's user, its session and
+    its `auth_time`, EF-USR-022 (3)) — the CLI keeps the uid, the route the account."""
     table = schema.tables["audit"]
     with write_transaction(engine) as connection:
         connection.execute(
             sa.insert(table).values(
-                id=new_ulid(), actor_id=f"cli:uid{os.getuid()}", action=action, target=target
+                id=new_ulid(),
+                actor_id=actor_id if actor_id is not None else f"cli:uid{os.getuid()}",
+                action=action,
+                target=target,
+                session_id=session_id,
+                auth_time=auth_time,
             )
         )

@@ -157,46 +157,45 @@ def run_install(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
 def run_enable(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     """Enable a plugin in its mode (D13): isolated by default — a reserved action, no variable,
     no typed sentence; in process only with ``--in-process``, the variable of M1b and the phrase
-    typed on standard input. A change of mode voids both activations."""
+    typed on standard input. A change of mode voids both activations, and a refusal — missing
+    variable, wrong phrase — changes nothing: neither the mode nor the grants of the other mode."""
     layout = guard.Layout.of(resolved.values.data_dir)
     if args.in_process and args.isolated:
         return _fail(t("plugin.mode_exclusive"))
+    state = guard.read_state(layout)
+    plugin = state.installed.get(guard.normalise_name(args.name))
     mode = (
         guard.MODE_IN_PROCESS
         if args.in_process
         else guard.MODE_ISOLATED
         if args.isolated
-        else None  # the recorded mode
+        else plugin.mode
+        if plugin is not None
+        else guard.MODE_ISOLATED
     )
-    if mode is not None:
-        try:
-            guard.set_mode(layout, args.name, mode)
-        except guard.PluginInstallError as exc:
-            _audited(resolved, "plugin.enable_refused", f"{args.name}:{exc.code}")
-            return _fail(t("plugin.enable_refused", code=exc.code, detail=exc.detail))
-    state = guard.read_state(layout)
-    plugin = state.installed.get(guard.normalise_name(args.name))
-    if plugin is not None and plugin.mode == guard.MODE_IN_PROCESS:
+    typed = ""
+    if mode == guard.MODE_IN_PROCESS:
+        # the in-process ladder comes first, before anything is written: a refusal
+        # must leave the recorded mode and the isolated grant exactly as they were
         if not guard.env_allows(os.environ):
             _audited(resolved, "plugin.enable_refused", f"{args.name}:env")
             return _fail(t("plugin.env_required", variable=guard.ENV_ALLOW))
         print(t("plugin.warning", phrase=guard.CONFIRMATION), file=sys.stderr)
-    typed = sys.stdin.readline()
+        typed = sys.stdin.readline()
+        if typed.strip() != guard.CONFIRMATION:
+            _audited(resolved, "plugin.enable_refused", f"{args.name}:confirmation")
+            return _fail(t("plugin.confirmation_mismatch"))
     target = f"{args.name}@{plugin.wheel_sha256}" if plugin else args.name
-    if (
-        plugin is not None
-        and plugin.mode == guard.MODE_IN_PROCESS
-        and typed.strip() != guard.CONFIRMATION
-    ):
-        _audited(resolved, "plugin.enable_refused", f"{target}:confirmation")
-        return _fail(t("plugin.confirmation_mismatch"))
     if not _audited(resolved, "plugin.enable", target):  # before the change, not after
         return 1
     try:
-        if plugin is not None and plugin.mode == guard.MODE_IN_PROCESS:
+        if mode == guard.MODE_IN_PROCESS:
+            guard.set_mode(layout, args.name, guard.MODE_IN_PROCESS)
             guard.confirm(layout, args.name, typed)
             print(t("plugin.enabled", name=args.name))
         else:
+            if args.isolated:  # back to the default: the in-process grant counts for nothing
+                guard.set_mode(layout, args.name, guard.MODE_ISOLATED)
             guard.enable_isolated(layout, args.name)
             print(t("plugin.enabled_isolated", name=args.name))
     except guard.PluginInstallError as exc:
@@ -205,10 +204,21 @@ def run_enable(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
 
 
 def run_disable(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    layout = guard.Layout.of(resolved.values.data_dir)
+    state = guard.read_state(layout)
+    plugin = state.installed.get(guard.normalise_name(args.name))
+    loaded = (
+        plugin is not None
+        and plugin.mode == guard.MODE_IN_PROCESS
+        and plugin.name in state.confirmed
+    )
     if not _audited(resolved, "plugin.disable", args.name):
         return 1
-    guard.unconfirm(guard.Layout.of(resolved.values.data_dir), args.name)
+    guard.unconfirm(layout, args.name)
     print(t("plugin.disabled", name=args.name))
+    if loaded:
+        # the host process loaded it at start-up: it goes on running until the next restart
+        print(t("plugin.disable_restart_notice"))
     return 0
 
 

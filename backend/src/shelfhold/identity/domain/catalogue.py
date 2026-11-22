@@ -193,6 +193,9 @@ _DECLARED = (
     # admin's word; a fresh session or the host CLI, never a key, and the in-process mode
     # keeps its typed phrase besides (CLI-only: no phrase crosses the wire)
     _action("plugin.enable_isolated", Effect.ACCEPTS_ADMIN_RISK),
+    # M6 L06: silencing a plugin is an admin gesture too (a plugin disabled in secret is a
+    # silent outage), with its own name: the audit says what was done, not something else
+    _action("plugin.disable_isolated", Effect.ACCEPTS_ADMIN_RISK),
 )
 
 RESERVED_ACTIONS: Mapping[str, ReservedAction] = MappingProxyType(

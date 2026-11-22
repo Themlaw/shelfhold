@@ -3862,6 +3862,10 @@ export type PluginOut = {
      */
     name: string;
     /**
+     * Notice
+     */
+    notice?: string | null;
+    /**
      * Reason
      */
     reason?: string | null;

@@ -6489,6 +6489,17 @@
             "title": "Name",
             "type": "string"
           },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice"
+          },
           "reason": {
             "anyOf": [
               {

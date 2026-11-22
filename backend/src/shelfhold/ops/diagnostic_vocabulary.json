@@ -3439,6 +3439,7 @@
   "pleb",
   "plugin.attest",
   "plugin.attest_partitioning",
+  "plugin.disable_isolated",
   "plugin.enable_isolated",
   "plugin_id",
   "plugin_index_url",

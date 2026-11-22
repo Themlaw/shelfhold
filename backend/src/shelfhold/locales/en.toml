@@ -238,6 +238,7 @@
   enabled = "Plugin {name} confirmed for the in-process mode. It is loaded on next boot if SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS=1 is set."
   enabled_isolated = "Plugin {name} enabled in isolated mode (reserved action). It never runs in the Shelfhold process: the companion runs it."
   disabled = "Confirmation of {name} removed."
+  disable_restart_notice = "This plugin was loaded in the Shelfhold process: the disable takes effect at the next restart."
   removed = "Plugin {name} uninstalled."
   none = "No third-party plugins installed."
   row = "{name} {version} {mode} {status}"

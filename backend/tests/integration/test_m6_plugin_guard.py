@@ -118,7 +118,9 @@ def test_third_party_plugins_disabled_by_default(cli: Cli, tmp_path: Path, probe
     (record,) = registry.load_all([candidate])
     assert record.status is PluginStatus.INCOMPATIBLE
     assert "mode" in (record.reason or "")
-    assert state["installed"]["demo-plug"]["mode"] == "isolated"  # and nothing changed on disk
+    # and nothing changed on disk: the file is read again, not the dict loaded before
+    on_disk = json.loads((cli.data / "plugins" / "state.json").read_text(encoding="utf-8"))
+    assert on_disk["installed"]["demo-plug"]["mode"] == "isolated"
 
 
 @pytest.mark.req("EF-SRC-019")
@@ -459,6 +461,6 @@ def test_isolated_plugin_enable_is_reserved_action(
         assert api.login().status_code == 200
         refused = api.post(path)
         assert refused.status_code == 409 and refused.json()["code"] == "plugin.not_isolated"
-        # the allowed action is audited, with its actor
-        actions = [row[0] for row in db_rows(settings, "SELECT action FROM audit")]
-        assert "plugin.enable_isolated" in actions
+        # the allowed action is audited by the route, with its plugin and its actor
+        rows = db_rows(settings, "SELECT action, target FROM audit WHERE action LIKE 'plugin.%'")
+        assert ("plugin.enable", f"acme-plug@{wheel.sha256}") in rows, rows

@@ -24,8 +24,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import Engine
 
 from shelfhold.headless.actor import Actor
+from shelfhold.i18n import negotiate, t_lang
 from shelfhold.identity.public import RESERVED_ACTIONS, Credential, Principal, audit_actor
 from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
 from shelfhold.interfaces.http_api.problems import ProblemError
@@ -48,7 +50,10 @@ __all__ = ["build_plugins_router"]
 _SECRET = reserved_action(RESERVED_ACTIONS["source.set_secret"])
 _ATTEST = reserved_action(RESERVED_ACTIONS["plugin.attest"])
 _ATTEST_PARTITIONING = reserved_action(RESERVED_ACTIONS["plugin.attest_partitioning"])
-_ENABLE_ISOLATED = reserved_action(RESERVED_ACTIONS["plugin.enable_isolated"])
+# M6 L06: the gate checks the credentials and writes no line — the route writes its own, with
+# the plugin as its target, once the guard has agreed (a refusal leaves no "allowed" row)
+_ENABLE_ISOLATED = reserved_action(RESERVED_ACTIONS["plugin.enable_isolated"], audit=False)
+_DISABLE_ISOLATED = reserved_action(RESERVED_ACTIONS["plugin.disable_isolated"], audit=False)
 
 
 class SecretStateOut(BaseModel):
@@ -100,6 +105,7 @@ class PluginOut(BaseModel):
     mode: str
     status: str  # `enabled` in its own mode, else `disabled`
     reason: str | None = None
+    notice: str | None = None  # e.g. a disable that takes effect at the next restart
 
 
 class PluginsOut(BaseModel):
@@ -135,6 +141,7 @@ def build_plugins_router(
     attestations: Callable[[], AttestationStore],
     schema_for: Callable[[str], SettingsSchema | None],
     data_dir: Callable[[], Path],
+    engine: Callable[[], Engine],
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["sources"])
 
@@ -256,6 +263,9 @@ def build_plugins_router(
         return listed(key)
 
     # -- the guard of M6 L06 (D13, EF-SRC-019): the mode, the activation, the reason -----------
+    # The gate checks the credentials and writes no line (`audit=False`): each route writes its
+    # own, with the plugin as its target, once the guard has agreed — a refusal (unknown plugin,
+    # in-process mode over the wire) leaves no row that says something was allowed.
 
     def _plugins() -> PluginsOut:
         layout = guard.Layout.of(data_dir())
@@ -278,20 +288,17 @@ def build_plugins_router(
     def read_plugins(_principal: Principal = Depends(admin_only)) -> PluginsOut:  # noqa: B008
         return _plugins()
 
-    def _enable(name: str) -> PluginOut:
-        layout = guard.Layout.of(data_dir())
-        try:
-            guard.enable_isolated(layout, name)
-        except guard.PluginInstallError as exc:
-            if exc.code == "unknown":
-                raise ProblemError("plugin.unknown") from None
-            if exc.code == "mode_invalid":
-                # the in-process mode keeps its typed phrase, and no phrase crosses the wire
-                raise ProblemError("plugin.not_isolated") from None
-            raise ProblemError("plugin.enable_refused", detail=exc.detail) from None
-        return _one(layout, name)
+    def _audit(principal: Principal, action: str, target: str) -> None:
+        guard.audit(
+            engine(),
+            action,
+            target,
+            actor_id=audit_actor(principal),
+            session_id=principal.session_id,
+            auth_time=principal.auth_time,
+        )
 
-    def _one(layout: guard.Layout, name: str) -> PluginOut:
+    def _one(layout: guard.Layout, name: str, *, notice: str | None = None) -> PluginOut:
         state = guard.read_state(layout)
         verdict = next(
             (v for v in guard.verdicts(layout, os.environ) if v.name == guard.normalise_name(name)),
@@ -306,22 +313,51 @@ def build_plugins_router(
             mode=verdict.mode,
             status="enabled" if verdict.granted else "disabled",
             reason=verdict.reason,
+            notice=notice,
         )
 
     @router.post("/plugins/{name}/enabled")
     def enable_plugin(
         name: str,
-        _principal: Principal = Depends(_ENABLE_ISOLATED),  # noqa: B008
+        request: Request,
+        principal: Principal = Depends(_ENABLE_ISOLATED),  # noqa: B008
     ) -> PluginOut:
-        return _enable(name)
+        layout = guard.Layout.of(data_dir())
+        try:
+            guard.enable_isolated(layout, name)
+        except guard.PluginInstallError as exc:
+            if exc.code == "unknown":
+                raise ProblemError("plugin.unknown") from None
+            if exc.code == "mode_invalid":
+                # the in-process mode keeps its typed phrase, and no phrase crosses the wire
+                raise ProblemError("plugin.not_isolated") from None
+            raise ProblemError("plugin.enable_refused", detail=exc.detail) from None
+        state = guard.read_state(layout)
+        plugin = state.installed[guard.normalise_name(name)]
+        _audit(principal, "plugin.enable", f"{plugin.name}@{plugin.wheel_sha256}")
+        return _one(layout, name)
 
     @router.delete("/plugins/{name}/enabled")
     def disable_plugin(
         name: str,
-        _principal: Principal = Depends(_ENABLE_ISOLATED),  # noqa: B008
+        request: Request,
+        principal: Principal = Depends(_DISABLE_ISOLATED),  # noqa: B008
     ) -> PluginOut:
         layout = guard.Layout.of(data_dir())
+        state = guard.read_state(layout)
+        plugin = state.installed.get(guard.normalise_name(name))
+        if plugin is None:
+            raise ProblemError("plugin.unknown") from None
+        loaded = plugin.mode == guard.MODE_IN_PROCESS and plugin.name in state.confirmed
         guard.unconfirm(layout, name)  # both activations: the plugin runs in one mode at a time
-        return _one(layout, name)
+        _audit(principal, "plugin.disable", plugin.name)
+        notice = None
+        if loaded:
+            # the host process loaded it at start-up: it goes on running until the next restart
+            notice = t_lang(
+                "plugin.disable_restart_notice",
+                language=negotiate(request.headers.get("accept-language")),
+            )
+        return _one(layout, name, notice=notice)
 
     return router
