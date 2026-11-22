@@ -3848,6 +3848,48 @@ export type PlanOut = {
 };
 
 /**
+ * PluginOut
+ *
+ * One installed third-party plugin: its mode (D13) and why it is not loaded.
+ */
+export type PluginOut = {
+    /**
+     * Mode
+     */
+    mode: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Notice
+     */
+    notice?: string | null;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Version
+     */
+    version: string;
+};
+
+/**
+ * PluginsOut
+ */
+export type PluginsOut = {
+    /**
+     * Items
+     */
+    items: Array<PluginOut>;
+};
+
+/**
  * PolicyIn
  */
 export type PolicyIn = {
@@ -4563,6 +4605,45 @@ export type RatedOut = {
      * Withdrawals
      */
     withdrawals: Array<WithdrawalOut>;
+};
+
+/**
+ * ReadMarkOut
+ *
+ * One read mark as the screen that undoes them shows it: whose it is, and the Unit it
+ * marks.
+ */
+export type ReadMarkOut = {
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Title
+     */
+    title: string | null;
+    /**
+     * Unit Id
+     */
+    unit_id: string;
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Username
+     */
+    username: string;
+};
+
+/**
+ * ReadMarksOut
+ */
+export type ReadMarksOut = {
+    /**
+     * Items
+     */
+    items: Array<ReadMarkOut>;
 };
 
 /**
@@ -6997,6 +7078,16 @@ export type TypedIn = {
 };
 
 /**
+ * UndoOut
+ */
+export type UndoOut = {
+    /**
+     * Undone
+     */
+    undone: number;
+};
+
+/**
  * UnfollowIn
  */
 export type UnfollowIn = {
@@ -8644,6 +8735,132 @@ export type ReaderPutPositionResponses = {
 };
 
 export type ReaderPutPositionResponse = ReaderPutPositionResponses[keyof ReaderPutPositionResponses];
+
+export type ReaderReadMarksData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    url: '/api/reader/read-marks';
+};
+
+export type ReaderReadMarksErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReaderReadMarksError = ReaderReadMarksErrors[keyof ReaderReadMarksErrors];
+
+export type ReaderReadMarksResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReadMarksOut;
+};
+
+export type ReaderReadMarksResponse = ReaderReadMarksResponses[keyof ReaderReadMarksResponses];
+
+export type ReaderUndoReadMarkData = {
+    body?: never;
+    path: {
+        /**
+         * Unit Id
+         */
+        unit_id: string;
+    };
+    query?: never;
+    url: '/api/reader/read-marks/{unit_id}/undo';
+};
+
+export type ReaderUndoReadMarkErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReaderUndoReadMarkError = ReaderUndoReadMarkErrors[keyof ReaderUndoReadMarkErrors];
+
+export type ReaderUndoReadMarkResponses = {
+    /**
+     * Successful Response
+     */
+    200: UndoOut;
+};
+
+export type ReaderUndoReadMarkResponse = ReaderUndoReadMarkResponses[keyof ReaderUndoReadMarkResponses];
+
+export type ReaderUndoReadMarkForChildData = {
+    body?: never;
+    path: {
+        /**
+         * Unit Id
+         */
+        unit_id: string;
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/api/reader/read-marks/{unit_id}/undo/for-child/{user_id}';
+};
+
+export type ReaderUndoReadMarkForChildErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * forbidden
+     */
+    403: unknown;
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReaderUndoReadMarkForChildError = ReaderUndoReadMarkForChildErrors[keyof ReaderUndoReadMarkForChildErrors];
+
+export type ReaderUndoReadMarkForChildResponses = {
+    /**
+     * Successful Response
+     */
+    200: UndoOut;
+};
+
+export type ReaderUndoReadMarkForChildResponse = ReaderUndoReadMarkForChildResponses[keyof ReaderUndoReadMarkForChildResponses];
 
 export type ReaderSettingsData = {
     body?: never;
@@ -14239,6 +14456,39 @@ export type ApplyResponses = {
 
 export type ApplyResponse = ApplyResponses[keyof ApplyResponses];
 
+export type ReadPluginsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/plugins';
+};
+
+export type ReadPluginsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadPluginsError = ReadPluginsErrors[keyof ReadPluginsErrors];
+
+export type ReadPluginsResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginsOut;
+};
+
+export type ReadPluginsResponse = ReadPluginsResponses[keyof ReadPluginsResponses];
+
 export type ReadAttestationsData = {
     body?: never;
     path: {
@@ -14356,6 +14606,82 @@ export type WithdrawResponses = {
 };
 
 export type WithdrawResponse = WithdrawResponses[keyof WithdrawResponses];
+
+export type DisablePluginData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/plugins/{name}/enabled';
+};
+
+export type DisablePluginErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DisablePluginError = DisablePluginErrors[keyof DisablePluginErrors];
+
+export type DisablePluginResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginOut;
+};
+
+export type DisablePluginResponse = DisablePluginResponses[keyof DisablePluginResponses];
+
+export type EnablePluginData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/plugins/{name}/enabled';
+};
+
+export type EnablePluginErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type EnablePluginError = EnablePluginErrors[keyof EnablePluginErrors];
+
+export type EnablePluginResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginOut;
+};
+
+export type EnablePluginResponse = EnablePluginResponses[keyof EnablePluginResponses];
 
 export type ProbeData = {
     body: ProbeIn;

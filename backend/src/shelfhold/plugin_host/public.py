@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import structlog
 
 from shelfhold.config import Settings
+from shelfhold.plugin_host import install as guard
 from shelfhold.plugin_host.adapters.meta.lncrawl import LncrawlService
 from shelfhold.plugin_host.adapters.native.gutenberg import GutenbergSource
 from shelfhold.plugin_host.adapters.native.wikisource import WikisourceSource
@@ -91,15 +92,25 @@ def start_plugins(
 ) -> tuple[PluginRegistry, list[PluginRecord]]:
     """The one place where third-party code can be loaded, once, at start-up (EF-SRC-019).
 
-    A plugin loads only with ``SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS=1``, its typed confirmation and
-    unchanged files; otherwise it is reported as disabled with the reason and never imported.
-    The loader is handed nothing: no settings, no secret, no host object.
+    A plugin loads in the host process only in the in-process mode, with
+    ``SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS=1``, its typed confirmation and unchanged files; an
+    isolated plugin (the default, D13) is never imported here, whatever the environment allows:
+    the companion runs it. Otherwise the plugin is reported as disabled with the reason and never
+    imported. The loader is handed nothing: no settings, no secret, no host object.
     """
     layout = Layout.of(settings.data_dir)
     state = read_state(layout)
     judged = verdicts(layout, os.environ if environ is None else dict(environ))
-    blocked = {v.name: v.reason or "refused" for v in judged if not v.granted}
-    granted = [v.name for v in judged if v.granted]
+    granted: list[str] = []
+    blocked: dict[str, str] = {}
+    for verdict in judged:
+        if verdict.loads_in_process:
+            granted.append(verdict.name)
+        elif verdict.mode == guard.MODE_ISOLATED and verdict.granted:
+            # enabled, and still never loaded in the host process: that is what the mode says
+            blocked[verdict.name] = "isolated mode: the host process never loads it"
+        else:
+            blocked[verdict.name] = verdict.reason or "refused"
     installed = [InstalledPlugin(i.name, i.top_levels) for i in state.installed.values()]
     plugin_state = load_plugin_state(settings)
     registry = PluginRegistry(

@@ -190,7 +190,7 @@ def _undone(connection: sa.Connection, user_id: str) -> set[str]:
     found: set[str] = set()
     for row in connection.execute(
         sa.select(table.c.undone_units).where(
-            table.c.user_id == user_id, table.c.undone_units != "{}"
+            table.c.user_id == user_id, table.c.undone_units != {}
         )
     ):
         found.update(str(u) for u in row.undone_units)

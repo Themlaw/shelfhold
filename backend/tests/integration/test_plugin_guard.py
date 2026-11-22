@@ -1,4 +1,8 @@
-"""EF-SRC-019 / ENF-SEC-009 (M1b L07): the third-party plugin guard, through the real CLI."""
+"""EF-SRC-019 / ENF-SEC-009 (M1b L07): the third-party plugin guard, through the real CLI.
+
+M6 L06 (D13): these are the tests of the **in-process** mode, which since L06 is the admin's
+explicit choice (`--in-process`); the isolated mode is the default and has its own file
+(`test_m6_plugin_guard.py`)."""
 
 import json
 import subprocess
@@ -41,7 +45,7 @@ def install(
 
 
 def enable(cli: Cli, name: str = "demo-plug") -> None:
-    done = cli.run("plugin", "enable", name, typed=PHRASE + "\n", **ENABLE)
+    done = cli.run("plugin", "enable", name, "--in-process", typed=PHRASE + "\n", **ENABLE)
     assert done.returncode == 0, done.stderr
 
 
@@ -49,10 +53,18 @@ def enable(cli: Cli, name: str = "demo-plug") -> None:
 def test_plugin_install_only_binary_require_hashes_no_deps(
     cli: Cli, tmp_path: Path, probe: Path
 ) -> None:
-    # the command line that runs: binary only, hashes required, no resolution, no index
-    argv = guard.install_command(["pip", "install"], tmp_path / "t", tmp_path / "r.txt")
-    for flag in ("--only-binary", ":all:", "--require-hashes", "--no-deps", "--no-index"):
+    # the command line that runs: binary only, hashes required, no resolution, no index,
+    # and no configuration of the machine it runs on (uv.toml, pip.conf, the environment)
+    argv = guard.install_command(
+        [sys.executable, "-m", "pip", "install"], tmp_path / "t", tmp_path / "r.txt"
+    )
+    for flag in ("--only-binary", ":all:", "--require-hashes", "--no-deps", "--no-index",
+                 "--isolated"):  # fmt: skip
         assert flag in argv
+    uv_argv = guard.install_command(
+        ["uv", "pip", "install", "--python", sys.executable], tmp_path / "t", tmp_path / "r.txt"
+    )
+    assert "--no-config" in uv_argv
     # a real offline install from a local wheel with its hash; nothing of the plugin runs
     install(cli, tmp_path, probe)
     site = cli.data / "plugins" / "site-packages"
@@ -74,19 +86,27 @@ def test_third_party_plugin_requires_env_and_typed_confirmation(
     cli: Cli, tmp_path: Path, probe: Path
 ) -> None:
     wheel = install(cli, tmp_path, probe)
-    # installed: not loaded, the reason is shown
+    # installed: isolated by default (D13), not loaded, the reserved reason is shown
     started = cli.run("plugin", "list", "--load")
-    assert "disabled" in started.stdout and "ALLOW_UNSANDBOXED_PLUGINS" in started.stdout
+    assert "disabled" in started.stdout and "reserved" in started.stdout
     assert snapshots(probe) == []
+    # the in-process mode is chosen by a successful enable; a disable drops the confirmation
+    # and keeps the mode: each missing piece then has its own reason
+    enable(cli)
+    assert cli.run("plugin", "disable", "demo-plug").returncode == 0
+    started = cli.run("plugin", "list", "--load")
+    assert "ALLOW_UNSANDBOXED_PLUGINS" in started.stdout and snapshots(probe) == []
     # the variable alone is not enough
     started = cli.run("plugin", "list", "--load", **ENABLE)
     assert "no typed confirmation" in started.stdout and snapshots(probe) == []
-    # a confirmation needs the variable, and the right sentence
-    refused = cli.run("plugin", "enable", "demo-plug", typed=PHRASE + "\n")
+    # a refused enable changes nothing: neither the mode nor the grants (variable first)
+    refused = cli.run("plugin", "enable", "demo-plug", "--in-process", typed=PHRASE + "\n")
     assert refused.returncode == 1 and "SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS" in refused.stderr
-    wrong = cli.run("plugin", "enable", "demo-plug", typed="yes\n", **ENABLE)
+    wrong = cli.run("plugin", "enable", "demo-plug", "--in-process", typed="yes\n", **ENABLE)
     assert wrong.returncode == 1
-    assert cli.run("plugin", "enable", "demo-plug", typed="", **ENABLE).returncode == 1  # no stdin
+    assert (
+        cli.run("plugin", "enable", "demo-plug", "--in-process", typed="", **ENABLE).returncode == 1
+    )  # no stdin
     assert snapshots(probe) == []
     enable(cli)
     # the confirmation alone is not enough either: without the variable nothing loads
@@ -98,7 +118,8 @@ def test_third_party_plugin_requires_env_and_typed_confirmation(
     # every step is audited, refusals included
     actions = [a for a, _ in cli.audit_actions()]
     assert actions.count("plugin.enable_refused") == 3
-    assert actions.count("plugin.enable") == 1 and actions.count("plugin.install") == 1
+    assert actions.count("plugin.enable") == 2 and actions.count("plugin.install") == 1
+    assert actions.count("plugin.disable") == 1
     # the confirmation is bound to the files: edited after the fact, it no longer counts
     site = cli.data / "plugins" / "site-packages" / "demo_plug" / "__init__.py"
     site.write_text(site.read_text(encoding="utf-8") + "\n# edited\n", encoding="utf-8")
@@ -109,7 +130,10 @@ def test_third_party_plugin_requires_env_and_typed_confirmation(
     assert wheel.exists()
     done = cli.run("plugin", "install", str(wheel), "--sha256", _sha(wheel))
     assert done.returncode == 0
-    assert "no typed confirmation" in cli.run("plugin", "list", "--load", **ENABLE).stdout
+    # a removed plugin is a new one: isolated again by default (D13), nothing confirmed
+    assert "reserved" in cli.run("plugin", "list", "--load").stdout
+    # the admin re-chooses the in-process mode: nothing of the old plugin was carried over
+    enable(cli)
     state = cli.data / "plugins" / "state.json"
     raw = json.loads(state.read_text(encoding="utf-8"))
     raw["confirmed"] = {"demo-plug": {"digest": "0" * 64, "at": "2026-01-01"}}

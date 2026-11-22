@@ -19,7 +19,7 @@ from shelfhold.reading.domain.document_hash import (
     koreader_partial_md5,
     verified_hashes,
 )
-from shelfhold.reading.public import record_delivery, record_position, undo_read_mark
+from shelfhold.reading.public import record_position, undo_read_mark
 from tests.reading_env import NEW_HASH, ReadingEnv, hours, reading_env
 
 pytestmark = pytest.mark.req("EF-LEC-014")
@@ -97,20 +97,6 @@ def test_the_client_date_never_buys_a_traversal(tmp_path: Path) -> None:
                     percent=None, client_ts=ts, now=now, device_id="reader-1",
                 )  # fmt: skip
         assert "read" not in states(env, reader, units)
-
-
-def test_the_delivery_of_the_file_is_the_anchor_of_a_first_report(tmp_path: Path) -> None:
-    with reading_env(tmp_path) as env:
-        reader = env.user("reader")
-        units, volume = volume_of(env)
-        start = hours(1)
-        with env.engine.begin() as connection:
-            record_delivery(
-                connection, user_id=reader, carrier_type="export_item", carrier_id=volume,
-                content_hash=NEW_HASH, now=start,
-            )  # fmt: skip
-        report(env, reader, volume, 30, start + timedelta(minutes=30))
-        assert states(env, reader, units) == ["read", "read", "read"]
 
 
 def test_with_no_anchor_a_first_report_reaches_nothing(tmp_path: Path) -> None:

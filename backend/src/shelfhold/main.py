@@ -140,6 +140,7 @@ from shelfhold.reading.application.kepub_delivery import KepubDelivery
 from shelfhold.reading.application.lease import ProgressLease
 from shelfhold.reading.application.page_stream import PageStream
 from shelfhold.reading.application.positions import ReaderPositions
+from shelfhold.reading.application.progress import ReadMarks
 from shelfhold.reading.application.publication import PublicationService, epub_spine_of
 from shelfhold.reading.application.settings import ReaderSettings
 from shelfhold.reading.bundle import SeriesBundles
@@ -507,6 +508,7 @@ def create_app(
             lambda: ReaderPositions(engine, content_access(), clock.now, progress_lease()),
             lambda: ReaderSettings(engine),
             lambda: ContinueReading(engine, content_access()),  # M5 L14: « Reprendre la lecture »
+            lambda: ReadMarks(engine, clock.now),  # M6 L18: undo a read mark
             lambda: kavita_open_url_of(engine),
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
@@ -550,6 +552,8 @@ def create_app(
             lambda: SourceSettings(engine, composition.vault, now=clock.now),
             lambda: AttestationStore(engine, clock=clock),
             schema_for,
+            lambda: resolved.data_dir,
+            lambda: engine,
         ),
     )
 

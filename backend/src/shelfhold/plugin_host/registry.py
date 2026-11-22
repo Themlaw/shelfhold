@@ -650,6 +650,11 @@ class PluginRegistry:
         data = raw.model_dump(mode="json") if isinstance(raw, PluginManifest) else raw
         if not isinstance(data, Mapping):
             return None, ApiVerdict(PluginStatus.INCOMPATIBLE, "plugin exposes no manifest")
+        if "mode" in data:  # D13 (M6 L06): a plugin never chooses its mode, the host does
+            return None, ApiVerdict(
+                PluginStatus.INCOMPATIBLE,
+                "a plugin never chooses its mode: isolated by default, the admin decides",
+            )
         declared = data.get("api")
         if not isinstance(declared, int) or isinstance(declared, bool):
             return None, ApiVerdict(PluginStatus.INCOMPATIBLE, "manifest declares no integer api")
