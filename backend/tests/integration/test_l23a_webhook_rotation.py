@@ -5,7 +5,11 @@ never a key. The new secret is shown once, in the answer to the rotation and now
 24 h after the rotation, each body carries two `v1=` signatures (the previous secret and the new
 one), so a receiver that moves over loses no event; after the window the old secret signs
 nothing. A delivery that is given up emits `webhook.dead` once, in the same transaction as the
-row that dies. Synthetic hosts and addresses; secrets made at run time.
+row that dies — unless the delivery was itself of a `webhook.dead`, which announces nothing (the
+announcement would feed the loop it reports). The previous secret leaves the sealed document at
+the first delivery that sees its window closed, and a creator who is no longer an administrator
+is named by a reason of their own (`not_theirs`). Synthetic hosts and addresses; secrets made at
+run time.
 """
 
 from __future__ import annotations
@@ -22,7 +26,14 @@ from shelfhold.config import Settings
 from shelfhold.events.bus import EventBus
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.integrations.webhooks import MAX_ATTEMPTS, sign_body
+from shelfhold.integrations.webhooks import (
+    MAX_ATTEMPTS,
+    Catalogue,
+    Deliverer,
+    EventSpec,
+    pick,
+    sign_body,
+)
 from shelfhold.integrations.webhooks.outbox import Due
 from tests.auth_env import ADMIN, AuthEnv, auth_env, db_rows
 from tests.fakes_fetcher import FakeResolver, Recorder
@@ -34,7 +45,7 @@ from tests.integration.test_m4_l24_webhook_routes import (
     _refused,
     _send,
 )
-from tests.webhooks_env import webhook_env
+from tests.webhooks_env import HOOK, webhook_env
 
 
 def _signatures(request: httpx2.Request) -> tuple[str, list[str]]:
@@ -94,6 +105,34 @@ def test_webhook_old_secret_dropped_after_window(settings: Settings) -> None:
 
 
 @pytest.mark.req("EF-INT-005")
+def test_the_previous_secret_leaves_the_sealed_document_once_expired(settings: Settings) -> None:
+    with webhook_env(settings) as env:
+        sub, first = env.subscribe()
+        with write_transaction(env.engine) as connection:
+            _, second = env.store.rotate(connection, sub.id, now=env.clock.now())
+        env.clock.advance(hours=25)  # past the 24 h window: the next delivery sees it closed
+
+        env.publish()
+        env.outbox().enqueue()
+        assert env.deliverer().run_once().delivered == 1
+        [request] = env.recorder.requests
+        _stamp, signatures = _signatures(request)
+        assert signatures == [sign_body(second, int(_stamp), request.content)]
+        # the sealed document no longer carries the previous secret (M6 L23a review)
+        with env.engine.connect() as connection:
+            document = json.loads(env.vault.open_row(connection, "webhook_subscription", sub.id))
+        assert document == {"url": HOOK, "secret": second}
+        assert first not in json.dumps(document)
+        # a later delivery changes nothing: the document is already the plain pair
+        env.publish("unit.stored", {"count": 5})
+        env.outbox().enqueue()
+        assert env.deliverer().run_once().delivered == 1
+        with env.engine.connect() as connection:
+            again = json.loads(env.vault.open_row(connection, "webhook_subscription", sub.id))
+        assert again == document
+
+
+@pytest.mark.req("EF-INT-005")
 def test_a_subscription_that_was_never_rotated_signs_once(settings: Settings) -> None:
     with webhook_env(settings) as env:
         env.subscribe()
@@ -137,7 +176,7 @@ def test_webhook_dead_event_emitted_once(settings: Settings) -> None:
 
 
 @pytest.mark.req("EF-INT-005")
-def test_webhook_dead_event_when_the_event_is_gone(settings: Settings) -> None:
+def test_webhook_dead_event_when_the_creator_is_no_longer_an_admin(settings: Settings) -> None:
     with webhook_env(settings) as env:
         sub, _ = env.subscribe()
         event_id = env.publish()
@@ -152,9 +191,36 @@ def test_webhook_dead_event_when_the_event_is_gone(settings: Settings) -> None:
         assert report.dead == 1
         dead = env.events("webhook.dead")
         assert len(dead) == 1
-        assert dead[0]["payload"]["reason"] == "event_gone"
-        assert dead[0]["payload"]["subscription_id"] == sub.id
-        assert dead[0]["payload"]["event_id"] == event_id
+        # a reason of its own (M6 L23a review), not the one of an event that vanished
+        assert dead[0]["payload"] == {
+            "subscription_id": sub.id,
+            "event_id": event_id,
+            "reason": "not_theirs",
+        }
+
+
+@pytest.mark.req("EF-INT-005")
+def test_webhook_dead_event_when_the_event_is_no_longer_exposed(settings: Settings) -> None:
+    exposed = Catalogue([EventSpec(type="unit.stored", current=1, render={1: pick("count")})])
+    with webhook_env(settings, catalogue=exposed) as env:
+        sub, _ = env.subscribe()
+        event_id = env.publish()
+        env.outbox().enqueue()
+        bus = EventBus(env.clock)
+        # the delivery reads through a catalogue that no longer exposes the type: the event is
+        # there, but there is no shape left to send it in
+        report = Deliverer(
+            env.engine, env.vault, env.clock, env.resolver,
+            transport=env.recorder.transport, catalogue=Catalogue([]), publisher=bus,
+        ).run_once()  # fmt: skip
+        assert report.dead == 1
+        dead = env.events("webhook.dead")
+        assert len(dead) == 1
+        assert dead[0]["payload"] == {
+            "subscription_id": sub.id,
+            "event_id": event_id,
+            "reason": "event_gone",
+        }
 
 
 # -- the route: a reserved action, the secret shown once -----------------------------------------

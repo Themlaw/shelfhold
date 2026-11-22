@@ -9,10 +9,12 @@ exact `host:port` with the addresses it had then, and nothing else.
 The body is signed as `HMAC-SHA256(secret, "<t>." + body)` and sent as
 `X-Shelfhold-Signature: t=<unix seconds>,v1=<hex>`; the receiver rejects a stale `t`. For 24 h
 after a rotation, a second `v1=` made with the previous secret travels beside the new one, so a
-receiver that moves over loses no event (M6 L23a). The secret is
+receiver that moves over loses no event (M6 L23a); the first delivery that sees the window closed
+drops that secret from the sealed document. The secret is
 opened for the call and never logged. A failure is a closed code and a count in the log, never the
 address or the body. A delivery that is given up is settled as dead and announced once by the
-`webhook.dead` event, written in the same transaction.
+`webhook.dead` event, written in the same transaction — unless the delivery was itself of a
+`webhook.dead`, which announces nothing (M6 L23a review).
 """
 
 from __future__ import annotations
@@ -24,13 +26,12 @@ import ipaddress
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any, Final
 
 import structlog
 from sqlalchemy import Engine
 
-from shelfhold.events.integration_feed import read_one
+from shelfhold.events.integration_feed import gone_reason, read_one
 from shelfhold.events.upcast import Upcaster
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import read_transaction
@@ -54,6 +55,7 @@ from shelfhold.integrations.webhooks.outbox import (
     Outbox,
 )
 from shelfhold.integrations.webhooks.subscriptions import (
+    ROTATION_WINDOW,
     Opened,
     SubscriptionStore,
     SubscriptionUnreadable,
@@ -72,9 +74,8 @@ __all__ = [
 log = structlog.get_logger(__name__)
 
 SIGNATURE_HEADER: Final = "X-Shelfhold-Signature"
-# After a rotation (M6 L23a), the previous secret signs beside the new one for this long, so a
-# receiver that moves over loses no event; after the window it signs nothing.
-ROTATION_WINDOW: Final = timedelta(hours=24)
+# The rotation window itself lives in `subscriptions`: the store needs it to drop the previous
+# secret from the sealed document once it has expired (M6 L23a review).
 LIMITS: Final = FetchLimits(
     max_bytes=64 * 1024, total_timeout=20.0, connect_timeout=5.0, read_timeout=10.0,
     max_redirects=0,  # a redirection is never followed
@@ -142,6 +143,13 @@ class Deliverer:
                     connection, row.event_id, as_user=opened.subscription.created_by,
                     steps=self._steps, require_admin=True,
                 )  # fmt: skip
+                # why nothing would be left to send, asked while the connection is open (M6 L23a
+                # review): the profile that made the subscription, or the event itself
+                gone = (
+                    None
+                    if event is not None
+                    else gone_reason(connection, as_user=opened.subscription.created_by)
+                )
         except SubscriptionUnreadable:  # the sealed document: each try counts, up to the ceiling
             log.warning("webhook.subscription_unreadable")
             self._retry(row, report, status=None, error="subscription_unreadable")
@@ -150,14 +158,17 @@ class Deliverer:
             log.warning("webhook.subscription_unreadable")
             self._outbox.release(row)  # the attempt is not counted: a long outage kills nothing
             return
+        self._drop_expired_previous(opened, row.subscription_id)
         data = (
             None if event is None
             else self._catalogue.render(event.type, row.schema_version, event.payload)
         )  # fmt: skip
         if (
             event is None or data is None
-        ):  # purged, or no longer theirs to send: nothing to wait for
-            self._outbox.failed(row, status=None, error="event_gone", final=True)
+        ):  # purged, no longer theirs, or no longer exposed: nothing to wait for
+            self._outbox.failed(
+                row, status=None, error=gone or "event_gone", final=True, reason=gone
+            )  # fmt: skip
             report.dead += 1
             return
         body = json.dumps(
@@ -196,6 +207,20 @@ class Deliverer:
             report.delivered += 1
         else:
             self._retry(row, report, status=response.status, error="http_status")
+
+    def _drop_expired_previous(self, opened: Opened, subscription_id: str) -> None:
+        """The previous secret leaves the sealed document at the first delivery that sees its
+        window closed (M6 L23a review): it signs nothing any more, and the document stops
+        carrying it."""
+        rotated_at = opened.subscription.rotated_at
+        if opened.secret_prev is None or rotated_at is None:
+            return
+        if self._clock.now() < rotated_at + ROTATION_WINDOW:
+            return
+        try:
+            self._store.drop_expired_previous(self._engine, subscription_id, now=self._clock.now())
+        except SubscriptionUnreadable:  # it will be counted at the next opening, not here
+            log.warning("webhook.subscription_unreadable")
 
     def _signatures(self, opened: Opened, stamp: int, body: bytes) -> list[str]:
         """The `v1` values of this delivery: the current secret, and the previous one while the

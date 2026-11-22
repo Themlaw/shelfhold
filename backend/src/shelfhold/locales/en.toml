@@ -3098,4 +3098,4 @@
   [errors."webhook.dead"]
     title = "A webhook gave up a delivery."
     action = "Open the list of webhooks, check the address that does not answer, then rotate the secret or remove the subscription."
-    cause = "A delivery ran out of attempts (or its event was gone): the receiver did not answer, or refused the delivery."
+    cause = "A delivery ran out of attempts, its event was gone, or the profile that had made the subscription is no longer an administrator: the receiver did not answer, or refused the delivery."

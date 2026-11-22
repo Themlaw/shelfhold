@@ -20,10 +20,11 @@ from datetime import datetime, timedelta
 from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy import Connection, Engine
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from shelfhold.events.integration_feed import read_after
+from shelfhold.events.integration_feed import read_after, read_type
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.ids import new_ulid
@@ -52,6 +53,8 @@ RELEASE_DELAY: Final = 300  # seconds before a row we could not even open is tri
 _READ: Final = 200
 _outbox = schema.webhook_outbox
 _subscription = schema.webhook_subscription
+
+log = structlog.get_logger(__name__)
 
 
 def retry_delay(attempts: int) -> timedelta:
@@ -201,12 +204,15 @@ class Outbox:
                      delivered_at=self._clock.now())  # fmt: skip
 
     def failed(
-        self, row: Due, *, status: int | None, error: str | None, final: bool = False
-    ) -> bool:
+        self, row: Due, *, status: int | None, error: str | None, final: bool = False,
+        reason: str | None = None,
+    ) -> bool:  # fmt: skip
         """Record a failed attempt: due again after the delay, or dead after the last one (or at
-        once when `final`). True when the row is dead."""
+        once when `final`). True when the row is dead. `reason` names the announcement of the
+        death (`event_gone`, `not_theirs`); without one it is `retries_exhausted`, or
+        `event_gone` for a final failure."""
         if final or row.attempts >= MAX_ATTEMPTS:
-            self._die(row, status=status, error=error, final=final)
+            self._die(row, status=status, error=error, final=final, reason=reason)
             return True
         retry_at = self._clock.now() + retry_delay(row.attempts)
         self._settle(
@@ -214,11 +220,17 @@ class Outbox:
         )
         return False
 
-    def _die(self, row: Due, *, status: int | None, error: str | None, final: bool) -> None:
+    def _die(
+        self, row: Due, *, status: int | None, error: str | None, final: bool,
+        reason: str | None = None,
+    ) -> None:  # fmt: skip
         """Settle the row as dead and announce it once (M6 L23a): the `webhook.dead` event is
         written in the same transaction, and only by the attempt that holds the claim — a slow
-        copy that comes back after the lease changed nothing and announces nothing."""
-        reason = "event_gone" if final else "retries_exhausted"
+        copy that comes back after the lease changed nothing and announces nothing.
+
+        A dead delivery of a `webhook.dead` announces nothing (M6 L23a review): the announcement
+        would be enqueued to the same broken receiver, die there, and announce again — a loop
+        that doubles with every turn. The row is settled either way."""
         with write_transaction(self._engine) as connection:
             settled = connection.execute(
                 sa.update(_outbox)
@@ -229,12 +241,16 @@ class Outbox:
                 )
                 .values(status="dead", last_status=status, last_error=error)
             )
-            if settled.rowcount == 1 and self._publisher is not None:
-                self._publisher.publish(
-                    connection, "webhook.dead",
-                    {"subscription_id": row.subscription_id, "event_id": row.event_id,
-                     "reason": reason},
-                )  # fmt: skip
+            if settled.rowcount != 1 or self._publisher is None:
+                return
+            if read_type(connection, row.event_id) == "webhook.dead":
+                log.info("webhook.dead_unannounced", event_id=row.event_id)
+                return
+            self._publisher.publish(
+                connection, "webhook.dead",
+                {"subscription_id": row.subscription_id, "event_id": row.event_id,
+                 "reason": reason or ("event_gone" if final else "retries_exhausted")},
+            )  # fmt: skip
 
     def release(self, row: Due) -> None:
         """Give the claim back without counting the attempt: what failed was ours (the database,

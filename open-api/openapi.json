@@ -35958,7 +35958,7 @@
         "X-Shelfhold-Delivery": "identity of the delivery, the same at every retry: drop a second copy",
         "X-Shelfhold-Event": "the event type",
         "X-Shelfhold-Schema-Version": "the version of the shape of `data`",
-        "X-Shelfhold-Signature": "t=<unix seconds>,v1=<hex HMAC-SHA256 of '<t>.' followed by the exact body, keyed by the secret given once at registration>; for 24 h after a rotation, a second v1= made with the previous secret travels beside the new one"
+        "X-Shelfhold-Signature": "t=<unix seconds>,v1=<hex HMAC-SHA256 of '<t>.' followed by the exact body, keyed by the secret given once at registration or rotation>; for 24 h after a rotation a second v1= made with the previous secret travels beside the new one: accept the delivery when any one v1 matches, comparing in constant time (the header is a list of key=value pairs, not a dictionary)"
       },
       "method": "POST",
       "retries": "8 attempts, the delay doubling from 30 s up to 6 h; a 2xx answer settles it; a redirection is not followed"

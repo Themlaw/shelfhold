@@ -28,7 +28,15 @@ from shelfhold.events.upcast import UnreadableVersionError, Upcaster, upcast_pay
 from shelfhold.identity.public import INTEGRATION_ROLE, reader_scope
 from shelfhold.infrastructure.schema import identity, platform
 
-__all__ = ["RETAINED_VERSIONS", "FeedEvent", "last_event_id", "read_after", "read_one"]
+__all__ = [
+    "RETAINED_VERSIONS",
+    "FeedEvent",
+    "gone_reason",
+    "last_event_id",
+    "read_after",
+    "read_one",
+    "read_type",
+]
 
 log = structlog.get_logger(__name__)
 
@@ -105,6 +113,22 @@ def _is_admin(connection: Connection, user_id: str | None) -> bool:
         sa.select(identity.user.c.role).where(identity.user.c.id == user_id)
     ).scalar()
     return role == "admin"
+
+
+def read_type(connection: Connection, event_id: int) -> str | None:
+    """The type of one stored event, by its id; None when the row is gone. The outbox asks this
+    before announcing a dead delivery (M6 L23a review): an announcement of an abandoned
+    `webhook.dead` would feed the very loop it reports."""
+    return connection.execute(
+        sa.select(platform.event.c.type).where(platform.event.c.id == event_id)
+    ).scalar()
+
+
+def gone_reason(connection: Connection, *, as_user: str | None) -> str:
+    """Why a delivery has nothing left to send, asked while the event is being read (M6 L23a
+    review): `not_theirs` when the profile that made the subscription is no longer an
+    administrator, `event_gone` when the event itself is no longer there to send."""
+    return "event_gone" if _is_admin(connection, as_user) else "not_theirs"
 
 
 def read_one(

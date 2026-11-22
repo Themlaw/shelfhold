@@ -2,7 +2,8 @@
 
 Un webhook envoie les événements d'exploitation de Shelfhold (un chapitre rangé, un disque presque plein, une sauvegarde en échec…)
 à une adresse de votre choix, pour les brancher à un autre outil. Tout se fait par l'API, en tant qu'administrateur :
-`POST /api/v1/webhooks`, `GET /api/v1/webhooks`, `GET /api/v1/webhooks/{id}`, `DELETE /api/v1/webhooks/{id}`.
+`POST /api/v1/webhooks`, `GET /api/v1/webhooks`, `GET /api/v1/webhooks/{id}`, `POST /api/v1/webhooks/{id}/rotate`,
+`DELETE /api/v1/webhooks/{id}`.
 
 ## Qui peut en faire
 
@@ -26,11 +27,20 @@ Un webhook envoie les événements d'exploitation de Shelfhold (un chapitre rang
 
 ## Le secret et la signature
 
-Le secret est donné **une seule fois**, dans la réponse à la création. Il est scellé dans la base (avec l'adresse), n'apparaît
-dans aucune autre réponse ni dans aucun journal. Si vous le perdez, supprimez le webhook et refaites-en un.
+Le secret est donné **une seule fois**, dans la réponse à la création — et dans celle d'une rotation. Il est scellé dans la base
+(avec l'adresse), n'apparaît dans aucune autre réponse ni dans aucun journal.
+
+**La rotation** : `POST /api/v1/webhooks/{id}/rotate`, la même action réservée que la création (`webhook.manage` : une session
+d'administrateur récente, jamais une clé d'API). Le nouveau secret est montré une seule fois, dans la réponse à la rotation ;
+l'ancien continue de signer à côté du nouveau pendant **24 heures**, puis ne signe plus rien et disparaît du scellé. Tourner
+deux fois en moins de 24 h ne garde qu'un ancien secret : l'avant-dernier est perdu, et un récepteur qui n'a pas basculé après
+deux rotations rapprochées perd la continuité — la fenêtre est pensée pour une bascule, pas pour un cadencement.
 
 Chaque envoi est un `POST` JSON signé : `X-Shelfhold-Signature: t=<secondes unix>,v1=<HMAC-SHA256 hexadécimal>`, où la valeur
-signée est `"<t>."` suivi des octets exacts du corps, avec le secret pour clé. Refusez un `t` trop ancien (cinq minutes) pour
+signée est `"<t>."` suivi des octets exacts du corps, avec le secret pour clé. Pendant les 24 heures qui suivent une rotation,
+l'en-tête porte **deux** valeurs `v1=` (le secret courant d'abord, puis l'ancien) : acceptez l'envoi si **l'une** des `v1`
+correspond, en comparant en temps constant. Ne lisez pas l'en-tête comme un dictionnaire : c'est une liste de paires
+`clé=valeur`, où une seconde clé `v1` n'écrase rien — parcourez-la. Refusez un `t` trop ancien (cinq minutes) pour
 vous protéger du rejeu. Les autres en-têtes : `X-Shelfhold-Event` (le type), `X-Shelfhold-Delivery` (l'identité de l'envoi,
 **la même à chaque reprise** : ignorez une seconde copie), `X-Shelfhold-Schema-Version`.
 
@@ -41,7 +51,11 @@ montre au rôle « intégration » : aucun événement privé n'en part.
 ## Reprises
 
 Les envois en attente sont des lignes de la base : un arrêt brutal du serveur n'en perd aucun. Un envoi manqué est repris au
-bout de 30 s, puis 60 s, 120 s… (jusqu'à 6 h), huit fois au plus ; passé cela il est abandonné. Une réponse 2xx règle l'envoi.
+bout de 30 s, puis 60 s, 120 s… (jusqu'à 6 h), huit fois au plus ; passé cela il est abandonné, et l'événement `webhook.dead`
+le dit (abonnable comme les autres, notifié comme les autres pannes d'exploitation) : il nomme l'abonnement, l'événement et la
+raison — `retries_exhausted`, `event_gone` (l'événement n'est plus là à envoyer) ou `not_theirs` (le profil qui avait créé
+l'abonnement n'est plus administrateur). Une livraison abandonnée d'un `webhook.dead` n'annonce rien à son tour : la boucle
+s'arrête. Une réponse 2xx règle l'envoi.
 
 Si l'adresse scellée d'un webhook ne peut plus être ouverte (une clé retirée, une ligne modifiée), chaque tentative compte et l'envoi
 s'arrête au plafond comme les autres ; la page Santé l'indique (`webhook.secret_unreadable`) avec la marche à suivre : supprimer

@@ -15,7 +15,7 @@ import json
 import secrets
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Final
 from urllib.parse import urlsplit
 
@@ -23,7 +23,7 @@ import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
 
 from shelfhold.events.integration_feed import last_event_id
-from shelfhold.infrastructure.db import read_transaction
+from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.fetcher import (
     GuardedFetcher,
     InvalidLanTarget,
@@ -41,6 +41,7 @@ from shelfhold.integrations.webhooks.catalogue import WEBHOOK_EVENTS, Catalogue
 __all__ = [
     "MAX_EVENT_TYPES",
     "MAX_URL_LENGTH",
+    "ROTATION_WINDOW",
     "Opened",
     "Subscription",
     "SubscriptionStore",
@@ -53,6 +54,10 @@ __all__ = [
 
 MAX_URL_LENGTH: Final = 2000
 MAX_EVENT_TYPES: Final = 64
+# After a rotation (M6 L23a), the previous secret signs beside the new one for this long, so a
+# receiver that moves over loses no event; after the window it signs nothing, and the first
+# delivery that sees the window closed drops it from the sealed document (M6 L23a review).
+ROTATION_WINDOW: Final = timedelta(hours=24)
 _TABLE: Final = "webhook_subscription"
 _table = schema.webhook_subscription
 
@@ -264,6 +269,30 @@ class SubscriptionStore:
             sa.update(_table).where(_table.c.id == subscription_id).values(rotated_at=now)
         )
         return self.get(connection, subscription_id) or _gone(), new_secret
+
+    def drop_expired_previous(self, engine: Engine, subscription_id: str, *, now: datetime) -> bool:
+        """Erase the previous secret from the sealed document once its window is closed (M6 L23a
+        review): it signs nothing any more, and the document stops carrying it. True when the
+        document was rewritten. The document is read again inside the transaction, so a rotation
+        that came first is left alone, and a document already rewritten changes nothing."""
+        with write_transaction(engine) as connection:
+            row = connection.execute(
+                sa.select(_table.c.rotated_at).where(_table.c.id == subscription_id)
+            ).first()  # fmt: skip
+            if row is None or row.rotated_at is None or now < row.rotated_at + ROTATION_WINDOW:
+                return False
+            try:
+                document = json.loads(self._vault.open_row(connection, _TABLE, subscription_id))
+                url, secret = str(document["url"]), str(document["secret"])
+            except Exception:  # the envelope, the key, the document: nothing of it is quoted
+                raise SubscriptionUnreadable from None
+            if not document.get("secret_prev"):
+                return False
+            self._vault.seal_row(
+                connection, _TABLE, subscription_id,
+                json.dumps({"url": url, "secret": secret}).encode(),
+            )  # fmt: skip
+            return True
 
     def open(self, engine: Engine | Connection, subscription_id: str) -> Opened:
         """The address and the secrets, for a delivery (the envelope is bound to the row)."""
