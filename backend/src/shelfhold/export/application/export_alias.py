@@ -22,8 +22,8 @@ committed together, or neither.
   them, one contract: `complete_hashes`, for the one file a caller just placed (a lazy read of
   the kosync relay), and `complete_hashes_of_destination`, for the aliases of one destination
   that are still empty — the ones a plan's own operations did not get to fill, then, for what a
-  stopped plan left behind, the sweep of the window and of a run with nothing to write. Both are
-  bounded to the destination's aliases and read only their own records.
+  stopped plan left behind, the sweep of the maintenance window. Both are bounded to the
+  destination's aliases and read only their own records.
 """
 
 import os
@@ -131,8 +131,9 @@ def complete_hashes_of_destination(
     aliases filled.
 
     Two callers: the operation itself, right after the file is placed (an alias left empty
-    until then is filled before the next operation begins), and the sweep — a run with nothing
-    to write, the maintenance window — for the aliases a stopped plan left behind."""
+    until then is filled before the next operation begins), and the sweep of the maintenance
+    window, for the aliases a stopped plan left behind — a run with nothing to write reads no
+    disk and sweeps nothing (ENF-OPS-014, EF-EXP-029)."""
     alias, record = export.document_alias, export.export_record
     empty = sa.or_(alias.c.koreader_partial_md5.is_(None), alias.c.kavita_md5.is_(None))
     try:

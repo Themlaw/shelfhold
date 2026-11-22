@@ -58,7 +58,7 @@ from shelfhold.export.application.intents import (
     OpenIntent,
     open_intent_paths,
 )
-from shelfhold.export.application.locks import ResourceLocks
+from shelfhold.export.application.locks import HeldLocks, ResourceLocks
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.rendering import CbzRenderer, comicinfo_data
 from shelfhold.export.application.snapshot import (
@@ -230,8 +230,8 @@ class VolumeAssembly:
         with self._locks.hold(
             request.job_id or new_ulid(), work=work_id,
             series=f"{ctx.destination_id}/{folder}", timeout=30.0,
-        ):  # fmt: skip
-            return self._assemble_held(ctx, olds, edition_id, request.volume, frozen, rel)
+        ) as held:  # fmt: skip
+            return self._assemble_held(ctx, olds, edition_id, request.volume, frozen, rel, held)
 
     def settle_hook(self) -> ManifestHook:
         """For `IntentJournal.resolve_open(on_done=...)` at boot: the bookkeeping of an `assemble`
@@ -344,6 +344,7 @@ class VolumeAssembly:
         volume: str,
         frozen: FrozenAttrs,
         rel: str,
+        held: HeldLocks | None = None,
     ) -> AssemblyResult:
         target = ctx.local(rel)
         if self._name_taken(ctx, rel, target):
@@ -376,7 +377,7 @@ class VolumeAssembly:
             log.warning("assembly.source_unreadable", error=type(error).__name__)
             return AssemblyResult(AssemblyOutcome.SOURCE_UNREADABLE)
         try:
-            return self._write(ctx, olds, edition_id, volume, frozen, rel, spans, rendered)
+            return self._write(ctx, olds, edition_id, volume, frozen, rel, spans, rendered, held)
         finally:
             rendered.file.close()
 
@@ -423,6 +424,7 @@ class VolumeAssembly:
         rel: str,
         spans: Sequence[ChapterSpan],
         rendered: Any,
+        held: HeldLocks | None = None,
     ) -> AssemblyResult:
         target = ctx.local(rel)
         new_item_id = new_ulid()
@@ -466,17 +468,18 @@ class VolumeAssembly:
                 connection, intent, {**payload, "kind": PAYLOAD_KIND}
             )
             self._journal.mark_done(intent, within=connection)
-        self._after(ctx, rel)
+        self._after(ctx, rel, held)
         self._bus.deliver(events)
         log.info("assembly.done", chapters=len(olds), volume=volume)
         return AssemblyResult(AssemblyOutcome.ASSEMBLED, new_item_id, assembly_id)
 
-    def _after(self, ctx: DestinationContext, rel: str) -> None:
+    def _after(self, ctx: DestinationContext, rel: str, held: HeldLocks | None = None) -> None:
         """The provenance mirror of the folder, then Kavita is asked to look at it again; the
-        files are placed and committed, so a failure here is healed by the next run."""
+        files are placed and committed, so a failure here is healed by the next run. The lock
+        of the folder is ours (`held`): the mirror writes through it, without waiting for it."""
         folder = rel.split("/", 1)[0]
         try:
-            self._mirror.sync_destination(ctx.destination_id, folder=folder)
+            self._mirror.sync_destination(ctx.destination_id, folder=folder, held=held)
         except Exception:
             log.warning("mirror_write_failed", destination=ctx.destination_id)
         if self._request_scan is not None:

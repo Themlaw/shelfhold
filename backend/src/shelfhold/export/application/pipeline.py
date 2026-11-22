@@ -27,7 +27,7 @@ from shelfhold.export.application import blocked_memo, fan_out, waiting_marks
 from shelfhold.export.application.export_alias import complete_hashes_of_destination
 from shelfhold.export.application.export_items import create_export_item, ensure_export_series
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
-from shelfhold.export.application.locks import ResourceLocks, library_resource
+from shelfhold.export.application.locks import HeldLocks, ResourceLocks, library_resource
 from shelfhold.export.application.manifest_write import complete_write
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.naming_preview import NAMING_BLOCKS, NamingItem
@@ -711,10 +711,7 @@ class ExportPipeline:
         _ctx, wanted, first = self._compute(destination_id, disk=False)
         if not first.ops:
             log.debug("export.nothing_to_write", destination_id=destination_id)
-            # L47: the sweep — a plan stopped before its `finally` leaves aliases without
-            # hashes, and this run has nothing else to do: fill them here, once, bounded
-            self._complete_alias_hashes(_ctx)
-            return ApplyReport(None, ())
+            return ApplyReport(None, ())  # no disk read (ENF-OPS-014): the window sweeps aliases
         if blocked_memo.known(self._engine, destination_id, wanted.version):
             log.debug("export.blocked_memo", destination_id=destination_id)
             return ApplyReport(None, ())  # the disk said "taken" for these inputs: ask no more
@@ -815,10 +812,11 @@ class ExportPipeline:
 
     def _complete_alias_hashes(self, ctx: DestinationContext) -> None:
         """L47 after an operation: the aliases of the destination that are still empty — the
-        file the operation just placed and committed, and anything a stopped run left behind —
-        filled in one bounded pass (`complete_hashes_of_destination`), right here and never
-        inside a transaction. Best effort: a failure leaves the aliases without hashes, and the
-        sweep of the next run with nothing to write, or of the maintenance window, fills them."""
+        file the operation just placed and committed, and what the operations before it did not
+        get to fill — filled in one bounded pass (`complete_hashes_of_destination`), right here
+        and never inside a transaction. Best effort: a failure leaves the aliases without
+        hashes, and the sweep of the maintenance window (`heal_mirror`) fills them — a run with
+        nothing to write reads no disk and sweeps nothing (ENF-OPS-014)."""
         if ctx.root_local is None:
             return  # no folder on this machine: no file to read, no alias to fill
         try:
@@ -1020,7 +1018,7 @@ class ExportPipeline:
                 if planned.kind == "register":
                     self._register(ctx, planned)
                     return None
-                if not self._write(ctx, planned, plan_id, held.ensure):
+                if not self._write(ctx, planned, plan_id, held):
                     return REFUSED  # a volume the last look left as it was: nothing written
             except SeriesAgeGateClosedError:
                 log.warning("export.series_age_unverified", edition_id=planned.series.edition_id)
@@ -1117,18 +1115,18 @@ class ExportPipeline:
         return source, served is not None
 
     def _write(
-        self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, guard: Callable[[], None]
+        self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, held: HeldLocks
     ) -> bool:
         """Write one operation; False when a last look left the destination as it was (only a
         volume does: the file kept is refused, or the policy keeps what is served)."""
         if planned.rel_path is None:
             raise ValueError("a write operation has a path")
         if planned.unit_id is None:
-            return self._write_volume(ctx, planned, plan_id, guard)
+            return self._write_volume(ctx, planned, plan_id, held)
         source, is_epub = self._source_of(planned.unit_id)
         series_name = str(planned.frozen["series"])
         if is_epub:
-            self._write_epub(ctx, planned, plan_id, source, guard)
+            self._write_epub(ctx, planned, plan_id, source, held)
             return True
         with self._engine.connect() as connection:
             xml = comicinfo_xml(connection, planned.unit_id, series_name)
@@ -1154,7 +1152,7 @@ class ExportPipeline:
             if rendered.content_hash != planned.content_hash:
                 raise SourceMissingError(f"{planned.unit_id}: the archive changed since the plan")
             self._place(
-                ctx, planned, plan_id, source, rendered, guard, self._reserved(planned, rendered)
+                ctx, planned, plan_id, source, rendered, held, self._reserved(planned, rendered)
             )
         finally:
             rendered.file.close()
@@ -1169,7 +1167,7 @@ class ExportPipeline:
         log.warning("export.pages_not_normalized", unit_id=unit_id, code=code)
 
     def _write_volume(
-        self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, guard: Callable[[], None]
+        self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, held: HeldLocks
     ) -> bool:
         """A volume (an EPUB of a range) through `RangedExporter`, which decides again, from the
         database and the file kept, what the plan only forecast: the policy, the coverage of the
@@ -1195,7 +1193,7 @@ class ExportPipeline:
             rendered = self._render_volume(prepared, planned)
             try:
                 self._place(
-                    ctx, planned, plan_id, None, rendered, guard,
+                    ctx, planned, plan_id, None, rendered, held,
                     self._reserved_volume(planned, prepared, rendered),
                 )  # fmt: skip
             finally:
@@ -1210,7 +1208,7 @@ class ExportPipeline:
                 return
             rendered = self._render_volume(prepared, planned)
             try:
-                result = self._replace_volume(ctx, planned, prepared, rendered, guard)
+                result = self._replace_volume(ctx, planned, prepared, rendered, held)
             finally:
                 rendered.file.close()
             if result is UpgradeOutcome.UPGRADED:
@@ -1256,11 +1254,13 @@ class ExportPipeline:
 
     def _replace_volume(
         self, ctx: DestinationContext, planned: PlannedOp, prepared: PreparedRange,
-        rendered: RenderedEpub, guard: Callable[[], None],
+        rendered: RenderedEpub, held: HeldLocks,
     ) -> UpgradeOutcome:  # fmt: skip
         target = ctx.local(str(planned.rel_path))
         opened = (
-            self._sessions.open(target, guard=guard) if self._sessions else nullcontext(self._fsops)
+            self._sessions.open(target, guard=held.ensure)
+            if self._sessions
+            else nullcontext(self._fsops)
         )
         with opened as writer:
             upgrade = SamePathUpgrade(
@@ -1272,6 +1272,7 @@ class ExportPipeline:
                 file_hash=rendered.file_hash,
                 content_hash=prepared.payload_hash or prepared.source_hash,
                 source_hash=prepared.source_hash, spine_count=prepared.spine_count,
+                held=held,
             )  # fmt: skip
         return result.outcome
 
@@ -1297,7 +1298,7 @@ class ExportPipeline:
 
     def _write_epub(
         self, ctx: DestinationContext, planned: PlannedOp, plan_id: str, source: ExportSource,
-        guard: Callable[[], None],
+        held: HeldLocks,
     ) -> None:  # fmt: skip
         """The passthrough of L08: the OPF edited (no age, D1), every other entry byte for byte;
         the original OPF kept in /data/meta once the file is placed (EF-BIB-048)."""
@@ -1310,7 +1311,7 @@ class ExportPipeline:
         rendered = self._epub_renderer.render(str(source.local_path), edit)
         try:
             self._place(
-                ctx, planned, plan_id, source, rendered, guard,
+                ctx, planned, plan_id, source, rendered, held,
                 self._reserved_epub(planned, source, rendered),
             )  # fmt: skip
         finally:
@@ -1390,7 +1391,7 @@ class ExportPipeline:
         plan_id: str,
         source: ExportSource | None,
         rendered: RenderedCbz | RenderedEpub,
-        guard: Callable[[], None],
+        held: HeldLocks,
         reserved: dict[str, Any],
     ) -> None:
         """02 section 5: the series and the manifest line are reserved and the intent committed
@@ -1411,7 +1412,9 @@ class ExportPipeline:
         )
         journal.mark_applying(intent)
         opened = (
-            self._sessions.open(target, guard=guard) if self._sessions else nullcontext(self._fsops)
+            self._sessions.open(target, guard=held.ensure)
+            if self._sessions
+            else nullcontext(self._fsops)
         )
         try:
             with opened as writer:

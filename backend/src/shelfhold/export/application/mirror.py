@@ -31,7 +31,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import IntentJournal
-from shelfhold.export.application.locks import ResourceLocks, path_resource
+from shelfhold.export.application.locks import HeldLocks, ResourceLocks, path_resource
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.path_map import clean_absolute, within
 from shelfhold.export.domain.provenance_mirror import (
@@ -82,14 +82,25 @@ class ProvenanceMirror:
     # -- the public moves ------------------------------------------------------------------------
 
     def sync_destination(
-        self, destination_id: str, *, folder: str | None = None, writer: MirrorWriter | None = None
+        self,
+        destination_id: str,
+        *,
+        folder: str | None = None,
+        writer: MirrorWriter | None = None,
+        held: HeldLocks | None = None,
     ) -> list[str]:
         """Bring the mirror files of the destination in line with the database; `folder` limits
         the work to the series folder just written. Returns the files actually rewritten.
 
         The first pass is cheap — which series hold a line, and in which folder — because the
         projection itself is made in `_put`, under the folder's `path` lock, from the database
-        as it stands there and then: never from a projection made before the lock was taken."""
+        as it stands there and then: never from a projection made before the lock was taken.
+
+        `held` is for the caller that already holds that very lock under its own job (the
+        same-path upgrade, the volume assembly — `_put` would wait for a lock their own caller
+        holds): the files of `folder` are written through it, with its guard, without asking
+        for it again. Every other caller leaves `held` alone and gets the lock here, one file
+        at a time; nobody writes a mirror file without a lock held."""
         with self._engine.connect() as connection:
             ctx = load_context(connection, destination_id)
             root = self._writable_root(connection, ctx)
@@ -100,7 +111,7 @@ class ProvenanceMirror:
         for series_id, series_folder in candidates:
             name = mirror_name(destination_id, series_id)
             try:
-                target = self._put(ctx, root, name, series_folder, writer or self._fsops)
+                target = self._put(ctx, root, name, series_folder, writer or self._fsops, held)
             except PathEscapeError:  # a link where the file or its folder should be
                 self._skip(name, "symlink")
                 continue
@@ -209,6 +220,7 @@ class ProvenanceMirror:
         name: str,
         folder: str,
         writer: MirrorWriter,
+        held: HeldLocks | None = None,
     ) -> str | None:
         """The one writer of one mirror file: the folder's `path` lock, then the projection made
         again **under that lock**, then — only if the file is behind — the intent (`write`), the
@@ -219,42 +231,55 @@ class ProvenanceMirror:
         the lock — and the projection made here no longer holds the erased line — or it runs
         after the write, and its own cleaning drops the line. No projection made before the
         lock is ever written. A folder held longer than the wait leaves the file to the next
-        run or the maintenance window; a file up to date writes nothing."""
-        destination_id, _, series_file = name.partition("/")
-        series_id = series_file.removesuffix(".jsonl")
-        resource = path_resource(f"{destination_id}/{folder}")
-        with self._locks.hold_resources(new_ulid(), [resource], timeout=MIRROR_LOCK_WAIT_S) as held:
-            held.ensure()
-            with self._engine.connect() as connection:
-                groups = self._project(connection, ctx, None, series_id=series_id)
-            group = groups.get(series_id)
-            if group is None:
-                return None  # erased since the candidates were read: the purge owns the file
-            try:
-                raw = self._fsops.read_mirror(root, name)
-            except PathEscapeError:
-                raise  # the caller reports a link and leaves the file alone
-            except Exception:  # a forged or damaged mirror never stops an export
-                self._skip(name, "unreadable")
-                return None
-            header, entries = group
-            data = self._merged(name, header, entries, raw)
-            if data is None or data == raw:
-                return None  # left alone: read only, or of a newer major, or already current
-            target = f"{root}/{MIRROR_DIR}/{name}"
-            journal = IntentJournal(self._engine, self._fsops, clock=self._clock)
-            intent = journal.record(
-                op="write", dst=target,
-                expected_sha256="sha256:" + hashlib.sha256(data).hexdigest(),
-            )  # fmt: skip
-            journal.mark_applying(intent)
-            try:
-                writer.write_mirror(root, name, data)
-            except Exception:
-                journal.cancel(intent)  # nothing was placed (the write is atomic)
-                raise
-            journal.mark_done(intent)
-            return target
+        run or the maintenance window; a file up to date writes nothing.
+
+        `held` is the reentrance: the caller already holds the lock of this very folder under
+        its own job (the same-path upgrade, the volume assembly) — its guard is checked, its
+        lock is not asked for again, and nothing is waited for."""
+        if held is not None:
+            held.ensure()  # the caller's lock, checked like every guard before a write
+            return self._write(ctx, root, name, folder, writer)
+        resource = path_resource(f"{ctx.destination_id}/{folder}")
+        with self._locks.hold_resources(new_ulid(), [resource], timeout=MIRROR_LOCK_WAIT_S) as own:
+            own.ensure()
+            return self._write(ctx, root, name, folder, writer)
+
+    def _write(
+        self, ctx: DestinationContext, root: str, name: str, folder: str, writer: MirrorWriter
+    ) -> str | None:
+        """The projection of one series file and, when the file is behind, its atomic write:
+        called under the folder's `path` lock, taken here or held by the caller."""
+        series_id = name.partition("/")[2].removesuffix(".jsonl")
+        with self._engine.connect() as connection:
+            groups = self._project(connection, ctx, None, series_id=series_id)
+        group = groups.get(series_id)
+        if group is None:
+            return None  # erased since the candidates were read: the purge owns the file
+        try:
+            raw = self._fsops.read_mirror(root, name)
+        except PathEscapeError:
+            raise  # the caller reports a link and leaves the file alone
+        except Exception:  # a forged or damaged mirror never stops an export
+            self._skip(name, "unreadable")
+            return None
+        header, entries = group
+        data = self._merged(name, header, entries, raw)
+        if data is None or data == raw:
+            return None  # left alone: read only, or of a newer major, or already current
+        target = f"{root}/{MIRROR_DIR}/{name}"
+        journal = IntentJournal(self._engine, self._fsops, clock=self._clock)
+        intent = journal.record(
+            op="write", dst=target,
+            expected_sha256="sha256:" + hashlib.sha256(data).hexdigest(),
+        )  # fmt: skip
+        journal.mark_applying(intent)
+        try:
+            writer.write_mirror(root, name, data)
+        except Exception:
+            journal.cancel(intent)  # nothing was placed (the write is atomic)
+            raise
+        journal.mark_done(intent)
+        return target
 
     @staticmethod
     def _candidates(
