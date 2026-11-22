@@ -15,11 +15,12 @@
   refuses any other page.
 * A `device` position never makes a Unit read by itself. When it completes a page-by-page
   traversal (`reading.domain.traversal`), the Units crossed are marked read in `read_units` of
-  that position: a journal (logged), that the member can undo (`undo_read_mark`).
+  that position: a journal (logged), that the member can undo (`undo_read_mark`) — the
+  administrator can undo the mark of a child profile, and nobody else's.
 """
 
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -29,9 +30,10 @@ import structlog
 
 from shelfhold.catalog.public import visible_edition_ids, visible_unit_ids
 from shelfhold.identity.public import reader_scope
+from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog as catalog_schema
-from shelfhold.infrastructure.schema import export, reading, storage
+from shelfhold.infrastructure.schema import export, identity, reading, storage
 from shelfhold.reading.domain.merge import bounded_ts
 from shelfhold.reading.domain.traversal import (
     DEFAULT_MAX_PAGES_PER_MINUTE,
@@ -53,14 +55,14 @@ VIA_DELIVERY = "delivery"
 
 __all__ = [
     "InvalidLocatorError",
-    "PositionRecord",
+    "ReadMark",
+    "ReadMarks",
     "UnitProgress",
     "UnknownCarrierError",
     "mark_traversed_in_frame",
     "normalise_locator",
-    "position_of",
     "progress_of",
-    "record_delivery",
+    "read_marks",
     "record_position",
     "undo_read_mark",
 ]
@@ -110,18 +112,6 @@ class UnitProgress:
     last_position_id: str  # the furthest position
     approximate: bool
     latest_position_id: str | None = None  # the last position written
-
-
-@dataclass(frozen=True)
-class PositionRecord:
-    id: str
-    carrier_type: str
-    carrier_id: str
-    content_hash: str
-    percent: float | None
-    client_ts: datetime
-    server_ts: datetime
-    device_id: str | None
 
 
 FULL_EXTENT = "full"  # `unit_coverage.extent` of a file that covers a Unit whole
@@ -536,26 +526,14 @@ def record_position(
     )  # fmt: skip
 
 
-def record_delivery(
-    connection: sa.Connection,
-    *,
-    user_id: str,
-    carrier_type: str,
-    carrier_id: str,
-    content_hash: str,
-    now: datetime | None = None,
-) -> str:
-    """The file was handed to the profile (an OPDS download, the first known opening): page 0, the
-    anchor from which the first move of a reader is measured. Called by the server with the
-    authenticated profile, never with a value from a request."""
-    check_carrier(connection, user_id, carrier_type, carrier_id)
-    when = now or datetime.now(UTC)
-    return insert_position(
-        connection, user_id=user_id, carrier_type=carrier_type, carrier_id=carrier_id,
-        content_hash=content_hash, locator={"page": 0, VIA: VIA_DELIVERY}, percent=0.0,
-        client_ts=when,
-        device_id="delivery", source="device", now=when,
-    )  # fmt: skip
+def _is_child(connection: sa.Connection, user_id: str) -> bool:
+    """Whether the profile is a child profile: the one whose marks an administrator may undo."""
+    row = connection.execute(
+        sa.select(identity.user.c.role, identity.user.c.max_age_rating).where(
+            identity.user.c.id == user_id
+        )
+    ).first()
+    return row is not None and (row.role == "child" or row.max_age_rating is not None)
 
 
 def undo_read_mark(
@@ -566,11 +544,16 @@ def undo_read_mark(
     unit_id: str,
     now: datetime | None = None,
 ) -> int:
-    """Undo the traversal mark of a Unit, as the member it belongs to (nobody else, admin
-    included: the answer is the one for nothing to undo). Returns how many marks were undone."""
+    """Undo the traversal mark of a Unit, as the member the mark belongs to or as the
+    administrator of a child profile (nobody else: the answer is the one for nothing to undo).
+    Returns how many marks were undone."""
     if viewer_id != subject_id:
-        return 0
-    scope = reader_scope(connection, viewer_id)
+        viewer = connection.execute(
+            sa.select(identity.user.c.role).where(identity.user.c.id == viewer_id)
+        ).scalar()
+        if viewer != "admin" or not _is_child(connection, subject_id):
+            return 0
+    scope = reader_scope(connection, subject_id)
     if scope.kind == "none" or unit_id not in visible_unit_ids(connection, scope, [unit_id]):
         return 0
     when = _ts(now or datetime.now(UTC)).isoformat()
@@ -581,7 +564,7 @@ def undo_read_mark(
             table.c.id, table.c.read_units, table.c.undone_units, table.c.source,
             table.c.covered_units,
         ).where(
-            table.c.user_id == viewer_id,
+            table.c.user_id == subject_id,
             sa.or_(
                 sa.func.json_array_length(table.c.read_units) > 0,
                 sa.and_(table.c.source == "server", table.c.covered_units.is_not(None)),
@@ -647,28 +630,82 @@ def progress_of(
     ]
 
 
-def position_of(
-    connection: sa.Connection, *, viewer_id: str, position_id: str
-) -> PositionRecord | None:
-    """One of the viewer's own positions, or None (also for another profile's, for a position on
-    a Work above her ceiling and for one that is not there)."""
+@dataclass(frozen=True)
+class ReadMark:
+    """One read mark as the screen that undoes them shows it: whose it is, and the Unit it
+    marks."""
+
+    user_id: str
+    username: str
+    unit_id: str
+    number: str  # the Unit's number as written (`number_raw`)
+    title: str | None
+
+
+def read_marks(connection: sa.Connection, *, viewer_id: str, edition_id: str) -> list[ReadMark]:
+    """The read marks of the Units of an Edition, for the screen that undoes them: the viewer's
+    own, and for an administrator the marks of the child profiles (another member's marks are
+    never listed). An Edition the viewer may not see, and one that is not there, answer alike:
+    no mark at all."""
     scope = reader_scope(connection, viewer_id)
-    if scope.kind == "none":
-        return None
-    table = reading.reading_position
-    row = connection.execute(
-        sa.select(table).where(table.c.id == position_id, table.c.user_id == viewer_id)
-    ).first()
-    if row is None:
-        return None
-    edition = _edition_of(connection, row.carrier_type, row.carrier_id)
-    if edition is None:
-        seen = scope.unrestricted  # the file is gone: only an adult still has her own history
-    else:
-        seen = edition in visible_edition_ids(connection, scope, [edition])
-    if not seen:
-        return None
-    return PositionRecord(
-        row.id, row.carrier_type, row.carrier_id, row.content_hash, row.percent,
-        row.client_ts, row.server_ts, row.device_id,
-    )  # fmt: skip
+    if scope.kind == "none" or edition_id not in visible_edition_ids(
+        connection, scope, [edition_id]
+    ):
+        return []
+    unit = catalog_schema.unit
+    units = connection.execute(
+        sa.select(unit.c.id, unit.c.number_raw, unit.c.title)
+        .where(unit.c.edition_id == edition_id)
+        .order_by(unit.c.number_sort, unit.c.id)
+    ).all()
+    if not units:
+        return []
+    user = identity.user
+    subjects: dict[str, str] = {
+        str(row.id): str(row.username)
+        for row in connection.execute(
+            sa.select(user.c.id, user.c.username).where(user.c.id == viewer_id)
+        )
+    }
+    if connection.execute(sa.select(user.c.role).where(user.c.id == viewer_id)).scalar() == "admin":
+        for row in connection.execute(
+            sa.select(user.c.id, user.c.username)
+            .where(sa.or_(user.c.role == "child", user.c.max_age_rating.is_not(None)))
+            .order_by(user.c.username)
+        ):
+            subjects.setdefault(str(row.id), str(row.username))
+    found: list[ReadMark] = []
+    for subject_id, username in subjects.items():
+        read = {
+            p.unit_id
+            for p in progress_of(
+                connection, viewer_id=subject_id, subject_id=subject_id,
+                unit_ids=[u.id for u in units],
+            )
+            if p.state == "read"
+        }  # fmt: skip
+        found.extend(
+            ReadMark(subject_id, username, str(u.id), str(u.number_raw), u.title)
+            for u in units
+            if u.id in read
+        )
+    return found
+
+
+class ReadMarks:
+    """The screen of the read marks (L18): what it lists and the undo it serves — the member's
+    own mark, the administrator's for a child profile. A journal line, nothing deleted."""
+
+    def __init__(self, engine: sa.Engine, now: Callable[[], datetime]) -> None:
+        self._engine, self._now = engine, now
+
+    def of(self, *, viewer_id: str, edition_id: str) -> list[ReadMark]:
+        with self._engine.connect() as connection:
+            return read_marks(connection, viewer_id=viewer_id, edition_id=edition_id)
+
+    def undo(self, *, viewer_id: str, subject_id: str, unit_id: str) -> int:
+        with write_transaction(self._engine) as connection:
+            return undo_read_mark(
+                connection, viewer_id=viewer_id, subject_id=subject_id, unit_id=unit_id,
+                now=self._now(),
+            )  # fmt: skip

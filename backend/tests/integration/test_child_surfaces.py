@@ -205,6 +205,10 @@ OPEN = {
     # setting widens what parental control hides (`test_m5_l13_settings.py`)
     "GET /api/reader/settings": "reader",
     "PUT /api/reader/settings": "reader",
+    # M6 L18: the read marks of an Edition and the undo of one: hers only, and only on an Edition
+    # she may see — a hidden one answers like one with no mark (`test_l18_undo_read_mark.py`)
+    "GET /api/reader/read-marks": "reader",
+    "POST /api/reader/read-marks/{unit_id}/undo": "reader",
     # M4 L23: the official links of an Edition she may see; a hidden one is an absent one
     "GET /api/v1/editions/{edition_id}/support-author": "support_author",
     # M4 L18a: the collections and reading lists, made of the Works she may see and a list of her
@@ -287,6 +291,8 @@ CLOSED = (
     "GET /api/v1/devices",
     "POST /api/v1/devices/{device_id}/rotate",
     "DELETE /api/v1/devices/{device_id}",
+    # M6 L18: the undo of a child's mark is the administrator's door, never a child's
+    "POST /api/reader/read-marks/{unit_id}/undo/for-child/{user_id}",
     "GET /api/v1/diagnostic/bundle",  # M3 L46: the bundle is the admin's alone
     "GET /api/v1/editions",
     "POST /api/v1/editions/{edition_id}/add-directly",
@@ -1368,6 +1374,18 @@ def _surface_reader(world: World) -> None:
                     )
                     assert [_shape(w) for w in where] == [_shape(a) for a in absent_where], key
             world.clean(got.text)
+    # M6 L18: the marks of an Edition and the undo of one: a hidden Edition answers like one
+    # with no mark, and the undo of a Unit that is not hers is the answer for nothing to undo
+    marks = "/api/reader/read-marks"
+    for edition_id in (seed.editions["ok"], seed.editions["twelve"], seed.editions["above"], ULID):
+        got = world.kid.get(marks, params={"edition_id": edition_id})
+        assert got.status_code == 200 and got.json()["items"] == [], edition_id
+        world.clean(got.text)
+    undone = world.kid.post(
+        f"{marks}/{ULID}/undo", headers={CSRF_HEADER: world.env.csrf(world.kid)}
+    )
+    assert undone.status_code == 200 and undone.json() == {"undone": 0}
+    world.clean(undone.text)
 
 
 def _surface_continue_reading(world: World) -> None:

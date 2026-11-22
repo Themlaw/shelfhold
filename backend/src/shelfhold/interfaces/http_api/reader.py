@@ -1,5 +1,5 @@
-"""The routes of the integrated reader: what it opens (M5 L06), where it is (M5 L07) and how it
-reads (M5 L13).
+"""The routes of the integrated reader: what it opens (M5 L06), where it is (M5 L07), how it
+reads (M5 L13) and the read marks it undoes (M6 L18).
 
 `GET /api/reader/{carrier_type}/{carrier_id}/publication`: what the reader opens (M5 L06).
 
@@ -11,6 +11,11 @@ ticket (403). A carrier that is absent, hidden from the profile, of a type that 
 not an identifier answers one 404 (no oracle); a Work with no file that may be read, an excerpt that
 cannot be cut within its bound, and a full read of what is only a sample are typed 409s that say
 what to do. Nothing is written: no position, no history, no state.
+
+`GET /read-marks`, `POST /read-marks/{unit_id}/undo` (M6 L18): the marks of the profile's reading
+on the Units of an Edition, and the undo of the profile's own mark — the administrator's, for the
+mark of a child profile, on a door of their own. The undo is a line of history, nothing is deleted;
+a Unit the profile may not see, and a mark that is not there, answer alike.
 """
 
 from collections.abc import Callable
@@ -49,7 +54,7 @@ from shelfhold.reading.application.positions import (
     StoredPosition,
     UnknownConflictError,
 )
-from shelfhold.reading.application.progress import HISTORY_LIMIT
+from shelfhold.reading.application.progress import HISTORY_LIMIT, ReadMarks
 from shelfhold.reading.application.publication import Publication, PublicationService
 from shelfhold.reading.application.settings import (
     DIRECTIONS,
@@ -211,6 +216,25 @@ class ResolveIn(BaseModel):
     device_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
+class ReadMarkOut(BaseModel):
+    """One read mark as the screen that undoes them shows it: whose it is, and the Unit it
+    marks."""
+
+    user_id: str
+    username: str
+    unit_id: str
+    number: str
+    title: str | None
+
+
+class ReadMarksOut(BaseModel):
+    items: list[ReadMarkOut]
+
+
+class UndoOut(BaseModel):
+    undone: int  # how many marks were undone: 0 is the answer for nothing to undo
+
+
 class ReaderSettingsOut(BaseModel):
     """What the reader reads with. `direction` is `None` when the profile chose nothing: the
     publication's own direction wins (the Œuvre's, ADR-0055)."""
@@ -262,6 +286,13 @@ def _own_session(principal: Principal) -> None:
         raise ProblemError("credential_not_allowed")  # the reader acts under a real session
 
 
+def _admin_session(principal: Principal) -> None:
+    """The door of the administrator: a real session of the administrator, nothing else."""
+    _own_session(principal)
+    if principal.role != "admin":
+        raise ProblemError("forbidden")
+
+
 def _settings(found: Effective) -> ReaderSettingsOut:
     return ReaderSettingsOut(
         direction=found.direction if found.direction in DIRECTIONS else None,  # type: ignore[arg-type]
@@ -274,9 +305,76 @@ def build_reader_router(
     get_positions: Callable[[], ReaderPositions],
     get_settings: Callable[[], ReaderSettings],
     get_continue: Callable[[], ContinueReading],
+    get_marks: Callable[[], ReadMarks],
     kavita_url: Callable[[], str | None] = lambda: None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/reader", tags=["reader"])
+
+    @router.get("/read-marks", operation_id="reader_read_marks", response_model=ReadMarksOut)
+    def marks_list(
+        response: Response,
+        principal: Session,
+        edition_id: Annotated[str, Query(max_length=26)],
+    ) -> ReadMarksOut:
+        """The read marks on the Units of an Edition, for the screen that undoes them: the
+        profile's own, and for an administrator the child profiles'. Another member's marks are
+        never listed; an Edition the profile may not see answers like one with no mark."""
+        _own_session(principal)
+        response.headers["Cache-Control"] = "no-store"
+        if not is_ulid(edition_id):
+            return ReadMarksOut(items=[])
+        return ReadMarksOut(
+            items=[
+                ReadMarkOut(
+                    user_id=m.user_id,
+                    username=m.username,
+                    unit_id=m.unit_id,
+                    number=m.number,
+                    title=m.title,
+                )
+                for m in get_marks().of(viewer_id=principal.user_id, edition_id=edition_id)
+            ]
+        )
+
+    @router.post(
+        "/read-marks/{unit_id}/undo",
+        operation_id="reader_undo_read_mark",
+        response_model=UndoOut,
+        responses={404: {"description": "not-found"}},
+    )
+    def undo_own(unit_id: str, response: Response, principal: Session) -> UndoOut:
+        """Undo the profile's own read mark on the Unit: a dated line of history, nothing
+        deleted. A Unit the profile may not see, and a mark that is not there, answer alike."""
+        _own_session(principal)
+        response.headers["Cache-Control"] = "no-store"
+        if not is_ulid(unit_id):
+            raise ProblemError("not_found", headers=_ABSENT)
+        return UndoOut(
+            undone=get_marks().undo(
+                viewer_id=principal.user_id, subject_id=principal.user_id, unit_id=unit_id
+            )
+        )
+
+    @router.post(
+        "/read-marks/{unit_id}/undo/for-child/{user_id}",
+        operation_id="reader_undo_read_mark_for_child",
+        response_model=UndoOut,
+        responses={403: {"description": "forbidden"}, 404: {"description": "not-found"}},
+    )
+    def undo_for_child(
+        unit_id: str, user_id: str, response: Response, principal: Session
+    ) -> UndoOut:
+        """The administrator's door: undo the read mark of a child profile. The mark of another
+        adult is not there for the administrator either, and the answer never tells which."""
+        _admin_session(principal)
+        response.headers["Cache-Control"] = "no-store"
+        if not is_ulid(unit_id) or not is_ulid(user_id):
+            raise ProblemError("not_found", headers=_ABSENT)
+        return UndoOut(
+            undone=get_marks().undo(
+                viewer_id=principal.user_id, subject_id=user_id, unit_id=unit_id
+            )
+        )
 
     @router.get("/continue", operation_id="reader_continue", response_model=ContinueOut)
     def continue_reading(

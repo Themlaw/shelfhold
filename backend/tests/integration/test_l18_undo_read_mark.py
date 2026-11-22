@@ -71,13 +71,13 @@ def state(world: World, username: str, unit: str) -> str:
 
 
 def rows_of(world: World, username: str) -> list[Any]:
+    table = reading.reading_position
     with world.seed.engine.connect() as connection:
         return list(
             connection.execute(
-                sa.text(
-                    "SELECT * FROM reading_position WHERE user_id = :u ORDER BY server_ts, id"
-                ),
-                {"u": user_id_of(world.seed.engine, username)},
+                sa.select(table)
+                .where(table.c.user_id == user_id_of(world.seed.engine, username))
+                .order_by(table.c.server_ts, table.c.id)
             )
         )
 
