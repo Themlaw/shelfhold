@@ -24,7 +24,7 @@ from structlog.contextvars import bound_contextvars
 
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application import blocked_memo, fan_out, waiting_marks
-from shelfhold.export.application.export_alias import complete_hashes
+from shelfhold.export.application.export_alias import complete_hashes_of_destination
 from shelfhold.export.application.export_items import create_export_item, ensure_export_series
 from shelfhold.export.application.intents import IntentJournal, open_intent_paths
 from shelfhold.export.application.locks import ResourceLocks, library_resource
@@ -784,6 +784,41 @@ class ExportPipeline:
         except Exception:  # a mirror never stops an export; the next run tries again
             log.warning("mirror_heal_failed", destination=ctx.destination_id)
 
+    def _sync_mirrors(self, ctx: DestinationContext, folders: set[str]) -> None:
+        """The mirror of every series folder a plan wrote, once each, once the plan is over
+        (EF-EXP-063, ENF-PERF-007). A series that takes five hundred chapters in one run is one
+        projection of five hundred lines, not five hundred projections that each read and wrote
+        the whole file again — the shape the nightly of the contention bench broke on. The write
+        is the one of every mirror write (`_put`: intent, atomic replace, intent closed), under
+        the root's write session like the healing, and best effort: a file placed is never
+        unwritten by a mirror that lags, and the next run, or `rebuild`, projects it again."""
+        if not folders:
+            return
+        opened = (
+            self._sessions.open(ctx.local("."))
+            if self._sessions and ctx.root_local
+            else nullcontext(self._fsops)
+        )
+        try:
+            with opened as writer:
+                for folder in sorted(folders):
+                    self.mirror.sync_destination(ctx.destination_id, folder=folder, writer=writer)
+        except Exception:  # the files are placed and committed: the next run heals it
+            log.warning("mirror_write_failed", destination=ctx.destination_id)
+
+    def _complete_alias_hashes(self, ctx: DestinationContext) -> None:
+        """L47 for a whole plan: the aliases its commits left without hashes are filled once the
+        plan is over, in one pass over the destination (`complete_hashes_of_destination`); one
+        reading of them and one conditional write per file, never inside a transaction. Best
+        effort: a failure leaves the aliases without hashes, and the sweep or the lazy read of
+        the kosync relay fills them later, as after a crash."""
+        if ctx.root_local is None:
+            return  # no folder on this machine: no file to read, no alias to fill
+        try:
+            complete_hashes_of_destination(self._engine, ctx.destination_id, ctx.local)
+        except Exception:  # never an exception towards the export (L47)
+            log.warning("alias_hashes_failed", destination=ctx.destination_id)
+
     # -- applying --------------------------------------------------------------------------------
 
     @staticmethod
@@ -843,15 +878,30 @@ class ExportPipeline:
 
         done: list[PlannedOp] = []
         folders: set[str] = set()
+        written_folder: str | None = None  # the series folder the plan is writing into
+        behind: set[str] = set()  # folders written, their mirror still due
 
         def run(op: PlanOp) -> None:
+            nonlocal written_folder
             planned = decode_op(op.payload or {})
-            folder = self._execute(ctx, planned, plan_id, job_id)
-            if folder is REFUSED:
+            # the plan is sorted by path, so its operations are grouped by series folder: once
+            # the plan moves past a folder, that folder's mirror is written once, right there —
+            # not after every file placed, and not all of them in one burst at the end either
+            # (ENF-PERF-007: the sustained cost of a run must not depend on its shape)
+            folder = str(planned.rel_path).split("/", 1)[0] if planned.rel_path else None
+            if folder is not None and folder != written_folder:
+                if written_folder is not None and written_folder in behind:
+                    self._sync_mirrors(ctx, {written_folder})
+                    behind.discard(written_folder)
+                written_folder = folder
+            outcome = self._execute(ctx, planned, plan_id, job_id)
+            if outcome is REFUSED:
                 return  # a last look refused it: not written, not reported as done
             done.append(planned)
-            if isinstance(folder, str):
-                folders.add(folder)
+            if isinstance(outcome, str):
+                folders.add(outcome)
+                if folder is not None:
+                    behind.add(folder)
 
         store = PlanStore(
             self._engine, clock=self._clock, current_version=current, step_version=inputs
@@ -862,6 +912,9 @@ class ExportPipeline:
             if self._request_scan is not None:
                 for folder in sorted(folders):  # one targeted scan per series folder
                     self._request_scan(ctx.remote_folder(folder))
+            if folders:
+                self._complete_alias_hashes(ctx)
+            self._sync_mirrors(ctx, behind)
         log.info(
             "export.applied",
             plan_id=plan_id,
@@ -1363,19 +1416,8 @@ class ExportPipeline:
                         identity=identity,
                     )  # fmt: skip
                     journal.mark_done(intent, within=connection)
-                # L47: the hashes of the alias, once the line is committed (never inside it)
-                complete_hashes(
-                    self._engine, export_item_id=item_id, file_hash=rendered.file_hash,
-                    path=Path(target),
-                )  # fmt: skip
-                # same write session, after the file and its manifest line (EF-EXP-063, I33)
-                try:
-                    self.mirror.sync_destination(
-                        ctx.destination_id, folder=str(planned.rel_path).split("/", 1)[0],
-                        writer=writer,
-                    )  # fmt: skip
-                except Exception:  # the file is placed and committed: the next run heals it
-                    log.warning("mirror_write_failed", destination=ctx.destination_id)
+                # L47: the hashes of the aliases are filled once the plan is over, in one pass
+                # over them (`_complete_alias_hashes`), never inside a transaction
         except BaseException:
             if self._fsops.observe(target) is None:  # nothing was placed: nothing to settle
                 journal.cancel(intent)

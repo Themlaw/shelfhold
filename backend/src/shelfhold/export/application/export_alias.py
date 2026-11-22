@@ -15,13 +15,18 @@ committed together, or neither.
   row follows its `export_item` (`ON DELETE CASCADE`) when the document is erased.
 - The row is made **without hashes** inside the transaction (file and alias stay atomic), and the
   transaction never opens the exported path: a link, a FIFO or another file put there cannot lend
-  its bytes to the alias nor hold the database write lock. After the commit, `complete_hashes`
-  fills them through `render_hooks.heal_alias_hashes`: SHA-256 checked against the alias in the
-  same single pass as the samples, no link followed, no blocking open, regular files only. A
-  failure leaves the alias without hashes and a log line, never an exception towards the export.
+  its bytes to the alias nor hold the database write lock. After the commit, the hashes are filled
+  through `render_hooks.heal_alias_hashes`: SHA-256 checked against the alias in the same single
+  pass as the samples, no link followed, no blocking open, regular files only. A failure leaves
+  the alias without hashes and a log line, never an exception towards the export. Two doors fill
+  them, one contract: `complete_hashes`, for the one file a caller just placed (a lazy read of the
+  kosync relay, the fan-out to a native folder), and `complete_hashes_of_destination`, for every
+  alias a plan's commits left empty — one reading of them and one conditional write per file
+  instead of a reading and a transaction per element (ENF-PERF-007).
 """
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -32,7 +37,12 @@ from shelfhold.export.application.render_hooks import heal_alias_hashes
 from shelfhold.infrastructure.logging import escaped
 from shelfhold.infrastructure.schema import export, storage
 
-__all__ = ["alias_wanted", "complete_hashes", "record_export_alias"]
+__all__ = [
+    "alias_wanted",
+    "complete_hashes",
+    "complete_hashes_of_destination",
+    "record_export_alias",
+]
 
 log = structlog.get_logger(__name__)
 
@@ -104,4 +114,41 @@ def complete_hashes(engine: Engine, *, export_item_id: str, file_hash: str, path
     except Exception:
         log.warning("document_alias.complete_failed", export_item=export_item_id,
                     path=escaped(str(path)))  # fmt: skip
+        return 0
+
+
+def complete_hashes_of_destination(
+    engine: Engine, destination_id: str, local: Callable[[str], str]
+) -> int:
+    """After the commits of a whole plan: the hashes of the aliases of the destination that are
+    still empty, in one pass over them. The same contract as `complete_hashes` (L47): each file
+    is read once, its SHA-256 checked against its alias in the same pass as the samples, reached
+    by no link, and the write stays conditional on the hashes being empty — but the aliases are
+    read once, not once per file placed, and the files are the destination's, not a caller's one
+    path. An alias whose file is gone, moved or not the one it names stays empty, for the sweep
+    to try again. Never raises; returns the number of aliases filled."""
+    record = export.export_record
+    with engine.connect() as connection:
+        placed = {
+            (row.export_item_id, row.file_hash): row.rel_path
+            for row in connection.execute(
+                sa.select(record.c.export_item_id, record.c.file_hash, record.c.rel_path).where(
+                    record.c.shelf_destination_id == destination_id,
+                    record.c.locator_type == "path",
+                    record.c.rel_path.is_not(None),
+                )
+            )
+        }
+
+    def locate(item: str, digest: str) -> Path | None:
+        found = placed.get((item, digest))
+        if found is None:
+            return None  # not one of the destination's files: the sweep owns it
+        location = local(found)
+        return Path(location) if os.path.realpath(location) == location else None
+
+    try:
+        return heal_alias_hashes(engine, locate=locate)
+    except Exception:
+        log.warning("document_alias.complete_failed", destination=destination_id)
         return 0
