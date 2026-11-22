@@ -345,6 +345,11 @@ CLOSED = (
     "GET /api/v1/plugins/{key}/attestations",
     "POST /api/v1/plugins/{key}/attestations",
     "DELETE /api/v1/plugins/{key}/attestations/{name}",
+    # M6 L06 (D13, EF-SRC-019): the guard of the third-party plugins is the admin's, on a fresh
+    # session: the list says why a plugin is not loaded, enabling an isolated one is reserved
+    "GET /api/v1/plugins",
+    "POST /api/v1/plugins/{name}/enabled",
+    "DELETE /api/v1/plugins/{name}/enabled",
     "POST /api/v1/probe",
     "GET /api/v1/profiles",
     "POST /api/v1/profiles",

@@ -345,12 +345,16 @@ def test_reserved_routes_of_create_app_refuse_api_keys(
         assert {"purge.now", "admin_risk.accept", "request.unmask"} <= guards
         assert len(routes) >= 6
         key = _create_key(monkeypatch, capsys, settings)
-        for method, path, name in routes:
+        for index, (method, path, name) in enumerate(routes):
             url = re.sub(r"\{[^}]+\}", "x", path)
             refused = env.client.request(method, url, headers=_bearer(key), json={})
             assert refused.status_code == 403, (method, path, name, refused.text)
             assert refused.json()["type"] == "/api/v1/problems/credential-not-allowed", path
-            anonymous = env.client.request(method, url, json={})
+            # the anonymous probe comes from its own address: the public limit is real (a window
+            # per address, ENF-SEC-008) and this scan makes more anonymous calls than one address
+            # may — the limit is not relaxed for it, each probe just has a budget of its own
+            probe = env.other_client(f"198.51.100.{index % 200 + 1}")
+            anonymous = probe.request(method, url, json={})
             assert anonymous.status_code in {401, 403}, (method, path)
 
 
