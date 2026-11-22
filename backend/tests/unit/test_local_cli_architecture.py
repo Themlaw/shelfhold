@@ -98,7 +98,13 @@ def test_http_interface_never_imports_the_local_cli_or_the_socket() -> None:
 def test_only_the_socket_package_opens_sockets() -> None:
     for path in ROOT.rglob("*.py"):
         rel = str(path.relative_to(ROOT))
-        if rel.startswith(("infrastructure/local_socket/", "infrastructure/fetcher/")):
+        if rel.startswith(
+            (
+                "infrastructure/local_socket/",
+                "infrastructure/fetcher/",
+                "plugin_host/runner/",  # the companion's own socket and its network probe (L05)
+            )
+        ):
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):

@@ -278,10 +278,18 @@ def _planned_for(caps: Any) -> PlannedContent:
 
 
 def run_destination_conformance(
-    destination: Any, scenario: DestinationScenario
+    destination: Any,
+    scenario: DestinationScenario,
+    *,
+    isolated: bool = False,
+    sandbox: Any = None,
+    core_uid: int | None = None,
 ) -> ConformanceReport:
-    """Replay `destination` on `scenario` and report every check, passed or not."""
+    """Replay `destination` on `scenario` and report every check, passed or not. `isolated`,
+    `sandbox` and `core_uid` are those of `run_source_conformance`."""
     report = ConformanceReport()
+    if isolated:
+        report.add_isolation(sandbox, core_uid)
     caps = getattr(destination, "capabilities", None)
     if caps is None:
         report.add("capabilities_declared", False, "the destination has no `capabilities`")
@@ -310,10 +318,17 @@ def run_destination_conformance(
 
 
 def assert_destination_conforms(
-    destination: Any, scenario: DestinationScenario
+    destination: Any,
+    scenario: DestinationScenario,
+    *,
+    isolated: bool = False,
+    sandbox: Any = None,
+    core_uid: int | None = None,
 ) -> ConformanceReport:
     """`AssertionError` naming each failed check, else the report."""
-    report = run_destination_conformance(destination, scenario)
+    report = run_destination_conformance(
+        destination, scenario, isolated=isolated, sandbox=sandbox, core_uid=core_uid
+    )
     report.assert_ok()
     return report
 

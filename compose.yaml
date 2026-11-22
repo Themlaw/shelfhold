@@ -74,6 +74,10 @@ services:
       # map of the target with mode = adopt_ro. Shelfhold reads it and never writes there (the :ro is
       # the second lock). Remove the line once the switchover is done.
       # - /path/to/suwayomi/downloads:/upstream/suwayomi:ro
+    # >>> plugin-runner core
+    # volumes:
+    #   - ./plugin-rpc:/plugin-rpc
+    # <<< plugin-runner
     healthcheck:
       test: ["CMD", "python", "/usr/local/bin/shelfhold-healthcheck"]
       interval: 30s
@@ -84,3 +88,42 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
     restart: unless-stopped
+
+  # Isolated third-party plugins (D-P1, docs/admin/plugins-isoles.md): optional, off by default.
+  # Steps, in this order (the companion refuses to start when it can see /data or has a network):
+  #   1. mkdir -p plugin-rpc data/plugins && sudo chown 1001:1001 plugin-rpc && sudo chmod 755 plugin-rpc data/plugins
+  #   2. uncomment the `plugin-runner` service below (same indentation as `shelfhold:`);
+  #   3. add the `./plugin-rpc:/plugin-rpc` line to the `volumes:` of `shelfhold`;
+  #   4. docker compose up -d, then docker compose logs plugin-runner (it prints that its sandbox is as required).
+  # A data folder or a named volume made by an earlier version keeps the modes it had: the companion
+  # (same image, another uid) must not read /data and /store, so run once, as the core:
+  #   docker compose exec shelfhold chmod 700 /data /store
+  # The companion also needs a kernel with Landlock (5.13 or later; `cat /sys/kernel/security/lsm`
+  # lists it) and refuses to start without it, whatever the rest.
+  # >>> plugin-runner service
+  # plugin-runner:
+  #   image: ghcr.io/themlaw/shelfhold:1.1   # the same image as the core: always the same tag
+  #   container_name: shelfhold-plugin-runner
+  #   command: ["shelfhold", "plugin-runner"]
+  #   user: "1001:1001"                      # another uid than the core's (1000)
+  #   network_mode: none                     # no network, not even a private one
+  #   read_only: true
+  #   cap_drop: [ALL]
+  #   security_opt: ["no-new-privileges:true"]
+  #   ulimits:
+  #     core: 0
+  #   init: true
+  #   mem_limit: 512m
+  #   pids_limit: 128
+  #   tmpfs: ["/tmp:size=64m"]               # each plugin's scratch folder: the one place it may write
+  #   volumes:
+  #     - ./data/plugins:/plugins:ro         # the wheels the core installs: read-only here
+  #     - ./plugin-rpc:/plugin-rpc           # the socket the core connects to: nothing else
+  #   healthcheck:
+  #     test: ["CMD", "shelfhold", "plugin-runner", "--healthcheck"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 20s
+  #   restart: unless-stopped
+  # <<< plugin-runner

@@ -13,7 +13,7 @@ import os
 import re
 import resource
 import signal
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from shelfhold.plugin_host.rpc.protocol import Channel, RpcLimits
 
@@ -36,11 +36,13 @@ def closed_environment(source: Mapping[str, str] | None = None) -> dict[str, str
     return {**kept, **_FIXED}
 
 
-def _limits(limits: RpcLimits) -> None:
+def _limits(limits: RpcLimits, confine: Callable[[], None] | None) -> None:
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
     resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds + 1))
     os.umask(0o077)
+    if confine is not None:
+        confine()  # last: once it is bound, this process may not undo what it has set
 
 
 def _describe(code: int | None) -> str:
@@ -58,18 +60,25 @@ def _describe(code: int | None) -> str:
 
 
 async def spawn_stdio(
-    argv: Sequence[str], *, limits: RpcLimits, env: Mapping[str, str] | None = None
+    argv: Sequence[str],
+    *,
+    limits: RpcLimits,
+    env: Mapping[str, str] | None = None,
+    extra_env: Mapping[str, str] | None = None,
+    confine: Callable[[], None] | None = None,
 ) -> Channel:
     """Start `argv` as a plugin's process and connect to its standard streams. `env` is a source
-    to pick from (`closed_environment`), never what the process receives as it is."""
+    to pick from (`closed_environment`), never what the process receives as it is; `extra_env` is
+    what the caller adds (the runner's scratch folder). `confine` runs in the child, after the
+    limits and before `exec`: the runner's Landlock sandbox."""
     process = await asyncio.create_subprocess_exec(
         *argv,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
-        env=closed_environment(env),
+        env={**closed_environment(env), **(extra_env or {})},
         start_new_session=True,
-        preexec_fn=lambda: _limits(limits),
+        preexec_fn=lambda: _limits(limits, confine),
     )
     stdin, stdout = process.stdin, process.stdout
     if stdin is None or stdout is None:  # pragma: no cover - PIPE always gives both
@@ -95,4 +104,4 @@ async def spawn_stdio(
         with contextlib.suppress(Exception):
             await asyncio.wait_for(process.wait(), 5.0)
 
-    return Channel(stdout, stdin, close, exit_reason)
+    return Channel(stdout, stdin, close, exit_reason, pid=process.pid)

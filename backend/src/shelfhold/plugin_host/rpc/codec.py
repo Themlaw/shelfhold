@@ -112,8 +112,12 @@ def encode_frame(message: Any) -> bytes:
     return _HEADER.pack(len(payload)) + payload
 
 
-async def read_frame(reader: asyncio.StreamReader) -> bytes | None:
-    """The payload of the next frame; ``None`` at a clean end (between two frames)."""
+async def read_frame(
+    reader: asyncio.StreamReader, *, max_bytes: int = MAX_MESSAGE_BYTES
+) -> bytes | None:
+    """The payload of the next frame; ``None`` at a clean end (between two frames). `max_bytes`
+    lowers the bound for a peer that has no business sending a large message (the greeting a core
+    sends the companion)."""
     try:
         header = await reader.readexactly(_HEADER.size)
     except asyncio.IncompleteReadError as exc:
@@ -121,8 +125,9 @@ async def read_frame(reader: asyncio.StreamReader) -> bytes | None:
             return None
         raise FrameError("the stream ended inside a frame header") from exc
     (length,) = _HEADER.unpack(header)
-    if length > MAX_MESSAGE_BYTES:  # decided on the header: no byte of the body is read or held
-        raise FrameTooLarge(f"a frame announces {length} bytes, the most is {MAX_MESSAGE_BYTES}")
+    limit = min(max_bytes, MAX_MESSAGE_BYTES)
+    if length > limit:  # decided on the header: no byte of the body is read or held
+        raise FrameTooLarge(f"a frame announces {length} bytes, the most is {limit}")
     try:
         return await reader.readexactly(length)
     except asyncio.IncompleteReadError as exc:

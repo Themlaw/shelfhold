@@ -92,6 +92,13 @@ CLOSED: dict[str, Counter[str]] = {
 # fields of a report, `ctypes.CDLL(None)` loads libc for `openat2`/`statfs`/`prctl` (no link call),
 # and `__dict__[...]` is the proxy of `refs_guard`. No `extractall`, no `ln`, no `symlinks=True`.
 SAFE_USES: dict[str, dict[str, int]] = {
+    # the companion's three Landlock system calls and two `prctl` flags, from libc: it creates no
+    # link and no file (a plugin's process may write nowhere, which is what these calls enforce)
+    "plugin_host/runner/confine.py": {
+        "_libc: ctypes.CDLL | None = None": 1,
+        "def _c() -> ctypes.CDLL:": 1,
+        "_libc = ctypes.CDLL(None, use_errno=True)": 1,
+    },
     "plugin_host/rpc/plugin_side.py": {
         "factory = getattr(importlib.import_module(module_name), attr)": 1
     },

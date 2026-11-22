@@ -116,6 +116,7 @@ class Channel:
     writer: Any  # write(bytes), drain(), close(): an `asyncio.StreamWriter`
     close: Callable[[], Awaitable[None]]
     exit_reason: Callable[[], Awaitable[str | None]]
+    pid: int | None = None  # the plugin's process, when this end started it (the companion)
 
 
 # -- the methods of the contracts ----------------------------------------------------------------

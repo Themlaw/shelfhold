@@ -118,6 +118,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # inherit this: its files follow SHELFHOLD_UMASK, applied per file by Fsops (EF-EXP-006).
     os.umask(0o077)
     args = build_parser().parse_args(argv)
+    if getattr(args, "standalone", False):
+        # `plugin-runner` runs where there is no data folder, no database and no setting: it never
+        # reads them (and must not fail for not finding them)
+        standalone: Callable[[argparse.Namespace], int] = args.handler
+        return standalone(args)
     try:
         resolved = resolve_settings()
     except ConfigError as exc:
