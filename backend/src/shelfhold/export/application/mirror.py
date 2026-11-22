@@ -31,7 +31,12 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import IntentJournal
-from shelfhold.export.application.locks import HeldLocks, ResourceLocks, path_resource
+from shelfhold.export.application.locks import (
+    HeldLocks,
+    LockBusyError,
+    ResourceLocks,
+    path_resource,
+)
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.path_map import clean_absolute, within
 from shelfhold.export.domain.provenance_mirror import (
@@ -98,9 +103,10 @@ class ProvenanceMirror:
 
         `held` is for the caller that already holds that very lock under its own job (the
         same-path upgrade, the volume assembly — `_put` would wait for a lock their own caller
-        holds): the files of `folder` are written through it, with its guard, without asking
-        for it again. Every other caller leaves `held` alone and gets the lock here, one file
-        at a time; nobody writes a mirror file without a lock held."""
+        holds): it is checked, not taken on trust — the `path` of `folder` must be one of the
+        lock's resources, or the lock is taken here like for any other caller. Every other
+        caller leaves `held` alone and gets the lock here, one file at a time; nobody writes a
+        mirror file without a lock held."""
         with self._engine.connect() as connection:
             ctx = load_context(connection, destination_id)
             root = self._writable_root(connection, ctx)
@@ -114,6 +120,9 @@ class ProvenanceMirror:
                 target = self._put(ctx, root, name, series_folder, writer or self._fsops, held)
             except PathEscapeError:  # a link where the file or its folder should be
                 self._skip(name, "symlink")
+                continue
+            except LockBusyError:  # another job holds the folder (a purge, an export): the file
+                log.info("mirror_folder_busy", folder=series_folder)  # is left to its next run
                 continue
             if target is not None:
                 written.append(target)
@@ -218,7 +227,7 @@ class ProvenanceMirror:
         ctx: DestinationContext,
         root: str,
         name: str,
-        folder: str,
+        folder: str | None,
         writer: MirrorWriter,
         held: HeldLocks | None = None,
     ) -> str | None:
@@ -230,22 +239,30 @@ class ProvenanceMirror:
         the same `path` lock before it erases a Unit's rows and lines, so it either ran before
         the lock — and the projection made here no longer holds the erased line — or it runs
         after the write, and its own cleaning drops the line. No projection made before the
-        lock is ever written. A folder held longer than the wait leaves the file to the next
-        run or the maintenance window; a file up to date writes nothing.
+        lock is ever written. A folder held longer than the wait (`LockBusyError`, left to the
+        caller by the sync) means the file stays behind, for its next run or the maintenance
+        window; a file up to date writes nothing.
 
-        `held` is the reentrance: the caller already holds the lock of this very folder under
-        its own job (the same-path upgrade, the volume assembly) — its guard is checked, its
-        lock is not asked for again, and nothing is waited for."""
-        if held is not None:
+        `held` is the reentrance, on proof and not on trust: the caller already holds the lock
+        of this very folder under its own job — the `path` of `folder` must be one of the
+        lock's resources, and a folder no lock can name (`None`) is refused it. Its guard is
+        checked, its lock is not asked for again, and nothing is waited for; any other `held`
+        is ignored and the lock is taken here like for any other caller."""
+        resource = path_resource(f"{ctx.destination_id}/{folder}")
+        if held is not None and folder is not None and resource in held.resources:
             held.ensure()  # the caller's lock, checked like every guard before a write
             return self._write(ctx, root, name, folder, writer)
-        resource = path_resource(f"{ctx.destination_id}/{folder}")
         with self._locks.hold_resources(new_ulid(), [resource], timeout=MIRROR_LOCK_WAIT_S) as own:
             own.ensure()
             return self._write(ctx, root, name, folder, writer)
 
     def _write(
-        self, ctx: DestinationContext, root: str, name: str, folder: str, writer: MirrorWriter
+        self,
+        ctx: DestinationContext,
+        root: str,
+        name: str,
+        folder: str | None,
+        writer: MirrorWriter,
     ) -> str | None:
         """The projection of one series file and, when the file is behind, its atomic write:
         called under the folder's `path` lock, taken here or held by the caller."""
