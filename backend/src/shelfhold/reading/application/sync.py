@@ -731,7 +731,7 @@ def _pending_chapters(
         undone = connection.execute(
             sa.select(position.c.undone_units).where(
                 position.c.user_id == user_id,
-                position.c.undone_units != "{}",
+                position.c.undone_units != {},
             )
         ).all()
         units = _units_of(connection, {r.carrier_id for r in refs}) if marks or undone else {}

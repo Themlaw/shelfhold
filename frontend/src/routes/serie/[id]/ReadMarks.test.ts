@@ -98,6 +98,20 @@ describe('Read marks of the series sheet', () => {
   });
 
   // req: EF-LEC-014
+  it('test_read_marks_keeps_the_mark_when_nothing_was_undone', async () => {
+    server.use(
+      me(),
+      list([mark()]),
+      http.post(`${MARKS}/U1/undo`, () => HttpResponse.json({ undone: 0 }))
+    );
+    const user = userEvent.setup();
+    render(ReadMarks, { editionId: 'ED1' });
+    await user.click(await screen.findByRole('button', { name: 'Annuler la lecture' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('0 marque annulée.');
+    expect(screen.getByText('n° 3 — Le rendez-vous — admin')).toBeInTheDocument();
+  });
+
+  // req: EF-LEC-014
   it('test_read_marks_draws_nothing_when_the_answer_is_not_ours_to_see', async () => {
     server.use(
       http.get(`${BASE}/api/v1/me`, () => HttpResponse.json(problem(401, 'unauthorized'))),

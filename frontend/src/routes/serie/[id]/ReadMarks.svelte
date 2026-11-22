@@ -48,7 +48,11 @@
     }
     problem = null;
     undone = answer.data.undone;
-    if (marks) marks = marks.filter((m) => m.user_id !== mark.user_id || m.unit_id !== mark.unit_id);
+    // The server says how many marks were undone: only a mark really undone leaves the list (a
+    // mark already taken back, or not the profile's to undo, stays where it is).
+    if (undone > 0 && marks) {
+      marks = marks.filter((m) => m.user_id !== mark.user_id || m.unit_id !== mark.unit_id);
+    }
   }
 
   $effect(() => {

@@ -51,7 +51,6 @@ VIA = (
     "via"  # the channel of a position, set by the server only (a client's locator has no such key)
 )
 VIA_WEB = "web"  # the reader of the web and its offline queue (`ReaderPositions.write`)
-VIA_DELIVERY = "delivery"
 
 __all__ = [
     "InvalidLocatorError",
@@ -241,7 +240,7 @@ def _mark_state(
             table.c.user_id == user_id,
             sa.or_(
                 sa.func.json_array_length(table.c.read_units) > 0,
-                table.c.undone_units != "{}",
+                table.c.undone_units != {},
             ),
         )
     ):
@@ -416,11 +415,12 @@ def _mark_traversed(
 
 def _same_pace(table: sa.Table, sparse: bool) -> sa.ColumnElement[bool]:
     """The positions that can be steps of this walk: the web reader's for a dense writer, the
-    others' for a sparse one; the delivery of the file (page 0) starts both."""
+    others' for a sparse one. The channel is the server's (`VIA`), and the web reader is the only
+    dense writer there is."""
     via = sa.func.json_extract(table.c.locator, "$." + VIA)
     if sparse:
         return sa.or_(via.is_(None), via != VIA_WEB)
-    return via.in_([VIA_WEB, VIA_DELIVERY])
+    return via == VIA_WEB
 
 
 def _same_writer(table: sa.Table, locator: dict[str, Any]) -> list[sa.ColumnElement[bool]]:
@@ -527,13 +527,13 @@ def record_position(
 
 
 def _is_child(connection: sa.Connection, user_id: str) -> bool:
-    """Whether the profile is a child profile: the one whose marks an administrator may undo."""
-    row = connection.execute(
-        sa.select(identity.user.c.role, identity.user.c.max_age_rating).where(
-            identity.user.c.id == user_id
-        )
-    ).first()
-    return row is not None and (row.role == "child" or row.max_age_rating is not None)
+    """Whether the profile is a child profile: the one whose marks an administrator may undo. The
+    rule of visibility (`identity.domain.visibility.scope_of`) knows a child by the role alone —
+    an adult keeps every right, whatever ceiling the row still carries."""
+    found = connection.execute(
+        sa.select(identity.user.c.role).where(identity.user.c.id == user_id)
+    ).scalar()
+    return found == "child"
 
 
 def undo_read_mark(
@@ -584,7 +584,12 @@ def undo_read_mark(
             )
             undone += 1
     if undone:
-        log.info("reading.read_unmarked", unit=unit_id, marks=undone)
+        # who undoes and whose the mark is: ids only, never a name (the diagnostic bundle keeps
+        # them pseudonymised: `actor_id` and `user_id` are the keys it knows)
+        log.info(
+            "reading.read_unmarked", unit=unit_id, marks=undone, actor_id=viewer_id,
+            user_id=subject_id,
+        )  # fmt: skip
     return undone
 
 
@@ -670,7 +675,7 @@ def read_marks(connection: sa.Connection, *, viewer_id: str, edition_id: str) ->
     if connection.execute(sa.select(user.c.role).where(user.c.id == viewer_id)).scalar() == "admin":
         for row in connection.execute(
             sa.select(user.c.id, user.c.username)
-            .where(sa.or_(user.c.role == "child", user.c.max_age_rating.is_not(None)))
+            .where(user.c.role == "child")
             .order_by(user.c.username)
         ):
             subjects.setdefault(str(row.id), str(row.username))

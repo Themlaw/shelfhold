@@ -53,9 +53,8 @@ ou un changement de sens attend la 2.0. Aucune écriture : un lecteur enregistre
    que la lecture (`GET`) vient de donner à ce jeton, ou une page plus tôt du même chapitre, est un
    point de départ et non une lecture (la liseuse revient là où on l'a envoyée) : elle ne marque
    rien. La dernière page donnée est gardée en mémoire (bornée, perdue au redémarrage).
-   Le point de départ A est la dernière position connue du profil sur ce contenu, sinon la
-   **remise du fichier** au profil (page 0, `record_delivery`), sinon rien : un premier rapport
-   sans point de départ n'atteint rien. Fichier sans bornes de page et à une seule Unité : mêmes
+   Le point de départ A est la dernière position connue du profil sur ce contenu, sinon rien :
+   un premier rapport sans point de départ n'atteint rien. Fichier sans bornes de page et à une seule Unité : mêmes
    règles en parts du fichier (5 % admis ; au-delà, la vitesse en pages demande le nombre de
    pages du contenu). La marque est journalisée dans `reading_position.read_units` et le membre
    peut l'annuler (`undo_read_mark`) ; une marque annulée ne revient que sur de nouveaux

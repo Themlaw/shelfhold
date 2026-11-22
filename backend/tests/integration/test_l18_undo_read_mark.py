@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+import structlog
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.db import write_transaction
@@ -177,6 +178,45 @@ def test_admin_undoes_the_mark_of_a_child_profile(world: World) -> None:
     assert state(world, "kid", unit) != "read"
 
 
+@pytest.mark.req("EF-LEC-014")
+def test_the_journal_of_the_undo_says_who_and_whose(world: World) -> None:
+    """The event of the undo says who undoes and whose the mark is: ids only, never a name."""
+    unit, carrier = read_unit(world)
+    kid = user_id_of(world.seed.engine, "kid")
+    admin = user_id_of(world.seed.engine, "admin")
+    mark_read(world, "kid", unit, carrier)
+    with structlog.testing.capture_logs() as logs:
+        assert undo(world, world.admin, unit, for_child=kid).json() == {"undone": 1}
+    (event,) = [line for line in logs if line.get("event") == "reading.read_unmarked"]
+    assert event["actor_id"] == admin  # who undoes
+    assert event["user_id"] == kid  # whose the mark is
+    assert event["unit"] == unit and event["marks"] == 1
+    assert "kid" not in repr(event)  # a username never enters the journal
+
+
+@pytest.mark.req("EF-LEC-014", "ENF-SEC-010")
+def test_an_api_key_cannot_undo_a_read_mark(world: World) -> None:
+    """A key of the API is not the reader's session: neither door of the undo answers it, and
+    nothing is undone through one."""
+    from shelfhold.identity.public import local_auth
+
+    unit, carrier = read_unit(world)
+    kid = user_id_of(world.seed.engine, "kid")
+    mark_read(world, "mum", unit, carrier)
+    key = (
+        local_auth(world.seed.engine, world.env.settings)
+        .create_api_key(name="mumkey", username="mum", read_only=True)
+        .value
+    )
+    client = world.env.other_client("10.0.0.9")
+    headers = {"Authorization": f"Bearer {key}"}
+    own = client.post(f"/api/reader/read-marks/{unit}/undo", headers=headers)
+    child = client.post(f"/api/reader/read-marks/{unit}/undo/for-child/{kid}", headers=headers)
+    assert own.status_code in {401, 403}
+    assert child.status_code in {401, 403}
+    assert state(world, "mum", unit) == "read"  # nothing was undone
+
+
 # -- the screen's list ---------------------------------------------------------------------------
 
 
@@ -299,3 +339,34 @@ def test_relay_does_not_remark_after_undo(tmp_path: Any) -> None:
         env.sync(reader)
         assert env.kavita_page(reader, chapter) == 3
         assert env.state(reader, chapter) != "read"
+
+
+@pytest.mark.req("EF-LEC-014", "EF-EXP-026")
+def test_undo_of_a_read_the_destination_made_alone_keeps_its_page(tmp_path: Any) -> None:
+    """A chapter only the destination read (a pulled server state, nothing ever pushed) keeps
+    its page when the member undoes the mark: « non lu » is sent only for a chapter Shelfhold
+    itself pushed as read."""
+    with sync_env(tmp_path) as env:
+        reader = env.member("reader")
+        own = env.chapter("Orchard Road", 1)
+        env.read_in_kavita(reader, own, own.pages)  # the destination read it there, alone
+        env.clock.advance(minutes=1)
+        env.sync(reader)  # the pull records the server state: the mark exists, from it only
+        assert env.state(reader, own) == "read"
+        env.clock.advance(minutes=1)
+        with write_transaction(env.engine) as connection:
+            assert (
+                undo_read_mark(
+                    connection,
+                    viewer_id=reader,
+                    subject_id=reader,
+                    unit_id=own.units[0],
+                    now=env.clock.now(),
+                )
+                == 1
+            )
+        assert env.state(reader, own) != "read"
+        env.clock.advance(minutes=1)
+        outcome = env.sync(reader)
+        assert outcome.code == "ok"
+        assert env.kavita_page(reader, own) == own.pages  # the destination keeps its page
