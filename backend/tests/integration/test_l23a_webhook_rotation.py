@@ -142,9 +142,10 @@ def test_webhook_dead_event_when_the_event_is_gone(settings: Settings) -> None:
         sub, _ = env.subscribe()
         event_id = env.publish()
         env.outbox().enqueue()
-        with write_transaction(env.engine) as connection:  # purged before it was sent
+        with write_transaction(env.engine) as connection:  # no longer theirs to send
             connection.execute(
-                sa.text("DELETE FROM event WHERE id = :id"), {"id": event_id}
+                sa.text("UPDATE \"user\" SET role = 'member' WHERE id = :id"),
+                {"id": env.admin_id},
             )  # fmt: skip
         bus = EventBus(env.clock)
         report = env.deliverer(publisher=bus).run_once()
@@ -153,6 +154,7 @@ def test_webhook_dead_event_when_the_event_is_gone(settings: Settings) -> None:
         assert len(dead) == 1
         assert dead[0]["payload"]["reason"] == "event_gone"
         assert dead[0]["payload"]["subscription_id"] == sub.id
+        assert dead[0]["payload"]["event_id"] == event_id
 
 
 # -- the route: a reserved action, the secret shown once -----------------------------------------

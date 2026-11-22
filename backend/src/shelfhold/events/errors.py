@@ -18,4 +18,5 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("reconcile.drift", 409, "admin", event=True),
     ErrorCode("wake.deferred", 503, "admin", event=True),
     ErrorCode("metadata.provider_down", 503, "admin", event=True),
+    ErrorCode("webhook.dead", 502, "admin", event=True),  # M6 L23a: a delivery was given up
 )

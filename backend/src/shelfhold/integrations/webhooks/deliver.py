@@ -7,9 +7,12 @@ followed: a 3xx is a failed attempt. A private target the administrator allowed 
 exact `host:port` with the addresses it had then, and nothing else.
 
 The body is signed as `HMAC-SHA256(secret, "<t>." + body)` and sent as
-`X-Shelfhold-Signature: t=<unix seconds>,v1=<hex>`; the receiver rejects a stale `t`. The secret is
+`X-Shelfhold-Signature: t=<unix seconds>,v1=<hex>`; the receiver rejects a stale `t`. For 24 h
+after a rotation, a second `v1=` made with the previous secret travels beside the new one, so a
+receiver that moves over loses no event (M6 L23a). The secret is
 opened for the call and never logged. A failure is a closed code and a count in the log, never the
-address or the body.
+address or the body. A delivery that is given up is settled as dead and announced once by the
+`webhook.dead` event, written in the same transaction.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ import ipaddress
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Final
 
 import structlog
@@ -41,7 +45,14 @@ from shelfhold.infrastructure.fetcher import (
 from shelfhold.infrastructure.fetcher.lan import normalize_host
 from shelfhold.infrastructure.secrets import SecretVault
 from shelfhold.integrations.webhooks.catalogue import WEBHOOK_EVENTS, Catalogue
-from shelfhold.integrations.webhooks.outbox import BATCH, LEASE, MAX_ATTEMPTS, Due, Outbox
+from shelfhold.integrations.webhooks.outbox import (
+    BATCH,
+    LEASE,
+    MAX_ATTEMPTS,
+    DeadDeliveryPublisher,
+    Due,
+    Outbox,
+)
 from shelfhold.integrations.webhooks.subscriptions import (
     Opened,
     SubscriptionStore,
@@ -51,6 +62,7 @@ from shelfhold.integrations.webhooks.subscriptions import (
 
 __all__ = [
     "MAX_ATTEMPTS",
+    "ROTATION_WINDOW",
     "SIGNATURE_HEADER",
     "Deliverer",
     "DeliveryReport",
@@ -60,6 +72,9 @@ __all__ = [
 log = structlog.get_logger(__name__)
 
 SIGNATURE_HEADER: Final = "X-Shelfhold-Signature"
+# After a rotation (M6 L23a), the previous secret signs beside the new one for this long, so a
+# receiver that moves over loses no event; after the window it signs nothing.
+ROTATION_WINDOW: Final = timedelta(hours=24)
 LIMITS: Final = FetchLimits(
     max_bytes=64 * 1024, total_timeout=20.0, connect_timeout=5.0, read_timeout=10.0,
     max_redirects=0,  # a redirection is never followed
@@ -94,6 +109,7 @@ class Deliverer:
         catalogue: Catalogue = WEBHOOK_EVENTS,
         steps: Mapping[tuple[str, int], Upcaster] | None = None,
         batch: int = BATCH,
+        publisher: DeadDeliveryPublisher | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
@@ -103,7 +119,7 @@ class Deliverer:
         self._steps = steps
         self._batch = batch
         self._store = SubscriptionStore(vault, catalogue=catalogue)
-        self._outbox = Outbox(engine, clock, catalogue=catalogue)
+        self._outbox = Outbox(engine, clock, catalogue=catalogue, publisher=publisher)
 
     def run_once(self) -> DeliveryReport:
         """Make the rows of the new events, then send what is due."""
@@ -150,9 +166,10 @@ class Deliverer:
             separators=(",", ":"), sort_keys=True,
         ).encode()  # fmt: skip
         stamp = int(self._clock.now().timestamp())
+        signatures = self._signatures(opened, stamp, body)
         headers = {
             "Content-Type": "application/json",
-            SIGNATURE_HEADER: f"t={stamp},v1={sign_body(opened.secret, stamp, body)}",
+            SIGNATURE_HEADER: f"t={stamp}," + ",".join(f"v1={digest}" for digest in signatures),
             "X-Shelfhold-Event": event.type,
             "X-Shelfhold-Delivery": row.id,  # stable across attempts: the receiver's dedupe key
             "X-Shelfhold-Schema-Version": str(row.schema_version),
@@ -179,6 +196,19 @@ class Deliverer:
             report.delivered += 1
         else:
             self._retry(row, report, status=response.status, error="http_status")
+
+    def _signatures(self, opened: Opened, stamp: int, body: bytes) -> list[str]:
+        """The `v1` values of this delivery: the current secret, and the previous one while the
+        rotation window is open (M6 L23a). After the window the old secret signs nothing."""
+        signed = [sign_body(opened.secret, stamp, body)]
+        previous, rotated_at = opened.secret_prev, opened.subscription.rotated_at
+        if (
+            previous is not None
+            and rotated_at is not None
+            and self._clock.now() < rotated_at + ROTATION_WINDOW
+        ):
+            signed.append(sign_body(previous, stamp, body))
+        return signed
 
     def _retry(self, row: Due, report: DeliveryReport, *, status: int | None, error: str) -> None:
         if self._outbox.failed(row, status=status, error=error):

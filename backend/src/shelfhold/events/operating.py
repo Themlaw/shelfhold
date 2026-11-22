@@ -76,6 +76,7 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
         "unit.revision_suspect",  # M2 L17 (EF-BIB-024): a suspect version was quarantined
         "unit.upgraded",  # M2 L16 (EF-EXP-016, D21): KOReader's position was reset
         "wake.deferred",
+        "webhook.dead",  # M6 L23a (EF-INT-005): a webhook delivery was given up
     }
 )
 

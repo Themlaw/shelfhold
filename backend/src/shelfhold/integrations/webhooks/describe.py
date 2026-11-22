@@ -43,7 +43,8 @@ def webhook_documentation() -> dict[str, Any]:
             "headers": {
                 SIGNATURE_HEADER: (
                     "t=<unix seconds>,v1=<hex HMAC-SHA256 of '<t>.' followed by the exact body, "
-                    "keyed by the secret given once at registration>"
+                    "keyed by the secret given once at registration>; for 24 h after a rotation, "
+                    "a second v1= made with the previous secret travels beside the new one"
                 ),
                 "X-Shelfhold-Event": "the event type",
                 "X-Shelfhold-Delivery": "identity of the delivery, the same at every retry: drop "

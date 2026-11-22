@@ -3094,3 +3094,8 @@
     title = "These event types are not available."
     action = "Pick one or more types from the closed list offered."
     cause = "The list is empty, too long, or names an event that webhooks do not send."
+
+  [errors."webhook.dead"]
+    title = "A webhook gave up a delivery."
+    action = "Open the list of webhooks, check the address that does not answer, then rotate the secret or remove the subscription."
+    cause = "A delivery ran out of attempts (or its event was gone): the receiver did not answer, or refused the delivery."

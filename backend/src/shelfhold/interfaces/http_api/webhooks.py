@@ -1,13 +1,14 @@
-"""`/api/v1/webhooks` (M4 L24, EF-INT-005): register, list, read and remove a webhook.
+"""`/api/v1/webhooks` (M4 L24, EF-INT-005): register, list, read, remove and rotate a webhook.
 
 Registering one sends the household's events to an address outside the house and hands out a
 secret: it is a reserved action (`webhook.manage`, a fresh session of an administrator, never a
-key). Reading is the administrator's alone (a session, or a key of scope `admin` that is not
-read-only); a child, a member, a read-only key and nobody are refused before anything is read, so
-a subscription that exists and one that does not give one answer.
+key). Turning the secret (M6 L23a) is the same action, with the same guard. Reading is the
+administrator's alone (a session, or a key of scope `admin` that is not read-only); a child, a
+member, a read-only key and nobody are refused before anything is read, so a subscription that
+exists and one that does not give one answer.
 
-The secret is in the answer to the creation, once. No other answer carries it, and what is shown of
-the address is its host.
+The secret is in the answer to the creation, and in the answer to the rotation, once each. No
+other answer carries it, and what is shown of the address is its host.
 """
 
 from collections.abc import Callable
@@ -20,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal
 from shelfhold.integrations.webhooks import (
     Subscription,
+    SubscriptionUnreadable,
     WebhookAdmin,
     WebhookRefused,
     webhook_documentation,
@@ -104,6 +106,19 @@ def build_webhooks_router(admin: Callable[[], WebhookAdmin]) -> APIRouter:
         if not admin().delete(principal, webhook_id):
             raise ProblemError("webhook.not_found")
         return Response(status_code=204)
+
+    @router.post("/{webhook_id}/rotate")
+    def rotate_webhook(webhook_id: str, principal: _Manager, response: Response) -> WebhookCreated:
+        """Turn the signing secret (M6 L23a): the same reserved action as the creation, and the
+        same answer — the only other one that carries a secret, once."""
+        try:
+            turned = admin().rotate(principal, webhook_id)
+        except SubscriptionUnreadable:
+            raise ProblemError("webhook.secret_unreadable") from None
+        if turned is None:
+            raise ProblemError("webhook.not_found")
+        response.headers["Cache-Control"] = "no-store"  # the one answer that carries the secret
+        return WebhookCreated(**_out(turned[0]).model_dump(), secret=turned[1])
 
     return router
 

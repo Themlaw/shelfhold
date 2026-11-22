@@ -14,9 +14,10 @@ and the receiver recognises the second copy by the delivery identity (the row id
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Final
+from typing import Any, Final, Protocol
 
 import sqlalchemy as sa
 from sqlalchemy import Connection, Engine
@@ -35,6 +36,7 @@ __all__ = [
     "LEASE",
     "MAX_ATTEMPTS",
     "MAX_DELAY",
+    "DeadDeliveryPublisher",
     "Due",
     "Outbox",
     "retry_delay",
@@ -66,13 +68,28 @@ class Due:
     attempts: int  # counting this one
 
 
+class DeadDeliveryPublisher(Protocol):
+    """What the outbox tells when a delivery is given up: the event bus, injected so this package
+    never imports it (the import contract keeps `events.bus` out of `integrations.webhooks`)."""
+
+    def publish(
+        self, connection: Connection, event_type: str, payload: Mapping[str, object]
+    ) -> object: ...
+
+
 class Outbox:
     def __init__(
-        self, engine: Engine, clock: Clock, *, catalogue: Catalogue = WEBHOOK_EVENTS
+        self,
+        engine: Engine,
+        clock: Clock,
+        *,
+        catalogue: Catalogue = WEBHOOK_EVENTS,
+        publisher: DeadDeliveryPublisher | None = None,
     ) -> None:
         self._engine = engine
         self._clock = clock
         self._catalogue = catalogue
+        self._publisher = publisher
 
     def enqueue(self) -> int:
         """Make the rows of every event the subscriptions have not seen yet; the number made."""
@@ -188,14 +205,36 @@ class Outbox:
     ) -> bool:
         """Record a failed attempt: due again after the delay, or dead after the last one (or at
         once when `final`). True when the row is dead."""
-        dead = final or row.attempts >= MAX_ATTEMPTS
-        values: dict[str, Any] = {"last_status": status, "last_error": error}
-        if dead:
-            self._settle(row, status="dead", **values)
-        else:
-            retry_at = self._clock.now() + retry_delay(row.attempts)
-            self._settle(row, status="pending", next_try_at=retry_at, **values)
-        return dead
+        if final or row.attempts >= MAX_ATTEMPTS:
+            self._die(row, status=status, error=error, final=final)
+            return True
+        retry_at = self._clock.now() + retry_delay(row.attempts)
+        self._settle(
+            row, status="pending", next_try_at=retry_at, last_status=status, last_error=error
+        )
+        return False
+
+    def _die(self, row: Due, *, status: int | None, error: str | None, final: bool) -> None:
+        """Settle the row as dead and announce it once (M6 L23a): the `webhook.dead` event is
+        written in the same transaction, and only by the attempt that holds the claim — a slow
+        copy that comes back after the lease changed nothing and announces nothing."""
+        reason = "event_gone" if final else "retries_exhausted"
+        with write_transaction(self._engine) as connection:
+            settled = connection.execute(
+                sa.update(_outbox)
+                .where(
+                    _outbox.c.id == row.id,
+                    _outbox.c.status == "pending",
+                    _outbox.c.attempts == row.attempts,
+                )
+                .values(status="dead", last_status=status, last_error=error)
+            )
+            if settled.rowcount == 1 and self._publisher is not None:
+                self._publisher.publish(
+                    connection, "webhook.dead",
+                    {"subscription_id": row.subscription_id, "event_id": row.event_id,
+                     "reason": reason},
+                )  # fmt: skip
 
     def release(self, row: Due) -> None:
         """Give the claim back without counting the attempt: what failed was ours (the database,

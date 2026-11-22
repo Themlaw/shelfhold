@@ -18975,6 +18975,44 @@ export type ReadWebhookResponses = {
 
 export type ReadWebhookResponse = ReadWebhookResponses[keyof ReadWebhookResponses];
 
+export type RotateWebhookData = {
+    body?: never;
+    path: {
+        /**
+         * Webhook Id
+         */
+        webhook_id: string;
+    };
+    query?: never;
+    url: '/api/v1/webhooks/{webhook_id}/rotate';
+};
+
+export type RotateWebhookErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RotateWebhookError = RotateWebhookErrors[keyof RotateWebhookErrors];
+
+export type RotateWebhookResponses = {
+    /**
+     * Successful Response
+     */
+    200: WebhookCreated;
+};
+
+export type RotateWebhookResponse = RotateWebhookResponses[keyof RotateWebhookResponses];
+
 export type ListWorksData = {
     body?: never;
     path?: never;
