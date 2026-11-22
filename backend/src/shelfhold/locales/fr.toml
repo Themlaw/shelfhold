@@ -130,6 +130,13 @@ plugin_field_help = "Nom du champ secret, tel que le déclare le settings_schema
 plugin_set_secret_help = "Règle un secret d'une source, lu dans un fichier ou sur l'entrée standard (audité)."
 plugin_set_cookies_help = "Remplace les cookies d'une source par un objet JSON nom → valeur (audité ; un objet vide les efface)."
 plugin_cookies_file_help = "Fichier JSON des cookies, ou - pour l'entrée standard."
+plugin_index_help = "Dépôts d'index de plugins signés : épinglage par URL et clé publique, actualisation vérifiée."
+plugin_index_add_help = "Épingle un dépôt d'index signé (URL et clé publique minisign, audité)."
+plugin_index_list_help = "Liste les dépôts d'index épinglés et leur dernière version crue."
+plugin_index_refresh_help = "Actualise les index épinglés (ou un seul, par URL) : signature, version, expiration."
+plugin_index_remove_help = "Retire le signet d'un dépôt d'index (audité) ; un ajout repart de zéro."
+plugin_index_url_help = "Adresse du document d'index (URL http(s) simple)."
+plugin_index_pubkey_help = "Clé publique minisign du signataire, en base64 (sans elle, aucun épinglement)."
 secrets_help = "Gère les secrets chiffrés au repos : export, rotation, état du trousseau."
 secrets_export_help = "Exporte le trousseau dans un fichier age protégé par une phrase de passe."
 secrets_import_help = "Fusionne les clés d'un export age dans le trousseau, puis rejoue les pierres tombales en attente (action réservée)."
@@ -254,6 +261,13 @@ cookies_unreadable = "Les cookies doivent être un objet JSON nom → valeur, li
 runner_refused = "Le compagnon des plugins refuse de démarrer : {problems}"
 runner_ready = "Le bac à sable du compagnon est conforme (uid {uid}, ni /data ni réseau, racine en lecture seule)."
 runner_listening = "Le compagnon des plugins écoute sur {socket}."
+index_refused = "Refusé ({code}) : {detail}"
+index_added = "Dépôt {url} épinglé (clé {key_id}) : la première actualisation devra être signée par cette clé."
+index_none = "Aucun dépôt d'index épinglé."
+index_row = "{url}\t{key_id}\tv{version}\texpire {expires}"
+index_refreshed = "Index de {url} appliqué : version {version}{rotated, plural, =0 {} other { (clé tournée)}}."
+index_unchanged = "Index de {url} inchangé : version {version} déjà appliquée."
+index_removed = "Dépôt {url} retiré ; un nouvel ajout repart de zéro."
 
 [secrets]
 exported = "Trousseau exporté (age, scrypt) : {path}"
@@ -1788,6 +1802,31 @@ cause = "La valeur n'est pas une de celles qu'un plugin tiers peut déclarer sur
 title = "Ce plugin est first-party : ses valeurs s'appliquent telles quelles."
 action = "Rien à attester."
 cause = "Un plugin fourni avec Shelfhold est déjà jugé sûr : ses valeurs n'ont pas besoin d'attestation."
+
+[errors."plugin.index_invalid"]
+title = "L'index signé n'a pas été accepté."
+action = "Vérifiez l'adresse du dépôt et l'empreinte de la clé, puis relancez l'actualisation."
+cause = "Le document reçu n'est pas un index valide, ou sa signature ne correspond pas à la clé épinglée."
+
+[errors."plugin.index_rollback"]
+title = "Cet index est plus ancien que celui déjà connu."
+action = "Aucune action : Shelfhold garde la dernière version vérifiée."
+cause = "Le numéro de version de l'index reçu est inférieur ou égal à celui déjà appliqué, ou deux index portent le même numéro."
+
+[errors."plugin.index_expired"]
+title = "Cet index a expiré."
+action = "Attendez que le dépôt publie un index à jour, puis relancez l'actualisation."
+cause = "La date d'expiration de l'index est passée, ou trop éloignée (plus de 90 jours)."
+
+[errors."plugin.index_not_found"]
+title = "Aucun dépôt épinglé à cette adresse."
+action = "Ajoutez le dépôt avec « plugin index add » avant de l'actualiser ou de le retirer."
+cause = "L'adresse donnée ne correspond à aucun dépôt d'index épinglé par l'administrateur."
+
+[errors."plugin.index_fingerprint_required"]
+title = "Un dépôt s'épingle avec l'empreinte de la clé de son signataire."
+action = "Reprenez l'ajout avec la clé publique minisign du dépôt."
+cause = "Sans la clé publique épinglée, aucun index de ce dépôt ne peut être vérifié : l'ajout est refusé."
 
 [errors."source.not_loaded"]
 title = "Une source n'est pas chargée."

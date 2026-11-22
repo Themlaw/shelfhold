@@ -7910,6 +7910,34 @@
         "title": "RecheckOut",
         "type": "object"
       },
+      "RefreshOut": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "rotated": {
+            "title": "Rotated",
+            "type": "boolean"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "url",
+          "version",
+          "applied",
+          "rotated"
+        ],
+        "title": "RefreshOut",
+        "type": "object"
+      },
       "RejectIn": {
         "additionalProperties": false,
         "properties": {
@@ -8334,6 +8362,88 @@
           "replayed"
         ],
         "title": "ReplayOut",
+        "type": "object"
+      },
+      "RepoIn": {
+        "properties": {
+          "pubkey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pubkey"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "RepoIn",
+        "type": "object"
+      },
+      "RepoOut": {
+        "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "expires": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires"
+          },
+          "key_id": {
+            "title": "Key Id",
+            "type": "string"
+          },
+          "last_version": {
+            "title": "Last Version",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "key_id",
+          "last_version",
+          "expires",
+          "added_at"
+        ],
+        "title": "RepoOut",
+        "type": "object"
+      },
+      "ReposOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RepoOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ReposOut",
         "type": "object"
       },
       "RequestIn": {
@@ -23830,6 +23940,240 @@
         ]
       }
     },
+    "/api/v1/plugin-repos": {
+      "get": {
+        "operationId": "read_plugin_repos",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReposOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Read Plugin Repos",
+        "tags": [
+          "sources"
+        ]
+      },
+      "post": {
+        "operationId": "add_plugin_repo",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Add Plugin Repo",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
+    "/api/v1/plugin-repos/{url}": {
+      "delete": {
+        "operationId": "remove_plugin_repo",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReposOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Remove Plugin Repo",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
+    "/api/v1/plugin-repos/{url}/refresh": {
+      "post": {
+        "operationId": "refresh_plugin_repo",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Refresh Plugin Repo",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
     "/api/v1/plugins/{key}/attestations": {
       "get": {
         "operationId": "read_attestations",
@@ -34953,6 +35297,26 @@
     },
     "/api/v1/problems/plugin.attestation-not-needed": {
       "code": "plugin.attestation_not_needed",
+      "status": 409
+    },
+    "/api/v1/problems/plugin.index-expired": {
+      "code": "plugin.index_expired",
+      "status": 409
+    },
+    "/api/v1/problems/plugin.index-fingerprint-required": {
+      "code": "plugin.index_fingerprint_required",
+      "status": 422
+    },
+    "/api/v1/problems/plugin.index-invalid": {
+      "code": "plugin.index_invalid",
+      "status": 422
+    },
+    "/api/v1/problems/plugin.index-not-found": {
+      "code": "plugin.index_not_found",
+      "status": 404
+    },
+    "/api/v1/problems/plugin.index-rollback": {
+      "code": "plugin.index_rollback",
       "status": 409
     },
     "/api/v1/problems/plugin.unknown": {

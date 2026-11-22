@@ -127,6 +127,7 @@ from shelfhold.ops.notifications import subscribe_notifications
 from shelfhold.ops.requests import build_service, resolve_request_ref, subscribe_arrivals
 from shelfhold.ops.wiring import open_ops
 from shelfhold.plugin_host.attestation import AttestationStore
+from shelfhold.plugin_host.index import RepoStore, index_fetcher
 from shelfhold.plugin_host.public import PluginRegistry, installed_versions, start_plugins
 from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse_settings_schema
 from shelfhold.progress_lease import build_progress_lease
@@ -550,6 +551,8 @@ def create_app(
             lambda: SourceSettings(engine, composition.vault, now=clock.now),
             lambda: AttestationStore(engine, clock=clock),
             schema_for,
+            lambda: RepoStore(engine, now=clock.now),  # M6 L07: the pinned plugin indexes
+            lambda: index_fetcher(composition.network),
         ),
     )
 

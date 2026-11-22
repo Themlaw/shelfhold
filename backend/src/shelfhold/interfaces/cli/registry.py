@@ -82,6 +82,7 @@ FROZEN_OPEN: frozenset[tuple[str, ...]] = frozenset(
         ("migrate",),
         ("missing", "list"),
         ("plugin", "list"),
+        ("plugin", "index", "list"),
         ("plugin", "settings"),
         ("profile", "list"),
         ("revisions", "list"),

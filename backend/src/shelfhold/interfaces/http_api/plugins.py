@@ -7,6 +7,12 @@
   (a fresh session, never a key), audited.
 - `GET|POST /api/v1/plugins/{key}/attestations`, `DELETE .../attestations/{field}`: the reserved
   action `plugin.attest` (and `plugin.attest_partitioning` for `access_partitioning`), audited.
+- `GET|POST /api/v1/plugin-repos`, `DELETE .../plugin-repos/{url}`, `POST .../refresh`: the
+  repositories of signed plugin indexes (M6 L07, D14, EF-SRC-017). Adding and removing are the
+  reserved actions `plugin.index_add` and `plugin.index_remove` (a fresh admin session or the
+  host CLI, never a key); the add pins the URL **and** the public key of the signer — without
+  the key there is no pin. A refresh goes through the host's Fetcher and verifies the minisign
+  signature, the trusted comment, the monotone version, the expiry and the revocations.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ from shelfhold.plugin_host.attestation import (
     AttestationNotNeeded,
     AttestationStore,
 )
+from shelfhold.plugin_host.index import PluginIndexError, RepoStore
 from shelfhold.plugin_host.settings import (
     SecretState,
     SettingsSchema,
@@ -40,6 +47,8 @@ __all__ = ["build_plugins_router"]
 _SECRET = reserved_action(RESERVED_ACTIONS["source.set_secret"])
 _ATTEST = reserved_action(RESERVED_ACTIONS["plugin.attest"])
 _ATTEST_PARTITIONING = reserved_action(RESERVED_ACTIONS["plugin.attest_partitioning"])
+_INDEX_ADD = reserved_action(RESERVED_ACTIONS["plugin.index_add"])
+_INDEX_REMOVE = reserved_action(RESERVED_ACTIONS["plugin.index_remove"])
 
 
 class SecretStateOut(BaseModel):
@@ -83,6 +92,47 @@ class AttestationsOut(BaseModel):
     items: list[AttestationOut]
 
 
+class RepoIn(BaseModel):
+    url: str
+    # optional in the schema on purpose: a repository without the signer's key is a typed
+    # refusal (`plugin.index_fingerprint_required`), not a validation error
+    pubkey: str | None = None
+
+
+class RepoOut(BaseModel):
+    url: str
+    key_id: str
+    last_version: int
+    expires: datetime | None
+    added_at: datetime
+
+
+class ReposOut(BaseModel):
+    items: list[RepoOut]
+
+
+class RefreshOut(BaseModel):
+    url: str
+    version: int
+    applied: bool
+    rotated: bool
+
+
+_INDEX_PROBLEMS = {
+    "fingerprint_required": "plugin.index_fingerprint_required",
+    "rollback": "plugin.index_rollback",
+    "same_version": "plugin.index_rollback",
+    "expired": "plugin.index_expired",
+    "expires_too_far": "plugin.index_expired",
+    "not_found": "plugin.index_not_found",
+}
+
+
+def _index_problem(error: PluginIndexError) -> ProblemError:
+    code = _INDEX_PROBLEMS.get(error.code, "plugin.index_invalid")
+    return ProblemError(code, detail=error.detail)
+
+
 def _state(state: SecretState) -> SecretStateOut:
     return SecretStateOut(set=state.set, fingerprint=state.fingerprint)
 
@@ -111,6 +161,8 @@ def build_plugins_router(
     settings: Callable[[], SourceSettings],
     attestations: Callable[[], AttestationStore],
     schema_for: Callable[[str], SettingsSchema | None],
+    repos: Callable[[], RepoStore],
+    index_fetcher_for: Callable[[], Any],
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["sources"])
 
@@ -230,5 +282,69 @@ def build_plugins_router(
     ) -> AttestationsOut:
         attestations().withdraw(key, name, actor=_actor(principal))
         return listed(key)
+
+    # -- the repositories of signed plugin indexes (M6 L07, EF-SRC-017, D14) ---------------------
+
+    def _repo(record: Any) -> RepoOut:
+        return RepoOut(
+            url=record.url,
+            key_id=record.key_id,
+            last_version=record.last_version,
+            expires=record.expires,
+            added_at=record.added_at,
+        )
+
+    def _repos() -> ReposOut:
+        return ReposOut(items=[_repo(record) for record in repos().list()])
+
+    @router.get("/plugin-repos")
+    def read_plugin_repos(_principal: Principal = Depends(admin_only)) -> ReposOut:  # noqa: B008
+        return _repos()
+
+    @router.post("/plugin-repos", status_code=201)
+    def add_plugin_repo(
+        body: RepoIn,
+        _principal: Principal = Depends(_INDEX_ADD),  # noqa: B008
+    ) -> RepoOut:
+        try:
+            record = repos().add(body.url, body.pubkey or "")
+        except PluginIndexError as error:
+            raise _index_problem(error) from None
+        return _repo(record)
+
+    @router.delete("/plugin-repos/{url:path}")
+    def remove_plugin_repo(
+        url: str,
+        _principal: Principal = Depends(_INDEX_REMOVE),  # noqa: B008
+    ) -> ReposOut:
+        try:
+            repos().remove(url)
+        except PluginIndexError as error:
+            raise _index_problem(error) from None
+        return _repos()
+
+    @router.post("/plugin-repos/{url:path}/refresh")
+    async def refresh_plugin_repo(
+        url: str,
+        _principal: Principal = Depends(admin_only),  # noqa: B008
+    ) -> RefreshOut:
+        record = next((r for r in repos().list() if r.url == url), None)
+        if record is None:
+            raise ProblemError(
+                "plugin.index_not_found", detail="no pinned repository at this address"
+            )
+        fetcher = index_fetcher_for()
+        try:
+            outcome = await repos().refresh(record, fetcher)
+        except PluginIndexError as error:
+            raise _index_problem(error) from None
+        finally:
+            await fetcher.aclose()
+        return RefreshOut(
+            url=url,
+            version=outcome.document.version,
+            applied=outcome.applied,
+            rotated=outcome.rotated,
+        )
 
     return router

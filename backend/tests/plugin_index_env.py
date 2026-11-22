@@ -58,7 +58,7 @@ def sign_index(
     prehashed: bool = True,
     key_id: bytes | None = None,
     global_signature: bool = True,
-) -> str:
+) -> bytes:
     """A detached minisign signature, as `index.json.minisig` carries it.
 
     `prehashed=False` writes the old `Ed` format (a signature of the file itself), which the
@@ -78,7 +78,7 @@ def sign_index(
         f"{base64.b64encode(blob).decode('ascii')}\n"
         f"trusted comment: {comment}\n"
         f"{base64.b64encode(global_sig).decode('ascii')}\n"
-    )
+    ).encode("ascii")
 
 
 def plugin_entry(

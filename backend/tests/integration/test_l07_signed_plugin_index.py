@@ -18,12 +18,12 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.plugin_host.index import PluginIndexError, RepoStore
 
 from shelfhold.config import Settings
 from shelfhold.identity.public import RESERVED_ACTIONS
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.migrate import migrate
+from shelfhold.plugin_host.index import PluginIndexError, RepoStore
 from tests.auth_env import ADMIN, CSRF_COOKIE, CSRF_HEADER, PASSWORD, AuthEnv, auth_env, run_cli
 from tests.plugin_index_env import (
     WHEEL_URL,
@@ -277,7 +277,9 @@ def test_wheel_sha256_verified(settings: Settings, tmp_path: Path) -> None:
         with pytest.raises(PluginIndexError) as caught:
             asyncio.run(store.fetch_wheel(entry, fetcher, tmp_path))
         assert caught.value.code == "wheel_hash_mismatch"
-        assert list(tmp_path.iterdir()) == [fetched]
+        # the settings fixture keeps its `data` and `store` folders here: what must be left
+        # alone is no staging file — the only file is the wheel accepted before
+        assert [p for p in tmp_path.iterdir() if p.is_file()] == [fetched]
     finally:
         engine.dispose()
 
