@@ -11,7 +11,8 @@ member may see:
    never `client_ts`) is written to Kavita, but only forward: a page not beyond Kavita's own (read
    again just before the write) is never sent, and the last page of a chapter is sent as « read »
    only when a traversal marked the Unit read (`reading_progress`), else Kavita is given the page
-   before it.
+   before it. A read mark undone (L18) is the one thing that goes back: a chapter Shelfhold itself
+   pushed as read and whose Units are no longer all read is told « unread » again.
 
 Kavita's own `lastModifiedUtc` is a stamp of **its** clock: it is compared for equality with the
 last one seen (« this changed ») and nothing else, so a Kavita whose clock is wrong decides nothing.
@@ -596,6 +597,14 @@ def _utc(value: datetime | None) -> datetime | None:
     return value if value is None or value.tzinfo else value.replace(tzinfo=UTC)
 
 
+def _iso(value: Any) -> datetime | None:
+    """An ISO stamp as written in `undone_units` (L18), or `None` if it is not one."""
+    try:
+        return _utc(datetime.fromisoformat(str(value)))
+    except ValueError:
+        return None
+
+
 def _load_notes(
     engine: sa.Engine, user_id: str, destination_id: str, account_ref: str
 ) -> dict[int, _Note]:
@@ -686,9 +695,10 @@ def relayable_position(position: sa.Table) -> sa.ColumnElement[bool]:
 def _pending_chapters(
     engine: sa.Engine, user_id: str, refs: Sequence[ChapterRef], notes: dict[int, _Note]
 ) -> set[int]:
-    """The chapters with a device position newer than their note, or a Unit a traversal marked
-    read since (one read for each, for all of them): only these can have something to say to
-    Kavita. A chapter a read through the block crossed has no position of its own."""
+    """The chapters with a device position newer than their note, a Unit a traversal marked
+    read since (one read for each, for all of them), or a Unit whose read mark was undone since
+    (L18): only these can have something to say to Kavita. A chapter a read through the block
+    crossed has no position of its own."""
     if not refs:
         return set()
     since = {r.chapter_id: (notes[r.chapter_id].synced_at if r.chapter_id in notes else EPOCH)
@@ -718,7 +728,13 @@ def _pending_chapters(
                 sa.func.json_array_length(position.c.read_units) > 0,
             )
         ).all()
-        units = _units_of(connection, {r.carrier_id for r in refs}) if marks else {}
+        undone = connection.execute(
+            sa.select(position.c.undone_units).where(
+                position.c.user_id == user_id,
+                position.c.undone_units != {},
+            )
+        ).all()
+        units = _units_of(connection, {r.carrier_id for r in refs}) if marks or undone else {}
     last = {str(r.carrier_id): _utc(r.last) for r in rows}
     found = {
         r.chapter_id
@@ -735,6 +751,20 @@ def _pending_chapters(
                 and when >= since[r.chapter_id]
                 and covered & set(m.read_units)
                 for m in marks
+            )
+        ):
+            found.add(r.chapter_id)
+    for r in refs:  # a read mark undone since (L18): the chapter has « unread » to say again
+        covered = units.get(r.carrier_id, set())
+        if (
+            r.chapter_id not in found
+            and covered
+            and any(
+                (when := _iso(stamp)) is not None
+                and when >= since[r.chapter_id]
+                and unit in covered
+                for row in undone
+                for unit, stamp in (row.undone_units or {}).items()
             )
         ):
             found.add(r.chapter_id)
@@ -773,7 +803,8 @@ def _chapter(
 
     `mode` `"pull"`: the reading half only, and the note keeps its date (the positions still to be
     pushed are still to be pushed). `"restore"`: the page to push is the member's furthest proven
-    one, whatever its source (a rescan of Kavita has deleted what it held)."""
+    one, whatever its source (a rescan of Kavita has deleted what it held). A chapter this pass
+    itself pushed as read whose Units are no longer all read (L18) is the one that goes back."""
     if old is not None and old.carrier_id != ref.carrier_id:
         old = None  # another file under the same id: its echo and its date are not this one's
     if ref.reflowable:
@@ -805,6 +836,14 @@ def _chapter(
             outcome.pulled += 1
     if not echo:
         pushed_page = None  # Kavita moved on its own: what we pushed is no longer what it holds
+    with engine.connect() as connection:
+        back = (  # a chapter we ourselves pushed as read (L18), whose Units are no longer all
+            mode == "sync"  # read: Kavita is told « unread » — never a chapter it moved alone
+            and pushed_page is not None
+            and ref.pages > 0
+            and pushed_page >= ref.pages
+            and not _all_read(connection, user_id, ref.carrier_id)
+        )
     wanted: int | None = None
     if mode == "restore":
         wanted = _carried_page(engine, user_id, ref, outcome, max_session_s)
@@ -819,10 +858,12 @@ def _chapter(
             carried = _carried_page(engine, user_id, ref, outcome, max_session_s, only_server=True)
             if carried is not None and (wanted is None or carried > wanted):
                 wanted = carried  # the furthest proven page is never replaced by an older one
-    if wanted is not None and wanted > seen.page:
+    if back and wanted is None:
+        wanted = 0  # nothing newer to say: the chapter is taken back to its first page
+    if wanted is not None and (wanted > seen.page or back):
         _live(engine, user_id, destination_id)
         latest = member.get(ref)  # read again just before writing: never back from what it holds
-        if wanted > latest.page:
+        if wanted > latest.page or (back and latest.page == seen.page):
             member.save(ref, wanted)
             outcome.pushed += 1
             pushed_page, pushed_at = wanted, clock.now()
