@@ -165,9 +165,9 @@ def test_arrival_replay_adds_once(settings: Settings) -> None:
         assert (done.in_library, done.requested) == (0, 1)
         (rid,) = [str(row[0]) for row in r.rows("SELECT request_id FROM request_list_item")]
         # the approval rates the Work; its Edition does not exist yet, so the request waits
-        assert service.approve(rid, admin(), age=6).state == "approved"
+        assert service.approve(rid, admin(), age=0).state == "approved"  # a tier, under her ceiling
         with write_transaction(r.engine) as connection:
-            edition = add_edition(connection, work, age_rating=6, rated_at=T0, shelf_id=shelf)
+            edition = add_edition(connection, work, age_rating=0, rated_at=T0, shelf_id=shelf)
             unit = add_unit(connection, edition)
             first = comp.bus.publish(
                 connection, "unit.stored",
