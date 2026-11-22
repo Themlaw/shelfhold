@@ -62,7 +62,9 @@ async def connect_runner(
     async def close() -> None:
         with contextlib.suppress(Exception):
             writer.close()
-            await asyncio.wait_for(writer.wait_closed(), 5.0)
+            # shielded: a wait that times out must not cancel the transport's close future, which a
+            # second `close()` awaits too
+            await asyncio.wait_for(asyncio.shield(writer.wait_closed()), 5.0)
 
     async def exit_reason() -> str | None:
         return "the plugin runner closed the connection (its log says why)"
