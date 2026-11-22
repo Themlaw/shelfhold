@@ -15,13 +15,19 @@ committed together, or neither.
   row follows its `export_item` (`ON DELETE CASCADE`) when the document is erased.
 - The row is made **without hashes** inside the transaction (file and alias stay atomic), and the
   transaction never opens the exported path: a link, a FIFO or another file put there cannot lend
-  its bytes to the alias nor hold the database write lock. After the commit, `complete_hashes`
-  fills them through `render_hooks.heal_alias_hashes`: SHA-256 checked against the alias in the
-  same single pass as the samples, no link followed, no blocking open, regular files only. A
-  failure leaves the alias without hashes and a log line, never an exception towards the export.
+  its bytes to the alias nor hold the database write lock. After the commit, the hashes are filled
+  through `render_hooks.heal_alias_hashes`: SHA-256 checked against the alias in the same single
+  pass as the samples, no link followed, no blocking open, regular files only. A failure leaves
+  the alias without hashes and a log line, never an exception towards the export. Two doors fill
+  them, one contract: `complete_hashes`, for the one file a caller just placed (a lazy read of
+  the kosync relay), and `complete_hashes_of_destination`, for the aliases of one destination
+  that are still empty — the ones a plan's own operations did not get to fill, then, for what a
+  stopped plan left behind, the sweep of the maintenance window. Both are bounded to the
+  destination's aliases and read only their own records.
 """
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -32,7 +38,12 @@ from shelfhold.export.application.render_hooks import heal_alias_hashes
 from shelfhold.infrastructure.logging import escaped
 from shelfhold.infrastructure.schema import export, storage
 
-__all__ = ["alias_wanted", "complete_hashes", "record_export_alias"]
+__all__ = [
+    "alias_wanted",
+    "complete_hashes",
+    "complete_hashes_of_destination",
+    "record_export_alias",
+]
 
 log = structlog.get_logger(__name__)
 
@@ -105,3 +116,57 @@ def complete_hashes(engine: Engine, *, export_item_id: str, file_hash: str, path
         log.warning("document_alias.complete_failed", export_item=export_item_id,
                     path=escaped(str(path)))  # fmt: skip
         return 0
+
+
+def complete_hashes_of_destination(
+    engine: Engine, destination_id: str, local: Callable[[str], str]
+) -> int:
+    """The aliases of one destination that are still empty, filled in one pass over them
+    (L47). The same contract as `complete_hashes` for each: the file is read once, its SHA-256
+    checked against its alias in the same pass as the samples, reached by no link, and the
+    write stays conditional on the hashes being empty, never inside a transaction — but the
+    pass is bounded: only the destination's aliases are read, only their own records are
+    looked up, and no other file is opened. An alias whose file is gone, moved or not the one
+    it names stays empty, for the next pass to try again. Never raises; returns the number of
+    aliases filled.
+
+    Two callers: the operation itself, right after the file is placed (an alias left empty
+    until then is filled before the next operation begins), and the sweep of the maintenance
+    window, for the aliases a stopped plan left behind — a run with nothing to write reads no
+    disk and sweeps nothing (ENF-OPS-014, EF-EXP-029)."""
+    alias, record = export.document_alias, export.export_record
+    empty = sa.or_(alias.c.koreader_partial_md5.is_(None), alias.c.kavita_md5.is_(None))
+    try:
+        with engine.connect() as connection:
+            pending = [
+                (str(row.export_item_id), str(row.file_hash))
+                for row in connection.execute(
+                    sa.select(alias.c.export_item_id, alias.c.file_hash).where(
+                        alias.c.shelf_destination_id == destination_id, empty
+                    )
+                )
+            ]
+            if not pending:
+                return 0
+            paths = {
+                (str(row.export_item_id), str(row.file_hash)): row.rel_path
+                for row in connection.execute(
+                    sa.select(record.c.export_item_id, record.c.file_hash, record.c.rel_path).where(
+                        record.c.shelf_destination_id == destination_id,
+                        record.c.locator_type == "path",
+                        record.c.export_item_id.in_([item for item, _ in pending]),
+                    )
+                )
+            }
+    except Exception:
+        log.warning("document_alias.heal_read_failed", destination=destination_id)
+        return 0
+    filled = 0
+    for item, digest in pending:
+        found = paths.get((item, digest))
+        if found is None:
+            continue  # its file is not on this destination's tree any more
+        filled += complete_hashes(
+            engine, export_item_id=item, file_hash=digest, path=Path(local(found))
+        )
+    return filled
