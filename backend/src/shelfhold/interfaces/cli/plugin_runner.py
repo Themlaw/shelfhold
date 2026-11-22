@@ -15,7 +15,12 @@ from pathlib import Path
 
 from shelfhold.i18n import t
 from shelfhold.plugin_host.adapters.rpc.runner_socket import DEFAULT_SOCKET
-from shelfhold.plugin_host.runner.selfcheck import SelfCheckFailed, self_check
+from shelfhold.plugin_host.runner.selfcheck import (
+    SelfCheckFailed,
+    accepts,
+    reachability,
+    self_check,
+)
 from shelfhold.plugin_host.runner.server import CORE_UID, RunnerConfig, configure_logging, serve
 
 __all__ = ["REFUSED", "register", "run"]
@@ -33,12 +38,28 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     parser.add_argument(
         "--core-uid", type=int, default=CORE_UID, help=t("cli.plugin_runner_core_uid_help")
     )
+    parser.add_argument(
+        "--healthcheck", action="store_true", help=t("cli.plugin_runner_healthcheck_help")
+    )
     parser.add_argument("--check", action="store_true", help=t("cli.plugin_runner_check_help"))
     parser.set_defaults(handler=run, standalone=True)
 
 
+def healthcheck(socket_path: Path) -> int:
+    """The container's healthcheck: the socket is a socket, its modes let the core (another uid)
+    in, and it accepts. Not healthy when the core could no longer enter, whoever changed that."""
+    problems = reachability(socket_path)
+    if not problems:
+        problems += accepts(socket_path)
+    for problem in problems:
+        print(problem, file=sys.stderr)
+    return 1 if problems else 0
+
+
 def run(args: argparse.Namespace, resolved: object = None) -> int:
     """`resolved` is never given: this command runs before any setting is read."""
+    if getattr(args, "healthcheck", False):
+        return healthcheck(Path(args.socket))
     configure_logging()
     try:
         seen = self_check(core_uid=args.core_uid)

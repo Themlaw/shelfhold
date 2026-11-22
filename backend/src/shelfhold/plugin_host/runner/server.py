@@ -12,10 +12,11 @@ standard streams, byte for byte: the companion carries `rpc_protocol` 1 without 
 
 A plugin's process lasts as long as its connection: when the core hangs up, or the plugin exits,
 the process group is killed, then every process that lost its parent on the way (the companion is
-the subreaper of its container) and the key is free again. A plugin runs under the companion's own
-uid, so the companion binds it: Landlock (`runner.confine`) leaves it a scratch folder of its own to
-write in and nothing else, in particular not the socket's folder, and the companion is not
-dumpable, so that no plugin reads its memory or its environment.
+the subreaper of its container) and the key is free again. A plugin may not leave its group: its
+seccomp filter refuses `setsid`, `setpgid` and the changes of mode and owner. A plugin runs under
+the companion's own uid, so the companion binds it: Landlock (`runner.confine`) leaves it a scratch
+folder of its own to write in and nothing else, in particular not the socket's folder, and the
+companion is not dumpable, so that no plugin reads its memory or its environment.
 
 Imports the SDK, `plugin_host.rpc`, the `rpc_stdio` spawn and the standard library: the import
 contract of the runner keeps everything else of the host out.
@@ -46,6 +47,7 @@ from shelfhold.plugin_host.runner.selfcheck import (
     SelfCheckFailed,
     observe,
     problems_of,
+    reachability,
 )
 
 __all__ = ["RunnerConfig", "RunnerServer", "configure_logging", "peer_uid_of", "serve"]
@@ -54,6 +56,7 @@ log = structlog.get_logger("shelfhold.plugin_runner")
 
 _FLOOR_MEMORY = 32 * 1024 * 1024
 _GREETING_TIMEOUT = 10.0
+_TEND_EVERY = 0.2  # seconds between two rounds of collecting zombies and looking at the modes
 CORE_UID = 1000  # the core's uid in the image: the only peer the companion serves
 
 
@@ -113,6 +116,7 @@ class RunnerServer:
         self._spawning = asyncio.Lock()  # a spawn and a sweep of orphans never overlap
         self._was: tuple[int, int] | None = None  # the process flags `start` changed
         self._beside: set[int] = set()  # children this process had before it listened
+        self._tender: asyncio.Task[None] | None = None
 
     @property
     def config(self) -> RunnerConfig:
@@ -145,9 +149,16 @@ class RunnerServer:
         except BaseException:
             listener.close()
             raise
+        for problem in reachability(path, repair=True, folder=False):
+            log.warning("plugin_runner.mode_restored", problem=problem)
+        self._tender = asyncio.ensure_future(self._tend())
         log.info("plugin_runner.listening", uid=self._own_uid)
 
     async def close(self) -> None:
+        if self._tender is not None:
+            self._tender.cancel()
+            await asyncio.gather(self._tender, return_exceptions=True)
+            self._tender = None
         if self._active:
             log.info("plugin_runner.stopping", plugins=sorted(self.pids()))
         if self._server is not None:
@@ -250,11 +261,17 @@ class RunnerServer:
         self._scratch[request.key] = scratch
         rules = confine.Ruleset([scratch])
         try:
+            filt = confine.Filter()
+
+            def bind() -> None:
+                rules.restrict()
+                filt.install()  # after Landlock: nothing here is undone from inside
+
             return await spawn_stdio(
                 self._argv(request.entry),
                 limits=self._limits(request),
                 extra_env={"TMPDIR": str(scratch)},
-                confine=rules.restrict,
+                confine=bind,
             )
         finally:
             rules.close()
@@ -264,6 +281,26 @@ class RunnerServer:
         if folder is not None:
             shutil.rmtree(folder, ignore_errors=True)
 
+    async def _tend(self) -> None:
+        """Every moment: collect the zombies of what the companion adopted, and look that the core
+        can still connect (a drift of the modes is put back, and said)."""
+        said: set[str] = set()
+        while True:
+            await asyncio.sleep(_TEND_EVERY)
+            try:
+                async with self._spawning:
+                    keep = {*self.pids().values(), *self._beside}
+                    await asyncio.to_thread(confine.collect_zombies, keep)
+                for problem in await asyncio.to_thread(reachability, self._config.socket_path):
+                    if problem not in said:  # once: the folder's mode is reported, not changed
+                        said.add(problem)
+                        log.warning("plugin_runner.mode_drift", problem=problem)
+                await asyncio.to_thread(
+                    reachability, self._config.socket_path, repair=True, folder=False
+                )
+            except Exception as exc:  # a round that fails is the next round's
+                log.warning("plugin_runner.tend_failed", error=type(exc).__name__)
+
     async def _sweep(self) -> None:
         """Kill what a plugin left behind by leaving its parent (a double fork, a `setsid`): it was
         adopted by this process, which is not one of its plugins' processes and not what it had
@@ -272,14 +309,7 @@ class RunnerServer:
             await asyncio.to_thread(self._sweep_now)
 
     def _sweep_now(self) -> None:
-        keep = {*self.pids().values(), *self._beside}
-        for _ in range(5):  # what a killed orphan had started is adopted in turn
-            found = confine.orphans(keep)
-            if not found:
-                return
-            for pid in found:
-                confine.kill_tree(pid)
-            confine.reap(found)
+        confine.sweep({*self.pids().values(), *self._beside})
 
     async def _admit(self, request: runner_wire.StartRequest, writer: asyncio.StreamWriter) -> None:
         sock = writer.get_extra_info("socket")
@@ -293,6 +323,11 @@ class RunnerServer:
         problems = problems_of(await asyncio.to_thread(self._observe), core_uid=peer)
         if problems:
             raise _Refused("the sandbox is not one: " + "; ".join(problems))
+        unreachable = await asyncio.to_thread(
+            reachability, self._config.socket_path, repair=True, folder=False
+        )
+        if unreachable:  # put back where it could be: what is left, the core cannot count on
+            raise _Refused("the socket is not as the core needs it: " + "; ".join(unreachable))
         if request.key in self._active:
             raise _Refused(f"{request.key} is already running")
         if len(self._active) >= self._config.max_plugins:

@@ -9,7 +9,9 @@ CLI socket, no interface but `lo`, no outbound connection, and an environment wi
 """
 
 import json
+import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -182,3 +184,60 @@ def test_what_a_plugin_started_and_abandoned_is_killed_with_its_connection(
         f"print(os.path.exists('/proc/{pid}'))\n"
     )
     assert exec_python("plugin-runner", script).strip() == "False"
+
+
+HOP_PROBE = """
+import socket, sys
+probe = socket.socket(socket.AF_UNIX)
+probe.settimeout(1)
+try:
+    probe.connect('\\0' + sys.argv[1])
+    print('alive')
+except OSError:
+    print('gone')
+"""
+
+
+def hop_alive(token: str) -> bool:
+    """Whether the process that hops answers, asked from inside the companion (same network
+    namespace: nothing else could reach an abstract socket)."""
+    done = compose("exec", "-T", "plugin-runner", "python", "-c", HOP_PROBE, token)
+    return done.stdout.strip() == "alive"
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_a_plugin_cannot_change_a_mode_nor_leave_its_group(stack: None) -> None:
+    """The plugin owns the socket and its folder (the companion's uid): Landlock does not look at
+    modes, the seccomp filter does. The modes stay, the core still enters, `setsid` does nothing,
+    and the container is healthy still (its check reads the modes)."""
+    seen = ask("modes")["seen"]
+    assert isinstance(seen, dict)
+    for name in ("chmod_socket", "chmod_folder", "chown_socket", "setxattr"):
+        assert seen[name] == "PermissionError", (name, seen)
+    assert seen["setsid"] == "ok" and seen["setpgid"] == "ok" and seen["same_group"] is True
+    check = compose("exec", "-T", "plugin-runner", "shelfhold", "plugin-runner", "--healthcheck")
+    assert check.returncode == 0, check.stderr
+    assert ask("probe")["seen"]["uid"] == 1001  # type: ignore[index]  # the core can still enter
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_a_process_that_changes_its_pid_dies_with_the_connection_and_leaves_no_zombie(
+    stack: None,
+) -> None:
+    """A plugin's process that forks again every few milliseconds, its parent gone each time: it is
+    in the plugin's group (`setsid` does nothing), the group is killed with the connection, and
+    the zombies of the hops are collected as they come."""
+    token = f"e2e-hop-{os.getpid()}"
+    seen = ask(f"hop:{token}")["seen"]
+    assert isinstance(seen, dict) and seen["started"] is True
+    for _ in range(60):  # the connection is closed by `ask`: it goes within moments
+        if not hop_alive(token):
+            break
+        time.sleep(0.5)
+    assert not hop_alive(token), "a process the plugin started outlived its connection"
+    zombies = compose(
+        "exec", "-T", "plugin-runner", "python", "-c",
+        "import os; print(sum(1 for p in os.listdir('/proc') if p.isdigit() and "
+        "open(f'/proc/{p}/stat').read().rpartition(')')[2].split()[0] == 'Z'))",
+    ).stdout  # fmt: skip
+    assert int(zombies) < 20, f"{zombies.strip()} zombies are left in the companion"

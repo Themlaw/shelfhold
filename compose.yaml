@@ -120,7 +120,7 @@ services:
   #     - ./data/plugins:/plugins:ro         # the wheels the core installs: read-only here
   #     - ./plugin-rpc:/plugin-rpc           # the socket the core connects to: nothing else
   #   healthcheck:
-  #     test: ["CMD", "python", "-c", "import socket; s = socket.socket(socket.AF_UNIX); s.settimeout(3); s.connect('/plugin-rpc/runner.sock')"]
+  #     test: ["CMD", "shelfhold", "plugin-runner", "--healthcheck"]
   #     interval: 30s
   #     timeout: 5s
   #     retries: 3

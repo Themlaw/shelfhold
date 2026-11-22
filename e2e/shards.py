@@ -74,5 +74,7 @@ SHARDS: dict[str, tuple[str, ...]] = {
         "test_a_plugin_cannot_write_in_the_socket_folder_nor_take_the_socket_over",
         "test_the_kit_in_isolated_mode_passes_for_a_shipped_plugin_in_the_companion",
         "test_what_a_plugin_started_and_abandoned_is_killed_with_its_connection",
+        "test_a_plugin_cannot_change_a_mode_nor_leave_its_group",
+        "test_a_process_that_changes_its_pid_dies_with_the_connection_and_leaves_no_zombie",
     ),
 }

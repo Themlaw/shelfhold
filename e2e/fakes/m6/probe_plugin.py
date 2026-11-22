@@ -8,11 +8,16 @@ library: it is installed on the volume the companion reads and runs in the compa
   the plugins volume) and where it may (its scratch folder);
 - `kit`: the kit, in isolated mode and on what this process really sees, played on a plugin the
   repository ships (the Project Gutenberg source, on a catalogue made up here);
-- `escape`: it starts a process in a session of its own, whose parent is gone, and says its pid.
+- `escape`: it starts a process in a session of its own, whose parent is gone, and says its pid;
+- `modes`: it tries to change the modes of the socket and of its folder, and to leave its process
+  group (`setsid`, `setpgid`), and says what it got and whether it is in its group still;
+- `hop:<token>`: it starts a process that forks again every few milliseconds (a new pid each time,
+  its parent gone), which answers on an abstract unix socket named by the token while it lives.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import socket
@@ -73,6 +78,54 @@ def _writes() -> dict[str, Any]:
         "scratch", lambda: open(os.path.join(os.environ["TMPDIR"], "ok"), "w").close()
     )
     return out
+
+
+def _modes() -> dict[str, Any]:
+    out: dict[str, Any] = {}
+
+    def attempt(name: str, action: Any) -> None:
+        try:
+            action()
+            out[name] = "ok"
+        except OSError as exc:
+            out[name] = type(exc).__name__
+
+    attempt("chmod_socket", lambda: os.chmod("/plugin-rpc/runner.sock", 0o600))
+    attempt("chmod_folder", lambda: os.chmod("/plugin-rpc", 0o700))
+    attempt("chown_socket", lambda: os.chown("/plugin-rpc/runner.sock", os.getuid(), os.getgid()))
+    attempt("setxattr", lambda: os.setxattr(os.environ["TMPDIR"], "user.x", b"1"))
+    group, session = os.getpgrp(), os.getsid(0)
+    attempt("setsid", os.setsid)
+    attempt("setpgid", lambda: os.setpgid(0, 0))
+    out["same_group"] = (os.getpgrp(), os.getsid(0)) == (group, session)
+    return out
+
+
+def _hop(token: str) -> bool:
+    """A process that makes a new pid every few milliseconds, its parent gone each time (it
+    tries `setsid` first, which does nothing here), and answers on an abstract socket."""
+    if os.fork() == 0:
+        with contextlib.suppress(OSError):
+            os.setsid()
+        if os.fork() == 0:
+            os.closerange(0, 4096)
+            held = socket.socket(socket.AF_UNIX)  # noqa: TID251 - the probe's own listener
+            held.bind("\0" + token)
+            held.listen(8)
+            held.settimeout(0.02)
+            end = time.monotonic() + 120
+            while time.monotonic() < end:
+                with contextlib.suppress(OSError):
+                    held.accept()[0].close()
+                try:
+                    if os.fork() != 0:
+                        os._exit(0)  # the parent goes: a new pid, adopted by the companion
+                except OSError:
+                    pass
+            os._exit(0)
+        os._exit(0)
+    os.wait()
+    return True
 
 
 def _escape() -> int:
@@ -159,6 +212,10 @@ class Plugin:
             return _title(await _kit(core_uid))
         if q == "escape":
             return _title({"pid": _escape()})
+        if q == "modes":
+            return _title(_modes())
+        if q.startswith("hop:"):
+            return _title({"started": _hop(q[4:])})
         view = observe_sandbox()
         report = run_isolation_check(view, core_uid=core_uid)
         seen = {

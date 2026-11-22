@@ -9,15 +9,17 @@ that what the check decides can be tested without a container.
 Standard library only.
 """
 
+import contextlib
 import errno
 import os
 import socket
+import stat
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from shelfhold.plugin_host.runner.confine import landlock_abi
+from shelfhold.plugin_host.runner.confine import landlock_abi, machine, seccomp_ready
 
 __all__ = [
     "DOCKER_SOCKETS",
@@ -25,10 +27,12 @@ __all__ = [
     "PLUGINS_ENTRIES",
     "Observation",
     "SelfCheckFailed",
+    "accepts",
     "interfaces_of",
     "observe",
     "probe_outbound",
     "problems_of",
+    "reachability",
     "self_check",
 ]
 
@@ -58,6 +62,7 @@ class Observation:
     root_read_only: bool
     landlock_abi: int | None = None  # None: not looked at (a test's description of a sandbox)
     stray_entries: tuple[str, ...] = ()  # of the plugins volume: what is not meant to be there
+    seccomp_ready: bool | None = None  # None: not looked at; False: the filter cannot be installed
 
 
 class SelfCheckFailed(Exception):
@@ -131,6 +136,7 @@ def observe(
         root_read_only=bool(os.statvfs("/").f_flag & os.ST_RDONLY),
         landlock_abi=landlock_abi(),
         stray_entries=stray_entries(plugins_root),
+        seccomp_ready=seccomp_ready(),
     )
 
 
@@ -155,6 +161,12 @@ def problems_of(seen: Observation, *, core_uid: int | None = None) -> list[str]:
             "the kernel offers no Landlock (it is needed to keep a plugin from writing "
             "beside its own scratch folder): use a kernel 5.13 or later with Landlock enabled"
         )
+    if seen.seccomp_ready is False:
+        problems.append(
+            "the seccomp filter that keeps a plugin from leaving its process group and from "
+            f"changing modes cannot be installed here (architecture {machine() or 'unknown'}; "
+            "x86_64 and aarch64 are known)"
+        )
     if seen.stray_entries:
         strays = ", ".join(seen.stray_entries)
         problems.append(f"the plugins volume holds more than the installed plugins: {strays}")
@@ -168,3 +180,43 @@ def self_check(seen: Observation | None = None, *, core_uid: int | None = None) 
     if problems:
         raise SelfCheckFailed(problems)
     return seen
+
+
+def reachability(
+    socket_path: str | Path, *, repair: bool = False, folder: bool = True
+) -> list[str]:
+    """Why the core (another uid) could not connect to the socket, as the modes stand: the socket
+    must be a socket that others may read and write and, with `folder`, sit in a folder others
+    may traverse. `repair` puts back the socket's `0666` (the companion made it, and its plugins
+    are kept from changing a mode, so a drift means something else did it, and it is said); the
+    folder's mode is the volume's, reported and never changed here."""
+    path = Path(socket_path)
+    problems: list[str] = []
+    try:
+        mode = path.lstat()
+        parent = path.parent.stat()
+    except OSError as exc:
+        return [f"{path} cannot be looked at: {type(exc).__name__}"]
+    if not stat.S_ISSOCK(mode.st_mode):
+        return [f"{path} is not a socket"]
+    if folder and not parent.st_mode & stat.S_IXOTH:
+        problems.append(f"the folder {path.parent} is not traversable by others")
+    if stat.S_IMODE(mode.st_mode) & 0o006 != 0o006:
+        problems.append(f"the socket {path} is not readable and writable by others")
+        if repair:
+            with contextlib.suppress(OSError):
+                path.chmod(0o666)
+    return problems
+
+
+def accepts(socket_path: str | Path, *, timeout: float = 3.0) -> list[str]:
+    """Whether something accepts on the unix socket (a problem, or nothing)."""
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe.settimeout(timeout)
+    try:
+        probe.connect(str(socket_path))
+    except OSError as exc:
+        return [f"the socket does not accept: {type(exc).__name__}"]
+    finally:
+        probe.close()
+    return []

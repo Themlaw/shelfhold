@@ -13,26 +13,44 @@ core; this module cuts them off from the companion and from each other's leftove
   plugin which double-forks and calls `setsid()` is still the companion's to kill (`kill_tree`,
   `orphans`).
 
-Standard library only (`ctypes` for the three Landlock system calls, `/proc` for the process tree).
+- **A seccomp filter** (`Filter`), posed beside Landlock before the plugin runs: `setsid` and
+  `setpgid` do nothing (a plugin stays in the group `killpg` kills, however fast it forks), and the
+  `chmod`, `chown` and `setxattr` families fail with `EPERM` (Landlock does not handle them: a
+  plugin that owns the socket's folder could make it unreachable for the core). The filter is
+  built by hand, for the two architectures the companion knows (x86-64, arm64); on another one it
+  does not start.
+
+Standard library only (`ctypes` for the Landlock and seccomp system calls, `/proc` for the process
+tree).
 """
 
 import contextlib
 import ctypes
+import errno
 import os
+import platform
 import signal
 import struct
+import subprocess
+import sys
 import time
 from collections.abc import Iterable
 from pathlib import Path
 
 __all__ = [
+    "Filter",
     "Ruleset",
+    "children_of",
+    "collect_zombies",
     "harden_process",
     "kill_tree",
+    "kill_trees",
     "landlock_abi",
     "orphans",
     "reap",
     "restore_process",
+    "seccomp_ready",
+    "sweep",
 ]
 
 _SYS_CREATE, _SYS_ADD, _SYS_RESTRICT = 444, 445, 446  # the same number on x86-64 and arm64
@@ -41,6 +59,7 @@ _RULE_PATH_BENEATH = 1
 _PR_SET_DUMPABLE, _PR_GET_DUMPABLE = 4, 3
 _PR_SET_CHILD_SUBREAPER, _PR_GET_CHILD_SUBREAPER = 36, 37
 _PR_SET_NO_NEW_PRIVS = 38
+_PR_SET_SECCOMP, _SECCOMP_MODE_FILTER = 22, 2
 
 # access rights of the filesystem, by the ABI that introduced them
 _WRITE_FILE, _REMOVE_DIR, _REMOVE_FILE = 1 << 1, 1 << 4, 1 << 5
@@ -153,6 +172,114 @@ def restore_process(was: tuple[int, int]) -> None:
     _prctl(_PR_SET_CHILD_SUBREAPER, was[1])
 
 
+# -- seccomp -----------------------------------------------------------------------------------
+
+_AUDIT_ARCH = {"x86_64": 0xC000003E, "aarch64": 0xC00000B7}
+_X32 = 0x40000000  # on x86-64, a system call number with this bit is the x32 ABI's
+_RET_ALLOW, _RET_KILL_PROCESS = 0x7FFF0000, 0x80000000
+_RET_ERRNO = 0x00050000  # | errno
+# what a plugin's process may not do, by architecture: the names are the kernel's
+_DENIED: dict[str, dict[str, int]] = {
+    "x86_64": {
+        "chmod": 90, "fchmod": 91, "fchmodat": 268, "fchmodat2": 452,
+        "chown": 92, "fchown": 93, "lchown": 94, "fchownat": 260,
+        "setxattr": 188, "lsetxattr": 189, "fsetxattr": 190,
+    },
+    "aarch64": {
+        "fchmod": 52, "fchmodat": 53, "fchmodat2": 452,
+        "fchown": 55, "fchownat": 54,
+        "setxattr": 5, "lsetxattr": 6, "fsetxattr": 7,
+    },
+}  # fmt: skip
+# `setsid` and `setpgid` are refused by *not happening*: the call returns 0 and the process stays
+# in its group. A plugin (or a library it starts) that daemonises with `setsid()` is then still in
+# the group `killpg` kills, and does not fail on the way; `EPERM` would crash whatever called it.
+_STAYS: dict[str, dict[str, int]] = {
+    "x86_64": {"setpgid": 109, "setsid": 112},
+    "aarch64": {"setpgid": 154, "setsid": 157},
+}
+_BPF_LD_W_ABS, _BPF_JEQ_K, _BPF_JGE_K, _BPF_RET_K = 0x20, 0x15, 0x35, 0x06
+
+
+def _instruction(code: int, jt: int, jf: int, k: int) -> bytes:
+    return struct.pack("=HBBI", code, jt, jf, k)
+
+
+def machine() -> str | None:
+    """The architecture the filter knows, or None (the companion does not start there)."""
+    name = platform.machine()
+    return name if name in _AUDIT_ARCH else None
+
+
+def build_program(arch: str) -> bytes:
+    """The BPF program: another architecture kills the process (a 32-bit call would dodge the
+    numbers below), the changes of mode and owner fail with `EPERM`, `setsid` and `setpgid`
+    return 0 without doing anything, everything else is allowed."""
+    checks: list[tuple[int, int, bool]] = [  # (instruction, number, returns 0 and does nothing)
+        *((_BPF_JEQ_K, n, False) for n in sorted(_DENIED[arch].values())),
+        *((_BPF_JEQ_K, n, True) for n in sorted(_STAYS[arch].values())),
+    ]
+    if arch == "x86_64":
+        checks.insert(0, (_BPF_JGE_K, _X32, False))  # the x32 numbers are all refused
+    program = [
+        _instruction(_BPF_LD_W_ABS, 0, 0, 4),  # seccomp_data.arch
+        _instruction(_BPF_JEQ_K, 1, 0, _AUDIT_ARCH[arch]),
+        _instruction(_BPF_RET_K, 0, 0, _RET_KILL_PROCESS),
+        _instruction(_BPF_LD_W_ABS, 0, 0, 0),  # seccomp_data.nr
+    ]
+    for index, (code, value, stays) in enumerate(checks):
+        # the instructions after the checks: allow, then EPERM, then "returns 0"
+        program.append(_instruction(code, len(checks) - index + int(stays), 0, value))
+    program.append(_instruction(_BPF_RET_K, 0, 0, _RET_ALLOW))
+    program.append(_instruction(_BPF_RET_K, 0, 0, _RET_ERRNO | errno.EPERM))
+    program.append(_instruction(_BPF_RET_K, 0, 0, _RET_ERRNO))
+    return b"".join(program)
+
+
+class _SockFprog(ctypes.Structure):
+    _fields_ = (("len", ctypes.c_ushort), ("filter", ctypes.c_void_p))
+
+
+class Filter:
+    """The seccomp filter, built in the companion and installed by the child before `exec`."""
+
+    def __init__(self) -> None:
+        arch = machine()
+        if arch is None:
+            raise OSError(f"no seccomp filter for the architecture {platform.machine()!r}")
+        program = build_program(arch)
+        self._buffer = ctypes.create_string_buffer(program, len(program))  # kept alive
+        self._fprog = _SockFprog(len(program) // 8, ctypes.cast(self._buffer, ctypes.c_void_p))
+
+    def install(self) -> None:
+        _prctl(_PR_SET_NO_NEW_PRIVS, 1)
+        if _c().prctl(_PR_SET_SECCOMP, _SECCOMP_MODE_FILTER, ctypes.byref(self._fprog), 0, 0) != 0:
+            raise OSError(ctypes.get_errno(), "seccomp filter")
+
+
+_SECCOMP_WORKS: bool | None = None
+
+
+def seccomp_ready() -> bool:
+    """Whether a child of this process can have the filter installed (tried once, in a child that
+    only starts and stops: the filter is never installed in this process)."""
+    global _SECCOMP_WORKS
+    if _SECCOMP_WORKS is None:
+        try:
+            filt = Filter()
+            done = subprocess.run(
+                [sys.executable, "-I", "-c", "pass"],
+                preexec_fn=filt.install,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+            _SECCOMP_WORKS = done.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            _SECCOMP_WORKS = False
+    return _SECCOMP_WORKS
+
+
 # -- the process tree --------------------------------------------------------------------------
 
 
@@ -173,17 +300,36 @@ def _table() -> dict[int, tuple[int, str]]:
 
 
 def children_of(pid: int) -> set[int]:
-    return {p for p, (parent, _) in _table().items() if parent == pid}
+    """The direct children of `pid`: the kernel's own list when it has one (a few reads), else
+    the whole table. It has to be quick: a child that forks again every few milliseconds is
+    stopped from this list, and a scan of every process is slower than that."""
+    try:
+        found: set[int] = set()
+        for task in os.listdir(f"/proc/{pid}/task"):
+            listed = Path(f"/proc/{pid}/task/{task}/children").read_text(encoding="utf-8")
+            found |= {int(p) for p in listed.split()}
+        return found
+    except (OSError, ValueError):
+        return {p for p, (parent, _) in _table().items() if parent == pid}
+
+
+def _below(root: int, table: dict[int, tuple[int, str]]) -> set[int]:
+    """`root` and everything beneath it in `table`, which is read once: a process that forks all
+    day leaves hundreds of zombies, and a table per pid would take minutes."""
+    by_parent: dict[int, list[int]] = {}
+    for pid, (parent, _) in table.items():
+        by_parent.setdefault(parent, []).append(pid)
+    found, frontier = {root}, [root]
+    while frontier:
+        for child in by_parent.get(frontier.pop(), ()):
+            if child not in found:
+                found.add(child)
+                frontier.append(child)
+    return found
 
 
 def descendants_of(pid: int) -> set[int]:
-    table = _table()
-    found: set[int] = set()
-    frontier = {pid}
-    while frontier:
-        frontier = {p for p, (parent, _) in table.items() if parent in frontier} - found
-        found |= frontier
-    return found
+    return _below(pid, _table()) - {pid}
 
 
 def orphans(keep: Iterable[int]) -> set[int]:
@@ -192,18 +338,64 @@ def orphans(keep: Iterable[int]) -> set[int]:
     return children_of(os.getpid()) - set(keep)
 
 
-def kill_tree(pid: int, *, rounds: int = 20) -> None:
-    """Kill `pid` and everything beneath it, again until nothing is left that could still fork."""
+def kill_trees(roots: Iterable[int], *, rounds: int = 20) -> None:
+    """Kill each of `roots` and everything beneath it. What is found is first **stopped** (a
+    stopped process forks no more), the trees are looked at again until nothing new turns up, and
+    only then is everything killed. The table is read once per round, however many roots."""
+    wanted = list(roots)
+    stopped: set[int] = set()
     for _ in range(rounds):
         table = _table()
-        victims = descendants_of(pid) | {pid}
-        living = [p for p in victims if p in table and table[p][1] != "Z"]
+        living: set[int] = set()
+        for root in wanted:
+            living |= {p for p in _below(root, table) if p in table and table[p][1] != "Z"}
+        living -= stopped
         if not living:
-            return
+            break
         for victim in living:
             with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.kill(victim, signal.SIGKILL)
+                os.kill(victim, signal.SIGSTOP)
+        stopped |= living
+    for victim in stopped:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.kill(victim, signal.SIGKILL)
+
+
+def kill_tree(pid: int) -> None:
+    kill_trees([pid])
+
+
+def sweep(keep: Iterable[int], *, rounds: int = 20) -> None:
+    """Kill what this process adopted and did not start (see `orphans`), and collect it.
+
+    Each round **stops** what it finds, from the kernel's list of children and nothing slower (a
+    stopped process forks no more, so the next round has fewer), then kills the trees beneath,
+    then collects. What a killed orphan had started is adopted in turn, so it goes round again
+    until there is nothing left."""
+    kept = set(keep)
+    mine = os.getpid()
+    for _ in range(rounds):
+        found = children_of(mine) - kept
+        if not found:
+            return
+        for pid in found:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(pid, signal.SIGSTOP)
+        kill_trees(found)
         time.sleep(0.01)
+        reap(found)
+
+
+def collect_zombies(keep: Iterable[int]) -> int:
+    """Collect the adopted children that have died (not `keep`: the plugins' own, which the event
+    loop waits for). A plugin that forks and lets its parent exit makes them by the dozen a
+    second, and each holds a pid until someone waits for it."""
+    table = _table()
+    mine = os.getpid()
+    dead = {p for p, (parent, state) in table.items() if parent == mine and state == "Z"}
+    dead -= set(keep)
+    reap(dead)
+    return len(dead)
 
 
 def reap(pids: Iterable[int]) -> None:

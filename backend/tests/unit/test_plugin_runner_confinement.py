@@ -19,6 +19,7 @@ import signal
 import socket
 import stat
 import subprocess
+import sys
 import tempfile
 import textwrap
 import time
@@ -477,3 +478,271 @@ def test_the_guard_refuses_a_wheel_that_shadows_the_standard_library(
         with pytest.raises(guard.PluginInstallError):
             guard.install_wheel(layout, wheel.path, wheel.sha256)
     assert not (layout.site / "json").exists()
+
+
+# -- the seccomp filter, the sweep, the modes (second pass of the adversarial review) -----------
+
+from shelfhold.interfaces.cli import plugin_runner as runner_cli  # noqa: E402
+from shelfhold.plugin_host.runner.selfcheck import reachability  # noqa: E402
+
+RET_ALLOW, RET_KILL, RET_ERRNO = 0x7FFF0000, 0x80000000, 0x00050000
+AUDIT = {"x86_64": 0xC000003E, "aarch64": 0xC00000B7}
+NUMBERS = {  # the kernel's numbers of what the filter names, by architecture
+    "x86_64": {"setsid": 112, "setpgid": 109, "chmod": 90, "fchmodat2": 452, "setxattr": 188},
+    "aarch64": {"setsid": 157, "setpgid": 154, "fchmod": 52, "fchmodat2": 452, "setxattr": 5},
+}
+HARMLESS = {"x86_64": 0, "aarch64": 63}  # read(2)
+
+
+def verdict(program: bytes, arch: int, nr: int) -> int:
+    """What a seccomp program answers for (arch, nr): a small interpreter of the few instructions
+    the filter uses."""
+    import struct
+
+    code = [struct.unpack("=HBBI", program[i : i + 8]) for i in range(0, len(program), 8)]
+    acc, pc = 0, 0
+    while True:
+        op, jt, jf, k = code[pc]
+        if op == 0x20:  # ld abs
+            acc = {0: nr, 4: arch}[k]
+        elif op == 0x15:  # jeq
+            pc += jt if acc == k else jf
+        elif op == 0x35:  # jge
+            pc += jt if acc >= k else jf
+        elif op == 0x06:  # ret
+            return k
+        pc += 1
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+@pytest.mark.parametrize("arch", ["x86_64", "aarch64"])
+def test_the_seccomp_program_refuses_what_it_names_and_allows_the_rest(arch: str) -> None:
+    program = confine.build_program(arch)
+    ask = lambda nr, a=AUDIT[arch]: verdict(program, a, nr)  # noqa: E731
+    for name, nr in NUMBERS[arch].items():
+        if name in ("setsid", "setpgid"):
+            assert ask(nr) == RET_ERRNO, name  # returns 0 and does nothing
+        else:
+            assert ask(nr) == RET_ERRNO | 1, name  # EPERM
+    assert ask(HARMLESS[arch]) == RET_ALLOW
+    other = AUDIT["aarch64" if arch == "x86_64" else "x86_64"]
+    assert verdict(program, other, HARMLESS[arch]) == RET_KILL  # another architecture: no
+    assert verdict(program, 0x40000003, HARMLESS[arch]) == RET_KILL  # 32-bit ABI too
+    if arch == "x86_64":
+        assert ask(0x40000000 | 3) == RET_ERRNO | 1  # the x32 numbers are refused
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_the_filter_is_known_for_this_machine_and_not_for_others(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert confine.machine() in ("x86_64", "aarch64") and confine.seccomp_ready()
+    confine.Filter()
+    monkeypatch.setattr(confine.platform, "machine", lambda: "riscv64")
+    assert confine.machine() is None
+    with pytest.raises(OSError, match="no seccomp filter"):
+        confine.Filter()
+    monkeypatch.setattr(confine, "_SECCOMP_WORKS", None)
+    assert confine.seccomp_ready() is False
+    refused = problems_of(replace(CLEAN, seccomp_ready=False))
+    assert len(refused) == 1 and "seccomp" in refused[0] and "x86_64" in refused[0]
+    assert problems_of(replace(CLEAN, seccomp_ready=True)) == []
+
+
+MODES = """
+import json, os
+from rpc_plugin import Plugin, _ref
+
+class Modes(Plugin):
+    async def search(self, f, q, filters, cursor, *, sub=None):
+        from shelfhold_sdk.models import Page
+        target = q
+        out = {}
+
+        def attempt(name, action):
+            try:
+                action()
+                out[name] = "ok"
+            except OSError as exc:
+                out[name] = type(exc).__name__
+
+        folder = os.path.dirname(target)
+        attempt("chmod_socket", lambda: os.chmod(target, 0o600))
+        attempt("chmod_folder", lambda: os.chmod(folder, 0o700))
+        attempt("fchmod", lambda: os.fchmod(os.open(os.environ["TMPDIR"], os.O_RDONLY), 0o777))
+        attempt("chown", lambda: os.chown(target, os.getuid(), os.getgid()))
+        attempt("setxattr", lambda: os.setxattr(os.environ["TMPDIR"], "user.x", b"1"))
+        group, session = os.getpgrp(), os.getsid(0)
+        attempt("setsid", os.setsid)
+        attempt("setpgid", lambda: os.setpgid(0, 0))
+        out["same_group"] = (os.getpgrp(), os.getsid(0)) == (group, session)
+        return Page(items=[_ref(json.dumps(out))])
+
+def make():
+    return Modes()
+"""
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_a_plugin_cannot_change_a_mode_nor_leave_its_group(short_dir: Path) -> None:
+    """The proof-of-concept's calls, one by one: the changes of mode, owner and attributes fail
+    (`EPERM`); `setsid` and `setpgid` do nothing, and the plugin is in its group still."""
+    import json
+
+    install(short_dir, "modes", MODES)
+    target = short_dir / "runner.sock"
+    folder_before = stat.S_IMODE(short_dir.stat().st_mode)
+
+    async def scenario() -> dict[str, object]:
+        server = server_in(short_dir)
+        await server.start()
+        try:
+            before_socket = stat.S_IMODE(target.stat().st_mode)
+            s = await session(server, "rpc-demo", "modes:make")
+            seen = json.loads((await search(s, str(target)))[0])
+            await s.close()
+            assert stat.S_IMODE(target.stat().st_mode) == before_socket
+            return seen
+        finally:
+            await server.close()
+
+    seen = run(scenario)
+    for name in ("chmod_socket", "chmod_folder", "fchmod", "chown", "setxattr"):
+        assert seen[name] == "PermissionError", (name, seen)
+    assert seen["setsid"] == "ok" and seen["setpgid"] == "ok" and seen["same_group"] is True
+    assert stat.S_IMODE(short_dir.stat().st_mode) == folder_before
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_the_sweep_kills_a_process_that_changes_its_pid_every_few_milliseconds() -> None:
+    """The review's second proof, played on the sweep alone (the filter keeps a plugin from
+    leaving its group, the sweep is the net under it): what is adopted and forks again and again
+    is stopped, then killed, however many pids it goes through."""
+    hopper = (
+        "import os, time\n"
+        "if os.fork(): os._exit(0)\n"  # the first process goes: the next is adopted
+        "end = time.monotonic() + 30\n"
+        "while time.monotonic() < end:\n"
+        "    if os.fork(): os._exit(0)\n"  # a new pid, its parent gone
+        "    time.sleep(0.01)\n"
+    )
+    was = confine.harden_process()
+    try:
+        subprocess.run([sys.executable, "-I", "-c", hopper], check=True, timeout=30)  # noqa: S603
+        deadline = time.monotonic() + 10
+        while not confine.orphans(set()) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert confine.orphans(set()), "nothing was adopted"
+        confine.sweep(set())
+        time.sleep(0.2)
+        confine.sweep(set())
+        left = {p: confine._table()[p] for p in confine.orphans(set()) if p in confine._table()}
+        assert left == {}, left
+    finally:
+        confine.restore_process(was)
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_the_companion_collects_the_zombies_it_adopts_as_they_come(short_dir: Path) -> None:
+    """Not only at the end of a connection: each adopted child that dies is collected within a
+    moment, so that a plugin forking all day cannot use up the companion's pids."""
+    (short_dir / "plugins").mkdir()
+    code = (
+        "import os, time\n"
+        "pid = os.fork()\n"
+        "if pid == 0:\n"
+        "    time.sleep(0.3)\n"
+        "    os._exit(0)\n"
+        "os.write(1, str(pid).encode())\n"
+        "os._exit(0)\n"
+    )
+
+    async def scenario() -> int:
+        server = server_in(short_dir)
+        await server.start()
+        try:
+            done = subprocess.run(  # noqa: S603 - the orphan is adopted by this process
+                [sys.executable, "-I", "-c", code], capture_output=True, text=True, check=True
+            )
+            pid = int(done.stdout)
+            for _ in range(60):
+                if not Path(f"/proc/{pid}").exists():
+                    return pid
+                await asyncio.sleep(0.1)
+            raise AssertionError(f"{pid} is still there (a zombie nobody waited for)")
+        finally:
+            await server.close()
+
+    run(scenario)
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_the_companion_keeps_the_socket_open_to_the_core_and_says_when_it_is_not(
+    short_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The socket's mode is put back when it drifts; the folder's, which is the volume's, is
+    reported (the healthcheck is not healthy while the core could not enter)."""
+    (short_dir / "plugins").mkdir()
+    target = short_dir / "runner.sock"
+
+    async def scenario() -> None:
+        server = server_in(short_dir)
+        await server.start()
+        try:
+            short_dir.chmod(0o755)
+            assert runner_cli.healthcheck(target) == 0
+            target.chmod(0o600)  # something other than a plugin did it
+            assert reachability(target) != []
+            assert runner_cli.healthcheck(target) == 1  # not healthy at this moment
+            for _ in range(40):
+                if stat.S_IMODE(target.stat().st_mode) == 0o666:
+                    break
+                await asyncio.sleep(0.1)
+            assert stat.S_IMODE(target.stat().st_mode) == 0o666  # put back, within a moment
+            assert runner_cli.healthcheck(target) == 0
+            short_dir.chmod(0o700)  # the volume's: reported, not changed
+            assert runner_cli.healthcheck(target) == 1
+            assert stat.S_IMODE(short_dir.stat().st_mode) == 0o700
+            short_dir.chmod(0o755)
+        finally:
+            short_dir.chmod(0o755)
+            await server.close()
+
+    run(scenario)
+    assert "not traversable" in capsys.readouterr().err
+    # not a socket, nothing there, nothing listening
+    (short_dir / "file.sock").write_text("x")
+    assert "not a socket" in reachability(short_dir / "file.sock")[0]
+    assert "cannot be looked at" in reachability(short_dir / "absent.sock")[0]
+    assert runner_cli.healthcheck(short_dir / "absent.sock") == 1
+    listener = socket.socket(socket.AF_UNIX)
+    listener.bind(str(short_dir / "dead.sock"))
+    listener.close()  # a socket file that nobody listens behind
+    (short_dir / "dead.sock").chmod(0o666)
+    assert runner_cli.healthcheck(short_dir / "dead.sock") == 1
+
+
+@pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+def test_a_greeting_is_refused_while_the_socket_cannot_be_entered(short_dir: Path) -> None:
+    """The check at each connection: a socket that cannot be put back (the companion does not own
+    it, here a stand-in) is said to the core, which is told why."""
+    install(short_dir, "modes", MODES)
+
+    async def scenario() -> None:
+        server = server_in(short_dir)
+        await server.start()
+        try:
+            from unittest.mock import patch
+
+            with (
+                patch(
+                    "shelfhold.plugin_host.runner.server.reachability",
+                    return_value=["the socket is not readable and writable by others"],
+                ),
+                pytest.raises(RunnerRefused, match="not as the core needs it"),
+            ):
+                await session(server, "rpc-demo", "modes:make")
+        finally:
+            await server.close()
+
+    run(scenario)

@@ -89,7 +89,8 @@ def test_plugin_runner_service_has_no_data_no_network_and_another_uid() -> None:
 def test_plugin_runner_is_healthy_only_when_its_socket_accepts() -> None:
     svc = load("e2e/compose.yaml")["services"]["plugin-runner"]
     health = svc["healthcheck"]
-    assert health["test"][0] == "CMD" and "plugin-rpc" in " ".join(health["test"])
+    # the companion's own check: the socket accepts and its modes let the core in
+    assert health["test"] == ["CMD", "shelfhold", "plugin-runner", "--healthcheck"]
     assert load("e2e/compose.yaml")["services"]["shelfhold"]["depends_on"]["plugin-runner"] == {
         "condition": "service_healthy"
     }

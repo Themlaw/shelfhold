@@ -36,6 +36,20 @@ Sans lui, aucun plugin isolé ne démarre ; l'ancien mode (en processus, derriè
   socket du compagnon, ni écrire dans `/plugin-rpc` ni dans `/plugins`. Avec un noyau qui offre
   l'ABI 4 de Landlock (6.7 ou plus), il ne peut pas non plus ouvrir de connexion TCP : une seconde
   barrière réseau derrière `network_mode: none`.
+- Un **filtre seccomp**, posé avec Landlock avant le lancement du plugin (construit à la main, sans
+  dépendance, pour **x86_64 et aarch64** ; sur une autre architecture le compagnon ne démarre pas) :
+  les changements de mode, de propriétaire et d'attributs (`chmod`, `fchmod`, `fchmodat`,
+  `fchmodat2`, `chown` et sa famille, `setxattr` et sa famille) échouent avec `EPERM`, et `setsid`
+  et `setpgid` **ne font rien** (ils rendent 0) : le plugin reste dans son groupe de processus, que
+  le compagnon tue d'un coup à la fin de la connexion, même pendant qu'il lance des fils. Sans ce
+  filtre, un plugin, propriétaire de `/plugin-rpc` (l'uid du compagnon), pourrait rendre le socket
+  inaccessible au cœur avec `chmod`, ou fabriquer un processus qui change de pid toutes les
+  quelques millisecondes. Un plugin qui copie des fichiers avec `shutil.copy` (qui copie le mode)
+  échoue donc dans son dossier de travail ; `shutil.copyfile` convient.
+- Le compagnon récupère **en continu** les processus que ses plugins ont abandonnés (il adopte les
+  orphelins de son conteneur), au lieu d'attendre la fin d'une connexion : un plugin qui
+  « fork-bombe » ne peut pas épuiser les 128 processus du conteneur par ses zombies. Le balayage de
+  fin de connexion reste en filet : il arrête les processus adoptés avant de les tuer.
 - Le compagnon n'est **pas « dumpable »** : un plugin ne lit ni son environnement ni sa mémoire.
 - Il **ne sert qu'un uid**, celui du cœur (`--core-uid`, 1000 par défaut), lu par le noyau sur le
   socket : un autre utilisateur de la machine qui atteindrait le socket est refusé. Côté cœur, la
@@ -67,8 +81,17 @@ démarrer** (code de sortie 3, rien d'ouvert) si :
 6. le noyau n'offre pas **Landlock** (5.13 ou plus, `landlock` dans `cat /sys/kernel/security/lsm`) :
    sans lui, un plugin pourrait remplacer le socket du compagnon, donc il ne démarre pas ;
 7. `/var/run/docker.sock` ou `/run/docker.sock` est visible ;
-8. `/plugins` contient autre chose que `site-packages` et l'état (`state.json`) : c'est le signe
+8. le filtre seccomp ne peut pas être posé (architecture inconnue, ou noyau/profil qui l'interdit) ;
+9. `/plugins` contient autre chose que `site-packages` et l'état (`state.json`) : c'est le signe
    d'un montage trop large, `./data:/plugins` par exemple.
+
+Le **contrôle de santé** du conteneur (`shelfhold plugin-runner --healthcheck`) vérifie aussi que le
+cœur peut entrer : le socket est un socket, lisible et inscriptible par les autres, dans un dossier
+traversable par les autres, et il accepte. Le compagnon rétablit le mode `0666` de son socket s'il
+a changé, et le dit dans son journal (`plugin_runner.mode_restored`) ; le mode du **dossier**, qui est
+celui du volume, est signalé (`plugin_runner.mode_drift`) mais jamais modifié : le conteneur est
+alors `unhealthy` et le cœur ne peut plus entrer, ce qui se voit. À chaque connexion, le compagnon
+revérifie le socket et refuse (avec la raison) si le cœur ne peut pas compter dessus.
 
 `docker compose logs plugin-runner` dit laquelle est fausse. `shelfhold plugin-runner --check` rejoue
 la vérification et s'arrête (0 : prêt).
@@ -112,8 +135,9 @@ Si vous utilisez des volumes nommés plutôt que des dossiers, montez le volume 
   connection is possible`, que `network_mode: none` manque ; `not read-only`, que `read_only: true`
   manque ; `the kernel offers no Landlock`, que l'hôte n'a pas Landlock (noyau 5.13 ou plus avec
   `landlock` dans les LSM actifs) ; `the plugins volume holds more than the installed plugins`, que
-  `/plugins` est un montage trop large. Docker doit aussi laisser passer les appels système de
-  Landlock : c'est le cas du profil seccomp par défaut des versions récentes de Docker ; un profil
+  `/plugins` est un montage trop large. `the seccomp filter ... cannot be installed here`, que l'architecture n'est ni
+  x86_64 ni aarch64 ou que le profil seccomp de Docker interdit `seccomp(2)` ou `prctl` sur ce
+  conteneur. Docker doit aussi laisser passer les appels système de Landlock : c'est le cas du profil seccomp par défaut des versions récentes de Docker ; un profil
   personnalisé qui les interdit empêche le compagnon de démarrer.
 - **« refused: uid »** : le cœur et le compagnon ont le même uid, ou le cœur annonce un autre uid
   que celui que voit le noyau. Ne mettez jamais `user: "1000:1000"` au compagnon.
