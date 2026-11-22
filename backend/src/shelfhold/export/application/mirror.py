@@ -122,7 +122,7 @@ class ProvenanceMirror:
                 self._skip(name, "symlink")
                 continue
             except LockBusyError:  # another job holds the folder (a purge, an export): the file
-                log.info("mirror_folder_busy", folder=series_folder)  # is left to its next run
+                log.info("mirror.folder_busy", folder=series_folder)  # is left to its next run
                 continue
             if target is not None:
                 written.append(target)

@@ -822,7 +822,7 @@ class ExportPipeline:
         try:
             complete_hashes_of_destination(self._engine, ctx.destination_id, ctx.local)
         except Exception:  # never an exception towards the export (L47)
-            log.warning("alias_hashes_failed", destination=ctx.destination_id)
+            log.warning("export.alias_hashes_failed", destination=ctx.destination_id)
 
     # -- applying --------------------------------------------------------------------------------
 
