@@ -488,9 +488,13 @@ from shelfhold.plugin_host.runner.selfcheck import reachability  # noqa: E402
 RET_ALLOW, RET_KILL, RET_ERRNO = 0x7FFF0000, 0x80000000, 0x00050000
 AUDIT = {"x86_64": 0xC000003E, "aarch64": 0xC00000B7}
 NUMBERS = {  # the kernel's numbers of what the filter names, by architecture
-    "x86_64": {"setsid": 112, "setpgid": 109, "chmod": 90, "fchmodat2": 452, "setxattr": 188},
-    "aarch64": {"setsid": 157, "setpgid": 154, "fchmod": 52, "fchmodat2": 452, "setxattr": 5},
-}
+    "x86_64": {"setsid": 112, "setpgid": 109, "chmod": 90, "fchmodat2": 452, "setxattr": 188,
+               "setxattrat": 463, "removexattr": 197, "fremovexattr": 199, "removexattrat": 466,
+               "io_uring_setup": 425, "io_uring_enter": 426, "io_uring_register": 427},
+    "aarch64": {"setsid": 157, "setpgid": 154, "fchmod": 52, "fchmodat2": 452, "setxattr": 5,
+                "setxattrat": 463, "removexattr": 14, "fremovexattr": 16, "removexattrat": 466,
+                "io_uring_setup": 425, "io_uring_enter": 426, "io_uring_register": 427},
+}  # fmt: skip
 HARMLESS = {"x86_64": 0, "aarch64": 63}  # read(2)
 
 

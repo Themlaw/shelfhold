@@ -39,7 +39,7 @@ Sans lui, aucun plugin isolé ne démarre ; l'ancien mode (en processus, derriè
 - Un **filtre seccomp**, posé avec Landlock avant le lancement du plugin (construit à la main, sans
   dépendance, pour **x86_64 et aarch64** ; sur une autre architecture le compagnon ne démarre pas) :
   les changements de mode, de propriétaire et d'attributs (`chmod`, `fchmod`, `fchmodat`,
-  `fchmodat2`, `chown` et sa famille, `setxattr` et sa famille) échouent avec `EPERM`, et `setsid`
+  `fchmodat2`, `chown` et sa famille, `setxattr`, `removexattr` et leurs familles, `io_uring`, qui a son propre `SETXATTR`) échouent avec `EPERM`, et `setsid`
   et `setpgid` **ne font rien** (ils rendent 0) : le plugin reste dans son groupe de processus, que
   le compagnon tue d'un coup à la fin de la connexion, même pendant qu'il lance des fils. Sans ce
   filtre, un plugin, propriétaire de `/plugin-rpc` (l'uid du compagnon), pourrait rendre le socket

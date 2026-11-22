@@ -183,12 +183,17 @@ _DENIED: dict[str, dict[str, int]] = {
     "x86_64": {
         "chmod": 90, "fchmod": 91, "fchmodat": 268, "fchmodat2": 452,
         "chown": 92, "fchown": 93, "lchown": 94, "fchownat": 260,
-        "setxattr": 188, "lsetxattr": 189, "fsetxattr": 190,
+        "setxattr": 188, "lsetxattr": 189, "fsetxattr": 190, "setxattrat": 463,
+        "removexattr": 197, "lremovexattr": 198, "fremovexattr": 199, "removexattrat": 466,
+        # io_uring carries its own SETXATTR, which no number above would see
+        "io_uring_setup": 425, "io_uring_enter": 426, "io_uring_register": 427,
     },
     "aarch64": {
         "fchmod": 52, "fchmodat": 53, "fchmodat2": 452,
         "fchown": 55, "fchownat": 54,
-        "setxattr": 5, "lsetxattr": 6, "fsetxattr": 7,
+        "setxattr": 5, "lsetxattr": 6, "fsetxattr": 7, "setxattrat": 463,
+        "removexattr": 14, "lremovexattr": 15, "fremovexattr": 16, "removexattrat": 466,
+        "io_uring_setup": 425, "io_uring_enter": 426, "io_uring_register": 427,
     },
 }  # fmt: skip
 # `setsid` and `setpgid` are refused by *not happening*: the call returns 0 and the process stays
