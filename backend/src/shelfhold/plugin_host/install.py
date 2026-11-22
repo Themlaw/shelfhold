@@ -14,7 +14,11 @@ plugins). Before any file is written the wheel is read as a zip and refused when
   ``*.dist-info`` that is not its own (a fake ``shelfhold-*.dist-info``).
 
 The recorded state keeps, per plugin, the wheel hash and a digest of the installed files. The typed
-confirmation (``enable``) is bound to that digest: reinstalling or editing the files voids it.
+confirmation (``enable --in-process``) is bound to that digest: reinstalling or editing the files
+voids it. Since M6 (D13) the recorded state also keeps the **mode** of each plugin — isolated by
+default, in process only on the admin's explicit word, never the plugin's — and the activation of
+each mode: the typed confirmation for the host process, the reserved action (a fresh admin session
+or the host CLI) for the isolated one. A plugin runs in one mode at a time.
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from importlib import metadata
 from importlib.machinery import PathFinder
@@ -48,6 +52,11 @@ from shelfhold.plugin_host.registry import normalise_name as normalise_name
 
 ENV_ALLOW = "SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS"
 CONFIRMATION = "mêmes droits que Shelfhold"
+# D13 (M6 L06): a third-party plugin runs isolated by default; the in-process mode is the
+# admin's explicit choice, never the plugin's (the manifest cannot ask for it).
+MODE_ISOLATED = "isolated"
+MODE_IN_PROCESS = "in_process"
+MODES = (MODE_ISOLATED, MODE_IN_PROCESS)
 RESERVED_DISTRIBUTIONS = frozenset({"shelfhold", "shelfhold-sdk", "httpx", "httpcore"})
 # M6 L02 (D10): the SDK is its own distribution (`shelfhold_sdk`); a plugin shipping that
 # top-level module would shadow it, so the name is reserved like the host's own.
@@ -59,10 +68,18 @@ NO_COMPILE = {
     "pip": "--no-compile",
     "uv": "--no-compile-bytecode",
 }  # nothing is compiled at install
+# the installer reads no configuration of the machine it runs on (uv.toml, pip.conf, the
+# environment): the command says everything, the machine nothing
+NO_CONFIG = {
+    "pip": "--isolated",
+    "uv": "--no-config",
+}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _DIST_INFO = re.compile(r"^(?P<name>.+)-(?P<version>[^-]+)\.dist-info$")
 
-Runner = Callable[[Sequence[str]], "subprocess.CompletedProcess[str]"]
+# The installer also receives the folder to run it from: never the process's own cwd — from a
+# workspace, uv merges the project's own dependencies into `--require-hashes` and refuses them.
+Runner = Callable[[Sequence[str], Path], "subprocess.CompletedProcess[str]"]
 
 
 class PluginInstallError(Exception):
@@ -102,6 +119,7 @@ class Installed:
     top_levels: tuple[str, ...]
     dist_info: str
     digest: str
+    mode: str = MODE_ISOLATED  # D13: isolated by default, the admin chooses, never the plugin
 
 
 @dataclass(frozen=True)
@@ -113,7 +131,8 @@ class Confirmation:
 @dataclass
 class PluginFile:
     installed: dict[str, Installed]
-    confirmed: dict[str, Confirmation]
+    confirmed: dict[str, Confirmation]  # the typed phrase, for the in-process mode
+    enabled: dict[str, Confirmation] = field(default_factory=dict)  # the reserved action, isolated
 
 
 def read_state(layout: Layout) -> PluginFile:
@@ -127,6 +146,7 @@ def read_state(layout: Layout) -> PluginFile:
                 top_levels=tuple(v["top_levels"]),
                 dist_info=str(v["dist_info"]),
                 digest=str(v["digest"]),
+                mode=str(v.get("mode", MODE_ISOLATED)),
             )
             for n, v in raw.get("installed", {}).items()
         }
@@ -134,9 +154,13 @@ def read_state(layout: Layout) -> PluginFile:
             n: Confirmation(str(v["digest"]), str(v["at"]))
             for n, v in raw.get("confirmed", {}).items()
         }
+        enabled = {
+            n: Confirmation(str(v["digest"]), str(v["at"]))
+            for n, v in raw.get("enabled", {}).items()
+        }
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return PluginFile({}, {})  # unreadable or absent: nothing is installed, nothing confirmed
-    return PluginFile(installed, confirmed)
+    return PluginFile(installed, confirmed, enabled)
 
 
 def write_state(layout: Layout, state: PluginFile) -> None:
@@ -149,12 +173,14 @@ def write_state(layout: Layout, state: PluginFile) -> None:
                 "top_levels": list(i.top_levels),
                 "dist_info": i.dist_info,
                 "digest": i.digest,
+                "mode": i.mode,
             }
             for n, i in sorted(state.installed.items())
         },
         "confirmed": {
             n: {"digest": c.digest, "at": c.at} for n, c in sorted(state.confirmed.items())
         },
+        "enabled": {n: {"digest": c.digest, "at": c.at} for n, c in sorted(state.enabled.items())},
     }
     write_private(layout.state, json.dumps(payload, indent=1).encode("utf-8"), overwrite=True)
 
@@ -393,16 +419,25 @@ def installer_prefix() -> list[str]:
 
 def install_command(prefix: Sequence[str], target: Path, requirements: Path) -> list[str]:
     tool = "pip" if "-m" in prefix else "uv"
-    return [*prefix, "--target", str(target), *PIP_FLAGS, NO_COMPILE[tool], "-r", str(requirements)]
+    return [
+        *prefix,
+        "--target",
+        str(target),
+        *PIP_FLAGS,
+        NO_COMPILE[tool],
+        NO_CONFIG[tool],
+        "-r",
+        str(requirements),
+    ]
 
 
 def requirement_line(name: str, wheel: Path, sha256: str) -> str:
     return f"{name} @ {wheel.resolve().as_uri()} --hash=sha256:{sha256}\n"
 
 
-def _run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+def _run(argv: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 - fixed argv, no shell, local file only
-        list(argv), capture_output=True, text=True, check=False, timeout=300
+        list(argv), capture_output=True, text=True, check=False, timeout=300, cwd=cwd
     )
 
 
@@ -444,7 +479,7 @@ def install_wheel(
         argv = install_command(
             prefix if prefix is not None else installer_prefix(), target, requirements
         )
-        done = runner(argv)
+        done = runner(argv, staging)
         if done.returncode != 0:
             raise PluginInstallError("install_failed", (done.stderr or done.stdout).strip()[-400:])
         _check_staged(target, info)
@@ -468,7 +503,8 @@ def install_wheel(
             info.name, info.version, expected, info.top_levels, info.dist_info, digest
         )
         state.installed[info.name] = installed
-        state.confirmed.pop(info.name, None)
+        state.confirmed.pop(info.name, None)  # a reinstall is new code nobody vouched for
+        state.enabled.pop(info.name, None)
         write_state(layout, state)
         return installed
     finally:
@@ -532,6 +568,7 @@ def remove_plugin(layout: Layout, name: str) -> Installed:
             path.unlink()
     del state.installed[key]
     state.confirmed.pop(key, None)
+    state.enabled.pop(key, None)
     write_state(layout, state)
     return plugin
 
@@ -543,8 +580,66 @@ def env_allows(environ: dict[str, str] | os._Environ[str]) -> bool:
     return environ.get(ENV_ALLOW) == "1"
 
 
+def set_mode(layout: Layout, name: str, mode: str) -> Installed:
+    """The admin chooses the mode (D13): isolated by default, in process on an explicit word.
+    A change of mode voids both activations: each mode has its own grant."""
+    if mode not in MODES:
+        raise PluginInstallError(
+            "mode_invalid", f"the mode is {MODE_ISOLATED!r} or {MODE_IN_PROCESS!r}"
+        )
+    state = read_state(layout)
+    key = normalise_name(name)
+    plugin = state.installed.get(key)
+    if plugin is None:
+        raise PluginInstallError("unknown", f"{name!r} is not installed")
+    if plugin.mode != mode:
+        plugin = replace(plugin, mode=mode)
+        state.installed[key] = plugin
+        state.confirmed.pop(key, None)
+        state.enabled.pop(key, None)
+        write_state(layout, state)
+    return plugin
+
+
+def _sound_and_unchanged(layout: Layout, plugin: Installed, strays: list[str]) -> str | None:
+    """What both modes check before a plugin may run: the state names nothing outside the
+    directory, no file nobody installed sits in it, and the files are the recorded ones."""
+    if not state_is_sound(layout, plugin):
+        return "state.json names a path outside the plugin directory"
+    if strays:  # a file nobody installed voids every activation
+        return f"unexpected files in site-packages: {strays}"
+    return None
+
+
+def enable_isolated(layout: Layout, name: str) -> Confirmation:
+    """The reserved action of D13 (a fresh admin session or the host CLI): the plugin may run
+    isolated. No variable, no typed sentence — and never the in-process mode."""
+    state = read_state(layout)
+    key = normalise_name(name)
+    plugin = state.installed.get(key)
+    if plugin is None:
+        raise PluginInstallError("unknown", f"{name!r} is not installed")
+    if plugin.mode != MODE_ISOLATED:
+        raise PluginInstallError(
+            "mode_invalid",
+            f"{name!r} is not in isolated mode: the reserved action enables an isolated plugin",
+        )
+    strays = unexpected_entries(layout, state)
+    problem = _sound_and_unchanged(layout, plugin, strays)
+    if problem is not None:
+        raise PluginInstallError("bad_state", problem)
+    digest = current_digest(layout, plugin)
+    if digest != plugin.digest:
+        raise PluginInstallError("modified", "installed files differ from the recorded install")
+    enabled = Confirmation(digest, datetime.now(UTC).isoformat())
+    state.enabled[key] = enabled
+    state.confirmed.pop(key, None)  # one mode at a time
+    write_state(layout, state)
+    return enabled
+
+
 def confirm(layout: Layout, name: str, typed: str) -> Confirmation:
-    """Record the typed confirmation for the files as they are now."""
+    """Record the typed confirmation for the files as they are now (the in-process mode)."""
     state = read_state(layout)
     key = normalise_name(name)
     plugin = state.installed.get(key)
@@ -561,13 +656,16 @@ def confirm(layout: Layout, name: str, typed: str) -> Confirmation:
         raise PluginInstallError("modified", "installed files differ from the recorded install")
     confirmation = Confirmation(digest, datetime.now(UTC).isoformat())
     state.confirmed[key] = confirmation
+    state.enabled.pop(key, None)  # one mode at a time
     write_state(layout, state)
     return confirmation
 
 
 def unconfirm(layout: Layout, name: str) -> None:
     state = read_state(layout)
-    state.confirmed.pop(normalise_name(name), None)
+    key = normalise_name(name)
+    state.confirmed.pop(key, None)
+    state.enabled.pop(key, None)
     write_state(layout, state)
 
 
@@ -576,42 +674,90 @@ class Verdict:
     name: str
     granted: bool
     reason: str | None = None
+    mode: str = MODE_ISOLATED
+
+    @property
+    def loads_in_process(self) -> bool:
+        """Only the in-process mode ever loads in the host process: an isolated plugin is the
+        companion's to run, whatever the environment allows."""
+        return self.granted and self.mode == MODE_IN_PROCESS
 
 
 def verdicts(layout: Layout, environ: dict[str, str] | os._Environ[str]) -> list[Verdict]:
-    """For each installed plugin: granted only with the variable, a confirmation and unchanged
-    files. Each condition is checked again at every start; none is remembered on its own."""
+    """For each installed plugin, in its own mode: granted only when the activation of that
+    mode holds (the reserved action for isolated, the variable and the typed confirmation for
+    in process). Each condition is checked again at every start; none is remembered on its own."""
     state = read_state(layout)
     strays = unexpected_entries(layout, state)
     out = []
     for name, plugin in sorted(state.installed.items()):
-        confirmation = state.confirmed.get(name)
-        if not env_allows(environ):
-            out.append(Verdict(name, False, f"{ENV_ALLOW}=1 is not set"))
-        elif confirmation is None:
-            out.append(Verdict(name, False, "no typed confirmation (shelfhold plugin enable)"))
-        elif not state_is_sound(layout, plugin):
-            out.append(Verdict(name, False, "state.json names a path outside the plugin directory"))
-        elif strays:  # a file nobody installed voids every confirmation
-            out.append(Verdict(name, False, f"unexpected files in site-packages: {strays}"))
-        elif (
-            confirmation.digest != plugin.digest or current_digest(layout, plugin) != plugin.digest
-        ):
-            out.append(Verdict(name, False, "files changed since the confirmation"))
-        else:
-            out.append(Verdict(name, True))
+        problem = _sound_and_unchanged(layout, plugin, strays)
+        if plugin.mode == MODE_IN_PROCESS:
+            confirmation = state.confirmed.get(name)
+            if not env_allows(environ):
+                out.append(Verdict(name, False, f"{ENV_ALLOW}=1 is not set", plugin.mode))
+            elif confirmation is None:
+                out.append(
+                    Verdict(
+                        name, False, "no typed confirmation (shelfhold plugin enable)", plugin.mode
+                    )
+                )
+            elif problem is not None:
+                out.append(Verdict(name, False, problem, plugin.mode))
+            elif (
+                confirmation.digest != plugin.digest
+                or current_digest(layout, plugin) != plugin.digest
+            ):
+                out.append(
+                    Verdict(name, False, "files changed since the confirmation", plugin.mode)
+                )
+            else:
+                out.append(Verdict(name, True, None, plugin.mode))
+        else:  # isolated (the default): enabling is a reserved action, nothing is typed
+            enabled = state.enabled.get(name)
+            if enabled is None:
+                out.append(
+                    Verdict(
+                        name,
+                        False,
+                        "not enabled: activating an isolated plugin is a reserved action "
+                        "(a fresh admin session or the host CLI)",
+                        plugin.mode,
+                    )
+                )
+            elif problem is not None:
+                out.append(Verdict(name, False, problem, plugin.mode))
+            elif enabled.digest != plugin.digest or current_digest(layout, plugin) != plugin.digest:
+                out.append(Verdict(name, False, "files changed since the enable", plugin.mode))
+            else:
+                out.append(Verdict(name, True, None, plugin.mode))
     return out
 
 
 # -- audit -------------------------------------------------------------------------------------
 
 
-def audit(engine: Engine, action: str, target: str) -> None:
-    """One row of the `audit` table; the actor is the host user that ran the command."""
+def audit(
+    engine: Engine,
+    action: str,
+    target: str,
+    *,
+    actor_id: str | None = None,
+    session_id: str | None = None,
+    auth_time: datetime | None = None,
+) -> None:
+    """One row of the `audit` table. The actor is the host user that ran the command, unless a
+    caller with a principal names its own (the HTTP routes: the session's user, its session and
+    its `auth_time`, EF-USR-022 (3)) — the CLI keeps the uid, the route the account."""
     table = schema.tables["audit"]
     with write_transaction(engine) as connection:
         connection.execute(
             sa.insert(table).values(
-                id=new_ulid(), actor_id=f"cli:uid{os.getuid()}", action=action, target=target
+                id=new_ulid(),
+                actor_id=actor_id if actor_id is not None else f"cli:uid{os.getuid()}",
+                action=action,
+                target=target,
+                session_id=session_id,
+                auth_time=auth_time,
             )
         )

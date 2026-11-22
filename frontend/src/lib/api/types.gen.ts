@@ -3848,6 +3848,48 @@ export type PlanOut = {
 };
 
 /**
+ * PluginOut
+ *
+ * One installed third-party plugin: its mode (D13) and why it is not loaded.
+ */
+export type PluginOut = {
+    /**
+     * Mode
+     */
+    mode: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Notice
+     */
+    notice?: string | null;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Version
+     */
+    version: string;
+};
+
+/**
+ * PluginsOut
+ */
+export type PluginsOut = {
+    /**
+     * Items
+     */
+    items: Array<PluginOut>;
+};
+
+/**
  * PolicyIn
  */
 export type PolicyIn = {
@@ -14414,6 +14456,39 @@ export type ApplyResponses = {
 
 export type ApplyResponse = ApplyResponses[keyof ApplyResponses];
 
+export type ReadPluginsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/plugins';
+};
+
+export type ReadPluginsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadPluginsError = ReadPluginsErrors[keyof ReadPluginsErrors];
+
+export type ReadPluginsResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginsOut;
+};
+
+export type ReadPluginsResponse = ReadPluginsResponses[keyof ReadPluginsResponses];
+
 export type ReadAttestationsData = {
     body?: never;
     path: {
@@ -14531,6 +14606,82 @@ export type WithdrawResponses = {
 };
 
 export type WithdrawResponse = WithdrawResponses[keyof WithdrawResponses];
+
+export type DisablePluginData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/plugins/{name}/enabled';
+};
+
+export type DisablePluginErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type DisablePluginError = DisablePluginErrors[keyof DisablePluginErrors];
+
+export type DisablePluginResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginOut;
+};
+
+export type DisablePluginResponse = DisablePluginResponses[keyof DisablePluginResponses];
+
+export type EnablePluginData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/plugins/{name}/enabled';
+};
+
+export type EnablePluginErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type EnablePluginError = EnablePluginErrors[keyof EnablePluginErrors];
+
+export type EnablePluginResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginOut;
+};
+
+export type EnablePluginResponse = EnablePluginResponses[keyof EnablePluginResponses];
 
 export type ProbeData = {
     body: ProbeIn;
