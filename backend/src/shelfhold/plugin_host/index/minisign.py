@@ -22,6 +22,7 @@ __all__ = ["PinnedKey", "PluginIndexError", "parse_public_key", "verify_detached
 
 _PUBLIC_BLOB = 42  # "Ed" + key id (8) + raw Ed25519 key (32)
 _SIGNATURE_BLOB = 74  # "ED" + key id (8) + signature (64)
+_SIGNATURE_BYTES = 64  # an Ed25519 signature, and the global signature is one too
 _LEGACY_ALGO = b"Ed"
 _PREHASHED_ALGO = b"ED"
 
@@ -97,6 +98,8 @@ def verify_detached(document: bytes, signature_file: bytes, key: PinnedKey) -> s
         raise PluginIndexError("signature_invalid", "the trusted comment line is malformed")
     text = comment.removeprefix("trusted comment: ")
     global_signature = _decode(lines[3], "global signature")
+    if len(global_signature) != _SIGNATURE_BYTES:  # `nacl` raises its own ValueError otherwise
+        raise PluginIndexError("signature_invalid", "the global signature has not its 64 bytes")
     try:  # minisign signs the comment's text, without the line's prefix, then the signature
         VerifyKey(key.raw[10:]).verify(text.encode("utf-8") + blob[10:], global_signature)
     except BadSignatureError:

@@ -47,8 +47,10 @@ __all__ = ["build_plugins_router"]
 _SECRET = reserved_action(RESERVED_ACTIONS["source.set_secret"])
 _ATTEST = reserved_action(RESERVED_ACTIONS["plugin.attest"])
 _ATTEST_PARTITIONING = reserved_action(RESERVED_ACTIONS["plugin.attest_partitioning"])
-_INDEX_ADD = reserved_action(RESERVED_ACTIONS["plugin.index_add"])
-_INDEX_REMOVE = reserved_action(RESERVED_ACTIONS["plugin.index_remove"])
+# the audit line of the index actions carries its target (`url:key_id`), like the CLI: the
+# route writes it, in the transaction that pins or unpins (audit=False)
+_INDEX_ADD = reserved_action(RESERVED_ACTIONS["plugin.index_add"], audit=False)
+_INDEX_REMOVE = reserved_action(RESERVED_ACTIONS["plugin.index_remove"], audit=False)
 
 
 class SecretStateOut(BaseModel):
@@ -304,10 +306,10 @@ def build_plugins_router(
     @router.post("/plugin-repos", status_code=201)
     def add_plugin_repo(
         body: RepoIn,
-        _principal: Principal = Depends(_INDEX_ADD),  # noqa: B008
+        principal: Principal = Depends(_INDEX_ADD),  # noqa: B008
     ) -> RepoOut:
         try:
-            record = repos().add(body.url, body.pubkey or "")
+            record = repos().add(body.url, body.pubkey or "", principal=principal)
         except PluginIndexError as error:
             raise _index_problem(error) from None
         return _repo(record)
@@ -315,10 +317,10 @@ def build_plugins_router(
     @router.delete("/plugin-repos/{url:path}")
     def remove_plugin_repo(
         url: str,
-        _principal: Principal = Depends(_INDEX_REMOVE),  # noqa: B008
+        principal: Principal = Depends(_INDEX_REMOVE),  # noqa: B008
     ) -> ReposOut:
         try:
-            repos().remove(url)
+            repos().remove(url, principal=principal)
         except PluginIndexError as error:
             raise _index_problem(error) from None
         return _repos()
@@ -326,7 +328,7 @@ def build_plugins_router(
     @router.post("/plugin-repos/{url:path}/refresh")
     async def refresh_plugin_repo(
         url: str,
-        _principal: Principal = Depends(admin_only),  # noqa: B008
+        principal: Principal = Depends(admin_only),  # noqa: B008
     ) -> RefreshOut:
         record = next((r for r in repos().list() if r.url == url), None)
         if record is None:
@@ -335,7 +337,7 @@ def build_plugins_router(
             )
         fetcher = index_fetcher_for()
         try:
-            outcome = await repos().refresh(record, fetcher)
+            outcome = await repos().refresh(record, fetcher, principal=principal)
         except PluginIndexError as error:
             raise _index_problem(error) from None
         finally:

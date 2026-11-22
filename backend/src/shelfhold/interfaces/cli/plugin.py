@@ -492,36 +492,39 @@ def run_index_refresh(args: argparse.Namespace, resolved: ResolvedSettings) -> i
         return _fail(t("plugin.index_refused", code="not_found", detail=""))
     from shelfhold.composition import default_network
 
-    fetcher = index_fetcher(default_network())
-    try:
-        for record in records:
-            if not _audited(resolved, "plugin.index_refresh", record.url):  # before, not after
-                return 1
-            try:
-                outcome = asyncio.run(store.refresh(record, fetcher))
-            except PluginIndexError as exc:
-                _audited(resolved, "plugin.index_refresh_refused", f"{record.url}:{exc.code}")
-                return _index_fail(exc)
-            if outcome.applied:
-                print(
-                    t(
-                        "plugin.index_refreshed",
-                        url=record.url,
-                        version=outcome.document.version,
-                        rotated=int(outcome.rotated),
+    async def _run() -> int:
+        fetcher = index_fetcher(default_network())
+        try:
+            for record in records:
+                if not _audited(resolved, "plugin.index_refresh", record.url):  # before, not after
+                    return 1
+                try:
+                    outcome = await store.refresh(record, fetcher)
+                except PluginIndexError as exc:
+                    _audited(resolved, "plugin.index_refresh_refused", f"{record.url}:{exc.code}")
+                    return _index_fail(exc)
+                if outcome.applied:
+                    print(
+                        t(
+                            "plugin.index_refreshed",
+                            url=record.url,
+                            version=outcome.document.version,
+                            rotated=int(outcome.rotated),
+                        )
                     )
-                )
-            else:
-                print(
-                    t(
-                        "plugin.index_unchanged",
-                        url=record.url,
-                        version=outcome.document.version,
+                else:
+                    print(
+                        t(
+                            "plugin.index_unchanged",
+                            url=record.url,
+                            version=outcome.document.version,
+                        )
                     )
-                )
-    finally:
-        asyncio.run(fetcher.aclose())
-    return 0
+        finally:
+            await fetcher.aclose()  # one client for every repository, closed once
+        return 0
+
+    return asyncio.run(_run())
 
 
 def run_index_remove(args: argparse.Namespace, resolved: ResolvedSettings) -> int:

@@ -28,6 +28,7 @@ import structlog
 from shelfhold_sdk.fetcher import Response
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from shelfhold.identity.public import AuditEntry, Principal, audit_actor, audit_insert
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher import FetchLimits, GuardedFetcher, Network
 from shelfhold.infrastructure.fetcher.client import Download
@@ -146,12 +147,13 @@ class RepoStore:
             ).mappings()
             return [_record(row) for row in rows]
 
-    def add(self, url: str, pubkey: str) -> RepoRecord:
+    def add(self, url: str, pubkey: str, *, principal: Principal | None = None) -> RepoRecord:
         """Pin a repository by its URL and the public key of its signer (the reserved action).
 
         Nothing is fetched here: the pin is the admin's word, and the first refresh will have
         to be signed by exactly this key. Without the key there is no pin — a repository is
-        never trusted on its own word.
+        never trusted on its own word. Over HTTP the audit line (`url:key_id`, like the CLI) is
+        written in the same transaction: no pin without its trace.
         """
         try:
             plain = require_plain_web_url(url.strip())
@@ -173,21 +175,33 @@ class RepoStore:
                 .values(url=plain, pubkey=key.b64, key_id=key.key_id)
                 .on_conflict_do_nothing()
             )
+            if principal is not None:
+                self._audit(connection, principal, "plugin.index_add", f"{plain}:{key.key_id}")
         return next(record for record in self.list() if record.url == plain)
 
-    def remove(self, url: str) -> None:
+    def remove(self, url: str, *, principal: Principal | None = None) -> None:
         """Take the pin away; a repository added back starts from version zero (D14)."""
         with write_transaction(self._engine) as connection:
             deleted = connection.execute(
                 sa.delete(acquisition.plugin_repo).where(acquisition.plugin_repo.c.url == url)
             ).rowcount
-        if not deleted:
-            raise PluginIndexError("not_found", "no pinned repository at this address")
+            if not deleted:
+                raise PluginIndexError("not_found", "no pinned repository at this address")
+            if principal is not None:
+                self._audit(connection, principal, "plugin.index_remove", url)
 
     # -- the refresh -----------------------------------------------------------------------------
 
-    async def refresh(self, record: RepoRecord, fetcher: IndexFetcher) -> RefreshOutcome:
-        """Fetch, verify and apply an index: the Fetcher carries it, the signature decides."""
+    async def refresh(
+        self, record: RepoRecord, fetcher: IndexFetcher, *, principal: Principal | None = None
+    ) -> RefreshOutcome:
+        """Fetch, verify and apply an index: the Fetcher carries it, the signature decides.
+
+        The checks against `record` are an early refusal only: the network is awaited after
+        them, so another refresh may have applied a newer index (or a rotation) meanwhile. The
+        floor and the pin are therefore re-read under the write lock in `_apply`, which refuses
+        a document that would roll the floor back or take a retired key back.
+        """
         document_bytes = await self._get(fetcher, record.url)
         signature = await self._get(fetcher, record.url + SIGNATURE_SUFFIX)
         key = parse_public_key(record.pubkey, code="key_mismatch")
@@ -230,8 +244,8 @@ class RepoStore:
                 )
             pubkey, key_id = document.next_pubkey.b64, document.next_pubkey.key_id
             rotated = True
-        self._apply(record, document, pubkey, key_id, content)
-        return RefreshOutcome(document, applied=True, rotated=rotated)
+        applied = self._apply(record, document, pubkey, key_id, content, principal=principal)
+        return RefreshOutcome(document, applied=applied, rotated=rotated)
 
     async def _get(self, fetcher: IndexFetcher, url: str) -> bytes:
         try:
@@ -242,11 +256,69 @@ class RepoStore:
             raise PluginIndexError("unreachable", f"the repository answered {response.status}")
         return response.body
 
+    def _audit(self, connection: Any, principal: Principal, action: str, target: str) -> None:
+        """The audit line of an HTTP action, on the caller's connection: the action and its
+        trace commit or fail together."""
+        connection.execute(
+            audit_insert(
+                AuditEntry(
+                    actor_id=audit_actor(principal),
+                    action=action,
+                    at=self._now(),
+                    target=target,
+                    session_id=principal.session_id,
+                    auth_time=principal.auth_time,
+                )
+            )
+        )
+
     def _apply(
-        self, record: RepoRecord, document: IndexDocument, pubkey: str, key_id: str, content: str
-    ) -> None:
-        """Keep what the index said: the version floor, the expiry, the revocations, the pin."""
+        self,
+        record: RepoRecord,
+        document: IndexDocument,
+        pubkey: str,
+        key_id: str,
+        content: str,
+        *,
+        principal: Principal | None = None,
+    ) -> bool:
+        """Keep what the index said: the version floor, the expiry, the revocations, the pin.
+
+        The row is re-read under the write lock (`BEGIN IMMEDIATE`): the `record` the caller
+        handed was read before the network answered, and another refresh may have moved the
+        floor or the pin since. An older index, a second index for a number already kept, or a
+        document signed by a key a rotation retired are refused here, never applied. False:
+        the same number said the same thing, nothing changed.
+        """
         with write_transaction(self._engine) as connection:
+            row = (
+                connection.execute(
+                    sa.select(acquisition.plugin_repo).where(
+                        acquisition.plugin_repo.c.url == record.url
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if row is None:
+                raise PluginIndexError(
+                    "not_found", "the repository was removed while the index was read"
+                )
+            current = _record(row)
+            if document.version < current.last_version:
+                raise PluginIndexError(
+                    "rollback", f"version {document.version} is behind the last one seen"
+                )
+            if document.version == current.last_version:
+                if content == current.content_sha256:
+                    return False  # the same number, the same words: nothing to do
+                raise PluginIndexError("same_version", "two indexes exist for one version number")
+            if current.pubkey != record.pubkey:
+                # the pin moved to another key while this document was being verified: what
+                # the pinned key signed then is not what the pinned key signs now
+                raise PluginIndexError(
+                    "rotation_refused", "the pin moved to another key while this index was read"
+                )
             connection.execute(
                 sa.update(acquisition.plugin_repo)
                 .where(acquisition.plugin_repo.c.url == record.url)
@@ -270,12 +342,15 @@ class RepoStore:
                     .values(kind="wheel_sha256", value=wheel)
                     .on_conflict_do_nothing()
                 )
+            if principal is not None:
+                self._audit(connection, principal, "plugin.index_refresh", record.url)
         log.info(
             "plugin_index.refreshed",
             url=record.url,
             version=document.version,
             rotated=pubkey != record.pubkey,
         )
+        return True
 
     # -- what the index said ---------------------------------------------------------------------
 
@@ -309,6 +384,7 @@ class RepoStore:
         handle, staged = tempfile.mkstemp(dir=destination, prefix=".index-wheel-", suffix=".whl")
         path = Path(staged)
         digest = hashlib.sha256()
+        accepted = False
         try:
             with os.fdopen(handle, "wb") as wheel:
                 try:
@@ -330,7 +406,8 @@ class RepoStore:
                 raise PluginIndexError(
                     "wheel_hash_mismatch", "the wheel is not the one the index vouches for"
                 )
-        except PluginIndexError:
-            path.unlink(missing_ok=True)  # nothing of a refused wheel stays on disk
-            raise
-        return path
+            accepted = True
+            return path
+        finally:
+            if not accepted:  # nothing of a refused wheel stays on disk, whatever refused it
+                path.unlink(missing_ok=True)

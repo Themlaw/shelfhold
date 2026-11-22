@@ -27,6 +27,36 @@ __all__ = [
 
 FORMAT = 1
 MAX_AHEAD = timedelta(days=90)  # an index is never believed for more than three months
+MAX_VERSION = 2**63 - 1  # what the database can keep: a bigger number is not a version
+_DOCUMENT_FIELDS = frozenset({"format", "version", "expires", "plugins", "revoked", "next_pubkey"})
+_ENTRY_FIELDS = frozenset(
+    {
+        "key",
+        "version",
+        "api",
+        "rpc_protocol",
+        "wheel_url",
+        "sha256",
+        "min_host",
+        "deprecated",
+        "replaced_by",
+    }
+)
+_REVOKED_FIELDS = frozenset({"plugin_keys", "wheel_sha256"})
+
+
+def _object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """The `object_pairs_hook` of the parse: a key that appears twice is a refusal, not a guess.
+
+    JSON allows it, the last value winning; an index that says two things about one name is
+    not an index this host believes.
+    """
+    seen: dict[str, Any] = {}
+    for name, value in pairs:
+        if name in seen:
+            raise ValueError(f"the member {name!r} appears twice")
+        seen[name] = value
+    return seen
 
 
 @dataclass(frozen=True)
@@ -87,9 +117,14 @@ def _web_url(value: Any, what: str) -> str:
 def _entry(raw: Any) -> IndexEntry:
     if not isinstance(raw, dict):
         raise PluginIndexError("document_invalid", "a plugin entry is not an object")
+    if not set(raw) <= _ENTRY_FIELDS:
+        raise PluginIndexError("document_invalid", "a plugin entry has unknown members")
     replaced_by = raw.get("replaced_by")
     if replaced_by is not None:
         replaced_by = _text(replaced_by, "the replacing plugin key")
+    deprecated = raw.get("deprecated")
+    if not isinstance(deprecated, bool):
+        raise PluginIndexError("document_invalid", "deprecated is not a boolean")
     return IndexEntry(
         key=_text(raw.get("key"), "a plugin key"),
         version=_text(raw.get("version"), "a plugin version"),
@@ -98,7 +133,7 @@ def _entry(raw: Any) -> IndexEntry:
         wheel_url=_web_url(raw.get("wheel_url"), "the wheel address"),
         sha256=_sha256(raw.get("sha256"), "the wheel sha256"),
         min_host=_text(raw.get("min_host"), "the minimum host version"),
-        deprecated=raw.get("deprecated") is True,
+        deprecated=deprecated,
         replaced_by=replaced_by,
     )
 
@@ -106,16 +141,21 @@ def _entry(raw: Any) -> IndexEntry:
 def parse_document(data: bytes) -> IndexDocument:
     """Parse and check a v1 index document; anything unexpected is a refusal, never a guess."""
     try:
-        raw = json.loads(data)
+        raw = json.loads(data, object_pairs_hook=_object)
     except (ValueError, UnicodeDecodeError):
         raise PluginIndexError("document_invalid", "the index is not a JSON document") from None
     if not isinstance(raw, dict):
         raise PluginIndexError("document_invalid", "the index is not a JSON object")
-    if raw.get("format") != FORMAT:
+    if not set(raw) <= _DOCUMENT_FIELDS:
+        raise PluginIndexError("document_invalid", "the index has unknown members")
+    fmt = raw.get("format")
+    if not isinstance(fmt, int) or isinstance(fmt, bool) or fmt != FORMAT:
         raise PluginIndexError("document_invalid", "the index format is not 1")
     version = raw.get("version")
     if not isinstance(version, int) or isinstance(version, bool) or version < 1:
         raise PluginIndexError("document_invalid", "the index version is not a positive integer")
+    if version > MAX_VERSION:
+        raise PluginIndexError("document_invalid", "the index version is out of range")
     expires = _expires(raw.get("expires"))
     plugins = raw.get("plugins")
     if not isinstance(plugins, list):
@@ -123,6 +163,8 @@ def parse_document(data: bytes) -> IndexDocument:
     revoked = raw.get("revoked")
     if not isinstance(revoked, dict):
         raise PluginIndexError("document_invalid", "the revocations are not an object")
+    if not set(revoked) <= _REVOKED_FIELDS:
+        raise PluginIndexError("document_invalid", "the revocations have unknown members")
     keys, wheels = revoked.get("plugin_keys"), revoked.get("wheel_sha256")
     if not isinstance(keys, list) or not isinstance(wheels, list):
         raise PluginIndexError("document_invalid", "the revocations are not lists")
@@ -131,11 +173,17 @@ def parse_document(data: bytes) -> IndexDocument:
         next_pubkey = parse_public_key(
             _text(raw.get("next_pubkey"), "the next public key"), code="document_invalid"
         )
+    entries = tuple(_entry(entry) for entry in plugins)
+    seen: set[str] = set()
+    for entry in entries:  # two entries for one key: which wheel is vouched for? Refused.
+        if entry.key in seen:
+            raise PluginIndexError("document_invalid", f"the plugin {entry.key!r} has two entries")
+        seen.add(entry.key)
     return IndexDocument(
         format=FORMAT,
         version=version,
         expires=expires,
-        plugins=tuple(_entry(entry) for entry in plugins),
+        plugins=entries,
         revoked_plugin_keys=frozenset(_text(k, "a revoked plugin key") for k in keys),
         revoked_wheel_sha256=frozenset(_sha256(w, "a revoked wheel sha256") for w in wheels),
         next_pubkey=next_pubkey,

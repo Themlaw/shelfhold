@@ -338,6 +338,10 @@ def _reserved_routes(app: object) -> list[tuple[str, str, str]]:
 def test_reserved_routes_of_create_app_refuse_api_keys(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], settings: Settings
 ) -> None:
+    # every reserved route is asked twice below (a key, then an anonymous call), and the app has
+    # more of them than the anonymous budget of one address (120/min): the budget is not what
+    # this test is about, so it is widened here, not in the product
+    settings = settings.model_copy(update={"http_public_rate_per_minute": 10_000})
     with auth_env(monkeypatch, settings) as env:
         routes = _reserved_routes(env.app)
         guards = {name for _method, _path, name in routes}
