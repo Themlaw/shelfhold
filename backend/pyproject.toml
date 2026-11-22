@@ -127,7 +127,7 @@ show_missing = true
 [tool.ruff]
 line-length = 100
 # the adversarial-review proofs are kept exactly as the reviewer wrote them
-extend-exclude = ["tests/unit/test_m4_l41_contradicteur.py"]
+extend-exclude = ["tests/unit/test_m4_l41_contradicteur.py", "tests/integration/test_m6_l06_review_poc.py"]
 target-version = "py313"
 src = ["src", "tests"]
 
@@ -181,7 +181,6 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF", "TID"]
 "src/shelfhold/plugin_host/runner/server.py" = ["TID251"]  # the companion's unix socket and the peer's uid
 "src/shelfhold/plugin_host/runner/confine.py" = ["TID251"]  # opens a folder by `O_PATH` to grant it to Landlock: no file of /data
 "tests/unit/test_m6_l05_runner_review.py" = ["E501", "F401"]  # the review's proofs, kept as they were written
-"tests/integration/test_m6_l06_review_poc.py" = ["E501"]  # the review's proofs, kept as they were written
 "src/shelfhold/plugin_host/install.py" = ["TID251"]  # /data/plugins: the plugins directory, never the library
 # the local CLI socket: AF_UNIX only, created in /data (EF-USR-024); never an outbound connection
 "src/shelfhold/infrastructure/local_socket/**" = ["TID251"]
