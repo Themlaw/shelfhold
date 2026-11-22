@@ -1,12 +1,19 @@
 """Writing the provenance mirror of a root (EF-EXP-063, I33; format in `domain.provenance_mirror`).
 
 The mirror is a projection of the database. After a file is placed and its manifest line
-committed, the series file that holds its line is rewritten under an intent (`write`, EF-EXP-041):
-the intent is committed, then the file is replaced atomically through `Fsops` (the sole writer,
-lease included), then the intent is closed. A crash in between leaves an intent whose target is
-either absent or not the new content: boot closes it as abandoned and the next run, or
-`rebuild`, writes the projection again. Nothing here ever deletes a line the database cannot
-explain (`unresolved`).
+committed, the series file that holds its line is rewritten under an intent (`write`,
+EF-EXP-041): the intent is committed, then the file is replaced atomically through `Fsops` (the
+sole writer, lease included), then the intent is closed. A crash in between leaves an intent
+whose target is either absent or not the new content: boot closes it as abandoned and the next
+run, or `rebuild`, writes the projection again. Nothing here ever deletes a line the database
+cannot explain (`unresolved`).
+
+Each file is written under the `path` lock of the series folder it belongs to, from a projection
+made again under that lock, never from one made before it: a purge takes the same lock before it
+erases (EF-BIB-052), so it either ran before the lock — and the projection made under it no
+longer holds the purged line — or it runs after the write, and its own cleaning drops the line.
+A purge can no more leave the line of an erased document behind than write between the
+projection and the file.
 
 Never written: for a destination whose egress is `externe`, for a transport other than `tree`,
 for a root that is `adopt_ro` (the lineage of an adopted file is written on the writable root at
@@ -24,6 +31,7 @@ from sqlalchemy import Connection, Engine
 
 from shelfhold.events.bus import EventBus
 from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.locks import ResourceLocks, path_resource
 from shelfhold.export.application.snapshot import DestinationContext, load_context
 from shelfhold.export.domain.path_map import clean_absolute, within
 from shelfhold.export.domain.provenance_mirror import (
@@ -38,6 +46,7 @@ from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.fetcher.refs import projectable
 from shelfhold.infrastructure.fsops import Fsops, PathEscapeError
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.logging import known_secret_values
 from shelfhold.infrastructure.schema import acquisition, catalog, export, platform
 from shelfhold.integrations.apprise import operating_bus as default_bus
@@ -48,6 +57,7 @@ __all__ = ["MirrorWriter", "ProvenanceMirror"]
 log = structlog.get_logger(__name__)
 
 LINE_STATES = ("written", "scanned", "resolved", "adopted")
+MIRROR_LOCK_WAIT_S = 2.0  # a folder held longer: the file is left to the next run or window
 
 
 class MirrorWriter(Protocol):
@@ -66,6 +76,7 @@ class ProvenanceMirror:
         self._bus = operating_bus or default_bus(clock)
         self._fsops = fsops
         self._clock = clock
+        self._locks = ResourceLocks(engine, clock=clock)
         self.skipped: list[str] = []  # files left alone: unreadable, or of a newer major
 
     # -- the public moves ------------------------------------------------------------------------
@@ -74,14 +85,27 @@ class ProvenanceMirror:
         self, destination_id: str, *, folder: str | None = None, writer: MirrorWriter | None = None
     ) -> list[str]:
         """Bring the mirror files of the destination in line with the database; `folder` limits
-        the work to the series folder just written. Returns the files actually rewritten."""
-        root, pending = self._pending(destination_id, folder)
+        the work to the series folder just written. Returns the files actually rewritten.
+
+        The first pass is cheap — which series hold a line, and in which folder — because the
+        projection itself is made in `_put`, under the folder's `path` lock, from the database
+        as it stands there and then: never from a projection made before the lock was taken."""
+        with self._engine.connect() as connection:
+            ctx = load_context(connection, destination_id)
+            root = self._writable_root(connection, ctx)
+            if root is None:
+                return []
+            candidates = self._candidates(connection, ctx, folder)
         written: list[str] = []
-        for name, data in pending:
+        for series_id, series_folder in candidates:
+            name = mirror_name(destination_id, series_id)
             try:
-                written.append(self._put(root, name, data, writer or self._fsops))
+                target = self._put(ctx, root, name, series_folder, writer or self._fsops)
             except PathEscapeError:  # a link where the file or its folder should be
                 self._skip(name, "symlink")
+                continue
+            if target is not None:
+                written.append(target)
         return written
 
     def would_write(self, destination_id: str) -> bool:
@@ -100,6 +124,8 @@ class ProvenanceMirror:
     def _pending(
         self, destination_id: str, folder: str | None
     ) -> tuple[str, list[tuple[str, bytes]]]:
+        """The read-only pass of `meta check`: which mirror files are missing or out of date,
+        and what they would hold. No lock, no write — `_put` is the one that writes."""
         with self._engine.connect() as connection:
             ctx = load_context(connection, destination_id)
             root = self._writable_root(connection, ctx)
@@ -176,28 +202,109 @@ class ProvenanceMirror:
             return None
         return merge_with_database(on_disk, entries, header=header).dumps()
 
-    def _put(self, root: str, name: str, data: bytes, writer: MirrorWriter) -> str:
-        """The intent (`write`), then the file, then the intent closed (EF-EXP-041)."""
-        target = f"{root}/{MIRROR_DIR}/{name}"
-        journal = IntentJournal(self._engine, self._fsops, clock=self._clock)
-        intent = journal.record(
-            op="write", dst=target,
-            expected_sha256="sha256:" + hashlib.sha256(data).hexdigest(),
+    def _put(
+        self,
+        ctx: DestinationContext,
+        root: str,
+        name: str,
+        folder: str,
+        writer: MirrorWriter,
+    ) -> str | None:
+        """The one writer of one mirror file: the folder's `path` lock, then the projection made
+        again **under that lock**, then — only if the file is behind — the intent (`write`), the
+        atomic replacement and the intent closed (EF-EXP-041, EF-BIB-052).
+
+        The lock and the projection made under it are what keep a purge honest: a purge takes
+        the same `path` lock before it erases a Unit's rows and lines, so it either ran before
+        the lock — and the projection made here no longer holds the erased line — or it runs
+        after the write, and its own cleaning drops the line. No projection made before the
+        lock is ever written. A folder held longer than the wait leaves the file to the next
+        run or the maintenance window; a file up to date writes nothing."""
+        destination_id, _, series_file = name.partition("/")
+        series_id = series_file.removesuffix(".jsonl")
+        resource = path_resource(f"{destination_id}/{folder}")
+        with self._locks.hold_resources(new_ulid(), [resource], timeout=MIRROR_LOCK_WAIT_S) as held:
+            held.ensure()
+            with self._engine.connect() as connection:
+                groups = self._project(connection, ctx, None, series_id=series_id)
+            group = groups.get(series_id)
+            if group is None:
+                return None  # erased since the candidates were read: the purge owns the file
+            try:
+                raw = self._fsops.read_mirror(root, name)
+            except PathEscapeError:
+                raise  # the caller reports a link and leaves the file alone
+            except Exception:  # a forged or damaged mirror never stops an export
+                self._skip(name, "unreadable")
+                return None
+            header, entries = group
+            data = self._merged(name, header, entries, raw)
+            if data is None or data == raw:
+                return None  # left alone: read only, or of a newer major, or already current
+            target = f"{root}/{MIRROR_DIR}/{name}"
+            journal = IntentJournal(self._engine, self._fsops, clock=self._clock)
+            intent = journal.record(
+                op="write", dst=target,
+                expected_sha256="sha256:" + hashlib.sha256(data).hexdigest(),
+            )  # fmt: skip
+            journal.mark_applying(intent)
+            try:
+                writer.write_mirror(root, name, data)
+            except Exception:
+                journal.cancel(intent)  # nothing was placed (the write is atomic)
+                raise
+            journal.mark_done(intent)
+            return target
+
+    @staticmethod
+    def _candidates(
+        connection: Connection, ctx: DestinationContext, folder: str | None
+    ) -> list[tuple[str, str]]:
+        """The series of the destination (of one series folder when given) that hold a line,
+        with the folder each lives in: the cheap first pass of a sync — no projection here, the
+        projection happens under the folder's lock, in `_put`."""
+        record, item, link = export.export_record, export.export_item, export.edition_export_series
+        query = (
+            sa.select(link.c.export_series_id, sa.func.min(record.c.rel_path).label("rel"))
+            .select_from(
+                record.join(item, item.c.id == record.c.export_item_id)
+                .join(
+                    link,
+                    sa.and_(
+                        link.c.edition_id == item.c.edition_id,
+                        link.c.remote_library_id == ctx.remote_library_id,
+                    ),
+                )
+            )
+            .where(
+                record.c.shelf_destination_id == ctx.destination_id,
+                record.c.locator_type == "path",
+                record.c.rel_path.is_not(None),
+                record.c.state.in_(LINE_STATES),
+            )
+            .group_by(link.c.export_series_id)
         )  # fmt: skip
-        journal.mark_applying(intent)
-        try:
-            writer.write_mirror(root, name, data)
-        except Exception:
-            journal.cancel(intent)  # nothing was placed (the write is atomic)
-            raise
-        journal.mark_done(intent)
-        return target
+        if folder is not None:
+            escaped = folder.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            query = query.where(record.c.rel_path.like(escaped + "/%", escape="\\"))
+        return [
+            (str(row.export_series_id), str(row.rel).split("/", 1)[0])
+            for row in connection.execute(query)
+        ]
 
     # -- the projection --------------------------------------------------------------------------
 
     def _project(
-        self, connection: Connection, ctx: DestinationContext, folder: str | None
+        self,
+        connection: Connection,
+        ctx: DestinationContext,
+        folder: str | None,
+        *,
+        series_id: str | None = None,
     ) -> dict[str, tuple[dict[str, Any], list[dict[str, Any]]]]:
+        """The projection, grouped by export series. `folder` limits it to one series folder
+        (the read-only pass of `meta check`); `series_id` to one series (the write of one file,
+        under the folder's lock). Neither: the whole destination."""
         record, item, link = export.export_record, export.export_item, export.edition_export_series
         query = (
             sa.select(
@@ -228,7 +335,9 @@ class ProvenanceMirror:
             )
             .order_by(link.c.export_series_id, record.c.rel_path)
         )  # fmt: skip
-        if folder is not None:
+        if series_id is not None:
+            query = query.where(link.c.export_series_id == series_id)
+        elif folder is not None:
             escaped = folder.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             query = query.where(record.c.rel_path.like(escaped + "/%", escape="\\"))
         rows = connection.execute(query).all()

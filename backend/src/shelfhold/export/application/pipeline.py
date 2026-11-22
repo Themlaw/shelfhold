@@ -711,6 +711,9 @@ class ExportPipeline:
         _ctx, wanted, first = self._compute(destination_id, disk=False)
         if not first.ops:
             log.debug("export.nothing_to_write", destination_id=destination_id)
+            # L47: the sweep — a plan stopped before its `finally` leaves aliases without
+            # hashes, and this run has nothing else to do: fill them here, once, bounded
+            self._complete_alias_hashes(_ctx)
             return ApplyReport(None, ())
         if blocked_memo.known(self._engine, destination_id, wanted.version):
             log.debug("export.blocked_memo", destination_id=destination_id)
@@ -757,8 +760,9 @@ class ExportPipeline:
         return self._sessions.open(root) if root else nullcontext()
 
     def heal_mirror(self, destination_id: str) -> None:
-        """The mirror of a destination projected again if a file is lost or out of date. A job of
-        the maintenance window, since looking for a lost file reads the disk (ENF-OPS-014): a run
+        """The mirror of a destination projected again if a file is lost or out of date, and the
+        aliases a stopped plan left without their hashes swept in the same pass. A job of the
+        maintenance window, since looking for a lost file reads the disk (ENF-OPS-014): a run
         with nothing to write does not, a run with something to write heals it on its way.
 
         A door like the others: the mirror is written on the disks, so a restored instance
@@ -767,6 +771,7 @@ class ExportPipeline:
         with self._engine.connect() as connection:
             ctx = load_context(connection, destination_id)
         self._heal_mirror(ctx)
+        self._complete_alias_hashes(ctx)  # L47: the sweep of the window, bounded to the destination
 
     def _heal_mirror(self, ctx: DestinationContext) -> None:
         """A mirror file lost, or never written because a run stopped after its file: the
@@ -786,12 +791,14 @@ class ExportPipeline:
 
     def _sync_mirrors(self, ctx: DestinationContext, folders: set[str]) -> None:
         """The mirror of every series folder a plan wrote, once each, once the plan is over
-        (EF-EXP-063, ENF-PERF-007). A series that takes five hundred chapters in one run is one
-        projection of five hundred lines, not five hundred projections that each read and wrote
-        the whole file again — the shape the nightly of the contention bench broke on. The write
-        is the one of every mirror write (`_put`: intent, atomic replace, intent closed), under
-        the root's write session like the healing, and best effort: a file placed is never
-        unwritten by a mirror that lags, and the next run, or `rebuild`, projects it again."""
+        (EF-EXP-063, ENF-PERF-007). A series that takes five hundred chapters in one run is
+        one projection of five hundred lines, not five hundred projections that each read and
+        wrote the whole file again — the shape the nightly of the contention bench broke on.
+        The write is the one of every mirror write (`ProvenanceMirror._put`: the folder's
+        `path` lock, the projection made again under it, intent, atomic replace, intent
+        closed), under the root's write session like the healing, and best effort: a file
+        placed is never unwritten by a mirror that lags, and the next run, or `rebuild`,
+        projects it again."""
         if not folders:
             return
         opened = (
@@ -807,11 +814,11 @@ class ExportPipeline:
             log.warning("mirror_write_failed", destination=ctx.destination_id)
 
     def _complete_alias_hashes(self, ctx: DestinationContext) -> None:
-        """L47 for a whole plan: the aliases its commits left without hashes are filled once the
-        plan is over, in one pass over the destination (`complete_hashes_of_destination`); one
-        reading of them and one conditional write per file, never inside a transaction. Best
-        effort: a failure leaves the aliases without hashes, and the sweep or the lazy read of
-        the kosync relay fills them later, as after a crash."""
+        """L47 after an operation: the aliases of the destination that are still empty — the
+        file the operation just placed and committed, and anything a stopped run left behind —
+        filled in one bounded pass (`complete_hashes_of_destination`), right here and never
+        inside a transaction. Best effort: a failure leaves the aliases without hashes, and the
+        sweep of the next run with nothing to write, or of the maintenance window, fills them."""
         if ctx.root_local is None:
             return  # no folder on this machine: no file to read, no alias to fill
         try:
@@ -879,7 +886,7 @@ class ExportPipeline:
         done: list[PlannedOp] = []
         folders: set[str] = set()
         written_folder: str | None = None  # the series folder the plan is writing into
-        behind: set[str] = set()  # folders written, their mirror still due
+        behind: set[str] = set()  # folders the plan owes a mirror to, written or attempted
 
         def run(op: PlanOp) -> None:
             nonlocal written_folder
@@ -894,14 +901,22 @@ class ExportPipeline:
                     self._sync_mirrors(ctx, {written_folder})
                     behind.discard(written_folder)
                 written_folder = folder
-            outcome = self._execute(ctx, planned, plan_id, job_id)
+            if folder is not None:
+                # due before the operation: a failure after its commit leaves the file placed
+                # and its line committed, and the folder still owed its mirror (L47, EF-EXP-063)
+                behind.add(folder)
+            try:
+                outcome = self._execute(ctx, planned, plan_id, job_id)
+            finally:
+                # L47: the aliases of what the operation committed are filled right here —
+                # the operation's own file, and anything a stopped run left behind — never
+                # later than the operation the plan is at
+                self._complete_alias_hashes(ctx)
             if outcome is REFUSED:
                 return  # a last look refused it: not written, not reported as done
             done.append(planned)
             if isinstance(outcome, str):
                 folders.add(outcome)
-                if folder is not None:
-                    behind.add(folder)
 
         store = PlanStore(
             self._engine, clock=self._clock, current_version=current, step_version=inputs
@@ -912,8 +927,6 @@ class ExportPipeline:
             if self._request_scan is not None:
                 for folder in sorted(folders):  # one targeted scan per series folder
                     self._request_scan(ctx.remote_folder(folder))
-            if folders:
-                self._complete_alias_hashes(ctx)
             self._sync_mirrors(ctx, behind)
         log.info(
             "export.applied",
@@ -1416,8 +1429,8 @@ class ExportPipeline:
                         identity=identity,
                     )  # fmt: skip
                     journal.mark_done(intent, within=connection)
-                # L47: the hashes of the aliases are filled once the plan is over, in one pass
-                # over them (`_complete_alias_hashes`), never inside a transaction
+                # L47: the alias of the file is made in the transaction above (without hashes);
+                # the hashes are filled right after the operation, never inside a transaction
         except BaseException:
             if self._fsops.observe(target) is None:  # nothing was placed: nothing to settle
                 journal.cancel(intent)
