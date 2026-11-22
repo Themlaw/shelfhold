@@ -80,7 +80,7 @@ describe('Read marks of the series sheet', () => {
   });
 
   // req: EF-LEC-014
-  it('test_read_marks_undoes_a_childs_mark_through_the_administrators_door', async () => {
+  it('test_read_marks_undoes_the_mark_of_a_child_through_the_administrators_door', async () => {
     let asked: string | null = null;
     server.use(
       me(),
