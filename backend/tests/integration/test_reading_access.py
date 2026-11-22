@@ -19,7 +19,6 @@ from shelfhold.reading.public import (
     MemberKeyRevokedError,
     UnknownCarrierError,
     live_member_account,
-    position_of,
     progress_of,
     record_position,
 )
@@ -47,10 +46,8 @@ def test_a_profile_records_and_reads_its_own_position(tmp_path: Path) -> None:
         reader = env.user("reader")
         units = env.units("ok", 2)
         item = env.file("ok", units)
-        position = put(env, reader, reader, item, percent=1.0)
+        put(env, reader, reader, item, percent=1.0)
         assert {p.unit_id: p.state for p in mine(env, reader)} == {u: "in_progress" for u in units}
-        with env.engine.connect() as connection:
-            assert position_of(connection, viewer_id=reader, position_id=position) is not None
 
 
 def test_a_future_client_ts_is_stored_bounded_by_the_server_date(tmp_path: Path) -> None:
@@ -94,18 +91,6 @@ def test_nobody_writes_the_position_of_another_profile(tmp_path: Path, attacker_
         assert count == 0
 
 
-def test_a_position_of_another_profile_is_not_found_by_its_id(tmp_path: Path) -> None:
-    with reading_env(tmp_path) as env:
-        victim = env.user("victim")
-        other = env.user("other")
-        item = env.file("ok", env.units("ok", 1))
-        position = put(env, victim, victim, item)
-        with env.engine.connect() as connection:
-            assert position_of(connection, viewer_id=other, position_id=position) is None
-            missing = position_of(connection, viewer_id=other, position_id=new_ulid())
-        assert missing is None  # exactly as if it did not exist
-
-
 def test_a_child_sees_no_progress_above_her_ceiling(tmp_path: Path) -> None:
     """Her own old position on a Work that is now above her ceiling (rated after, ceiling
     lowered): it is gone from every answer, as is any trace of it."""
@@ -116,12 +101,10 @@ def test_a_child_sees_no_progress_above_her_ceiling(tmp_path: Path) -> None:
         visible = env.file("ok", visible_units)
         hidden = env.file("above", hidden_units)
         env.position(kid, visible, percent=1.0)
-        hidden_position = env.position(kid, hidden, percent=1.0)  # left by an earlier state
+        env.position(kid, hidden, percent=1.0)  # left by an earlier state
         got = mine(env, kid)
         assert [p.unit_id for p in got] == visible_units
         assert mine(env, kid, units=hidden_units) == []
-        with env.engine.connect() as connection:
-            assert position_of(connection, viewer_id=kid, position_id=hidden_position) is None
 
 
 def test_a_child_cannot_record_on_a_work_above_her_ceiling(tmp_path: Path) -> None:

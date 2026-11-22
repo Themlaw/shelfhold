@@ -100,18 +100,6 @@ symbols = [
 ]
 
 [[allow]]
-category = "m4-l43-reading-service"
-reason = "2026-11-17 (M4 L43): what L14a wrote for the relays of progress is still not called, and none of L14b, L47 and L50 turned out to need it: the sweep of the aliases a crash left without hashes (`heal_alias_hashes`, `verified_hashes`: since M4 L47 the export itself calls them, they left this entry) needs a locator under the physical roots of a binding, which is a security contract of its own (no symbolic link, never outside the roots) and is not a simple wiring; the read of a position (`position_of`), the delivery of a server state (`record_delivery`) and the undo of a read mark (`undo_read_mark`) wait for the reader of M5 (the screen where a member undoes a mark); `reading.domain.merge` (`latest`, `furthest`) states the rule that the SQL view `reading_progress` implements, and a test proves the two equal. Redated M5 in writing (docs/decisions/M4.md, table of the debts). 2026-11-19 (M5 L22b): redated M6. No M5 lot carries a route or a screen where a member undoes a read mark, nor a read of the server state by the reader (the reader writes positions through its own routes, docs/decisions/M5.md, L07): `position_of`, `record_delivery`, `undo_read_mark` and the two merge rules stay as they are, proved by their tests. Until then a read mark cannot be undone by anyone: the mark is journalled (`reading.read_marked`) and only a device report that crosses pages marks, which is the cost accepted in writing in docs/decisions/M5.md. The undo is a lot of M6."
-until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md): the undo of a read mark and the lazy read of the aliases, a lot of M6 — L18
-symbols = [
-  "shelfhold.reading.application.progress:position_of",
-  "shelfhold.reading.application.progress:record_delivery",
-  "shelfhold.reading.application.progress:undo_read_mark",
-  "shelfhold.reading.domain.merge:latest",
-  "shelfhold.reading.domain.merge:furthest",
-]
-
-[[allow]]
 category = "deferred-l24-deprecation-window"
 reason = "2026-11-17 (M4 L24): `Deprecation` builds the window during which an event is sent in two versions of its shape (EF-INT-005). Every event of the catalogue is still at its first version, so no entry declares one: the double emission is proved with a catalogue the test builds, and the bounds are checked when any catalogue is built. It comes with the first change of the shape of an event. 2026-11-19 (M5 L22b): redated M6 (D18), then to the first change of the shape of an event. No event changes shape in M5 (the catalogue of events and the webhooks are untouched since `v1.1.0`), so there is nothing to declare yet."
 until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md, D18): the first change of the shape of an event — L25
