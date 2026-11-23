@@ -112,7 +112,7 @@
   <title>{t('appearance.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('appearance.title')}</h1>
   {#if prefs}
     <form onsubmit={(event) => event.preventDefault()}>

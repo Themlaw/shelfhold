@@ -14,6 +14,89 @@ input:focus-within {
   outline-offset: 2px;
 }
 
+/* Vertical rhythm: headings and paragraphs spaced consistently. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+h1:not(:first-child),
+h2:not(:first-child),
+h3:not(:first-child),
+h4:not(:first-child),
+h5:not(:first-child),
+h6:not(:first-child) {
+  margin-top: 1.5rem;
+}
+
+/* Form screen styles: centered layout with readable width, only for form pages */
+main.form-screen {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem;
+}
+
+.form-screen form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.form-screen label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 500;
+}
+
+.form-screen input:not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='button']):not([type='reset']),
+.form-screen select,
+.form-screen textarea {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-cover);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-sizing: border-box;
+}
+
+.form-screen .hint {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  margin-top: -0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.form-screen button[type='submit'],
+.form-screen input[type='submit'] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border: none;
+  border-radius: var(--radius-cover);
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.form-screen button[type='submit']:hover:not(:disabled),
+.form-screen input[type='submit']:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.form-screen button[type='submit']:disabled,
+.form-screen input[type='submit']:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* ENF-A11Y-004: every target is at least 44x44 px. A checkbox is reached through its label. */
 button,
 [role='button'],
@@ -86,6 +169,10 @@ canvas {
     bottom: 0.5rem;
     z-index: 1;
     background: var(--color-bg);
+  }
+  /* a form screen's submit is the accent button: its text colour is meant for that background */
+  .form-screen form > button[type='submit']:last-child {
+    background: var(--color-accent);
   }
 }
 

@@ -3,6 +3,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { client } from '#lib/api/client.gen.ts';
+import { setUiLanguage } from '#lib/i18n/index.ts';
 import Page from './+page.svelte';
 
 const BASE = 'http://shelfhold.test';
@@ -14,7 +15,11 @@ beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' } as never);
   client.setConfig({ baseUrl: BASE });
 });
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  // Reset to French after each test to avoid interference
+  setUiLanguage('fr');
+});
 afterAll(() => server.close());
 
 describe('Assistant : compte', () => {

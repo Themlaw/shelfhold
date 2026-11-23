@@ -168,7 +168,7 @@
   <title>{t('admin.wizard.dossier.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('admin.wizard.title')}</h1>
   <WizardSteps current="dossier" />
   <h2>{t('admin.wizard.dossier.title')}</h2>

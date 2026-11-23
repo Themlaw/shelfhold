@@ -198,7 +198,7 @@
   <title>{t('webhooks.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('webhooks.title')}</h1>
 
   {#if adminOnly}
