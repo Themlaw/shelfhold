@@ -60,6 +60,7 @@ __all__ = [
     "ContentChangedError",
     "ContentKey",
     "ContentRefusedError",
+    "Elsewhere",
     "ExcerptUnavailableError",
     "FullReadNotAllowedError",
     "IssuedTicket",
@@ -67,6 +68,7 @@ __all__ = [
     "ResolvedCarrier",
     "ServedEntry",
     "read_elsewhere",
+    "read_elsewhere_of_unit",
 ]
 
 _INFO = b"shelfhold/content-ticket/v1"
@@ -130,28 +132,75 @@ class ArchiveSource(Protocol):
         ...
 
 
-def read_elsewhere(connection: sa.Connection, *, user_id: str, content_id: str) -> str | None:
-    """Where a content is read (J5-S2): the kind of the first destination that holds it written —
-    a live export record, an account of the profile's own there, live and verified — or None when
-    it is read here only. The one query every surface asks (the reader, the positions, PSE, KEPUB
-    and « Reprendre »): the rule is written once, by `content_id` and verified account, the
-    strictest reading of it (ADR-0055 D-P1)."""
+@dataclass(frozen=True)
+class Elsewhere:
+    """Where a content of the profile's is read: the kind of the destination that holds it and
+    the address of its target, as written — the route words it, `web_address` decides what opens."""
+
+    kind: str
+    url: str | None
+
+
+def read_elsewhere(connection: sa.Connection, *, user_id: str, content_id: str) -> Elsewhere | None:
+    """Where a content is read (J5-S2): the first destination that holds it written — a live
+    export record, an account of the profile's own there, live and verified — or None when it is
+    read here only. The one query every surface that applies the rule asks (the reader, the
+    positions, KEPUB and « Reprendre »): the rule is written once, by `content_id` and verified
+    account, the strictest reading of it (ADR-0055 D-P1)."""
+    return _elsewhere(
+        connection, user_id=user_id, held=export.export_item.c.content_id == content_id
+    )
+
+
+def read_elsewhere_of_unit(
+    connection: sa.Connection, *, user_id: str, unit_id: str
+) -> Elsewhere | None:
+    """The same query, asked of a Unit through its coverage (J5-S2): an assembled volume is an
+    `export_item` with no content of its own (`assembly._complete` writes `content_id=None`) —
+    it is read elsewhere all the same, and « Reprendre » says so. The same account criterion,
+    the same order, one definition of the rule."""
+    coverage = export.unit_coverage
+    held = sa.and_(
+        coverage.c.unit_id == unit_id,
+        coverage.c.carrier_type == "export_item",
+        coverage.c.carrier_id == export.export_item.c.id,
+    )
+    return _elsewhere(connection, user_id=user_id, held=held, through=coverage)
+
+
+def _elsewhere(
+    connection: sa.Connection,
+    *,
+    user_id: str,
+    held: sa.ColumnElement[bool],
+    through: sa.FromClause | None = None,
+) -> Elsewhere | None:
+    """The one definition: the first destination (by kind, then id) that holds what `held` names
+    written, where the profile has a live, verified account of her own."""
     record, item, account = (
         export.export_record,
         export.export_item,
         identity.destination_account,
     )
     destination, target = export.shelf_destination, export.export_target
-    kind = connection.execute(
-        sa.select(target.c.kind)
+    held_elsewhere = item.join(record, record.c.export_item_id == item.c.id)
+    if through is not None:  # what holds it is said by a coverage row, not by the item itself
+        held_elsewhere = through.join(
+            held_elsewhere,
+            sa.and_(
+                export.unit_coverage.c.carrier_type == "export_item",
+                export.unit_coverage.c.carrier_id == item.c.id,
+            ),
+        )
+    found = connection.execute(
+        sa.select(target.c.kind, target.c.config)
         .select_from(
-            item.join(record, record.c.export_item_id == item.c.id)
-            .join(destination, destination.c.id == record.c.shelf_destination_id)
+            held_elsewhere.join(destination, destination.c.id == record.c.shelf_destination_id)
             .join(target, target.c.id == destination.c.target_id)
             .join(account, account.c.shelf_destination_id == destination.c.id)
         )
         .where(
-            item.c.content_id == content_id,
+            held,
             record.c.state.in_(sorted(LIVE_STATES)),
             account.c.user_id == user_id,
             account.c.revoked_at.is_(None),
@@ -159,8 +208,11 @@ def read_elsewhere(connection: sa.Connection, *, user_id: str, content_id: str) 
         )
         .order_by(target.c.kind, destination.c.id)
         .limit(1)
-    ).scalar()
-    return str(kind) if kind is not None else None
+    ).first()
+    if found is None:
+        return None
+    url = found.config.get("url") if isinstance(found.config, dict) else None
+    return Elsewhere(str(found.kind), url if isinstance(url, str) else None)
 
 
 class ContentKey:
@@ -396,11 +448,11 @@ class ContentAccess:
         connection: sa.Connection, user_id: str, carrier_type: str, content_id: str
     ) -> bool:
         """ADR-0055 D-P1: the full reader is for the kept copy (a `content`) that is not read where
-        it was sent; that one is read there. The query is asked at every judgement (J5-S2, the one
-        query of every surface); what its answer allows is the carrier's: an `export_item` is that
-        exported file, an excerpt only."""
-        elsewhere = read_elsewhere(connection, user_id=user_id, content_id=content_id)
-        return carrier_type == "content" and elsewhere is None
+        it was sent; that one is read there. An `export_item` is that exported file, an excerpt
+        only — the query is not even asked of it: its answer could change nothing here."""
+        if carrier_type != "content":
+            return False
+        return read_elsewhere(connection, user_id=user_id, content_id=content_id) is None
 
 
 def _digest(names: Collection[str]) -> str:

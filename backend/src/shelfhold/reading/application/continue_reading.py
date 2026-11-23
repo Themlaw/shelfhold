@@ -14,8 +14,9 @@ copy): two sources that agree are one row per (profile, Unit), so a series is ne
 * `target`: `kept_copy` when the profile reads a kept copy of the Unit in full (ADR-0055 D-P1,
   the rule of the publication), else the kind of the destination she reads the Unit on (« Ouvrir
   dans Komga » in front of a Komga server, J5-S2) — judged by the one query of every surface
-  (`content_access.read_elsewhere`), on each content of hers that covers the Unit; a Unit with
-  no content of her own is dropped: nothing of hers is proven on any destination.
+  (`content_access.read_elsewhere`), on each content of hers that covers the Unit, then through
+  the Unit's coverage (an assembled volume has no content of its own); the entry carries the
+  address of the destination that answered, the one her account is on.
 * Bounded: `MAX_ENTRIES` at most, `MAX_WORKS_EXAMINED` series looked at (only those with something
   to offer), `MAX_CANDIDATES` Units tried per series, whatever the library.
 """
@@ -30,8 +31,10 @@ from shelfhold.identity.public import reader_scope
 from shelfhold.infrastructure.schema import catalog, reading, storage
 from shelfhold.reading.application.content_access import (
     ContentAccess,
+    Elsewhere,
     NoReadableCopyError,
     read_elsewhere,
+    read_elsewhere_of_unit,
 )
 from shelfhold.reading.application.progress import UnknownCarrierError
 from shelfhold.reading.application.publication import PublicationService
@@ -68,6 +71,9 @@ class ContinueEntry:
     # `target` is `kept_copy`
     carrier_type: Literal["content"] | None = None
     carrier_id: str | None = None
+    # the address « Ouvrir dans <kind> » opens, when `target` names a destination: the target of
+    # the destination that answered, the one this profile has an account on — never another's
+    open_url: str | None = None
 
 
 def _order(row: Any) -> tuple[bool, float, int, int, str]:
@@ -223,7 +229,7 @@ class ContinueReading:
         found = self._target(connection, user_id, unit_id)
         if found is None:
             return None
-        target, carrier = found
+        target, carrier, open_url = found
         row = connection.execute(
             sa.select(
                 catalog.unit.c.number_raw,
@@ -243,35 +249,40 @@ class ContinueReading:
             number=str(row.number_raw), unit_title=row.title, state=state, target=target,
             approximate=approximate,
             carrier_type="content" if carrier else None, carrier_id=carrier,
+            open_url=None if carrier else open_url,
         )  # fmt: skip
 
     def _target(
         self, connection: sa.Connection, user_id: str, unit_id: str
-    ) -> tuple[Target, str | None] | None:
-        """What the entry opens, judged by the one query on each content of the Unit (J5-S2): a
-        kept copy of hers that is not read elsewhere opens the reader; a Unit every content of
-        which is read elsewhere names the kind of the destination; a Unit with no content of her
-        own is dropped — nothing of hers is proven on any destination."""
+    ) -> tuple[Target, str | None, str | None] | None:
+        """What the entry opens, judged by the one query (J5-S2): a kept copy of hers that is not
+        read elsewhere opens the reader; a Unit read elsewhere names the kind of the destination
+        that answered — on each content of the Unit first, then through its coverage (an assembled
+        volume is an `export_item` with no content of its own: it is read elsewhere all the same).
+        The answer carries the address of the target the profile's account is on, never one of
+        another's."""
         try:
             carrier = self._publication.choose(user_id, "unit", unit_id)
             if self._access.resolve(user_id, *carrier).full_allowed:
-                return "kept_copy", carrier[1]  # a kept copy: the manifest's own `content` pair
+                return "kept_copy", carrier[1], None  # the manifest's own `content` pair
         except (NoReadableCopyError, UnknownCarrierError):
             pass
-        kind: str | None = None
+        elsewhere: Elsewhere | None = None
         contents = connection.execute(
             sa.select(storage.content.c.id)
             .where(storage.content.c.unit_id == unit_id)
             .order_by(storage.content.c.id)
         ).scalars()
         for content_id in contents:
-            elsewhere = read_elsewhere(connection, user_id=user_id, content_id=str(content_id))
-            if elsewhere is not None:
-                kind = kind or elsewhere  # the first kind, whatever the content that says it
+            found = read_elsewhere(connection, user_id=user_id, content_id=str(content_id))
+            if found is not None:
+                elsewhere = elsewhere or found  # the first answer, whatever the content
                 continue
             try:
                 self._access.resolve(user_id, "content", str(content_id))
             except (NoReadableCopyError, UnknownCarrierError):
                 continue  # not hers to open: another content of the Unit may be
-            return "kept_copy", str(content_id)
-        return (kind, None) if kind else None
+            return "kept_copy", str(content_id), None
+        if elsewhere is None:  # no content of the Unit said it: the coverage may still hold one
+            elsewhere = read_elsewhere_of_unit(connection, user_id=user_id, unit_id=unit_id)
+        return (elsewhere.kind, None, elsewhere.url) if elsewhere else None

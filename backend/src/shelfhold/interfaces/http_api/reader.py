@@ -18,7 +18,7 @@ mark of a child profile, on a door of their own. The undo is a line of history, 
 a Unit the profile may not see, and a mark that is not there, answer alike.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit, urlunsplit
@@ -308,7 +308,6 @@ def build_reader_router(
     get_settings: Callable[[], ReaderSettings],
     get_continue: Callable[[], ContinueReading],
     get_marks: Callable[[], ReadMarks],
-    open_urls: Callable[[], Mapping[str, str]] = lambda: {},
 ) -> APIRouter:
     router = APIRouter(prefix="/api/reader", tags=["reader"])
 
@@ -388,10 +387,17 @@ def build_reader_router(
         the session only (the progress is hers, the filter is the one of every surface)."""
         _own_session(principal)
         response.headers["Cache-Control"] = "no-store"
-        found = {kind: web_address(url) for kind, url in open_urls().items()}
+        entries = get_continue().entries(principal.user_id, limit)
+        handed: dict[str, str] = {}
+        for entry in entries:
+            if entry.target == "kept_copy" or entry.target in handed:
+                continue
+            url = web_address(entry.open_url)
+            if url:
+                handed[entry.target] = url
         return ContinueOut(
-            items=[_item(e) for e in get_continue().entries(principal.user_id, limit)],
-            open_urls={kind: url for kind, url in found.items() if url},
+            items=[_item(e) for e in entries],
+            open_urls=handed,
         )
 
     @router.get(

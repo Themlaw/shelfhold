@@ -161,8 +161,9 @@ def session_of(world: Any, name: str, ip: str) -> Any:
 def test_read_elsewhere_single_query_used_by_every_surface(pse: Pse, monkeypatch: Any) -> None:
     """The rule is written once: no module of the reading package joins the export ledger with
     the accounts but `content_access`, and every surface that applies the rule — the reader, the
-    positions, KEPUB, PSE and « Reprendre » — asks `content_access.read_elsewhere` (by content,
-    verified account), never a copy of its own."""
+    positions, KEPUB and « Reprendre » — asks `content_access.read_elsewhere` (by content,
+    verified account), never a copy of its own. PSE applies no rule of the sort (D-P7a: the
+    whole volume), so it asks nothing."""
     package = Path(content_access.__file__).parent.parent
     for path in sorted(package.rglob("*.py")):
         text = path.read_text(encoding="utf-8")
@@ -181,7 +182,7 @@ def test_read_elsewhere_single_query_used_by_every_surface(pse: Pse, monkeypatch
     calls = {"n": 0}
     real = content_access.read_elsewhere
 
-    def spy(connection: Any, *, user_id: str, content_id: str) -> str | None:
+    def spy(connection: Any, *, user_id: str, content_id: str) -> Any:
         calls["n"] += 1
         return real(connection, user_id=user_id, content_id=content_id)
 
@@ -201,9 +202,6 @@ def test_read_elsewhere_single_query_used_by_every_surface(pse: Pse, monkeypatch
     seen = calls["n"]  # KEPUB: judged by the same query (a Work with no stream, so the count is
     feed = parse(world.mum.get(f"/opds/works/{world.seed.works['twelve']}"))  # KEPUB's alone)
     assert [link["href"] for link in kepub_links(feed)] == [f"/opds/kepub/{epub_item}"]
-    assert calls["n"] > seen
-    seen = calls["n"]  # PSE: the stream of the volume, judged by the same query
-    assert pse.page(world.kid, item, 0).status_code == 200
     assert calls["n"] > seen
     pulled(world, "kid", "export_item", item, done=False)
     seen = calls["n"]  # « Reprendre »: the entry opens where the Unit was sent
@@ -248,21 +246,6 @@ def test_unit_covered_by_two_contents_read_elsewhere_consistent(pse: Pse) -> Non
     )
     assert int(kid_link[f"{PSE_NS}count"]) == 30
     assert pse.page(world.kid, item, 29).status_code == 200
-
-
-@pytest.mark.req("EF-LEC-008")
-def test_continue_reading_a_unit_with_no_content_here_is_not_read_elsewhere(world: World) -> None:
-    """The query judges contents (the strictest of the three, J5-S2): a Unit whose file only
-    exists as an export — no kept copy here, no content of hers to judge — is not « read
-    elsewhere »; the entry is dropped rather than sent to a destination nothing of hers is
-    proven on, and the series waits for a Unit that can be opened."""
-    from tests.integration.test_schema_catalog import add_unit
-
-    with write_transaction(world.seed.engine) as connection:
-        unit = add_unit(connection, world.seed.editions["ok"], "500")
-    item = sent(world, None, unit, readers=("admin",))
-    pulled(world, "admin", "export_item", item, done=False)
-    assert items(world.admin.get(HOME)) == []  # nothing of hers is proven on that destination
 
 
 # -- the label names the destination (J5-S2) ---------------------------------------------------

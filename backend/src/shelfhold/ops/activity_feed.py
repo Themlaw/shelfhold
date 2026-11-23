@@ -31,7 +31,6 @@ __all__ = [
     "kavita_open_url",
     "kavita_open_url_of",
     "open_urls",
-    "open_urls_of",
     "recent_events",
     "recent_requests",
     "request_edition",
@@ -73,11 +72,6 @@ def open_urls(connection: Connection) -> dict[str, str]:
         if isinstance(url, str) and url.startswith(_SCHEMES) and str(kind) not in found:
             found[str(kind)] = url
     return found
-
-
-def open_urls_of(engine: Engine) -> dict[str, str]:
-    with engine.connect() as connection:
-        return open_urls(connection)
 
 
 def kavita_open_url(connection: Connection) -> str | None:

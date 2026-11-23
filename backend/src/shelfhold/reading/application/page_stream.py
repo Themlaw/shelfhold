@@ -15,8 +15,8 @@ specification counts) is the `n`-th image of its reading order, read from the ke
 Which scope (ADR-0055, D-P7a of M6). A stream is offered only for an item that has a live export
 record. The scope is the bundle rule's: the whole volume to every profile the feed offers a stream
 to — the bound of the web reader's excerpt (D-P1) is a rule of that reader, not of the feed. The
-one query of every surface (`content_access.read_elsewhere`, J5-S2) is asked on the content all
-the same; its answer bounds nothing here.
+one query of every surface (`content_access.read_elsewhere`, J5-S2) is not asked here: the rule
+does not apply to the stream (D-P7a).
 """
 
 from __future__ import annotations
@@ -144,9 +144,9 @@ class PageStream:
     def _judge(self, user_id: str, item_id: str) -> tuple[str, Scope]:
         """The content to read and how much of it, judged now: the item and its content are seen by
         the profile (the one filter), the item is live somewhere, and the scope is the bundle
-        rule's (D-P7a): the whole volume. The judgement asks the one query of every surface
-        (J5-S2, with the `resolve`); its answer bounds nothing here — D-P1 is a rule of the web
-        reader, not of the feed."""
+        rule's (D-P7a): the whole volume. The one query of every surface
+        (`content_access.read_elsewhere`, J5-S2) is not asked here — the rule does not apply to
+        the stream, so D-P1 is a rule of the web reader, not of the feed."""
         resolved = self._access.resolve(user_id, _CARRIER, item_id)
         if resolved.format != _FORMAT or not self._live(item_id):
             raise UnknownCarrierError

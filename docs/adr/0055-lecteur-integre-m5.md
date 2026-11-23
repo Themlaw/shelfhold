@@ -204,18 +204,21 @@ l'accompagnent s'appliquent au lecteur intégré (`/lire`, `/content`, les posit
 Ils ne s'appliquent pas au flux OPDS-PSE : **le volume entier est servi à tout profil auquel le
 flux est offert** (D-P7a — le contradicteur de jalon a relevé qu'un même flux offrait le bloc de
 série complet et un flux PSE réduit à l'extrait ; sans réponse du porteur, la recommandation
-s'applique). La requête « lu ailleurs » reste demandée par PSE, la même que toutes les surfaces ;
-sa réponse ne borne plus rien sur ce flux.
+s'applique). La requête « lu ailleurs » n'y est pas demandée : la règle ne s'applique pas à ce
+flux, il n'y a rien à borner.
 
 **Une seule requête « lu ailleurs » (J5-S2).** La règle était écrite trois fois (le lecteur,
 « Reprendre la lecture », les clés membres) ; elle l'est une fois : `content_access.read_elsewhere`,
 la plus stricte des trois lectures — par `content_id` et compte vérifié — demandée par le lecteur,
-les positions, PSE, KEPUB et « Reprendre la lecture ». Les clés membres (`live_member_account`)
-exigent le même compte vérifié.
+les positions, KEPUB et « Reprendre la lecture » (PSE ne la demande pas : la règle ne le concerne
+pas). Une seconde entrée de la même définition, `read_elsewhere_of_unit`, juge une Unité par sa
+couverture : un volume assemblé est un `export_item` sans `content` propre, il se lit ailleurs
+tout de même. Les clés membres (`live_member_account`) exigent le même compte vérifié.
 
 **`target` porte le type de la destination.** « Reprendre la lecture » n'écrit plus « kavita » en
 dur : l'entrée porte le type de la destination où l'Unité se lit (« Ouvrir dans Komga » devant un
-serveur Komga), et la réponse donne, par type, l'adresse à ouvrir (`open_urls`).
+serveur Komga), et la réponse donne, par type, l'adresse de la cible où le profil a un compte —
+jamais l'adresse d'une cible sans compte de son profil (`open_urls`).
 
 ## Conséquences
 - **Positives** : le lecteur tient la définition de fini sans concurrencer Kavita ; l'isolation par défaut ne demande rien au porteur ; la sync des liseuses reste sûre ; les contradictions de 01, 02 et 03 sont fermées avant que du code en dépende.
