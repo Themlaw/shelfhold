@@ -21,7 +21,7 @@ from shelfhold.export.application.target_state import (
     load_health,
     save_health,
 )
-from shelfhold.export.domain.bindings import is_family
+from shelfhold.export.domain.bindings import family_clause, is_family
 from shelfhold.export.domain.komga_access import (
     AUDIT_FAILED,
     AUDIT_SUPERSEDED,
@@ -31,7 +31,7 @@ from shelfhold.export.domain.komga_access import (
     child_reach,
     evaluate,
 )
-from shelfhold.export.domain.path_map import PathMapError, clean_absolute
+from shelfhold.export.domain.path_map import PathMapError, clean_absolute, within
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import export
@@ -66,6 +66,7 @@ class KomgaAuditReport:
     error: str | None = None  # the class of the error, never its text
     version: str | None = None
     warnings: tuple[str, ...] = ()
+    folders: int = 0  # the folders the reading was compared for: `proved` says nothing without one
 
 
 @dataclass(frozen=True)
@@ -122,6 +123,69 @@ class KomgaAuditRecorder:
             )
         return kept
 
+    @staticmethod
+    def _pending(connection: Any, target_id: str) -> list[BoundShelf]:
+        """The folders of the links that wait: the folders the shelves below 18+ write (the
+        trees a Komga indexes, ADR-0052), under the folders this server's path map maps and
+        not bound to it yet. The day's audit is the production door that proves them (L22): a
+        family shelf is refused only until the next audit, never forever. The shelf is not
+        bound to this server, so a finding withdraws the proof (the link is refused with its
+        reason) but pauses nothing."""
+        path_map = connection.execute(
+            sa.select(export.export_target.c.path_map).where(export.export_target.c.id == target_id)
+        ).scalar()
+        if not isinstance(path_map, list):
+            return []
+        writable = [
+            entry
+            for entry in path_map
+            if isinstance(entry, dict) and entry.get("mode", "rw") == "rw"
+        ]
+        if not writable:
+            return []
+        d, s, t = export.shelf_destination, export.shelf, export.export_target
+        rows = connection.execute(
+            sa.select(d.c.root_subpath, t.c.path_map, s.c.max_age_rating)
+            .select_from(d.join(s, s.c.id == d.c.shelf_id).join(t, t.c.id == d.c.target_id))
+            .where(
+                d.c.target_id != target_id,
+                d.c.transport == "tree",
+                family_clause(s.c.max_age_rating),
+            )
+        ).all()
+        pending: dict[str, BoundShelf] = {}
+        for row in rows:
+            entries = row.path_map if isinstance(row.path_map, list) else []
+            base = next(
+                (
+                    entry["local"]
+                    for entry in entries
+                    if isinstance(entry, dict)
+                    and entry.get("mode", "rw") == "rw"
+                    and isinstance(entry.get("local"), str)
+                ),
+                None,
+            )
+            if base is None:
+                continue
+            try:
+                folder = clean_absolute(f"{base}/{row.root_subpath}" if row.root_subpath else base)
+            except PathMapError:
+                continue
+            for entry in writable:  # the folder as this server names it, entry by entry
+                local, remote = entry.get("local"), entry.get("remote")
+                if not isinstance(local, str) or not isinstance(remote, str):
+                    continue
+                try:
+                    rest = within(folder, clean_absolute(local))
+                    root = clean_absolute(f"{remote}/{rest}") if rest else clean_absolute(remote)
+                except PathMapError:
+                    continue
+                if rest is not None:
+                    pending.setdefault(root, BoundShelf(None, root, row.max_age_rating))
+                    break
+        return list(pending.values())
+
     def record(
         self, target_id: str, candidate: BoundShelf | None, reading: Reading | None,
         *, failed: str | None = None, stamp: Stamp | None = None,
@@ -148,12 +212,22 @@ class KomgaAuditRecorder:
         reading: Reading | None, failed: str | None, stamp: Stamp, previous: dict[str, Any],
     ) -> KomgaAuditReport:  # fmt: skip
         bound = self._bound(connection, target_id)
-        # the day's audit replays the shelves bound now and the proofs the state holds (a
-        # folder proved the day before stays proved only through it); a link (`admit`) asks
-        # about its candidate alone.
+        # the day's audit replays the shelves bound now, the proofs the state holds (a folder
+        # proved the day before stays proved only through it) and the folders of the links that
+        # wait (a family shelf is refused only until the next audit, never forever); a link
+        # (`admit`) asks about its candidate alone.
         roots = {b.root for b in bound}
         kept = [k for k in self._kept(previous) if k.root not in roots] if candidate is None else []
-        shelves = [*bound, *kept, *([candidate] if candidate else [])]
+        pending = (
+            [
+                p
+                for p in self._pending(connection, target_id)
+                if p.root not in roots and p.root not in {k.root for k in kept}
+            ]
+            if candidate is None
+            else []
+        )
+        shelves = [*bound, *kept, *pending, *([candidate] if candidate else [])]
         findings: tuple[Finding, ...] = ()
         reason: str | None = None
         must_pause: set[str] = set()
@@ -179,10 +253,11 @@ class KomgaAuditRecorder:
                 for shelf in shelves
                 if shelf.root and shelf.shelf_id not in bad
             ]
+        folders = [shelf for shelf in shelves if shelf.root]
         if candidate is not None:  # the question is the shelf about to be linked
-            proved_now = complete and None not in {f.shelf_id for f in findings}
+            proved_now = complete and None not in {f.shelf_id for f in findings} and bool(folders)
         else:
-            proved_now = complete and not findings
+            proved_now = complete and not findings and bool(folders)
         report = KomgaAuditReport(
             proved=proved_now,
             reason=None if proved_now else reason,
@@ -191,6 +266,7 @@ class KomgaAuditRecorder:
             error=failed,
             version=reading.version if reading else None,
             warnings=reading.advisories if reading else (),
+            folders=len(folders),
         )
         for shelf_id in sorted(must_pause):
             if hold(connection, target_id, shelf_id):

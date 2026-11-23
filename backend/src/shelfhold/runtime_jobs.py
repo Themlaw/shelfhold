@@ -171,6 +171,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
 from shelfhold.infrastructure.packaging.cbz import PageTarget
 from shelfhold.infrastructure.schema import coherence, export
+from shelfhold.infrastructure.secrets.errors import EnvelopeError
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
@@ -884,7 +885,11 @@ def komga_indexers(
     for row in rows:
         try:
             client = comp.komga_client(row.target_id)
-        except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound):
+        except (KeyringUnavailableError, LookupError, EnvelopeError, sa.exc.NoResultFound) as error:
+            log.info(  # the class and the target, never the key the vault could not open
+                "export.komga_client_skipped", target_id=row.target_id,
+                reason=type(error).__name__,
+            )  # fmt: skip
             continue
         found.append(
             (row.id, row.target_id, client, remote_root_of(row.path_map, row.root_subpath))
@@ -897,13 +902,14 @@ def relay_komga_scans(comp: Composition, written: Iterable[str]) -> None:
     indexes: Komga has no scan of a folder, so the pass asks for the scan of the library once
     its writing is done — never when nothing was written. A Komga that does not answer, a
     folder no library holds, or a paused destination is logged and left to the next pass (a
-    scan is idempotent); one server is asked once, whatever the number of its bindings."""
+    scan is idempotent); a server is asked once per folder, whatever the number of its
+    bindings (two libraries of the same server are scanned each)."""
     from shelfhold.export.application.target_state import DestinationPausedError
 
-    indexers: dict[str, tuple[str, str, KomgaClient, str]] = {}  # by server: asked once
+    indexers: dict[tuple[str, str], tuple[str, str, KomgaClient, str]] = {}  # server and folder
     for destination_id in written:
         for binding_id, target_id, client, root in komga_indexers(comp, destination_id):
-            indexers.setdefault(client.base_url, (binding_id, target_id, client, root))
+            indexers.setdefault((client.base_url, root), (binding_id, target_id, client, root))
     for _binding_id, target_id, client, root in indexers.values():
         try:
             asyncio.run(_scan_komga_library(comp, client, _binding_id, root))
@@ -1501,13 +1507,22 @@ def connected_clients(comp: Composition) -> Callable[[], Iterable[tuple[str, Kav
 
 def connected_komga_clients(comp: Composition) -> Callable[[], Iterable[tuple[str, KomgaClient]]]:
     """The client factory of the daily audit of the Komga accounts: every Komga target that has
-    an address and a sealed key."""
+    an address and a sealed key. A row without a secret, or an envelope the vault cannot open,
+    is logged (its class and its target, never the key) and skipped: it must not stop the
+    audit of the targets that follow."""
 
     def clients() -> Iterable[tuple[str, KomgaClient]]:
         for target_id in comp.komga_targets():
             try:
                 yield target_id, comp.komga_client(target_id)
-            except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound):
+            except (
+                KeyringUnavailableError, LookupError, EnvelopeError, sa.exc.NoResultFound,
+            ) as error:  # fmt: skip
+                log.info(
+                    "target.komga_client_skipped",
+                    target_id=target_id,
+                    reason=type(error).__name__,
+                )
                 continue
 
     return clients

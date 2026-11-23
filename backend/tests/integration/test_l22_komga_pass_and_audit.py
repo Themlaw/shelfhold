@@ -3,9 +3,10 @@ audit of the accounts, and the fresh proof a family binding asks.
 
 The pass writes a tree; every Komga that indexes it is asked for the scan of the library that
 holds the folder the binding indexes (Komga has no scan of a folder), once the writing is done.
-The audit of the accounts runs every day over the shelves bound now: it is what keeps the proof of
-partitioning fresh (36 h, the value of L08b) — a proof nobody refreshed is no proof, and a shelf
-below 18+ is refused with its reason. Synthetic servers only; keys made at run time.
+The audit of the accounts runs every day over the shelves bound now and the folders of the links
+that wait: it is what keeps the proof of partitioning fresh (36 h, the value of L08b) — a proof
+nobody refreshed is no proof, and a shelf below 18+ is refused with its reason. Synthetic
+servers only; keys made at run time.
 """
 
 from __future__ import annotations
@@ -54,7 +55,7 @@ from tests.fakes.suwayomi import FakeSuwayomi
 from tests.fakes_fetcher import FakeResolver
 from tests.family_env import family_env
 from tests.headless_env import FakeChannels, FakeSuwayomiProbe
-from tests.integration.test_komga_access_audit import LIBRARY, ROOT, admit, bind_indexer, kit
+from tests.integration.test_komga_access_audit import LIBRARY, ROOT, bind_indexer, kit
 from tests.komga_env import run
 from tests.l41_env import KAVITA_PASSWORD, context
 from tests.l50_env import Seeded
@@ -225,15 +226,17 @@ def test_komga_pass_relays_targeted_scan(
 
 @pytest.mark.req("EF-EXP-047", "ENF-SEC-016")
 def test_komga_daily_audit_feeds_partitioning_proof() -> None:
-    """The daily job replays the audit over the shelves bound now: a gap that opens withdraws the
-    proof and pauses the shelf, a repaired server proves the partitioning again and lifts the
-    pause — only a complete audit does."""
+    """The daily job replays the audit over the shelves bound now and the folders of the links
+    that wait: a gap that opens withdraws the proof and pauses the shelf, a repaired server
+    proves the partitioning again and lifts the pause — only a complete audit does."""
     with family_env(13) as env:
         fake, client, _auditor, _events, target = kit(env)
         fake.users = [administrator(), reader("teen", [LIBRARY], age=13)]
-        assert admit(env, _auditor, client, target).proved
-        bind_indexer(env, target)
         audit = komga_accounts_audit(env.engine, env.clock, _events, lambda: [(target, client)])
+        audit()  # the production door: the day's audit proves the folder of the waiting link
+        with env.engine.connect() as connection:
+            assert proved_for(connection, target, ROOT, 13)
+        bind_indexer(env, target)
         fake.users[1] = reader("teen", [LIBRARY], age=6)  # lowered in Komga: the gap opens
         audit()
         assert env.rows(export.shelf)[0].paused_reason == "child_exposure"
@@ -254,15 +257,17 @@ def test_komga_daily_audit_feeds_partitioning_proof() -> None:
 @pytest.mark.req("EF-EXP-047", "ENF-SEC-016")
 def test_komga_family_binding_refused_without_fresh_audit() -> None:
     """A proof older than 36 h (the value of L08b) is no proof: the binding of a shelf below 18+
-    is refused with `audit_stale`, and the daily audit that runs again is what reopens it."""
+    is refused with `audit_stale`, and the daily audit that runs again is what reopens it — the
+    audit of the day is the production door that proves the folder of a family shelf."""
     with family_env(13) as env:
-        fake, client, auditor, _events, target = kit(env)
+        fake, client, _auditor, _events, target = kit(env)
         fake.users = [administrator(), reader("teen", [LIBRARY], age=13)]
-        assert admit(env, auditor, client, target).proved
+        audit = komga_accounts_audit(env.engine, env.clock, _events, lambda: [(target, client)])
+        audit()  # the day's audit proves the folder of the waiting link (the production door)
         env.clock.advance(hours=37)  # the proof is older than the 36 h of L08b
         from tests.integration.test_komga_access_audit import try_bind
 
         refused = try_bind(env, target)
         assert refused is not None and "audit_stale" in refused
-        komga_accounts_audit(env.engine, env.clock, _events, lambda: [(target, client)])()
+        audit()
         assert try_bind(env, target) is None  # the audit of the day proved the folder again

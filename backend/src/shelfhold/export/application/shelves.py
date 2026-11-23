@@ -674,18 +674,19 @@ class ShelfService:
             if row.kind == KOMGA and attach_to_tree is not None and self._layout_check is not None:
                 # ADR-0052: Komga reads the folder as the series. A tree whose files the common
                 # render would not make it see that way is refused, never rewritten (files are
-                # frozen): the indexer is told of the conflict, not of a repair.
-                placed = fan_out.tree_place(connection, attach_to_tree)
+                # frozen): the indexer is told of the conflict, not of a repair. The files are
+                # the records of the primary of the tree (its root id is no binding).
+                primary = fan_out.primary_of(connection, attach_to_tree)
                 rel_paths = (
                     connection.execute(
                         sa.select(export.export_record.c.rel_path).where(
-                            export.export_record.c.shelf_destination_id == placed[0],
+                            export.export_record.c.shelf_destination_id == primary,
                             export.export_record.c.rel_path.is_not(None),
                         )
                     )
                     .scalars()
                     .all()
-                    if placed is not None
+                    if primary is not None
                     else []
                 )
                 conflicts = self._layout_check(rel_paths)

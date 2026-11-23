@@ -58,10 +58,12 @@ def komga_accounts_audit(
     engine: Engine, clock: Clock, events: TargetEvents, clients: KomgaClients
 ) -> Callable[[], None]:
     """The body of `target.komga_audit` (EF-EXP-047, ENF-SEC-016): the accounts of every Komga
-    read again over the shelves bound now. It is what keeps the proof of partitioning fresh
-    (36 h, the value of L08b) — a proof nobody refreshed is no proof, and a shelf below 18+ is
-    refused with its reason. The audit itself never writes to Komga; a server that does not
-    answer is recorded as failed (nothing proved) and tried again tomorrow."""
+    read again over the shelves bound now and the folders of the links that wait (the trees of
+    the shelves below 18+ the server does not index yet). It is what keeps the proof of
+    partitioning fresh (36 h, the value of L08b) — a proof nobody refreshed is no proof, and a
+    shelf below 18+ is refused with its reason; the journal says `proved=True` only when the
+    audit read at least one folder. The audit itself never writes to Komga; a server that does
+    not answer is recorded as failed (nothing proved) and tried again tomorrow."""
     auditor = KomgaAuditor(engine, clock, events)
 
     def run() -> None:
