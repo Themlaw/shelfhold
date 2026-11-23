@@ -59,3 +59,18 @@ def test_poc_published_version_checked_on_built_files() -> None:
     assert any("TAG" in s and (".whl" in s or "dist/" in s) for s in after_build), (
         "the tag is never checked against the built distributions"
     )
+
+
+@pytest.mark.req("ENF-SEC-007")
+def test_poc_sdk_tag_creation_restricted_documented() -> None:
+    """La doc demande d'ajouter `refs/tags/sdk-v*` à la règle qui protège `refs/tags/v*` et
+    affirme que « personne ne crée » d'étiquette sans revue. Or cette règle ne porte que sur
+    la suppression, la mise à jour et l'avance non rapide : la création reste libre. Comme
+    l'environnement `pypi` accepte toute étiquette `sdk-v*`, quiconque peut pousser crée
+    `sdk-v9.9.9` sur un commit non fusionné et obtient le jeton OIDC de PyPI, seule la
+    relecture manuelle l'arrête. Il faut exiger la restriction de création (« Restrict
+    creations », règle `creation`), le porteur seul en contournement."""
+    section = (ROOT / "docs" / "releasing.md").read_text(encoding="utf-8").split(
+        "## Publier le SDK", 1
+    )[-1]
+    assert "creation" in section, "the ruleset does not restrict the creation of sdk-v* tags"
