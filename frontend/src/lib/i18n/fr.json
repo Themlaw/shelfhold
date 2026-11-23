@@ -1141,7 +1141,7 @@
   "webhooks.add": "Ajouter",
   "webhooks.rotate": "Faire tourner le secret",
   "webhooks.delete": "Supprimer",
-  "webhooks.private": "point de terminaison privé : {endpoint}",
+  "webhooks.private": "adresse privée autorisée : {endpoint}",
   "webhooks.created": "Webhook ajouté.",
   "webhooks.rotated": "Secret tourné.",
   "webhooks.deleted": "Webhook supprimé.",
