@@ -19,13 +19,13 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+from shelfhold_sdk.testing.fakes import TRACKER_KEY
 
 from shelfhold.config import Settings
 from shelfhold.identity.domain.catalogue import RESERVED_ACTIONS
 from shelfhold.identity.public import local_auth
 from shelfhold.infrastructure.db import create_db_engine
-from shelfhold.sdk.testing.fakes import TRACKER_KEY
-from tests.tracker_env import REMOTE_ID, Fixture, trackers_path, tracker_env
+from tests.tracker_env import REMOTE_ID, TRACKER_ORIGIN, Fixture, tracker_env, trackers_path
 
 pytestmark = pytest.mark.req("EF-INT-010", "EF-USR-024", "ENF-SEC-005")
 
@@ -75,7 +75,7 @@ def test_an_adult_links_their_own_tracker(fx: Fixture) -> None:
     assert token not in fx.written()  # sealed: not in the file in clear
     # the plugin was called, through the Fetcher that carries the credential
     assert [call[0] for call in fx.fake.calls] == ["link"]
-    assert fx.fetcher.seen[0][0] == "POST https://tracker.invalid/links"
+    assert fx.fetcher.seen[0][:2] == ("POST", f"{TRACKER_ORIGIN}/links")
     # a second link of the same tracker replaces the token: one row, a new fingerprint
     second = _token()
     again = fx.link("mum", second, client=mum)
@@ -108,9 +108,10 @@ def test_unlink_removes_the_link_and_the_secret(fx: Fixture) -> None:
     # the profile's own door only: another profile's unlink answers like one that is not there
     fx.add("dad", "member")
     assert fx.link("dad", _token(), client=fx.client_of("dad")).status_code == 200
-    assert fx.send(
-        "DELETE", trackers_path(fx.users["dad"], TRACKER_KEY), client=mum
-    ).status_code == 404
+    assert (
+        fx.send("DELETE", trackers_path(fx.users["dad"], TRACKER_KEY), client=mum).status_code
+        == 404
+    )
     assert len(fx.links()) == 1
 
 
@@ -154,6 +155,9 @@ def test_child_tracker_allowance_is_reserved(fx: Fixture) -> None:
     allowed = fx.send("PUT", path, {"allowed": True})
     assert allowed.status_code == 200 and allowed.json() == {"allowed": True}
     assert fx.allowances() == [(fx.users["kid"], TRACKER_KEY, _admin_id(fx))]
+    # the child links with a fresh session of her own: pasting the token is reserved, fresh in
+    # every profile (the truth table's line for `tracker.link`)
+    assert fx.api.login("kid", client=kid).status_code == 200
     assert fx.link("kid", _token(), client=kid).status_code == 200
     # withdrawing the allowance takes the child's link away with it
     assert fx.send("PUT", path, {"allowed": False}).status_code == 200
@@ -243,10 +247,15 @@ def test_tracker_push_only_after_opt_in(fx: Fixture) -> None:
     assert ("push", REMOTE_ID, 0.5) in fx.fake.calls
     # the accord is the profile's own: another profile cannot switch it
     fx.add("dad", "member")
-    assert fx.send(
-        "PUT", trackers_path(fx.users["mum"], TRACKER_KEY, PUSH), {"enabled": False},
-        client=fx.client_of("dad"),
-    ).status_code == 404
+    assert (
+        fx.send(
+            "PUT",
+            trackers_path(fx.users["mum"], TRACKER_KEY, PUSH),
+            {"enabled": False},
+            client=fx.client_of("dad"),
+        ).status_code
+        == 404
+    )
     # and saying no again closes the door
     assert fx.send(
         "PUT", trackers_path(fx.users["mum"], TRACKER_KEY, PUSH), {"enabled": False}, client=mum
@@ -269,12 +278,12 @@ def test_tracker_pull_never_marks_read(fx: Fixture) -> None:
     assert ("pull", REMOTE_ID) in fx.fake.calls
     # nothing was written anywhere a read mark would live
     for table in ("read_marker", "user_state", "reading_position"):
-        assert fx.rows(f"SELECT count(*) FROM {table}")[0][0] == 0, table
+        assert fx.rows(f"SELECT count(*) FROM {table}")[0][0] == 0, table  # noqa: S608
     # and the hint stays a hint: pulling twice writes nothing either
     again = fx.send("POST", trackers_path(fx.users["mum"], TRACKER_KEY, PULL), client=mum)
     assert again.status_code == 200
     for table in ("read_marker", "user_state", "reading_position"):
-        assert fx.rows(f"SELECT count(*) FROM {table}")[0][0] == 0, table
+        assert fx.rows(f"SELECT count(*) FROM {table}")[0][0] == 0, table  # noqa: S608
 
 
 # --- the reserved actions are declared ------------------------------------------------------

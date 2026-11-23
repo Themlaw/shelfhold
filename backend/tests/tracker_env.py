@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from shelfhold_sdk.fetcher import Response
+from shelfhold_sdk.testing.fakes import TRACKER_KEY, TRACKER_ORIGIN, FakeFetcher, FakeTracker
 
 from shelfhold.config import Settings
 from shelfhold.infrastructure.db import create_db_engine
@@ -26,8 +28,6 @@ from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.integrations.trackers import TrackerHost
 from shelfhold.plugin_host.registry import PluginCandidate, PluginOrigin, PluginRegistry
-from shelfhold.sdk.fetcher import Response
-from shelfhold.sdk.testing.fakes import TRACKER_KEY, TRACKER_ORIGIN, FakeFetcher, FakeTracker
 from tests.auth_env import ADMIN, PASSWORD, AuthEnv, auth_env
 from tests.fakes_clock import ManualClock
 
@@ -51,9 +51,15 @@ def tracker_fetcher() -> FakeFetcher:
     """Scripted for the fake tracker: a link, a push, a pull, and nothing else."""
     return FakeFetcher(
         responses={
-            ("POST", f"{TRACKER_ORIGIN}/links"): Response(200, body=_body({"remote_id": REMOTE_ID})),
-            ("POST", f"{TRACKER_ORIGIN}/progress/{REMOTE_ID}"): Response(200, body=_body({})),
-            ("GET", f"{TRACKER_ORIGIN}/progress/{REMOTE_ID}"): Response(200, body=_body(PULLED)),
+            ("POST", f"{TRACKER_ORIGIN}/links"): Response(
+                status=200, body=_body({"remote_id": REMOTE_ID})
+            ),
+            ("POST", f"{TRACKER_ORIGIN}/progress/{REMOTE_ID}"): Response(
+                status=200, body=_body({})
+            ),
+            ("GET", f"{TRACKER_ORIGIN}/progress/{REMOTE_ID}"): Response(
+                status=200, body=_body(PULLED)
+            ),
         }
     )
 

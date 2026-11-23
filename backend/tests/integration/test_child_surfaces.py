@@ -113,6 +113,7 @@ OWN = (
     # child reaches her own — refused until the admin allowed one, which is the CLOSED route's
     # business (`test_l13_trackers.py`)
     "GET /api/v1/profiles/{user_id}/trackers",
+    "GET /api/v1/profiles/{user_id}/trackers/{plugin_key}",
     "PUT /api/v1/profiles/{user_id}/trackers/{plugin_key}",
     "DELETE /api/v1/profiles/{user_id}/trackers/{plugin_key}",
     "PUT /api/v1/profiles/{user_id}/trackers/{plugin_key}/push",
