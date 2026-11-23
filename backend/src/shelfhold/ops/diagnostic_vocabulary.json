@@ -2185,6 +2185,7 @@
   "shelfhold.plugin_host.index.document",
   "shelfhold.plugin_host.index.minisign",
   "shelfhold.plugin_host.index.service",
+  "shelfhold.plugin_host.index.staging",
   "shelfhold.plugin_host.install",
   "shelfhold.plugin_host.native_sources",
   "shelfhold.plugin_host.provider_fetcher",
