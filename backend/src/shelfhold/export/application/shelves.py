@@ -637,13 +637,9 @@ class ShelfService:
                 root_subpath=root_subpath,
                 ceiling=shelf.max_age_rating,
             )
+            remote_root = remote_root_of(row.path_map, root_subpath)
             if row.kind == "komga" and (
-                exposed := exposure_for(
-                    connection,
-                    target_id,
-                    remote_root_of(row.path_map, root_subpath),
-                    shelf.max_age_rating,
-                )
+                exposed := exposure_for(connection, target_id, remote_root, shelf.max_age_rating)
             ):  # whatever the shelf: the last audit saw a child reach this folder (#320 M6)
                 raise UnpartitionedDestinationError(
                     f"the last audit of this Komga saw a child account reach it ({exposed})",
@@ -653,7 +649,8 @@ class ShelfService:
                 shelf.max_age_rating,
                 partitioning,
                 reason=(
-                    audit_reason(connection, target_id)
+                    # the reason of the folder the link asks about, never another folder's
+                    audit_reason(connection, target_id, remote_root)
                     if row.kind == "komga" and partitioning not in PARTITIONED
                     else None
                 ),

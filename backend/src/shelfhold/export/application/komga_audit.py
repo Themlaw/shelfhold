@@ -288,7 +288,9 @@ class KomgaAuditRecorder:
             "stamp": list(stamp),
             "reason": reason,
             "proved": proved,
-            "findings": [{"code": f.code, "library": f.library} for f in findings],
+            "findings": [
+                {"code": f.code, "library": f.library, "folder": f.folder} for f in findings
+            ],
             "libraries": [{"ref": lib.ref, "root": lib.root} for lib in libraries],
             "child_libraries": child_reach(reading.accounts, libraries) if complete and reading
             else {},
