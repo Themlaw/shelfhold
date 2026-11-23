@@ -1372,6 +1372,62 @@ export type DeletionPreviewIn = {
 };
 
 /**
+ * DeliveryList
+ */
+export type DeliveryList = {
+    /**
+     * Items
+     */
+    items: Array<DeliveryOut>;
+};
+
+/**
+ * DeliveryOut
+ *
+ * One delivery as the screen shows it (M6 L23b): the identity the receiver deduplicates on,
+ * the event, the version of its shape, the state, the attempts, the HTTP status of the last try
+ * and its closed code. Never the address, its path or the secret.
+ */
+export type DeliveryOut = {
+    /**
+     * Attempts
+     */
+    attempts: number;
+    /**
+     * Delivered At
+     */
+    delivered_at: string | null;
+    /**
+     * Event Id
+     */
+    event_id: number;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Last Error
+     */
+    last_error: string | null;
+    /**
+     * Last Status
+     */
+    last_status: number | null;
+    /**
+     * Next Try At
+     */
+    next_try_at: string;
+    /**
+     * Schema Version
+     */
+    schema_version: number;
+    /**
+     * Status
+     */
+    status: string;
+};
+
+/**
  * DestinationIn
  */
 export type DestinationIn = {
@@ -19125,6 +19181,44 @@ export type ReadWebhookResponses = {
 };
 
 export type ReadWebhookResponse = ReadWebhookResponses[keyof ReadWebhookResponses];
+
+export type ListDeliveriesData = {
+    body?: never;
+    path: {
+        /**
+         * Webhook Id
+         */
+        webhook_id: string;
+    };
+    query?: never;
+    url: '/api/v1/webhooks/{webhook_id}/deliveries';
+};
+
+export type ListDeliveriesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListDeliveriesError = ListDeliveriesErrors[keyof ListDeliveriesErrors];
+
+export type ListDeliveriesResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeliveryList;
+};
+
+export type ListDeliveriesResponse = ListDeliveriesResponses[keyof ListDeliveriesResponses];
 
 export type RotateWebhookData = {
     body?: never;
