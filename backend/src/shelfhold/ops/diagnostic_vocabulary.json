@@ -1999,7 +1999,6 @@
   "shelfhold.library.application.renditions",
   "shelfhold.library.application.reneutralize",
   "shelfhold.library.application.thumbnails",
-  "shelfhold.library.application.volumes",
   "shelfhold.library.domain",
   "shelfhold.library.domain.content_hash",
   "shelfhold.library.domain.copies",

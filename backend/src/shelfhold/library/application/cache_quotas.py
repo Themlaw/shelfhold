@@ -15,8 +15,8 @@ asks the guard again after each file, so it stops as soon as the volume is back 
 The sweep is a system emitter of the closed list (`cache_retention_purge`, passe 13, N2): no
 credential triggers it, and in exchange it erases **only paths the host itself created** — the
 cache folders under `/data`, at the name patterns their writers use, checked here before anything
-is opened, then erased through the `/data` file layer of the application
-(`library.application.volumes.unlink_data_file`: a descriptor walk, a link
+is opened, then erased through the `/data` writer (`infrastructure.volumes._unlink_cache_file`:
+a descriptor walk, a link
 on the way refused, every step on the device of `/data`, and the last name a regular file or a
 link — a folder is never removed, not even as a tree). Never `/store`, `/library`, `.shelfhold/`,
 nor an original: those are not under the cache folders, and a path that is not one of them is
@@ -48,14 +48,13 @@ from shelfhold.config import Settings
 from shelfhold.infrastructure.clock import Clock
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.schema import platform, storage
-from shelfhold.infrastructure.volumes import open_data_folder
+from shelfhold.infrastructure.volumes import _unlink_cache_file, open_data_folder
 from shelfhold.library.application.renditions import _NAME as RENDITION_NAME
 from shelfhold.library.application.renditions import _SHARD as RENDITION_SHARD
 from shelfhold.library.application.renditions import CACHE_DIR as RENDITIONS_DIR
 from shelfhold.library.application.renditions import RenditionService
 from shelfhold.library.application.thumbnails import _NAME as THUMBNAIL_NAME
 from shelfhold.library.application.thumbnails import _SHARD as THUMBNAIL_SHARD
-from shelfhold.library.application.volumes import unlink_data_file
 
 __all__ = [
     "CACHE_PURGE_EMITTER",
@@ -167,9 +166,10 @@ def _erase_file(data_dir: Path, rel: str, *, cache: str) -> int | None:
 def erase_cache_path(data_dir: Path, rel: str) -> bool:
     """Erase one file of a cache, the emitter's allowlist checked first: the only eraser of the
     sweep, and the one a test asks for a refusal. A regular file or a link only, on the device
-    of `/data` (`unlink_data_file`): a folder is refused, never removed as a tree; a path that
-    is not there any more answers False. Whether something went."""
-    return unlink_data_file(data_dir, _checked(rel))
+    of `/data` (`_unlink_cache_file`, the `/data` writer's own, this function its only caller):
+    a folder is refused, never removed as a tree; a path that is not there any more answers
+    False. Whether something went."""
+    return _unlink_cache_file(data_dir, _checked(rel))
 
 
 # -- the sweep -----------------------------------------------------------------------------------

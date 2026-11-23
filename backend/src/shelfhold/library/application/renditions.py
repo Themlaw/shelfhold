@@ -49,6 +49,7 @@ from shelfhold.infrastructure.volumes import (
     DataFolder,
     erase_data_path,
     open_data_folder,
+    touch_data_file,
     write_data_file,
 )
 from shelfhold.library.application.kepub import KepubError, kepubify
@@ -343,14 +344,15 @@ class RenditionService:
 
     def _touch(self, folder: DataFolder, name: str) -> None:
         """Record the access on the file, unless it was recorded less than a day ago: the LRU
-        key of the retention sweep is this time, never the creation."""
+        key of the retention sweep is this time, never the creation. The date is written
+        through the `/data` writer (`touch_data_file`), never around it."""
         stat = folder.stat_of(name)
         if stat is None:
             return
         at = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
         if self._clock.now() - at < TOUCH_GRACE:
             return
-        folder.touch(name, at=self._clock.now().timestamp())
+        touch_data_file(folder, name, at=self._clock.now().timestamp())
 
     def read(self, rendition: Rendition) -> bytes | None:
         """The converted bytes, only when they are the ones whose hash is the name; None when
@@ -519,13 +521,15 @@ class RenditionService:
     def _store(self, origin: _Origin, params: RenditionParams, key: str, data: bytes) -> Rendition:
         out_hash = "sha256:" + hashlib.sha256(data).hexdigest()
         rendition = Rendition(origin.source, params.kind, key, out_hash, len(data))
-        write_data_file(self._data, rendition.rel, data)
+        self._pinned(rendition)  # before the file: from its first byte to the caller's read
         try:
+            write_data_file(self._data, rendition.rel, data)
             self._record(rendition, origin)
         except BaseException:
+            self._leave(rendition.content_hash)  # nothing is handed back: the hold goes too
             self._drop_if_unreferenced(rendition.content_hash, rendition.kind)
             raise
-        return self._pinned(rendition)  # handed back pinned, like a hit of the cache
+        return rendition  # handed back pinned, like a hit of the cache
 
     def _record(self, rendition: Rendition, origin: _Origin) -> None:
         table = storage.rendition
