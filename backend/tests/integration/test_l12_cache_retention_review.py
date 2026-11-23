@@ -20,6 +20,7 @@ from sqlalchemy import Engine
 
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.schema import metadata, platform, storage
+from shelfhold.library.application import renditions as renditions_module
 from shelfhold.library.application.cache_quotas import (
     CachePolicy,
     erase_cache_path,
@@ -162,6 +163,7 @@ def test_a_kepub_found_in_the_cache_is_pinned_until_it_is_read() -> None:
         )
         source = epub(book())
         made = service.render_kepub(content_id, source)  # in the cache now
+        service.unpin(made)  # handed back pinned since the fix: this test holds no request
         expected = service.read(made)
         assert expected is not None
 
@@ -269,3 +271,113 @@ def test_a_pinned_rendition_stays_even_when_the_quota_wants_it(engine: Engine, d
         )
         assert not (data / older.rel).exists()
         assert (data / served.rel).exists()  # over the quota, kept by the pin alone
+
+
+# -- second pass of the review: the fixes of the sweep ------------------------------------------
+
+
+def _bytes_under(root: Path) -> int:
+    return sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
+
+
+@pytest.mark.req("EF-BIB-018")
+def test_the_low_disk_guard_evicts_only_until_the_volume_is_back_above(
+    engine: Engine, data: Path
+) -> None:
+    """While the low-disk guard says `/data` is under its mark, the sweep evicts "until the
+    volume is back above". The guard reads the disk afresh, but the files are erased only once
+    the eviction loop is over: inside the loop the guard can never change its answer, so one
+    moment of pressure empties the whole cache. Here, two of three files are enough."""
+    for seed, age in (("oldest", 3), ("middle", 2), ("newest", 1)):
+        body = b"r" * 1000
+        out = _hex(seed)
+        _write(data, f"cache/renditions/{out[:2]}/{out}.jpeg", body, age_days=age)
+        _rendition_row(engine, out, source_seed=seed, size=1000, age_days=age)
+
+    def pressure() -> bool:  # the volume is under its mark while more than 1500 bytes are used
+        return _bytes_under(data) > 1500
+
+    purge_caches(engine, data, ManualClock(NOW), _policy(), pressure=pressure)
+
+    newest = _hex("newest")
+    assert (data / f"cache/renditions/{newest[:2]}/{newest}.jpeg").exists(), (
+        "the guard emptied the whole cache: 1000 bytes would have put the volume back above"
+    )
+    assert _bytes_under(data) == 1000
+
+
+@pytest.mark.req("EF-BIB-018")
+def test_a_cache_hit_is_pinned_before_its_check_read_ends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_cached` checks the file with `read` (pinned for its own length), lets the pin go, and
+    only then takes the hold it hands back: a sweep that runs between the two finds no pin and
+    takes the file the request is about to read. The hold must be taken before the check read
+    lets its own pin go."""
+    monkeypatch.setattr(renditions_module, "_PINNED", {})  # no pin left over by another test
+    with export_env() as env:
+        unit = env.add_chapter(env.new_series(TITLE), "1")
+        with env.engine.connect() as connection:
+            content_id = str(
+                connection.execute(
+                    sa.select(storage.content.c.id).where(storage.content.c.unit_id == unit)
+                ).scalar_one()
+            )
+        service = RenditionService(
+            env.engine, env.lib.data, ManualClock(NOW), tombstones=NONE_PURGED
+        )
+        source = epub(book())
+        made = service.render_kepub(content_id, source)
+        service.unpin(made)
+        expected = service.read(made)
+        assert expected is not None and RenditionService.pinned() == frozenset()
+
+        real_read = service.read
+        swept: list[bool] = []
+
+        def read_then_sweep(rendition: Rendition) -> bytes | None:
+            found = real_read(rendition)
+            if not swept:  # the sweep lands right after the check read of the lookup
+                swept.append(True)
+                purge_caches(
+                    env.engine,
+                    env.lib.data,
+                    ManualClock(NOW),
+                    _policy(renditions_quota_bytes=1),
+                    pinned=RenditionService.pinned(),
+                )
+            return found
+
+        service.read = read_then_sweep  # type: ignore[method-assign]
+        try:
+            assert service.kepub_bytes(content_id, source) == expected
+        except KepubError as error:
+            pytest.fail(f"the cache hit was evicted before its hold was taken: {error}")
+
+
+@pytest.mark.req("EF-BIB-018")
+def test_a_thumbnail_row_whose_shard_folder_is_gone_is_dropped(engine: Engine, data: Path) -> None:
+    """`_unlink` turns a folder missing on the way (`FileNotFoundError`) into a `ValueError`, and
+    the thumbnail sweep keeps the row of a refused path: a row whose shard folder is gone (its
+    files removed by hand, a restore without the cache) stays for ever, warned about every day,
+    and counted in the use that `status` and Health show. A missing path is nothing to erase,
+    not a refusal: the row goes."""
+    digest = _hex("no-shard")
+    with engine.begin() as connection:
+        connection.execute(
+            sa.insert(storage.thumbnail).values(
+                content_hash=f"sha256:{digest}",
+                size=160,
+                path=f"{digest[:2]}/{digest}-160.webp",
+                bytes=1024,
+                created_at=NOW.replace(year=NOW.year - 2),
+                last_used_at=NOW.replace(year=NOW.year - 2),
+            )
+        )
+    assert not (data / "thumbnails").exists()
+
+    purge_caches(engine, data, ManualClock(NOW), _policy())
+
+    with engine.connect() as connection:
+        left = connection.execute(sa.select(sa.func.count()).select_from(storage.thumbnail))
+        assert left.scalar_one() == 0, "a thumbnail row past its retention, with no file, stayed"
