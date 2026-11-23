@@ -190,7 +190,7 @@ describe('Écran des webhooks', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    await user.type(await screen.findByLabelText('Adresse'), 'https://127.0.0.1/hook');
+    await user.type(await screen.findByLabelText('Adresse'), 'https://inside.example.org/hook');
     await user.type(screen.getByLabelText('Types d’événements'), 'unit.stored');
     await user.click(screen.getByRole('button', { name: 'Ajouter' }));
     expect((await screen.findByRole('alert')).textContent).toMatch(/adresse a été refusée/);
