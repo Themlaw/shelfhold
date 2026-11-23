@@ -4,10 +4,23 @@ import { expect, test } from '../workshop/fixtures';
 
 // M6 L20 (EF-LEC-012, D-P7 (b)): « Lire hors ligne » in the reader, in a real browser with the real
 // stores (IndexedDB, Cache Storage, Web Locks) — the API answers from routes, as the reader specs of
-// M5 do, because what is played here is what only a browser does. A copy is kept in one tab while
-// another signs a child in: the write of the copy is locked across tabs, it waits for the wipe, sees
-// that the profile is no longer the browser's and drops the bytes — nothing of the profile that
-// left (cache or database) stays behind. The pages the reader draws are grey PNGs.
+// M5 do, because what is played here is what only a browser does. Two scenes:
+// - the write of a copy is locked across tabs (`navigator.locks`): another tab holds the very lock
+//   the store writes under, the download of the copy ends meanwhile, and the manifest is written
+//   only once the lock is released;
+// - a copy whose download ends after the browser changed hands (a child signed in in another tab) is
+//   dropped, never written, and nothing of the profile that left — cache or database — stays.
+//
+// The service worker of the SPA is blocked here on purpose. Under WebKit, a request that a page
+// hands to a worker that controls it is no longer seen by Playwright's route mocks (measured: the
+// mock answers only while the page is uncontrolled), so the reader's publication would be asked of
+// the real server and the spec would play against a 404 — the button never appears. The three
+// features the store degrades without (`navigator.locks`, `BroadcastChannel`, `indexedDB.databases`)
+// are all present in the WebKit build the CI pins; the worker itself is the subject of
+// `m5_pwa.spec.ts`. Blocking it here keeps this spec on its own subject, on the app's supported
+// path when the browser refuses a worker (`registerServiceWorker` catches and the app works online).
+
+test.use({ serviceWorkers: 'block' });
 
 const MEMBER = { id: '01JMEMBER0000000000000000M', username: 'membre', role: 'member', nav: [] };
 const CHILD = { id: '01JCHILD00000000000000000C', username: 'enfant8', role: 'child', nav: [] };
@@ -111,6 +124,19 @@ const databaseNames = (page: Page) =>
     )
   );
 
+/** Holds `shelfhold-offline`, the lock the store writes under, from the page it is given: the lock
+ * stays held until `letGoOfTheLock(page)` resolves the promise the callback returned. */
+const holdTheLock = (page: Page) =>
+  page.evaluate(() => {
+    (window as unknown as { __release: (() => void) | null }).__release = null;
+    void navigator.locks.request('shelfhold-offline', () => new Promise<void>((resolve) => {
+      (window as unknown as { __release: (() => void) | null }).__release = resolve;
+    }));
+  });
+
+const lockHeld = (page: Page) => page.waitForFunction('window.__release !== null');
+const letGoOfTheLock = (page: Page) => page.evaluate(() => (window as unknown as { __release: () => void }).__release());
+
 // req: EF-LEC-012
 test('offline writes are locked across tabs', async ({ page, context }) => {
   let release!: () => void;
@@ -124,6 +150,41 @@ test('offline writes are locked across tabs', async ({ page, context }) => {
   await expect.poll(() => activeProfile(page)).toBe(MEMBER.id);
 
   // the reader opens her book and keeps a copy: the download begins and holds on its last entry
+  await page.goto('/lire/unit/U1');
+  await page.getByRole('button', { name: 'Lire hors ligne' }).click();
+  await expect.poll(() => cacheNames(page)).toContain(`shelfhold-copy-${MEMBER.id}`);
+
+  // another tab takes the very lock the store writes under
+  const other = await context.newPage();
+  await serve(other, MEMBER, Promise.resolve());
+  await other.goto('/');
+  await holdTheLock(other);
+  await lockHeld(other); // the callback runs only once the lock is granted: the lock is the other tab's
+
+  // the held download now ends: the write of the manifest waits behind the lock, it does not land
+  release();
+  await page.waitForTimeout(600); // long enough for a finished download to write, if it could
+  expect(await readKv(page, `shelfhold-offline-p-${MEMBER.id}`, `copy:content:${CARRIER}`)).toBeNull();
+
+  // the other tab lets the lock go: the write lands, and the reader says the copy is kept
+  await letGoOfTheLock(other);
+  await expect
+    .poll(() => readKv(page, `shelfhold-offline-p-${MEMBER.id}`, `copy:content:${CARRIER}`))
+    .toBeTruthy();
+  await expect(page.getByText('Copie gardée sur cet appareil')).toBeVisible();
+});
+
+// req: EF-LEC-012, EF-USR-006
+test('a copy whose profile left the browser leaves nothing behind', async ({ page, context }) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await serve(page, MEMBER, gate);
+
+  // the first tab signs a member in, the reader keeps her copy, the download holds on its last entry
+  await page.goto('/');
+  await expect.poll(() => activeProfile(page)).toBe(MEMBER.id);
   await page.goto('/lire/unit/U1');
   await page.getByRole('button', { name: 'Lire hors ligne' }).click();
   await expect.poll(() => cacheNames(page)).toContain(`shelfhold-copy-${MEMBER.id}`);
