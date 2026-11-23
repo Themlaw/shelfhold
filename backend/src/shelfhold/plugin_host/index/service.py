@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -47,6 +46,7 @@ from shelfhold.plugin_host.index.minisign import (
     parse_public_key,
     verify_detached,
 )
+from shelfhold.plugin_host.index.staging import discard_staged_wheel, stage_wheel
 
 __all__ = ["MAX_INDEX_BYTES", "MAX_WHEEL_BYTES", "RepoRecord", "RepoStore", "index_fetcher"]
 
@@ -380,9 +380,7 @@ class RepoStore:
         memory); a hash that is not the one the index signed is a refusal and leaves nothing
         behind — the guard of M1b never sees a file the index did not vouch for.
         """
-        destination.mkdir(parents=True, exist_ok=True)
-        handle, staged = tempfile.mkstemp(dir=destination, prefix=".index-wheel-", suffix=".whl")
-        path = Path(staged)
+        handle, path = stage_wheel(destination)
         digest = hashlib.sha256()
         accepted = False
         try:
@@ -410,4 +408,4 @@ class RepoStore:
             return path
         finally:
             if not accepted:  # nothing of a refused wheel stays on disk, whatever refused it
-                path.unlink(missing_ok=True)
+                discard_staged_wheel(path)

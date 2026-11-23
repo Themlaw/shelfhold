@@ -95,6 +95,10 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 "shelfhold/plugin_host/runner/server.py::RunnerServer.start",
                 # a plugin's scratch folder in the companion's own /tmp, removed with its connection
                 "shelfhold/plugin_host/runner/server.py::RunnerServer._drop_scratch",
+                # the staged wheel of a signed index fetch (M6 L07, D14): a scratch file the
+                # fetch made itself in the destination the caller gave, removed when the
+                # index's word does not hold; never a library path
+                "shelfhold/plugin_host/index/staging.py::discard_staged_wheel",
                 # the probe folder the write check made itself (EF-UX-002)
                 f"{_FSOPS}/probe.py::_remove_probe_dir",
             }

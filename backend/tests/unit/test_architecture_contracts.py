@@ -455,6 +455,9 @@ WRITERS_ALLOWED = (
     "shelfhold/infrastructure/secrets/atomic.py",  # keyring and export file, owner-only
     "shelfhold/infrastructure/cover_store.py",  # /data/covers: covers the decode worker re-encoded
     "shelfhold/plugin_host/install.py",  # /data/plugins: staging, site-packages, state file
+    # the staged wheel of a signed index fetch (M6 L07, D14): a scratch file in the destination
+    # the caller gave (the plugins volume), removed when the index's word does not hold
+    "shelfhold/plugin_host/index/staging.py",
     "shelfhold/plugin_host/runner/server.py",  # the companion's socket file, on its own volume
     "shelfhold/infrastructure/local_socket/server.py",  # the CLI socket (and staging dir), /data
     "shelfhold/docgen/release_assets.py",  # release tooling: two files in a directory it is given
