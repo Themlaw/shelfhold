@@ -111,14 +111,36 @@ class Contention:
         return self.during_p95_s / self.at_rest_p95_s
 
 
+def quiet_export_job(engine: sa.Engine) -> None:
+    """Take the app's own export job out of its schedule (`enabled=false`: the product's own
+    flag, the one the boot's scan skips by design) for a measure whose load is the bench's own
+    pass. The job runs every five minutes and its fan-out writes whatever a binding is due —
+    for the native folder that is the very 500 chapters the measured pass is to write, and it
+    stole them whole before the bench's pass ran (`BindingOutcome(status='done', executed=0)`:
+    every file already on the disk, every operation of the plan dropped as done). The two
+    pipeline shapes need nothing of this: their destination's target carries no sealed key, so
+    the job skips it and never opens a root, and their shelf holds no native binding, so no
+    fan-out pass runs for them either."""
+    with write_transaction(engine) as connection:
+        connection.execute(
+            sa.update(platform.schedule)
+            .where(platform.schedule.c.job_kind == "export.run")
+            .values(enabled=False)
+        )
+
+
 def contention_of(
     env: ExportEnv,
     patch: pytest.MonkeyPatch,
     work: Callable[[ExportEnv], Callable[[], object]],
+    *,
+    mute_export: bool = False,
 ) -> tuple[Contention, object]:
     """The p95 of the library list at rest, then while `work(env)` runs on a thread: the
     application serves the very database file the work writes. The measure, and what the work
-    returned (the shape of the work decides what its caller asserts of it)."""
+    returned (the shape of the work decides what its caller asserts of it). `mute_export`: the
+    app's own export job is taken out of its schedule for this measure (see
+    `quiet_export_job`) — only a measure whose load is a fan-out pass needs it."""
     database = env.engine.url.database
     assert database is not None
     settings = load_settings(
@@ -131,6 +153,8 @@ def contention_of(
     ).values
     give_password(env.engine)  # the profile's own administrator signs in
     with auth_env(patch, settings, with_admin=False) as app:
+        if mute_export:  # before anything else: the schedule's next tick is a minute away
+            quiet_export_job(env.engine)
         sign_in(app)
         settled()
         run = work(env)
@@ -194,7 +218,9 @@ def fan_out_after_boot(env: ExportEnv) -> FanOut:
 def measure_native_folder_contention(*, chapters: int, profile: Profile = CI_PROFILE) -> Contention:
     """The p95 of the library list at rest, then while `chapters` chapters are fanned out into the
     folder Mihon reads: one new chapter per series, the shape of a night's catch-up. The shelf of
-    the measure holds only that binding, so the pass renders into the native folder alone."""
+    the measure holds only that binding, so the pass renders into the native folder alone. The
+    app's own export job is taken out of its schedule for this measure: it would otherwise write
+    those very chapters on its own cron before the measured pass runs (`quiet_export_job`)."""
     with export_env() as env, pytest.MonkeyPatch.context() as patch:
         generate_catalog(env.engine, profile)
         native_shelf = new_ulid()
@@ -219,7 +245,7 @@ def measure_native_folder_contention(*, chapters: int, profile: Profile = CI_PRO
 
             return run
 
-        got, report = contention_of(env, patch, work)
+        got, report = contention_of(env, patch, work, mute_export=True)
         outcome = report.outcomes[0]  # type: ignore[attr-defined]
         assert outcome.status == "done" and outcome.code is None, outcome
         assert outcome.executed >= chapters and not outcome.lost_format, outcome

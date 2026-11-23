@@ -17,6 +17,7 @@ from shelfhold.identity.public import AuditEntry, Principal, audit_actor, audit_
 from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.fetcher import FetchError, Resolver
 from shelfhold.infrastructure.secrets import SecretVault
+from shelfhold.integrations.webhooks.outbox import RECENT, Delivery, recent
 from shelfhold.integrations.webhooks.subscriptions import (
     Subscription,
     SubscriptionStore,
@@ -70,6 +71,13 @@ class WebhookAdmin:
     def get(self, subscription_id: str) -> Subscription | None:
         with read_transaction(self._engine) as connection:
             return SubscriptionStore(self._vault()).get(connection, subscription_id)
+
+    def deliveries(self, subscription_id: str, *, limit: int = RECENT) -> list[Delivery] | None:
+        """The last deliveries of one subscription (M6 L23b), for the screen: the rows of the
+        outbox, newest first, and None when the subscription is not there. The sealed document is
+        not opened — an address that cannot be read still shows what was sent to it."""
+        with read_transaction(self._engine) as connection:
+            return recent(connection, subscription_id, limit=limit)
 
     def delete(self, principal: Principal, subscription_id: str) -> bool:
         now = self._now()
