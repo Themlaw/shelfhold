@@ -7,6 +7,7 @@ import Page from './+page.svelte';
 
 const BASE = 'http://shelfhold.test';
 const KAVITA = 'http://kavita.test:5000';
+const KOMGA = 'http://komga.test:5000';
 
 type Listener = (message: MessageEvent<string>) => void;
 const FRAME = JSON.stringify({
@@ -159,6 +160,26 @@ describe('home page', () => {
     expect(within(rows[0]!).getByRole('link', { name: 'Lire, Série A, n° 2' })).toHaveAttribute('href', '/lire/content/c2');
     expect(within(rows[1]!).getByRole('link', { name: 'Ouvrir dans Kavita, Série B, n° 9' })).toHaveAttribute('href', KAVITA);
     expect(resumeQuery?.get('limit')).toBe('6'); // a bounded list asked for
+  });
+
+  // req: EF-LEC-008
+  it('test_continue_reading_label_names_destination_type', async () => {
+    // the target carries the type of the destination: a Komga server is not Kavita
+    server.use(
+      http.get(`${BASE}/api/reader/continue`, () =>
+        HttpResponse.json({
+          items: [
+            { work_id: 'w3', title: 'Série C', unit_id: 'u3', number: '3', unit_title: null, state: 'in_progress', target: 'komga', approximate: false, carrier_type: null, carrier_id: null }
+          ],
+          open_urls: { komga: KOMGA }
+        })
+      )
+    );
+    render(Page);
+    const section = await screen.findByRole('region', { name: 'Reprendre la lecture' });
+    const row = within(section).getByRole('listitem');
+    expect(row.textContent?.split(/\s+/).join(' ').trim()).toBe('Série C N° 3 · en cours Ouvrir dans Komga');
+    expect(within(row).getByRole('link', { name: 'Ouvrir dans Komga, Série C, n° 3' })).toHaveAttribute('href', KOMGA);
   });
 
   // req: EF-LEC-008
