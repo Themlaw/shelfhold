@@ -468,10 +468,12 @@ def version_of(connection: Connection, ctx: DestinationContext) -> str:
 
 def inputs_version_of(connection: Connection, ctx: DestinationContext) -> str:
     """The inputs alone: what must not move while a plan is being applied. Read again before
-    **every** operation of an apply (`PlanStore`, EF-EXP-042), so its cost is four narrow scans
-    over the shelf's rows instead of the full derivation of `version_of`: on a shelf of
-    hundreds of Units that derivation cost more than the operation it fenced, and the export
-    thread held the interpreter for it the whole plan through (ENF-PERF-007).
+    **every** operation of an apply (`PlanStore`, EF-EXP-042): on a shelf of hundreds of Units
+    the full derivation cost more than the operation it fenced, and the export thread held the
+    interpreter for it through the whole plan (ENF-PERF-007). The Editions, the Units and the
+    sources are read as four narrow scans over the shelf's rows; `admissions_of` and
+    `_volume_rows` are called as before, so a shelf below 18+ still pays the rating of each of
+    its Editions — the gain is mostly an adult shelf's, the shape of a night's catch-up.
 
     The scans read the same rows the material of `_version` is built from, and the sources as a
     **superset**: every `content` of the Units in an accepted format (not only the preferred
