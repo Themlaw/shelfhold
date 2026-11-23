@@ -31,7 +31,7 @@ export interface RelayEntry {
 
 /** A derived cache of the library: its use, its quota and whether it is over (EF-BIB-018). */
 export interface CacheEntryView {
-  kind: 'thumbnails' | 'renditions' | 'http' | 'metadata';
+  kind: 'thumbnails' | 'renditions' | 'web_responses' | 'metadata';
   entries: number;
   usedBytes: number | null; // null when the bodies are not sized by the database
   quotaBytes: number | null; // null when the quota is counted in rows
