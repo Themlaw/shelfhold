@@ -9,13 +9,14 @@ rows), and a retention in days for each. The sweep runs daily and evicts by **la
 time of a rendition's file (its read touches it the same way), the `stored_at` of an HTTP entry,
 the `fetched_at` of a metadata row. What the retention no longer keeps goes first, then the least
 recently used, until the quota holds — and while the low-disk guard of M3 says the volume of
-`/data` is under its free-space mark, the guard passes first: the sweep evicts until the volume
-is back above it.
+`/data` is under its free-space mark, the guard passes first: the sweep erases as it decides and
+asks the guard again after each file, so it stops as soon as the volume is back above it.
 
 The sweep is a system emitter of the closed list (`cache_retention_purge`, passe 13, N2): no
 credential triggers it, and in exchange it erases **only paths the host itself created** — the
 cache folders under `/data`, at the name patterns their writers use, checked here before anything
-is opened, then erased through the `/data` layer (`_unlink`: a descriptor walk, a link
+is opened, then erased through the `/data` file layer of the application
+(`library.application.volumes.unlink_data_file`: a descriptor walk, a link
 on the way refused, every step on the device of `/data`, and the last name a regular file or a
 link — a folder is never removed, not even as a tree). Never `/store`, `/library`, `.shelfhold/`,
 nor an original: those are not under the cache folders, and a path that is not one of them is
@@ -32,9 +33,7 @@ of it is on disk, so no sweep of it exists.
 
 from __future__ import annotations
 
-import os
 import re
-import stat
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -56,6 +55,7 @@ from shelfhold.library.application.renditions import CACHE_DIR as RENDITIONS_DIR
 from shelfhold.library.application.renditions import RenditionService
 from shelfhold.library.application.thumbnails import _NAME as THUMBNAIL_NAME
 from shelfhold.library.application.thumbnails import _SHARD as THUMBNAIL_SHARD
+from shelfhold.library.application.volumes import unlink_data_file
 
 __all__ = [
     "CACHE_PURGE_EMITTER",
@@ -150,53 +150,43 @@ def _checked(rel: str) -> str:
     raise ValueError(f"{rel!r} is not a path the host created in a cache")
 
 
-def _unlink(data_dir: Path, rel: str) -> bool:
-    """Remove one file under `/data` — a regular file or a link, never a folder: what the sweep
-    of the caches erases (EF-BIB-018). Returns whether something went.
-
-    `rel` comes back from `_checked`, so its parts are plain names. Every step of the walk is
-    opened with `O_NOFOLLOW` (a link on the way is refused, not followed) and must sit on the
-    same device as `/data` itself: a mount point inside the path — or at its end — is refused
-    (`ValueError`), so the eraser never crosses into another volume. The last name must be a
-    regular file or a link (`ValueError` otherwise): a folder is never removed, not even as a
-    tree."""
-    parts = rel.split("/")
-    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
-    fds = [os.open(data_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)]
+def _erase_file(data_dir: Path, rel: str, *, cache: str) -> int | None:
+    """Erase one cache file, the emitter's allowlist checked first: how many went (0 when there
+    was nothing there — the row that names it goes all the same), or None when the row must
+    stay: a path that is not one the host created is refused (`ValueError`), an erasure that
+    failed (`OSError`) leaves the file. Both are logged and the sweep goes on."""
     try:
-        device = os.fstat(fds[0]).st_dev
-        for part in parts[:-1]:  # dirfd walk, O_NOFOLLOW: a swap for a link cannot redirect it
-            try:
-                fds.append(os.open(part, flags, dir_fd=fds[-1]))
-            except OSError as error:  # ELOOP / ENOTDIR: a link or a file on the way
-                raise ValueError(f"{part!r} on the way to {rel!r} is not a plain folder") from error
-            if os.fstat(fds[-1]).st_dev != device:
-                raise ValueError(f"{rel!r} crosses a mount point at {part!r}")
-        parent, name = fds[-1], parts[-1]
-        try:
-            found = os.stat(name, dir_fd=parent, follow_symlinks=False)
-        except FileNotFoundError:
-            return False
-        if found.st_dev != device:
-            raise ValueError(f"{rel!r} sits on another volume than /data")
-        if not (stat.S_ISREG(found.st_mode) or stat.S_ISLNK(found.st_mode)):
-            raise ValueError(f"{rel!r} is not a file: a folder is never removed as a tree")
-        os.unlink(name, dir_fd=parent)  # a link at the end is removed as a link
-        return True
-    finally:
-        for fd in fds:
-            os.close(fd)
+        return int(erase_cache_path(data_dir, rel))
+    except ValueError as error:
+        log.warning("cache.path_refused", cache=cache, path=rel, error=type(error).__name__)
+    except OSError as error:
+        log.warning("cache.erase_failed", cache=cache, path=rel, error=type(error).__name__)
+    return None
 
 
 def erase_cache_path(data_dir: Path, rel: str) -> bool:
     """Erase one file of a cache, the emitter's allowlist checked first: the only eraser of the
     sweep, and the one a test asks for a refusal. A regular file or a link only, on the device
-    of `/data` (`_unlink`): a folder is refused, never removed as a tree. Whether something
-    went."""
-    return _unlink(data_dir, _checked(rel))
+    of `/data` (`unlink_data_file`): a folder is refused, never removed as a tree; a path that
+    is not there any more answers False. Whether something went."""
+    return unlink_data_file(data_dir, _checked(rel))
 
 
 # -- the sweep -----------------------------------------------------------------------------------
+
+
+def _erase_thumbnail(data_dir: Path, row: Any) -> int | None:
+    """Erase the files one thumbnail row names (its colour variant, and the grey one): how many
+    went, or None when the row must stay (a refused path, a file that would not go — both
+    logged by `_erase_file`)."""
+    digest = str(row.content_hash).removeprefix("sha256:")
+    gone = 0
+    for name in (f"{digest}-{row.size}.webp", f"{digest}-{row.size}-grey.webp"):
+        found = _erase_file(data_dir, f"{THUMBNAILS_DIR}/{digest[:2]}/{name}", cache="thumbnails")
+        if found is None:
+            return None
+        gone += found
+    return gone
 
 
 def _thumbnails(
@@ -208,9 +198,11 @@ def _thumbnails(
 ) -> tuple[int, int]:
     """The retention first (a thumbnail nobody looked at for `retention_days`), then the quota:
     the least recently used goes until the quota holds — and while the low-disk guard says the
-    volume is still under its mark, the guard passes first (D17). The grey variant of a size has
-    no row: it goes with its colour thumbnail. A path that is not a file the host created is
-    skipped with a warning, row and all: the sweep goes on."""
+    volume of `/data` is still under its mark, the guard passes first (D17), erasing as it
+    decides and asking the guard again after each file, so it stops as soon as the volume is
+    back above. The grey variant of a size has no row: it goes with its colour thumbnail. A
+    path that is not a file the host created is skipped with a warning, row and all: the sweep
+    goes on."""
     table = storage.thumbnail
     with engine.connect() as connection:
         rows = connection.execute(
@@ -234,23 +226,20 @@ def _thumbnails(
             kept.append(row)
             total += int(row.bytes)
     kept.sort(key=lambda row: row.last_used_at or row.created_at)
-    while kept and (total > policy.thumbnails_quota_bytes or (pressure is not None and pressure())):
-        row = kept.pop(0)
-        doomed.append(row)
-        total -= int(row.bytes)
     files = 0
     taken: list[Any] = []
-    for row in doomed:
-        digest = str(row.content_hash).removeprefix("sha256:")
-        try:
-            for name in (f"{digest}-{row.size}.webp", f"{digest}-{row.size}-grey.webp"):
-                files += int(erase_cache_path(data_dir, f"{THUMBNAILS_DIR}/{digest[:2]}/{name}"))
-        except ValueError as error:
-            log.warning(
-                "cache.path_refused", cache="thumbnails", path=f"{digest[:2]}/{digest}",
-                error=type(error).__name__,
-            )  # fmt: skip
-            continue  # not a file the host created: the row stays, the sweep goes on
+    for row in doomed:  # the retention goes first, whatever the guard says
+        gone = _erase_thumbnail(data_dir, row)
+        if gone is not None:
+            files += gone
+            taken.append(row)
+    while kept and (total > policy.thumbnails_quota_bytes or (pressure is not None and pressure())):
+        row = kept.pop(0)
+        gone = _erase_thumbnail(data_dir, row)  # erased here: the guard sees the space back
+        if gone is None:
+            continue  # the file stayed: the row stays too, and the guard is asked again
+        files += gone
+        total -= int(row.bytes)
         taken.append(row)
     if taken:
         with write_transaction(engine) as connection:
@@ -283,7 +272,10 @@ def _renditions(
     one of its rows stays. A pinned rendition — one an in-flight request is serving, from its
     lookup to its read — is never evicted, by retention or by quota, but it occupies the disk all
     the same; the pin is asked again under its lock at every unlink, for a request may have taken
-    the file since the pass began. A row whose file is gone is dropped: the file is the cache."""
+    the file since the pass began. The retention goes first, then the quota and the low-disk
+    guard erase as they decide — the guard is asked again after each file, so it stops as soon as
+    the volume of `/data` is back above its mark. A row whose file is gone is dropped: the file
+    is the cache."""
     table = storage.rendition
     with engine.connect() as connection:
         rows = connection.execute(
@@ -318,7 +310,7 @@ def _renditions(
             continue  # a linked or missing shard: its rows are dropped below all the same
     cutoff = now - timedelta(days=policy.renditions_retention_days)
     ledger: list[Any] = []  # rows of a file that is not there: a ledger of nothing
-    doomed: list[tuple[float, str, dict[str, Any]]] = []  # (mtime, key, file) to erase
+    doomed: list[tuple[str, dict[str, Any]]] = []  # past their retention: (key, file)
     kept: list[tuple[float, str, dict[str, Any]]] = []  # under the quota's hand
     total = 0
     for key, entry in files.items():
@@ -330,29 +322,32 @@ def _renditions(
             total += entry["size"]  # it stays and occupies the disk all the same
             continue  # a request is serving it: not the sweep's to take
         if datetime.fromtimestamp(mtime, tz=UTC) < cutoff:
-            doomed.append((mtime, key, entry))  # leaving: not the quota's to count
+            doomed.append((key, entry))  # leaving: not the quota's to count
             continue
         total += entry["size"]  # once per file, however many rows name it
         kept.append((mtime, key, entry))
     kept.sort(key=lambda item: item[0])
-    while kept and (total > policy.renditions_quota_bytes or (pressure is not None and pressure())):
-        mtime, key, entry = kept.pop(0)
-        doomed.append((mtime, key, entry))
-        total -= entry["size"]
     files_gone = 0
     taken: list[Any] = []
-    for _, key, entry in doomed:
+    for key, entry in doomed:  # the retention goes first, whatever the guard says
+        with RenditionService.erasable(entry["rows"][0].content_hash) as free:
+            if not free:
+                continue  # pinned since the picture: the next pass decides again
+            gone = _erase_file(data_dir, f"{RENDITIONS_DIR}/{key}", cache="renditions")
+            if gone is None:
+                continue  # refused or failed: the file stays, so do its rows
+            files_gone += gone
+            taken.extend(entry["rows"])
+    while kept and (total > policy.renditions_quota_bytes or (pressure is not None and pressure())):
+        _, key, entry = kept.pop(0)
         with RenditionService.erasable(entry["rows"][0].content_hash) as free:
             if not free:
                 continue  # pinned since the decision: the file and its rows wait for the next pass
-            try:
-                files_gone += int(erase_cache_path(data_dir, f"{RENDITIONS_DIR}/{key}"))
-            except ValueError as error:
-                log.warning(
-                    "cache.path_refused", cache="renditions", path=key,
-                    error=type(error).__name__,
-                )  # fmt: skip
-                continue  # not a file the host created: the rows stay, the sweep goes on
+            gone = _erase_file(data_dir, f"{RENDITIONS_DIR}/{key}", cache="renditions")
+            if gone is None:
+                continue  # refused or failed: the file stayed, so did the disk it occupies
+            files_gone += gone  # erased here: the guard sees the space it asked for
+            total -= entry["size"]
             taken.extend(entry["rows"])
     taken.extend(ledger)
     if taken:
@@ -368,6 +363,26 @@ def _renditions(
     return files_gone, len(taken)
 
 
+def _take_http_body(data_dir: Path, row: Any) -> int:
+    """Erase the body one HTTP row names, wherever it sits: how many files went. A body that is
+    not a file the host created — outside the cache folder, or a folder at its name — is not the
+    sweep's to erase: the body stays and a warning is written; a body that would not go is
+    logged with its class. The row goes all the same, for nothing will ever serve it again
+    (nothing writes this table today; the sweep is ready for the writer that does)."""
+    if row.body_ref is None:
+        return 0
+    try:
+        return int(erase_cache_path(data_dir, str(row.body_ref)))
+    except ValueError:
+        log.warning("cache.http_body_outside", scope=row.scope)
+    except OSError as error:
+        log.warning(
+            "cache.erase_failed", cache="http", path=str(row.body_ref),
+            error=type(error).__name__,
+        )  # fmt: skip
+    return 0
+
+
 def _http(
     engine: Engine,
     data_dir: Path,
@@ -377,12 +392,10 @@ def _http(
 ) -> tuple[int, int]:
     """The HTTP cache expires by its own validators (`stored_at` + `max_age`), then the quota
     evicts the oldest stored — and while the low-disk guard says the volume is under its mark,
-    the guard passes first (D17). A body is sized wherever it sits under the cache folder, a
-    sub-folder included (the folder of its own is opened by descriptor). A body that is not a
-    file the host created — outside the cache folder, or a folder at its name — is not the
-    sweep's to erase: the body stays and a warning is written; the row goes all the same, for
-    nothing will ever serve it again (nothing writes this table today; the sweep is ready for
-    the writer that does)."""
+    the guard passes first (D17), erasing as it decides and asking the guard again after each
+    body, so it stops as soon as the volume is back above. A body is sized wherever it sits
+    under the cache folder, a sub-folder included (the folder of its own is opened by
+    descriptor)."""
     table = platform.http_cache
     with engine.connect() as connection:
         rows = connection.execute(
@@ -419,18 +432,14 @@ def _http(
             kept.append((row.stored_at, row))
             total += sizes.get(str(row.body_ref), 0)
     kept.sort(key=lambda pair: pair[0])
+    files = 0
+    for row in doomed:  # the expiry goes first, whatever the guard says
+        files += _take_http_body(data_dir, row)
     while kept and (total > policy.http_quota_bytes or (pressure is not None and pressure())):
         _, row = kept.pop(0)
-        doomed.append(row)
+        files += _take_http_body(data_dir, row)  # erased here: the guard sees the space back
         total -= sizes.get(str(row.body_ref), 0)
-    files = 0
-    for row in doomed:
-        if row.body_ref is None:
-            continue
-        try:
-            files += int(erase_cache_path(data_dir, str(row.body_ref)))
-        except ValueError:
-            log.warning("cache.http_body_outside", scope=row.scope)
+        doomed.append(row)
     if doomed:
         with write_transaction(engine) as connection:
             gone = int(
@@ -503,7 +512,8 @@ def purge_caches(
     (`RenditionService.pinned()`): none of it is evicted, and the pin is asked again under its
     lock at every unlink, for a request may have taken a file since the pass began. `pressure`
     is the low-disk guard of M3 on the volume of `/data`: while it says the volume is under its
-    mark, it passes before the quotas — the sweep evicts until the volume is back above. Only
+    mark, it passes before the quotas — the sweep erases as it decides, asks the guard again
+    after each file, and stops as soon as the volume is back above. Only
     `/data` is touched: no library disk is woken, so the pass runs at any hour."""
     now = clock.now()
     thumbs_files, thumbs_rows = _thumbnails(engine, data_dir, now, policy, pressure)

@@ -99,7 +99,8 @@ def sweep_caches(comp: Composition) -> CacheSweep:
     in-flight request is serving is pinned and stays — the sweep asks the pin again under its
     lock at every file it unlinks, so a request that began since the pass started is honoured
     all the same. The low-disk guard of M3 passes before the quotas: while the volume of `/data`
-    is under its free-space mark, the sweep evicts until it is back above."""
+    is under its free-space mark, the sweep erases as it decides, asks the guard again after
+    each file, and stops as soon as the volume is back above."""
     gate = comp.gates.disk_pressure
     return purge_caches(
         comp.engine,

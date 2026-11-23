@@ -305,10 +305,22 @@ class RenditionService:
 
     def unpin(self, rendition: Rendition) -> None:
         """Drop the hold a lookup took: `cached`, `render` and `render_kepub` hand back a
-        rendition **pinned** — the window between the lookup and the read is the request's, and
-        a sweep that runs in it must find the pin — so the caller releases it once it has read
-        the file (or given up on it)."""
+        rendition **pinned** — the pin is taken before the check read, so the window from the
+        lookup to the read is the request's, and a sweep that runs in it must find the pin.
+        `holding` drops it at the end of its block; this is the same release, for a caller
+        that cannot hold the block."""
         self._leave(rendition.content_hash)
+
+    @contextmanager
+    def holding(self, rendition: Rendition) -> Iterator[Rendition]:
+        """The hold a lookup took, kept for the length of the block and dropped here whatever
+        happens: the caller of `cached`, `render` or `render_kepub` wraps its read in this, and
+        a sweep that runs inside the block leaves the file to the request. The pin itself was
+        taken by the lookup, before its check read — never after it."""
+        try:
+            yield rendition
+        finally:
+            self._leave(rendition.content_hash)
 
     @classmethod
     def _leave(cls, key: str) -> None:
@@ -363,8 +375,8 @@ class RenditionService:
 
     def cached(self, content_id: str, params: RenditionParams, data: bytes) -> Rendition | None:
         """The rendition already made from these bytes of this content, if its file is there and
-        intact. Handed back **pinned**: the caller holds it until it has read the file
-        (`unpin`), so a sweep that runs between the lookup and the read keeps the file."""
+        intact. Handed back **pinned**: the caller holds it with `holding` until it has read the
+        file, so a sweep that runs between the lookup and the read keeps the file."""
         origin = self._origin(content_id)
         if self._tombstoned(origin):  # as `render` refuses: nothing is handed back during a purge
             return None
@@ -382,13 +394,16 @@ class RenditionService:
         if row is None:
             return None
         found = Rendition(source, params.kind, key, row.content_hash, row.size)
+        self._pinned(found)  # before the check read: the hold covers it, and the window after
         if self.read(found) is None:
+            self._leave(found.content_hash)  # the file is not there: the hold goes with it
             return None
-        return self._pinned(found)  # handed back pinned: the caller holds it until it is read
+        return found  # handed back pinned: the caller holds it with `holding` until it is read
 
     def _pinned(self, rendition: Rendition) -> Rendition:
-        """Take the hold the caller will drop with `unpin`: from the lookup to the read, the
-        file is the request's, and a sweep that runs in that window finds the pin."""
+        """Take the hold the caller will drop with `holding`: from the lookup (before its check
+        read) to the read, the file is the request's, and a sweep that runs in that window finds
+        the pin."""
         with _PIN_LOCK:
             _PINNED[rendition.content_hash] = _PINNED.get(rendition.content_hash, 0) + 1
         return rendition
@@ -428,7 +443,7 @@ class RenditionService:
     ) -> Rendition:
         """The rendition of `data`, read from the content `content_id`, made now if it is not
         there. The caps can be lowered by the caller, never raised past the worker's. Handed
-        back **pinned**: the caller holds it until it has read the file (`unpin`).
+        back **pinned**: the caller holds it with `holding` until it has read the file.
 
         Raises `UnknownSourceError`, `RemoteProcessorRefusedError` (a remote processor and a
         watermarked file), `UnsupportedSourceError` (not AVIF or WebP) and `ImageRejected`
@@ -466,7 +481,7 @@ class RenditionService:
         if it is not there (rule X4: the caller judged the profile first and read these bytes from
         the content it names). Pure Python, nothing leaves the host, so nothing here depends on
         `watermarked`. Bounded by the size of the input, and by the conversions that run at once.
-        Handed back **pinned**: the caller holds it until it has read the file (`unpin`).
+        Handed back **pinned**: the caller holds it with `holding` until it has read the file.
 
         Raises `UnknownSourceError`, `TombstonedContentError`, `RenditionBusyError` (no conversion
         slot came free in time) and `KepubError` (not an EPUB it can convert, or too large)."""
@@ -492,13 +507,11 @@ class RenditionService:
 
     def kepub_bytes(self, content_id: str, data: bytes) -> bytes:
         """`render_kepub`, then the bytes, checked against their hash as they are read. The
-        lookup hands back a pinned rendition and the hold covers the window until the read: a
-        sweep that runs in it leaves the file to the request."""
+        lookup hands back a pinned rendition and `holding` keeps the hold until the read is
+        done: a sweep that runs in the window leaves the file to the request."""
         rendition = self.render_kepub(content_id, data)
-        try:
+        with self.holding(rendition):
             found = self.read(rendition)
-        finally:
-            self.unpin(rendition)
         if found is None:
             raise KepubError("unavailable", "the file of the KEPUB is gone")
         return found
