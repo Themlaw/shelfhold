@@ -12,7 +12,7 @@ a series another shelf takes meanwhile is caught by the library lock and the res
 import hashlib
 import json
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
@@ -467,17 +467,87 @@ def version_of(connection: Connection, ctx: DestinationContext) -> str:
 
 
 def inputs_version_of(connection: Connection, ctx: DestinationContext) -> str:
-    """The inputs alone: what must not move while a plan is being applied."""
-    editions, unit_rows, sources = _inputs(connection, ctx)
-    return _version(
-        ctx,
-        editions,
-        unit_rows,
-        sources,
-        None,
-        admissions_of(connection, ctx, editions),
-        _volume_rows(connection, editions),
-    )
+    """The inputs alone: what must not move while a plan is being applied. Read again before
+    **every** operation of an apply (`PlanStore`, EF-EXP-042): on a shelf of hundreds of Units
+    the full derivation cost more than the operation it fenced, and the export thread held the
+    interpreter for it through the whole plan (ENF-PERF-007). The Editions, the Units and the
+    sources are read as four narrow scans over the shelf's rows; `admissions_of` and
+    `_volume_rows` are called as before, so a shelf below 18+ still pays the rating of each of
+    its Editions — the gain is mostly an adult shelf's, the shape of a night's catch-up.
+
+    The scans read the same rows the material of `_version` is built from, and the sources as a
+    **superset**: every `content` of the Units in an accepted format (not only the preferred
+    Variant's) and every library copy (not only the first readable one). Anything that moves the
+    full version moves this one too; what the superset may do is move without the full one having
+    moved — a chapter re-received without becoming the preferred Variant, a second copy put back —
+    and the apply then stops and computes its plan again from what is there now: work refused,
+    never work lost, and the common writer of those rows (an arrival, a re-delivery that becomes
+    the preferred Variant) moves the full version as well.
+    """
+    shelf = (ctx.shelf_id,)
+    editions = [tuple(row) for row in connection.exec_driver_sql(_EDITIONS_SCAN, shelf)]
+    material: dict[str, Any] = {
+        "destination": asdict(ctx.facts()) | {"template": ctx.template.dumps()},
+        "retention": ctx.retention_mode,
+        "root": ctx.root_local,
+        "editions": editions,
+        "units": [tuple(row) for row in connection.exec_driver_sql(_UNITS_SCAN, shelf)],
+        "contents": [tuple(row) for row in connection.exec_driver_sql(_CONTENTS_SCAN, shelf)],
+        "copies": [tuple(row) for row in connection.exec_driver_sql(_COPIES_SCAN, shelf)],
+    }
+    named = _named_editions(editions)
+    material["admissions"] = sorted(admissions_of(connection, ctx, named).items())
+    material["volumes"] = [
+        [v.id, v.edition_id, v.label, v.closed, list(v.unit_ids), list(v.child_ids), v.verdict]
+        for v in _volume_rows(connection, named)
+    ]
+    digest = hashlib.sha256(
+        json.dumps(material, sort_keys=True, default=str, separators=(",", ":")).encode()
+    ).digest()
+    return digest[:16].hex()  # 128 bits, hex text: the same shape as `version_of`
+
+
+# The scans of the fence, each over the rows of one input and each in a fixed order, so the same
+# rows give the same digest twice. Plain SQL over the driver's cursor, no row object built per
+# row: the fence runs before every operation of a plan, and SQLAlchemy's row machinery over the
+# same rows costs half as much again on a shelf of hundreds of Units (ENF-PERF-007).
+_EDITIONS_SCAN = (
+    "SELECT e.id, e.work_id, e.lang, e.text_version, e.packaging, w.title, s.id, s.title"
+    " FROM edition e JOIN work w ON w.id = e.work_id"
+    " LEFT JOIN series_member m ON m.work_id = w.id"
+    " LEFT JOIN series s ON s.id = m.series_id"
+    " WHERE e.shelf_id = ? ORDER BY e.id, s.id"
+)  # the fields of `EditionFacts`, the Series above the Work included
+_UNITS_SCAN = (
+    "SELECT id, edition_id, number_norm, track, part, number_segment, source_order"
+    " FROM unit WHERE edition_id IN (SELECT id FROM edition WHERE shelf_id = ?)"
+    " ORDER BY id"
+)  # the fields of `unit_material`, nothing else of the Unit
+_CONTENTS_SCAN = (
+    "SELECT c.id, c.unit_id, c.content_hash, c.watermarked, v.preferred"
+    " FROM content c LEFT JOIN unit_variant v ON v.id = c.variant_id"
+    " WHERE c.format IN ('cbz', 'epub') AND c.unit_id IN"
+    " (SELECT u.id FROM unit u JOIN edition e ON e.id = u.edition_id WHERE e.shelf_id = ?)"
+    " ORDER BY c.id"
+)  # every content the source of a Unit may be chosen from, the preference included
+_COPIES_SCAN = (
+    "SELECT r.id, r.unit_id, r.rel_path, r.file_hash, r.damaged_at"
+    " FROM replica r WHERE r.location = 'library' AND r.unit_id IN"
+    " (SELECT u.id FROM unit u JOIN edition e ON e.id = u.edition_id WHERE e.shelf_id = ?)"
+    " ORDER BY r.id"
+)  # every copy a source is read from, a damaged one included
+
+
+def _named_editions(rows: Sequence[tuple[Any, ...]]) -> tuple[EditionFacts, ...]:
+    """The Editions of the shelf as `edition_facts` gives them, from the fence's own scan: a Work
+    in two Series is named once, by the first Series in id order."""
+    found: dict[str, EditionFacts] = {}
+    for row in rows:
+        found.setdefault(
+            row[0],
+            EditionFacts(row[0], row[1], row[5], row[2], row[3], row[6], row[7], row[4]),
+        )
+    return tuple(found.values())
 
 
 def _world(

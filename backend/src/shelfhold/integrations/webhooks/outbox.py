@@ -37,9 +37,12 @@ __all__ = [
     "LEASE",
     "MAX_ATTEMPTS",
     "MAX_DELAY",
+    "RECENT",
     "DeadDeliveryPublisher",
+    "Delivery",
     "Due",
     "Outbox",
+    "recent",
     "retry_delay",
 ]
 
@@ -50,6 +53,7 @@ LEASE: Final = 600  # seconds a claimed row is held back before it is due again
 BATCH: Final = 20  # rows claimed at once: BATCH x the longest send (20 s) stays under the lease
 PER_SUBSCRIPTION: Final = 5  # of them, at most, for one address: a dead one does not hold the rest
 RELEASE_DELAY: Final = 300  # seconds before a row we could not even open is tried again
+RECENT: Final = 20  # the last deliveries the screen of the webhooks shows for one subscription
 _READ: Final = 200
 _outbox = schema.webhook_outbox
 _subscription = schema.webhook_subscription
@@ -69,6 +73,56 @@ class Due:
     event_id: int
     schema_version: int
     attempts: int  # counting this one
+
+
+@dataclass(frozen=True)
+class Delivery:
+    """One row of the outbox as the screen reads it (M6 L23b): what became of one event sent to one
+    address. The identity is the receiver's idempotency key; nothing of the address, of its path or
+    of the secret is here."""
+
+    id: str
+    event_id: int
+    schema_version: int
+    status: str
+    attempts: int
+    last_status: int | None
+    last_error: str | None
+    delivered_at: datetime | None
+    next_try_at: datetime
+
+
+def recent(
+    connection: Connection, subscription_id: str, *, limit: int = RECENT
+) -> list[Delivery] | None:
+    """The last deliveries of one subscription, newest first (the order of the events, then of the
+    versions of their shape); None when the subscription is not there. The rows only: the sealed
+    document is not opened, so an address that cannot be read still shows what was sent to it."""
+    known = connection.execute(
+        sa.select(_subscription.c.id).where(_subscription.c.id == subscription_id)
+    ).first()
+    if known is None:
+        return None
+    rows = connection.execute(
+        sa.select(_outbox)
+        .where(_outbox.c.subscription_id == subscription_id)
+        .order_by(_outbox.c.event_id.desc(), _outbox.c.schema_version.desc(), _outbox.c.id.desc())
+        .limit(limit)
+    ).all()
+    return [
+        Delivery(
+            id=row.id,
+            event_id=row.event_id,
+            schema_version=row.schema_version,
+            status=row.status,
+            attempts=row.attempts,
+            last_status=row.last_status,
+            last_error=row.last_error,
+            delivered_at=row.delivered_at,
+            next_try_at=row.next_try_at,
+        )
+        for row in rows
+    ]
 
 
 class DeadDeliveryPublisher(Protocol):

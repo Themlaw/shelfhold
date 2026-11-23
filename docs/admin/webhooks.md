@@ -3,12 +3,14 @@
 Un webhook envoie les événements d'exploitation de Shelfhold (un chapitre rangé, un disque presque plein, une sauvegarde en échec…)
 à une adresse de votre choix, pour les brancher à un autre outil. Tout se fait par l'API, en tant qu'administrateur :
 `POST /api/v1/webhooks`, `GET /api/v1/webhooks`, `GET /api/v1/webhooks/{id}`, `POST /api/v1/webhooks/{id}/rotate`,
-`DELETE /api/v1/webhooks/{id}`.
+`GET /api/v1/webhooks/{id}/deliveries`, `DELETE /api/v1/webhooks/{id}`. L'écran **Réglages → Webhooks** fait la même chose
+sans ligne de commande : la liste, l'ajout, la rotation, la suppression, et les dernières livraisons de chaque abonnement
+(état, tentatives, code HTTP, code d'erreur).
 
 ## Qui peut en faire
 
 - **Créer et supprimer** est une action réservée (`webhook.manage`) : une session d'administrateur récente, jamais une clé d'API.
-- **Lire** la liste est réservé à l'administrateur : sa session, ou une clé de portée `admin` qui n'est pas en lecture seule.
+- **Lire** la liste et les dernières livraisons est réservé à l'administrateur : sa session, ou une clé de portée `admin` qui n'est pas en lecture seule.
 - Un enfant, un membre, une clé en lecture seule, un jeton d'appareil ou personne reçoivent un refus avant que quoi que ce soit
   soit lu : un webhook qui existe et un webhook qui n'existe pas reçoivent la même réponse.
 
