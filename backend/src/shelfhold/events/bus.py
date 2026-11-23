@@ -90,6 +90,8 @@ PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
         )
     },
     "job.dead_lettered": {"reason": frozenset({"retries_exhausted", "handler_error"})},
+    # M6 L23a (EF-INT-005): why a webhook delivery was given up
+    "webhook.dead": {"reason": frozenset({"retries_exhausted", "event_gone", "not_theirs"})},
     "ops.window_missed": {"reason": frozenset({"window_over"})},
     # EF-SRC-037: why a binding fell back to the next rank
     "source.fallback": {

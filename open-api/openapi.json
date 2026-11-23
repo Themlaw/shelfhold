@@ -32296,6 +32296,69 @@
         ]
       }
     },
+    "/api/v1/webhooks/{webhook_id}/rotate": {
+      "post": {
+        "description": "Turn the signing secret (M6 L23a): the same reserved action as the creation, and the\nsame answer — the only other one that carries a secret, once.",
+        "operationId": "rotate_webhook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Rotate Webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
     "/api/v1/works": {
       "get": {
         "operationId": "list_works",
@@ -36099,6 +36162,10 @@
       "code": "wake.deferred",
       "status": 503
     },
+    "/api/v1/problems/webhook.dead": {
+      "code": "webhook.dead",
+      "status": 502
+    },
     "/api/v1/problems/webhook.event-types": {
       "code": "webhook.event_types",
       "status": 422
@@ -36139,7 +36206,7 @@
         "X-Shelfhold-Delivery": "identity of the delivery, the same at every retry: drop a second copy",
         "X-Shelfhold-Event": "the event type",
         "X-Shelfhold-Schema-Version": "the version of the shape of `data`",
-        "X-Shelfhold-Signature": "t=<unix seconds>,v1=<hex HMAC-SHA256 of '<t>.' followed by the exact body, keyed by the secret given once at registration>"
+        "X-Shelfhold-Signature": "t=<unix seconds>,v1=<hex HMAC-SHA256 of '<t>.' followed by the exact body, keyed by the secret given once at registration or rotation>; for 24 h after a rotation a second v1= made with the previous secret travels beside the new one: accept the delivery when any one v1 matches, comparing in constant time (the header is a list of key=value pairs, not a dictionary)"
       },
       "method": "POST",
       "retries": "8 attempts, the delay doubling from 30 s up to 6 h; a 2xx answer settles it; a redirection is not followed"
@@ -36448,6 +36515,17 @@
             "series_id",
             "edition_id",
             "unit_id"
+          ]
+        }
+      },
+      "webhook.dead": {
+        "current_version": 1,
+        "deprecated": {},
+        "fields": {
+          "1": [
+            "subscription_id",
+            "event_id",
+            "reason"
           ]
         }
       }

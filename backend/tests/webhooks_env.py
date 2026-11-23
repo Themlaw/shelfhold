@@ -57,13 +57,13 @@ class WebhookEnv:
     admin_id: str
     users: dict[str, str] = field(default_factory=dict)
 
-    def outbox(self) -> Outbox:
-        return Outbox(self.engine, self.clock, catalogue=self.catalogue)
+    def outbox(self, publisher: Any = None) -> Outbox:
+        return Outbox(self.engine, self.clock, catalogue=self.catalogue, publisher=publisher)
 
-    def deliverer(self, engine: Any = None) -> Deliverer:
+    def deliverer(self, engine: Any = None, publisher: Any = None) -> Deliverer:
         return Deliverer(
             engine or self.engine, self.vault, self.clock, self.resolver,
-            transport=self.recorder.transport, catalogue=self.catalogue,
+            transport=self.recorder.transport, catalogue=self.catalogue, publisher=publisher,
         )  # fmt: skip
 
     def add_user(self, role: str, *, ceiling: int | None = None) -> str:
@@ -123,6 +123,14 @@ class WebhookEnv:
                 sa.text("SELECT * FROM webhook_outbox ORDER BY event_id, schema_version")
             )
             return [dict(r._mapping) for r in found]
+
+    def events(self, event_type: str) -> list[dict[str, Any]]:
+        with self.engine.connect() as connection:
+            found = connection.execute(
+                sa.text("SELECT type, payload FROM event WHERE type = :t ORDER BY id"),
+                {"t": event_type},
+            )
+            return [{"type": r.type, "payload": json.loads(r.payload)} for r in found]
 
     def bodies(self) -> list[dict[str, Any]]:
         return [json.loads(r.content) for r in self.recorder.requests]

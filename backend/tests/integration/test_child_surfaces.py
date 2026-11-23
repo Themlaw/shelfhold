@@ -436,6 +436,7 @@ CLOSED = (
     "POST /api/v1/webhooks",
     "GET /api/v1/webhooks/{webhook_id}",
     "DELETE /api/v1/webhooks/{webhook_id}",
+    "POST /api/v1/webhooks/{webhook_id}/rotate",  # M6 L23a: the secret's rotation, reserved
     "GET /metrics",  # M4 L25: a key of scope `metrics` alone
     "GET /api/v1/status",
     "POST /api/v1/store/reinit",

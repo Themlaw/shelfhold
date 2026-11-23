@@ -142,5 +142,14 @@ _EXPOSED = (
 )  # fmt: skip
 
 WEBHOOK_EVENTS: Final = Catalogue(
-    EventSpec(type=name, current=1, render={1: pick(*_FIELDS)}) for name in _EXPOSED
+    [
+        *(EventSpec(type=name, current=1, render={1: pick(*_FIELDS)}) for name in _EXPOSED),
+        # M6 L23a: a delivery that was given up. A new type, not a new shape: the first version,
+        # no deprecation window (nothing that a receiver already parses changes).
+        EventSpec(
+            type="webhook.dead",
+            current=1,
+            render={1: pick("subscription_id", "event_id", "reason")},
+        ),
+    ]
 )

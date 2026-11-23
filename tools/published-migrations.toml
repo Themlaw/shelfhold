@@ -359,3 +359,8 @@ since = "1.2"
 file = "0108_rendition_kepub.py"
 sha256 = "dff808b7c45e82f44660d702da983f26e9202c3c6b933f2074f181341d23eb0e"
 since = "1.2"
+
+[[migration]]
+file = "0114_webhook_rotation.py"
+sha256 = "2ede6c3e7aea9efd9af795fcee03e9e44b9da6876332f8b462500086ec9ddf09"
+since = "1.3"
