@@ -8,7 +8,17 @@ from typing import Any
 
 import pytest
 from pydantic import BaseModel, ValidationError
-from shelfhold_sdk import api_call, connected, export_target, fetcher, fsops, models, refs, source
+from shelfhold_sdk import (
+    api_call,
+    connected,
+    export_target,
+    fetcher,
+    fsops,
+    models,
+    refs,
+    source,
+    tracker,
+)
 from shelfhold_sdk.age import AgeRating
 
 OPAQUE = "opaque-handle"
@@ -169,13 +179,27 @@ def _samples() -> dict[type[BaseModel], BaseModel]:
         export_target.NamingConstraints(
             max_segment_bytes=255, max_path_bytes=4096, forbidden="/\\", case_insensitive=False
         ),
+        # M6 L13 (EF-INT-010): the Tracker contract — a link, a progress, the hint of a pull
+        tracker.TrackerManifest(
+            key="sample-tracker",
+            kind=models.PluginKind.TRACKER,
+            version="1.0.0",
+            api=models.API_VERSION,
+            name="Sample tracker",
+            auth=models.AuthApiKey(location="header", name="Authorization"),
+        ),
+        tracker.TrackerRef(remote_id="acct-1", opaque={"page": 12}),
+        tracker.TrackProgress(
+            fraction=0.5, at=datetime(2026, 1, 2, tzinfo=UTC), opaque={"unit": "sample:ch-1"}
+        ),
+        tracker.TrackerHint(fraction=0.25, at=datetime(2026, 1, 2, tzinfo=UTC)),
     ]
     return {type(m): m for m in samples}
 
 
 def _exported_models() -> list[type[BaseModel]]:
     found: list[type[BaseModel]] = []
-    for module in (models, refs, source, connected, export_target, fetcher, api_call):
+    for module in (models, refs, source, connected, export_target, fetcher, api_call, tracker):
         for _, cls in inspect.getmembers(module, inspect.isclass):
             if (
                 issubclass(cls, BaseModel)

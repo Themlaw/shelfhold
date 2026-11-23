@@ -109,6 +109,15 @@ OWN = (
     "POST /api/v1/requests",
     "GET /api/v1/requests/{request_id}",
     "POST /api/v1/requests/{request_id}/cancel",
+    # M6 L13 (EF-INT-010): the trackers of the caller's own profile, never catalogue data; a
+    # child reaches her own — refused until the admin allowed one, which is the CLOSED route's
+    # business (`test_l13_trackers.py`)
+    "GET /api/v1/profiles/{user_id}/trackers",
+    "PUT /api/v1/profiles/{user_id}/trackers/{plugin_key}",
+    "DELETE /api/v1/profiles/{user_id}/trackers/{plugin_key}",
+    "PUT /api/v1/profiles/{user_id}/trackers/{plugin_key}/push",
+    "POST /api/v1/profiles/{user_id}/trackers/{plugin_key}/progress",
+    "POST /api/v1/profiles/{user_id}/trackers/{plugin_key}/pull",
 )
 # DEVICE (M4 L46): behind a device token and nothing else, the credential of an e-reader. A session,
 # a child's or an adult's, and an API key are refused (401); the token of a child reads as that
@@ -490,6 +499,9 @@ CLOSED = (
     "GET /api/v1/admin/sessions",  # M3 L07: every profile's sessions are the admin's
     "DELETE /api/v1/admin/sessions/{session_id}",
     "GET /api/v1/admin/recovery-kit",
+    # M6 L13 (EF-INT-010): the admin's word that one tracker may be linked by one child profile;
+    # refused to a child and to a key of hers (`test_l13_trackers.py`)
+    "PUT /api/v1/profiles/{user_id}/trackers/{plugin_key}/allowance",
 )
 
 # The one route whose body is read before its guard answers: it is given a valid one, so that the
