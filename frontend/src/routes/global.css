@@ -36,7 +36,7 @@ h6:not(:first-child) {
 }
 
 /* Form screen styles: centered layout with readable width, only for form pages */
-.form-screen main {
+main.form-screen {
   max-width: 44rem;
   margin: 0 auto;
   padding: 1.5rem 1rem;
