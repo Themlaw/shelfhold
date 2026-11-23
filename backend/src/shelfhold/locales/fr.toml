@@ -428,6 +428,13 @@ koreader_reset_line = "Le chapitre {unit_id} a été remplacé au même emplacem
 rights_may_be_protected = "L'Édition {edition_id} peut encore être protégée dans le pays de l'instance : libre de droits aux États-Unis ne veut pas dire libre de droits partout. Indication seulement : elle n'empêche rien."
 rights_translation_may_be_protected = "La traduction de l'Édition {edition_id} peut encore être protégée dans le pays de l'instance (droits propres du traducteur). Indication seulement : elle n'empêche rien."
 identity_header_stripped = "des requêtes portent l'en-tête d'identité « {header} », retiré et jamais cru (forward-auth non configuré ou proxy hors des CIDR de confiance). Retirez-le au niveau du proxy ou du tunnel, ou configurez le forward-auth (M3)."
+cache_kind_thumbnails = "vignettes de couverture"
+cache_kind_renditions = "dérivés de lecture (KEPUB compris)"
+cache_kind_web_responses = "cache HTTP"
+cache_kind_metadata = "réponses de métadonnées"
+cache_line = "Cache {cache} : {entries} entrées, {used} octets sur un quota de {quota} — dépassé : {over}."
+cache_entries_line = "Cache {cache} : {entries} entrées (quota : {quota} octets)."
+cache_rows_line = "Cache {cache} : {entries} entrées sur un quota de {quota} — dépassé : {over}."
 
 [ops]
 refused = "Refusé ({code}) : {detail}"

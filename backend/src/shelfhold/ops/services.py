@@ -51,6 +51,7 @@ from shelfhold.infrastructure.schema import catalog, export, platform
 from shelfhold.infrastructure.stable_hash import FileChangedError
 from shelfhold.jobs.control import QueueControl
 from shelfhold.jobs.window import DEFAULT_WINDOW, MaintenanceWindow
+from shelfhold.library.public import CachePolicy, cache_state
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.assembly import VolumeAssemblyOps
 from shelfhold.ops.attach import AttachOps
@@ -153,6 +154,7 @@ class StatusReport:
     kept_in_service: list[dict[str, object]] = field(default_factory=list)
     wal_pending: list[dict[str, object]] = field(default_factory=list)
     koreader_resets: list[dict[str, object]] = field(default_factory=list)  # EF-EXP-016, D21
+    caches: list[dict[str, object]] = field(default_factory=list)  # EF-BIB-018, M6 L12
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -170,6 +172,7 @@ class StatusReport:
             "kept_in_service": self.kept_in_service,
             "wal_pending": self.wal_pending,
             "koreader_resets": self.koreader_resets,
+            "caches": self.caches,
         }
 
 
@@ -255,6 +258,7 @@ class OpsServices:
         destination_accounts: DestinationAccounts | None = None,
         teardown: DetachOps | None = None,
         window: MaintenanceWindow | None = None,
+        cache_policy: CachePolicy | None = None,
     ) -> None:
         self._window = window or DEFAULT_WINDOW
         self._engine = engine
@@ -304,6 +308,7 @@ class OpsServices:
         self._komga_accounts = komga_accounts
         self._destination_accounts = destination_accounts
         self._teardown = teardown
+        self._cache_policy = cache_policy
 
     @property
     def _fsops(self) -> Fsops | None:
@@ -351,6 +356,7 @@ class OpsServices:
                 jurisdiction_report(connection), rights_report(connection, now.date()),
                 kept_in_service_report(connection), wal_pending_report(connection),
                 koreader_reset_report(connection, now - KOREADER_RESET_WINDOW),
+                [] if self._cache_policy is None else cache_state(connection, self._cache_policy),
             )  # fmt: skip
 
     def restored_behind(self) -> bool:

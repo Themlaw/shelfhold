@@ -130,6 +130,51 @@ def _remove_tree_at(parent: int, name: str) -> None:
     os.rmdir(name, dir_fd=parent)
 
 
+def _unlink_cache_file(data_dir: Path, rel: str) -> bool:
+    """Remove one file of the derived caches under `/data` (EF-BIB-018): the eraser of the
+    retention sweep, and nothing else — `cache_quotas.erase_cache_path` checks its closed
+    allowlist first and is its only caller. Returns whether something went; a path that is not
+    there any more answers False (nothing to erase, not a refusal: the row that names it goes).
+
+    A regular file or a link only, never a folder — not even as a tree, unlike
+    `erase_data_path` above: what the sweep takes is one file it made itself. Every step of the
+    walk is opened with `O_NOFOLLOW` (a link on the way is refused, not followed) and must sit
+    on the same device as `/data` itself: a mount point inside the path — or at its end — is
+    refused (`ValueError`), so the eraser never crosses into another volume. An erasure that
+    fails (`OSError`) is the caller's to log and skip."""
+    parts = rel.split("/")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    fds = [os.open(data_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)]
+    try:
+        device = os.fstat(fds[0]).st_dev
+        for part in parts[:-1]:  # dirfd walk, O_NOFOLLOW: a swap for a link cannot redirect it
+            try:
+                fds.append(os.open(part, flags, dir_fd=fds[-1]))
+            except FileNotFoundError:
+                return False  # a folder of the way is gone: nothing to erase, not a refusal
+            except OSError as error:  # ELOOP / ENOTDIR: a link or a file on the way
+                raise ValueError(f"{part!r} on the way to {rel!r} is not a plain folder") from error
+            if os.fstat(fds[-1]).st_dev != device:
+                raise ValueError(f"{rel!r} crosses a mount point at {part!r}")
+        parent, name = fds[-1], parts[-1]
+        try:
+            found = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            return False
+        if found.st_dev != device:
+            raise ValueError(f"{rel!r} sits on another volume than /data")
+        if not (stat.S_ISREG(found.st_mode) or stat.S_ISLNK(found.st_mode)):
+            raise ValueError(f"{rel!r} is not a file: a folder is never removed as a tree")
+        try:
+            os.unlink(name, dir_fd=parent)  # a link at the end is removed as a link
+        except FileNotFoundError:
+            return False  # gone between the look and the take: nothing to erase
+        return True
+    finally:
+        for fd in fds:
+            os.close(fd)
+
+
 class DataFolder:
     """A folder of /data held open by its descriptor: what is read through it is read *there*,
     whatever is swapped for the path afterwards (no check-then-open window)."""
@@ -160,6 +205,13 @@ class DataFolder:
         except OSError:
             return False
 
+    def touch(self, name: str, *, at: float | None = None) -> None:
+        """Set the access and modification times of `name` (`at`, or now when None): the last
+        access of a cache file, its LRU key (EF-BIB-018). A plain name only, never a link."""
+        if not name or "/" in name or name in (".", ".."):
+            raise ValueError(f"not a plain name: {name!r}")
+        os.utime(name, (at, at) if at is not None else None, dir_fd=self._fd)
+
     def read(self, name: str, limit: int) -> bytes:
         """The regular file `name` of the folder, never through a link, at most `limit` bytes.
         `ValueError` for a link, a special file or a name that is not plain."""
@@ -180,6 +232,13 @@ class DataFolder:
                 return stream.read(limit)
         finally:
             os.close(fd)
+
+
+def touch_data_file(folder: DataFolder, name: str, *, at: float) -> None:
+    """Record the access of one cache file of an open folder (`at`): the last access is the LRU
+    key of the derived caches (EF-BIB-018). The write of the date goes through the `/data`
+    writer — never around it — for the reader that holds the folder open."""
+    folder.touch(name, at=at)
 
 
 @contextmanager

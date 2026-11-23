@@ -133,6 +133,10 @@ _AS_IS = (
     "timezone", "retention_events_days", "retention_audit_days", "backup_retention",
     "stream_max_per_profile", "adopt_probe_workers",
     "backup_stale_hours", "fetcher_cache", "comicvine_enabled", "googlebooks_daily_budget",
+    "cache_thumbnails_quota_mib", "cache_thumbnails_retention_days",
+    "cache_renditions_quota_mib", "cache_renditions_retention_days",
+    "cache_http_quota_mib", "cache_http_retention_days", "cache_metadata_rows",
+    "cache_metadata_quota_mib", "cache_plugin_quota_mib",
 )  # fmt: skip
 _PRESENCE = (
     "public_url", "content_origin", "api_token", "secret_key_file", "frontend_dir", "source_url",

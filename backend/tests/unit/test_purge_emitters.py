@@ -28,10 +28,16 @@ PURGE_MODULES = {
 def test_every_unlink_emitter_is_reserved_action() -> None:
     """A deleting function of the purge is classed `purge.now`: a reserved action that deletes
     permanently, so the truth table refuses it to any key and to a stale session. And the purge
-    checks that rule itself, before it records anything."""
+    checks that rule itself, before it records anything. The one other site of those modules is
+    the eraser of the cache sweep (M6 L12): it lives in the `/data` writer, behind the closed
+    allowlist of `cache_quotas`, and is classed under its own system emitter."""
     purge_sites = {s: k for s, k in DELETION_SITES.items() if s.split("::")[0] in PURGE_MODULES}
     assert purge_sites, "the purge deletes through no classed site"
+    cache_sweep_eraser = "shelfhold/infrastructure/volumes.py::_unlink_cache_file"
     for site, kind in purge_sites.items():
+        if site == cache_sweep_eraser:
+            assert kind == "cache_retention_purge", f"{site} is classed {kind!r}"
+            continue
         assert kind == "purge.now", f"{site} is classed {kind!r}"
     assert RESERVED_ACTIONS["purge.now"].effects == frozenset({Effect.DELETES_PERMANENTLY})
     tree = ast.parse((SRC / "export/application/purge.py").read_text(encoding="utf-8"))
