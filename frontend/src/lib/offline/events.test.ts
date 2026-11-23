@@ -14,17 +14,17 @@ const BOB = '01JBOB0000000000000000000B';
 /** Two ports of one channel, as two tabs of one browser: a message posted by one is delivered to
  * the others only, as the browser does. */
 function tabs(): [OfflineChannel, OfflineChannel] {
-  const ports: OfflineChannel[] = [];
+  const slots: { hears: ((message: string) => void) | null }[] = [];
   const port = (): OfflineChannel => {
-    const own: OfflineChannel = {
-      onmessage: null,
+    const slot: { hears: ((message: string) => void) | null } = { hears: null };
+    slots.push(slot);
+    return {
+      hear: (listener) => void (slot.hears = listener),
       close: () => undefined,
       postMessage: (message) => {
-        for (const other of ports) if (other !== own) other.onmessage?.({ data: message });
+        for (const other of slots) if (other !== slot) other.hears?.(message);
       }
     };
-    ports.push(own);
-    return own;
   };
   return [port(), port()];
 }

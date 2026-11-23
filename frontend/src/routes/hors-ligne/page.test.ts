@@ -2,7 +2,7 @@
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createOfflineStore, type OfflineStore } from '#lib/offline/store.ts';
+import { createOfflineStore, type CopyMeta, type OfflineStore } from '#lib/offline/store.ts';
 import { memoryEnv } from '#lib/offline/testing.ts';
 import Page from './+page.svelte';
 
@@ -18,7 +18,13 @@ vi.mock('#lib/offline/runtime.ts', () => ({
 
 const ALICE = '01JALICE00000000000000000A';
 const BOB = '01JBOB0000000000000000000B';
-const COPY = { carrierType: 'content', carrierId: 'C1', workId: 'W1', title: '<b>Tale</b>', publication: {} as never };
+const COPY: Omit<CopyMeta, 'keptAt'> = {
+  carrierType: 'content',
+  carrierId: 'C1',
+  workId: 'W1',
+  title: '<b>Tale</b>',
+  publication: {} as never
+};
 
 beforeEach(() => {
   held.store = createOfflineStore(memoryEnv());
