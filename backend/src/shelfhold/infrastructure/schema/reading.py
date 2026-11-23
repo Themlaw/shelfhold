@@ -426,10 +426,14 @@ kobo_sync_point = sa.Table(
     sa.Column("synced_at", UtcDateTime(), nullable=False),
     sa.Column("books", sa.JSON(), nullable=False, server_default="{}"),
     sa.Column("tags", sa.JSON(), nullable=False, server_default="{}"),
+    # the sync in flight: what its first page froze (the walk, the deletions, the tags, the
+    # states, the instant of page 1) — the pages serve from it, the point is written from it
+    sa.Column("in_progress", sa.JSON(), nullable=False, server_default="{}"),
     now_column(),
     ulid_check("id"),
     ulid_check("device_id"),
     json_shape_check("books", "object"),
     json_shape_check("tags", "object"),
+    json_shape_check("in_progress", "object"),
     sa.UniqueConstraint("device_id"),
 )

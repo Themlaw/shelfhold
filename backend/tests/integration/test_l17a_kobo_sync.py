@@ -6,7 +6,8 @@ our own server and nothing of the manufacturer's, `POST v1/auth/device` is a dum
 and stores nothing, `GET v1/library/sync` answers entitlements, tags and reading states page by
 page (`x-kobo-synctoken` to continue, `X-Kobo-sync: continue` while a page follows), and every
 other route under the token has one generic answer (the store proxy is off: no request is relayed
-to the manufacturer's servers, and none leaves).
+to the manufacturer's servers, and none leaves) — except the download and the cover the metadata
+names: the bytes are L17b's, and they answer 404 until that lot lands.
 
 The credential is the device token of the Kobo, in the path: one token per device, of kind
 `kobo` (a token of another kind opens nothing here), never a session, never a key, never a header.
@@ -46,9 +47,8 @@ SYNC = "/v1/library/sync"
 INIT = "/v1/initialization"
 AUTH_DEVICE = "/v1/auth/device"
 RATED = datetime(2026, 11, 1, 10, 0, tzinfo=UTC)
-# the editions of the seed a child with a ceiling of 10 sees, and the Work each one carries
+# the editions of the seed a child with a ceiling of 10 sees: what her sync serves, by identifier
 KID_KEYS = ("ok", "ok_second", "adult_shelf", "mixed_rated")
-KID_WORKS = ("ok", "ok", "adult_shelf", "mixed")
 
 
 @dataclass
@@ -292,6 +292,13 @@ def test_kobo_initialization_and_dummy_auth_device(world: World) -> None:
         assert stub.status_code == 200, (method, stub.text)
         assert stub.json() == {}
 
+    # the bytes of a book are L17b's: the routes the metadata names answer 404, not an empty 200
+    # the device would take for a file it holds
+    for path in ("/v1/download/anything", "/v1/covers/anything"):
+        missing = mum.get(path)
+        assert missing.status_code == 404, (path, missing.text)
+        assert missing.json()["code"] == "not_found"
+
     # the credential is the path segment: nothing else opens the surface
     assert world.env.login().status_code == 200  # the admin's own session, on this client
     key = auth_of(world.env).create_api_key(name="k", scope="admin").value
@@ -320,6 +327,17 @@ def _device_count(world: World) -> int:
         return int(
             connection.execute(sa.select(sa.func.count()).select_from(identity.device)).scalar_one()
         )
+
+
+def test_kobo_expects_tls(world: World) -> None:
+    """Plain HTTP is refused before the segment is looked at: in clear the credential would
+    travel, and replay, as it is. A refused request counts nothing against the reader."""
+    plain = world.env.other_client("10.0.0.60", base_url="http://testserver")
+    refused = plain.get(f"{world.kid.base}{INIT}")
+    assert refused.status_code == 403
+    assert refused.json()["code"] == "device_tls_required"
+    secure = world.env.other_client("10.0.0.60")  # nothing was counted against the reader
+    assert secure.get(f"{world.kid.base}{INIT}").status_code == 200
 
 
 # -- the sync: entitlements, tags, continuation token --------------------------------------------
@@ -435,7 +453,8 @@ def test_kobo_per_device_token_in_path(world: World) -> None:
 def test_kobo_sync_respects_child_visibility(world: World) -> None:
     kid = world.kid
     pages, done = sync_all(kid)
-    assert titles_of(books_of(pages)) == sorted(world.seed.title_of(k) for k in KID_WORKS)
+    # what her sync serves, by the identifier the protocol speaks — not only the titles
+    assert set(books_of(pages)) == {entitlement_of(world.seed.editions[k]) for k in KID_KEYS}
     for page in pages:
         world.clean(page.text)
     # the shelf of the adults is not nameable to her, the family shelf is closed to her: no tag
@@ -490,4 +509,20 @@ def test_kobo_token_never_logged(world: World) -> None:
     with capture_logs() as logs:
         response = world.mum.get(SYNC)
         assert response.status_code == 200
+    assert token not in str(logs)
+
+
+def test_kobo_token_is_not_logged_on_a_refusal_either(world: World) -> None:
+    """A refusal logs its lines without the segment: the token is a credential, and a wrong
+    guess must not travel in the logs any more than a good one."""
+    stranger = "a" * 46  # a well-shaped segment nobody holds
+    with capture_logs() as logs:
+        response = world.mum.client.get(f"/kobo/{stranger}{INIT}")
+        assert response.status_code == 401
+    assert stranger not in str(logs)
+    # the real token, on a refusal of our own making (a revoked token), is not there either
+    token = world.mum.token
+    auth_of(world.env).revoke_device_token(world.mum.public_id)
+    with capture_logs() as logs:
+        assert world.mum.get(INIT).status_code == 401
     assert token not in str(logs)

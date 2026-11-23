@@ -4400,6 +4400,7 @@
   "job_kind": [],
   "kind": [
    "adopted_missing",
+   "delta",
    "duplicate_file",
    "entry",
    "header",

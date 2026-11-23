@@ -8,6 +8,9 @@ device is already paired, its token is the path segment) and the library sync, p
 (`x-kobo-synctoken` to continue, `X-Kobo-sync: continue` while a page follows). Every other
 route under the token has one generic answer, `{}`, the same for every method: the device asks,
 the answer says "nothing to do", and no undocumented route becomes an error the device stops on.
+The download and the cover of a book are the exception: the metadata names them, the bytes are
+L17b's, and they answer 404 until that lot lands — an empty 200 would tell the device it holds
+a file it has not.
 
 Every route takes `require_device_kobo`: the credential is the path segment, TLS is required, a
 wrong guess is counted and limited, and the profile — the scope of every query — is the token's,
@@ -27,6 +30,7 @@ from fastapi.responses import JSONResponse
 from shelfhold.identity.public import Principal
 from shelfhold.interfaces.http_api.device_auth import require_device_kobo
 from shelfhold.interfaces.http_api.path_safety import mount_prefix
+from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.reading.public import KoboSync
 
 __all__ = ["build_kobo_router"]
@@ -83,10 +87,13 @@ def build_kobo_router(service: Callable[[], KoboSync]) -> APIRouter:
     )
     def stub(response: Response, token: str, rest: str, _principal: Device) -> dict[str, Any]:
         """Every other route under the token: one generic answer, the same for every method —
-        the bytes of a book are L17b's, and no undocumented route becomes an error the device
-        stops its sync on."""
-        del rest  # the route exists to answer, not to read what it was asked for
+        no undocumented route becomes an error the device stops its sync on. The download and
+        the cover are the exception: the metadata names them, the bytes are L17b's, and an
+        empty 200 would tell the device it holds a file it has not — they answer 404 until
+        the lot that serves them lands."""
         response.headers["Cache-Control"] = _NO_STORE
+        if rest.startswith(("v1/download/", "v1/covers/")):
+            raise ProblemError("not_found")
         return {}
 
     return router

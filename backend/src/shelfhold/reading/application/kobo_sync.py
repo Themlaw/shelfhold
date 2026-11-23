@@ -9,10 +9,20 @@ from it (`entitlement_of`: a UUID, stable, that says nothing of the database), a
 
 The scope is the profile of the device token, read from the database at each request
 (`reader_scope`), and the one filter of the catalogue is a condition of every query: a page, a
-tag and a count are made of what the profile may see, and nothing is filtered afterwards. The
-scope is **re-verified at each page**: a ceiling lowered, a shelf closed or a book hidden between
-two pages of one sync empties the next page, and the sync point written at the end holds only
-what the last page could see.
+tag and a count are made of what the profile may see, and nothing is filtered afterwards.
+
+The pages of one sync are separate requests, and the catalogue changes under them: a ceiling
+lowered, a shelf closed or a book hidden between two pages must not change what one sync says.
+The first page of a sync therefore **freezes one snapshot per device** (the `in_progress`
+document of `kobo_sync_point`, dated of that instant): the walk it serves (the books as they
+were, each marked new or changed), the deletions it will announce, the tags, the reading states.
+The pages serve from that walk — re-verifying the scope at each page, so a book hidden mid-sync
+is consumed, not served — and the sync point written at the completion holds **what the device
+was given**, not what the last page could see: what it was served and may no longer be seen is
+announced as `DeletedEntitlements` at the last page and stays in the point (the next delta says
+it again), and what became visible on the way was never served, is not in the point, and the
+next delta announces it. The point is dated of the instant of the first page: whatever happened
+on the way is the next delta's to say.
 
 What the device already has is the **sync point**, one row per device (`kobo_sync_point`): the
 entitlements and the tags of its last completed sync, each book with the fingerprint of what may
@@ -34,7 +44,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Final
 
@@ -74,8 +84,8 @@ def _fingerprint(title: str, lang: str, shelf_id: str | None) -> str:
 
 @dataclass(frozen=True)
 class Cursor:
-    """Where a sync stopped: the last Edition served (`after`, None when the sync completed) and
-    the sync point a delta is against (`version`, None for a full enumeration)."""
+    """Where a sync stopped: the last Edition consumed (`after`, None when the sync completed)
+    and the instant of the first page the token belongs to (`version`)."""
 
     after: str | None
     version: int | None
@@ -119,7 +129,8 @@ class SyncPage:
 
 @dataclass(frozen=True)
 class _Book:
-    """One Edition as the sync sees it: what the device is told, and what it is filed on."""
+    """One Edition as the sync sees it: what the device is told, what it is filed on, and whether
+    the device holds it (`kind`: "new" it does not, "changed" its metadata moved)."""
 
     edition_id: str
     title: str
@@ -127,6 +138,7 @@ class _Book:
     shelf_id: str | None
     shelf_name: str | None
     created_at: datetime
+    kind: str = "new"
 
     @property
     def entitlement_id(self) -> str:
@@ -138,19 +150,137 @@ class _Book:
 
 
 @dataclass(frozen=True)
-class _Tag:
-    tag_id: str
-    name: str
-    items: list[str]
-
-
-@dataclass(frozen=True)
 class _Point:
     """The state a device holds, as its last completed sync wrote it."""
 
     synced_at: datetime
     books: dict[str, dict[str, str]]  # entitlement id -> edition, title, fingerprint
     tags: dict[str, dict[str, Any]]  # tag id -> name, items
+
+
+@dataclass(frozen=True)
+class _Flight:
+    """The sync now in flight, frozen at its first page and dated of that instant: what the
+    pages serve from, and what the completion writes the point from. The catalogue changes
+    under a sync; the answer of one sync does not."""
+
+    t0: datetime
+    kind: str  # "full": everything as new; "delta": the difference against the point
+    walk: list[_Book]  # the books to serve, in identifier order, each marked new or changed
+    served: list[str]  # the Editions the device was given so far (served, never the skipped)
+    gone: list[str]  # the entitlements the point held and the profile may no longer see
+    tags: dict[str, dict[str, Any]]  # "new", "changed", "deleted": tag id -> name, items
+    states: list[dict[str, Any]]  # the reading positions, as the first page read them
+
+    @property
+    def version(self) -> int:
+        return int(self.t0.timestamp())
+
+
+def _book_document(book: _Book) -> dict[str, Any]:
+    return {
+        "edition": book.edition_id,
+        "title": book.title,
+        "lang": book.lang,
+        "shelf": book.shelf_id,
+        "created": book.created_at.isoformat(),
+        "kind": book.kind,
+    }
+
+
+def _book_of(document: Any) -> _Book | None:
+    if not isinstance(document, dict):
+        return None
+    edition, title = document.get("edition"), document.get("title")
+    lang, shelf = document.get("lang"), document.get("shelf")
+    created, kind = document.get("created"), document.get("kind")
+    if not (
+        isinstance(edition, str)
+        and edition
+        and isinstance(title, str)
+        and title
+        and isinstance(lang, str)
+        and lang
+        and isinstance(created, str)
+        and kind in ("new", "changed")
+    ):
+        return None
+    if shelf is not None and not isinstance(shelf, str):
+        return None
+    try:
+        at = datetime.fromisoformat(created)
+    except ValueError:
+        return None
+    return _Book(edition, title, lang, shelf, None, at, kind)
+
+
+def _str_list(value: Any) -> list[str] | None:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return None
+    return list(value)
+
+
+def _tags_of_document(value: Any) -> dict[str, dict[str, Any]] | None:
+    if not isinstance(value, dict):
+        return None
+    for tag in value.values():
+        if not isinstance(tag, dict) or not isinstance(tag.get("name"), str):
+            return None
+        if _str_list(tag.get("items")) is None:
+            return None
+    return dict(value)
+
+
+def _flight_document(flight: _Flight) -> dict[str, Any]:
+    return {
+        "t0": flight.t0.isoformat(),
+        "kind": flight.kind,
+        "walk": [_book_document(book) for book in flight.walk],
+        "served": flight.served,
+        "gone": flight.gone,
+        "tags": flight.tags,
+        "states": flight.states,
+    }
+
+
+def _flight_of_document(document: Any) -> _Flight | None:
+    """The flight a first page froze, or None: a document we cannot read (nobody's, another
+    server's, a shape we no longer write) starts a full sync again — the device is never
+    stuck with an answer it cannot read."""
+    if not isinstance(document, dict) or document.get("kind") not in ("full", "delta"):
+        return None
+    t0 = document.get("t0")
+    if not isinstance(t0, str):
+        return None
+    try:
+        at = datetime.fromisoformat(t0)
+    except ValueError:
+        return None
+    walk_raw = document.get("walk")
+    if not isinstance(walk_raw, list):
+        return None
+    walk: list[_Book] = []
+    for entry in walk_raw:
+        book = _book_of(entry)
+        if book is None:
+            return None
+        walk.append(book)
+    served, gone = _str_list(document.get("served")), _str_list(document.get("gone"))
+    if served is None or gone is None:
+        return None
+    tags_raw = document.get("tags")
+    if not isinstance(tags_raw, dict):
+        return None
+    tags: dict[str, dict[str, Any]] = {}
+    for name in ("new", "changed", "deleted"):
+        part = _tags_of_document(tags_raw.get(name))
+        if part is None:
+            return None
+        tags[name] = part
+    states = document.get("states")
+    if not isinstance(states, list) or not all(isinstance(state, dict) for state in states):
+        return None
+    return _Flight(at, str(document["kind"]), walk, served, gone, tags, list(states))
 
 
 class KoboSync:
@@ -180,43 +310,292 @@ class KoboSync:
         base: str,
         continuation: object,
     ) -> SyncPage:
-        """One page of the sync of this device. The scope is read at this request and re-read at
-        each page; the sync point is written only when a sync completes."""
+        """One page of the sync of this device. The first page of a sync freezes what its pages
+        serve from; the scope is re-verified at each page; the sync point is written only when a
+        sync completes, and holds what the device was given."""
         cursor = _decode(continuation)
         with self._engine.connect() as connection:
             device_id = self._device_of(connection, token_id)
             scope = reader_scope(connection, principal.user_id)
+            if device_id is None:
+                # nobody's token (the door vouches for a device): pages without a state
+                after = cursor.after if cursor is not None and cursor.version is None else None
+                return self._stateless_page(
+                    connection, principal=principal, scope=scope, base=base, after=after
+                )
             point = self._point_of(connection, device_id)
-            version = int(point.synced_at.timestamp()) if point is not None else None
+            if cursor is not None and cursor.after is not None:
+                # a page of the sync in flight: the walk its first page froze
+                flight = self._flight_of(connection, device_id)
+                if flight is not None and cursor.version == flight.version:
+                    return self._page(
+                        connection,
+                        scope=scope,
+                        base=base,
+                        device_id=device_id,
+                        flight=flight,
+                        after=cursor.after,
+                    )
+                # the flight is gone, or not the one the token names: the device starts over
+                return self._begin_full(
+                    connection, principal=principal, scope=scope, base=base, device_id=device_id
+                )
             if (
-                point is not None  # a delta needs a state to diff against
+                point is not None
                 and cursor is not None
-                and cursor.version is not None
-                and version == cursor.version
+                and cursor.version == int(point.synced_at.timestamp())
             ):
-                return self._delta_page(
-                    connection, principal=principal, scope=scope, point=point,
-                    cursor=cursor, base=base, device_id=device_id,
-                )  # fmt: skip
-            # a full enumeration: no token, a page of one, or a delta whose sync point is gone
-            after = cursor.after if cursor is not None and cursor.version is None else None
-            return self._full_page(
-                connection, principal=principal, scope=scope, base=base,
-                device_id=device_id, after=after,
-            )  # fmt: skip
+                return self._begin_delta(
+                    connection,
+                    principal=principal,
+                    scope=scope,
+                    base=base,
+                    device_id=device_id,
+                    point=point,
+                )
+            # a full enumeration: no token, or one whose sync point is gone
+            return self._begin_full(
+                connection, principal=principal, scope=scope, base=base, device_id=device_id
+            )
 
-    # -- a full enumeration: everything the profile may see, as new --------------------------------
+    # -- the first page of a sync: the snapshot is frozen here ------------------------------------
 
-    def _full_page(
+    def _begin_full(
         self,
         connection: Connection,
         *,
         principal: Principal,
         scope: ReaderScope,
         base: str,
-        device_id: str | None,
+        device_id: str,
+    ) -> SyncPage:
+        """The first page of a full enumeration: everything the profile may see, as new. The
+        walk, the tags and the reading states are frozen here and dated of now — the pages serve
+        from them, whatever the catalogue does on the way."""
+        t0 = self._now()
+        books = self._books_of(connection, scope)
+        tags = self._tags_of(connection, scope, books)
+        states = self._reading_states(
+            connection, principal.user_id, [book.edition_id for book in books], since=None
+        )
+        flight = _Flight(
+            t0=t0,
+            kind="full",
+            walk=books,
+            served=[],
+            gone=[],
+            tags={"new": tags, "changed": {}, "deleted": {}},
+            states=states,
+        )
+        self._save_flight(device_id, flight)
+        return self._page(
+            connection, scope=scope, base=base, device_id=device_id, flight=flight, after=None
+        )
+
+    def _begin_delta(
+        self,
+        connection: Connection,
+        *,
+        principal: Principal,
+        scope: ReaderScope,
+        base: str,
+        device_id: str,
+        point: _Point,
+    ) -> SyncPage:
+        """The first page of a delta: the difference between the point and the catalogue, frozen
+        here and dated of now. What the point held and the profile may no longer see is frozen as
+        gone; the states are read over everything the profile may see, since the point."""
+        t0 = self._now()
+        current = self._books_of(connection, scope)
+        current_tags = self._tags_of(connection, scope, current)
+        held = set(point.books)
+        walk: list[_Book] = []
+        for book in current:
+            if book.entitlement_id not in held:
+                walk.append(replace(book, kind="new"))
+            elif point.books[book.entitlement_id].get("fp") != book.fingerprint:
+                walk.append(replace(book, kind="changed"))
+        gone = sorted(e for e in point.books if e not in {b.entitlement_id for b in current})
+        new_tags = {t: doc for t, doc in current_tags.items() if t not in point.tags}
+        changed_tags = {
+            t: doc for t, doc in current_tags.items() if t in point.tags and point.tags[t] != doc
+        }
+        deleted_tags = {t: point.tags[t] for t in point.tags if t not in current_tags}
+        states = self._reading_states(
+            connection,
+            principal.user_id,
+            [book.edition_id for book in current],
+            since=point.synced_at,
+        )
+        flight = _Flight(
+            t0=t0,
+            kind="delta",
+            walk=walk,
+            served=[],
+            gone=gone,
+            tags={"new": new_tags, "changed": changed_tags, "deleted": deleted_tags},
+            states=states,
+        )
+        self._save_flight(device_id, flight)
+        return self._page(
+            connection, scope=scope, base=base, device_id=device_id, flight=flight, after=None
+        )
+
+    # -- the pages of the sync in flight -----------------------------------------------------------
+
+    def _page(
+        self,
+        connection: Connection,
+        *,
+        scope: ReaderScope,
+        base: str,
+        device_id: str,
+        flight: _Flight,
         after: str | None,
     ) -> SyncPage:
+        """One page of the sync in flight: the walk after the cursor, minus what the profile may
+        no longer see — the scope is re-verified here, book by book. A book the profile may no
+        longer see is consumed, not served: the cursor moves past it and no later page serves it."""
+        candidates = [book for book in flight.walk if after is None or book.edition_id > after]
+        visible = self._visible_ids_of(connection, scope)
+        served_page: list[_Book] = []
+        consumed, seen = after, 0
+        for book in candidates:
+            consumed, seen = book.edition_id, seen + 1
+            if book.edition_id in visible:
+                served_page.append(book)
+                if len(served_page) == PAGE:
+                    break
+        more = seen < len(candidates)
+        served_all = sorted(set(flight.served) | {book.edition_id for book in served_page})
+        first_page = after is None
+        delta = flight.kind == "delta"
+        result: dict[str, Any] = {
+            "NewEntitlements": [
+                self._entitlement(book, base) for book in served_page if book.kind == "new"
+            ],
+            "ChangedEntitlements": [],
+            "DeletedEntitlements": (
+                sorted(
+                    set(flight.gone) | {entitlement_of(e) for e in served_all if e not in visible}
+                )
+                if not more
+                else []
+            ),
+            "NewTagging": self._tagging(flight.tags["new"]) if first_page else [],
+            "ChangedTagging": self._tagging(flight.tags["changed"]) if first_page and delta else [],
+            "DeletedTagging": (
+                self._deleted_tagging(flight.tags["deleted"]) if first_page and delta else []
+            ),
+            "ChangedProductMetadata": [
+                {"Id": book.entitlement_id, "BookMetadata": self._metadata(book, base)}
+                for book in served_page
+                if book.kind == "changed"
+            ],
+            "ChangedReadingState": flight.states if first_page else [],
+        }
+        if more:
+            self._save_flight(device_id, replace(flight, served=served_all))
+            nxt = _encode(Cursor(consumed, flight.version))
+            return SyncPage({"SyncStateResult": result, "ContinuationToken": nxt}, nxt, True)
+        version = self._complete(connection, device_id=device_id, flight=flight, served=served_all)
+        done = _encode(Cursor(None, version))
+        return SyncPage({"SyncStateResult": result, "ContinuationToken": done}, done, False)
+
+    def _complete(
+        self, connection: Connection, *, device_id: str, flight: _Flight, served: list[str]
+    ) -> int:
+        """The last page: the point is written from what the device was given, dated of the
+        instant of the first page — whatever changed on the way is the next delta's to say. What
+        it was served and may no longer be seen stays in the point (the device holds it: the next
+        delta says it again); what it was never served is not in it (the next delta announces
+        it). Returns the version the completion token carries."""
+        by_edition = {book.edition_id: book for book in flight.walk}
+        books: dict[str, dict[str, str]] = {}
+        tags: dict[str, dict[str, Any]] = {}
+        if flight.kind == "delta":
+            # the point this delta is against has not moved while the flight ran
+            row = connection.execute(
+                sa.select(reading.kobo_sync_point.c.books, reading.kobo_sync_point.c.tags).where(
+                    reading.kobo_sync_point.c.device_id == device_id
+                )
+            ).first()
+            if row is not None:
+                gone = set(flight.gone)
+                old_books = row.books if isinstance(row.books, dict) else {}
+                old_tags = row.tags if isinstance(row.tags, dict) else {}
+                books = {e: doc for e, doc in old_books.items() if e not in gone}
+                deleted = set(flight.tags["deleted"])
+                tags = {t: doc for t, doc in old_tags.items() if t not in deleted}
+        for edition_id in served:
+            book = by_edition.get(edition_id)
+            if book is not None:
+                books[book.entitlement_id] = {
+                    "edition": book.edition_id,
+                    "title": book.title,
+                    "fp": book.fingerprint,
+                }
+        tags.update(flight.tags["new"])
+        tags.update(flight.tags["changed"])
+        with write_transaction(self._engine) as writer:
+            writer.execute(
+                sa.delete(reading.kobo_sync_point).where(
+                    reading.kobo_sync_point.c.device_id == device_id
+                )
+            )
+            writer.execute(
+                sa.insert(reading.kobo_sync_point).values(
+                    id=new_ulid(),
+                    device_id=device_id,
+                    synced_at=flight.t0,
+                    books=books,
+                    tags=tags,
+                    in_progress={},
+                )
+            )
+        return flight.version
+
+    def _save_flight(self, device_id: str, flight: _Flight) -> None:
+        """The flight, persisted at each page: a page the device asks again must find what it was
+        given. The point of a delta stays as it is while the flight runs — the completion reads
+        it to write the next one; a device with no row yet has an empty one, dated of the flight."""
+        document = _flight_document(flight)
+        with write_transaction(self._engine) as writer:
+            existing = writer.execute(
+                sa.select(reading.kobo_sync_point.c.id).where(
+                    reading.kobo_sync_point.c.device_id == device_id
+                )
+            ).scalar()
+            if existing is None:
+                writer.execute(
+                    sa.insert(reading.kobo_sync_point).values(
+                        id=new_ulid(),
+                        device_id=device_id,
+                        synced_at=flight.t0,
+                        books={},
+                        tags={},
+                        in_progress=document,
+                    )
+                )
+            else:
+                writer.execute(
+                    sa.update(reading.kobo_sync_point)
+                    .where(reading.kobo_sync_point.c.device_id == device_id)
+                    .values(in_progress=document)
+                )
+
+    def _stateless_page(
+        self,
+        connection: Connection,
+        *,
+        principal: Principal,
+        scope: ReaderScope,
+        base: str,
+        after: str | None,
+    ) -> SyncPage:
+        """A page for a token that is nobody's (the door vouches for a device; this is the
+        defensive case): no flight and no point — the pages follow the cursor and nothing is
+        written anywhere."""
         books = self._books_of(connection, scope, after=after, limit=PAGE + 1)
         more = len(books) > PAGE
         served = books[:PAGE]
@@ -233,109 +612,13 @@ class KoboSync:
             "DeletedTagging": [],
             "ChangedProductMetadata": [],
             "ChangedReadingState": self._reading_states(
-                connection, principal.user_id, [b.edition_id for b in served], since=None
+                connection, principal.user_id, [book.edition_id for book in served], since=None
             ),
         }
         if more:
-            next_after = books[PAGE - 1].edition_id
-            nxt = _encode(Cursor(next_after, None))
+            nxt = _encode(Cursor(books[PAGE - 1].edition_id, None))
             return SyncPage({"SyncStateResult": result, "ContinuationToken": nxt}, nxt, True)
-        # the last page: the device now holds what the profile may see, as of now
-        everything = self._books_of(connection, scope)
-        version = self._write_point(
-            device_id, everything, self._tags_of(connection, scope, everything)
-        )
-        done = _encode(Cursor(None, version))
-        return SyncPage({"SyncStateResult": result, "ContinuationToken": done}, done, False)
-
-    # -- a delta: what changed since the device was last seen --------------------------------------
-
-    def _delta_page(
-        self,
-        connection: Connection,
-        *,
-        principal: Principal,
-        scope: ReaderScope,
-        point: _Point,
-        cursor: Cursor,
-        base: str,
-        device_id: str | None,
-    ) -> SyncPage:
-        current = self._books_of(connection, scope)
-        current_tags = self._tags_of(connection, scope, current)
-        by_edition = {book.edition_id: book for book in current}
-        held = set(point.books)
-        arrived = frozenset(
-            book.edition_id
-            for book in current
-            if book.entitlement_id not in held  # the device does not hold it
-        )
-        retitled = frozenset(
-            book.edition_id
-            for book in current
-            if book.entitlement_id in held
-            and point.books[book.entitlement_id].get("fp") != book.fingerprint
-        )
-        gone = sorted(e for e in point.books if e not in {b.entitlement_id for b in current})
-        # the page serves the arrivals and the retitlings in one ordered walk, by cursor
-        walk = sorted(arrived | retitled)
-        after = cursor.after
-        remaining = [e for e in walk if after is None or e > after]
-        served, more = remaining[:PAGE], len(remaining) > PAGE
-        first_page = after is None
-        result: dict[str, Any] = {
-            "NewEntitlements": [
-                self._entitlement(by_edition[e], base) for e in served if e in arrived
-            ],
-            "ChangedEntitlements": [],
-            "DeletedEntitlements": gone if first_page else [],
-            "NewTagging": self._tagging(
-                {t: current_tags[t] for t in current_tags if t not in point.tags}
-            )
-            if first_page
-            else [],
-            "ChangedTagging": self._tagging(
-                {
-                    t: current_tags[t]
-                    for t in current_tags
-                    if t in point.tags
-                    and point.tags[t]
-                    != {"name": current_tags[t].name, "items": current_tags[t].items}
-                }
-            )
-            if first_page
-            else [],
-            "DeletedTagging": self._deleted_tagging(
-                {t: point.tags[t] for t in point.tags if t not in current_tags}
-            )
-            if first_page
-            else [],
-            "ChangedProductMetadata": [
-                {
-                    "Id": by_edition[e].entitlement_id,
-                    "BookMetadata": self._metadata(by_edition[e], base),
-                }
-                for e in served
-                if e in retitled
-            ],
-            # a position moves on a book nothing else changed about: the states of a delta are
-            # read over everything the profile may see, not over the walk of changed books
-            "ChangedReadingState": (
-                self._reading_states(
-                    connection,
-                    principal.user_id,
-                    [b.edition_id for b in current],
-                    since=point.synced_at,
-                )
-                if first_page
-                else []
-            ),
-        }
-        if more:
-            nxt = _encode(Cursor(served[-1], cursor.version))
-            return SyncPage({"SyncStateResult": result, "ContinuationToken": nxt}, nxt, True)
-        version = self._write_point(device_id, current, current_tags)
-        done = _encode(Cursor(None, version))
+        done = _encode(Cursor(None, int(self._now().timestamp())))
         return SyncPage({"SyncStateResult": result, "ContinuationToken": done}, done, False)
 
     # -- the pieces -------------------------------------------------------------------------------
@@ -367,20 +650,20 @@ class KoboSync:
             "DateAdded": book.created_at.isoformat(),
         }
 
-    def _tagging(self, tags: dict[str, _Tag]) -> list[dict[str, Any]]:
+    def _tagging(self, tags: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
         return [
             {
-                "Tag": {"Id": tag.tag_id, "Name": tag.name, "Type": _TAG_TYPE},
+                "Tag": {"Id": tag_id, "Name": tag["name"], "Type": _TAG_TYPE},
                 "ChangedTagging": [
                     {
-                        "Tag": {"Id": tag.tag_id, "Name": tag.name, "Type": _TAG_TYPE},
-                        "Items": tag.items,
+                        "Tag": {"Id": tag_id, "Name": tag["name"], "Type": _TAG_TYPE},
+                        "Items": tag["items"],
                         "IsDeleted": False,
                         "LastModified": self._now().isoformat(),
                     }
                 ],
             }
-            for tag in tags.values()
+            for tag_id, tag in tags.items()
         ]
 
     def _deleted_tagging(self, tags: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -424,7 +707,7 @@ class KoboSync:
             )
             .where(*conditions)
             .order_by(edition.id)
-        )  # fmt: skip
+        )
         if limit is not None:
             query = query.limit(limit)
         rows = connection.execute(query).all()
@@ -436,12 +719,26 @@ class KoboSync:
         names = dict(self._pairs_of(connection, export.shelf.c.id, export.shelf.c.name, shelf_ids))
         return [
             _Book(
-                str(row.id), titles[str(row.work_id)], str(row.lang),
-                row.shelf_id, names.get(str(row.shelf_id)) if row.shelf_id else None,
+                str(row.id),
+                titles[str(row.work_id)],
+                str(row.lang),
+                row.shelf_id,
+                names.get(str(row.shelf_id)) if row.shelf_id else None,
                 row.created_at,
             )
             for row in rows
-        ]  # fmt: skip
+        ]
+
+    @staticmethod
+    def _visible_ids_of(connection: Connection, scope: ReaderScope) -> set[str]:
+        """The Editions the profile may see right now, identifiers only: the light re-verification
+        of each page against the frozen walk. The query walks `catalog.edition` alone, for the
+        condition speaks in subqueries of its own and a table joined here would be correlated
+        into them."""
+        rows = connection.execute(
+            sa.select(catalog.edition.c.id).where(visible_editions_clause(scope))
+        ).all()
+        return {str(row.id) for row in rows}
 
     @staticmethod
     def _pairs_of(
@@ -460,10 +757,11 @@ class KoboSync:
 
     def _tags_of(
         self, connection: Connection, scope: ReaderScope, books: list[_Book]
-    ) -> dict[str, _Tag]:
+    ) -> dict[str, dict[str, Any]]:
         """The shelves this profile may be **named** with (`shelf_open_to`: the name of a shelf is
         household data) that are open to it (`allowed_profiles`) and hold at least one book it may
-        see: a tag with nothing in it is not sent."""
+        see: a tag with nothing in it is not sent. The answer is the document the flight freezes
+        and the point holds: tag id -> name, items."""
         shelf = export.shelf.c
         rows = connection.execute(
             sa.select(shelf.id, shelf.name, shelf.max_age_rating, shelf.allowed_profiles).order_by(
@@ -474,7 +772,7 @@ class KoboSync:
         for book in books:
             if book.shelf_id is not None:
                 items.setdefault(book.shelf_id, []).append(book.entitlement_id)
-        tags: dict[str, _Tag] = {}
+        tags: dict[str, dict[str, Any]] = {}
         for row in rows:
             allowed = row.allowed_profiles or []
             if not shelf_open_to(scope, row.max_age_rating):
@@ -483,7 +781,7 @@ class KoboSync:
                 continue
             held = items.get(str(row.id))
             if held:
-                tags[_tag_of(str(row.id))] = _Tag(_tag_of(str(row.id)), str(row.name), sorted(held))
+                tags[_tag_of(str(row.id))] = {"name": str(row.name), "items": sorted(held)}
         return tags
 
     def _reading_states(
@@ -548,9 +846,7 @@ class KoboSync:
             )
         ).scalar()
 
-    def _point_of(self, connection: Connection, device_id: str | None) -> _Point | None:
-        if device_id is None:
-            return None
+    def _point_of(self, connection: Connection, device_id: str) -> _Point | None:
         row = connection.execute(
             sa.select(
                 reading.kobo_sync_point.c.synced_at,
@@ -564,34 +860,10 @@ class KoboSync:
         tags = row.tags if isinstance(row.tags, dict) else {}
         return _Point(row.synced_at, books, tags)
 
-    def _write_point(self, device_id: str | None, books: list[_Book], tags: dict[str, _Tag]) -> int:
-        """The state the device now holds, written at the completion of its sync: the version of
-        the next delta. A device with no row (nobody's token) is not written."""
-        now = self._now()
-        if device_id is None:
-            return int(now.timestamp())
-        document = {
-            book.entitlement_id: {
-                "edition": book.edition_id,
-                "title": book.title,
-                "fp": book.fingerprint,
-            }
-            for book in books
-        }
-        shelves = {tag.tag_id: {"name": tag.name, "items": tag.items} for tag in tags.values()}
-        with write_transaction(self._engine) as connection:
-            connection.execute(
-                sa.delete(reading.kobo_sync_point).where(
-                    reading.kobo_sync_point.c.device_id == device_id
-                )
+    def _flight_of(self, connection: Connection, device_id: str) -> _Flight | None:
+        document = connection.execute(
+            sa.select(reading.kobo_sync_point.c.in_progress).where(
+                reading.kobo_sync_point.c.device_id == device_id
             )
-            connection.execute(
-                sa.insert(reading.kobo_sync_point).values(
-                    id=new_ulid(),
-                    device_id=device_id,
-                    synced_at=now,
-                    books=document,
-                    tags=shelves,
-                )
-            )
-        return int(now.timestamp())
+        ).scalar()
+        return None if not document else _flight_of_document(document)
