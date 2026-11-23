@@ -201,6 +201,10 @@ _DECLARED = (
     # M6 L06: silencing a plugin is an admin gesture too (a plugin disabled in secret is a
     # silent outage), with its own name: the audit says what was done, not something else
     _action("plugin.disable_isolated", Effect.ACCEPTS_ADMIN_RISK),
+    # M6 L08 (EF-SRC-017 passe 8, GAP-8-13): moving the state, the settings and the secrets of
+    # a previous install to another signer's code is the admin's word, not the index's: the
+    # signature vouches for the bytes, never for the secrets they will read
+    _action("plugin.adopt_state", Effect.ACCEPTS_ADMIN_RISK),
 )
 
 RESERVED_ACTIONS: Mapping[str, ReservedAction] = MappingProxyType(

@@ -1,4 +1,5 @@
-"""The client of a signed plugin index (EF-SRC-017, D14, ADR-0056): pin, refresh, revoke, fetch.
+"""The client of a signed plugin index (EF-SRC-017, D14, ADR-0056): pin, refresh, revoke, fetch,
+install.
 
 A repository is pinned by its URL and by the *public key* the admin gave (its key id is the
 fingerprint shown everywhere); none ships with the product. A refresh goes through the host's
@@ -10,6 +11,13 @@ refused). Revocations are kept once seen, even if a later index omits them. A ro
 the pin only on a double signature: the same document signed by the pinned key and by the next
 one the document names. A wheel is fetched by the same Fetcher and its sha256 is checked
 against what the index vouches for — before the guard of M1b ever sees the file.
+
+Since M6 L08 (passe 8, GAP-8-13) a plugin is also *installed* from an index: the wheel the entry
+vouches for, fetched and verified, then through the guard like any other. The install is pinned
+to the triple (key, index, signer) — and a second index that publishes the same key signed by
+another signer is never an update: the install is refused and a distinct one proposed. The
+distinct install inherits nothing: the state, the settings and the secrets of the previous
+install are held under its signer's fingerprint, and move only on the admin's confirmed word.
 """
 
 from __future__ import annotations
@@ -19,8 +27,9 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 import sqlalchemy as sa
 import structlog
@@ -34,6 +43,7 @@ from shelfhold.infrastructure.fetcher.client import Download
 from shelfhold.infrastructure.fetcher.errors import FetchError
 from shelfhold.infrastructure.http_headers import require_plain_web_url
 from shelfhold.infrastructure.schema import acquisition
+from shelfhold.plugin_host.attestation import THIRD_PARTY_ORIGIN
 from shelfhold.plugin_host.index.document import (
     MAX_AHEAD,
     IndexDocument,
@@ -47,8 +57,22 @@ from shelfhold.plugin_host.index.minisign import (
     verify_detached,
 )
 from shelfhold.plugin_host.index.staging import discard_staged_wheel, stage_wheel
+from shelfhold.plugin_host.install import (
+    Installed,
+    Layout,
+    install_wheel,
+    installed_keys,
+)
+from shelfhold.plugin_host.settings import Vault, held_identity, hold_plugin_data
 
-__all__ = ["MAX_INDEX_BYTES", "MAX_WHEEL_BYTES", "RepoRecord", "RepoStore", "index_fetcher"]
+__all__ = [
+    "MAX_INDEX_BYTES",
+    "MAX_WHEEL_BYTES",
+    "IndexInstall",
+    "RepoRecord",
+    "RepoStore",
+    "index_fetcher",
+]
 
 log = structlog.get_logger(__name__)
 
@@ -117,6 +141,15 @@ class RefreshOutcome:
     document: IndexDocument
     applied: bool  # False: the same version, the same content, nothing to do
     rotated: bool = False
+
+
+@dataclass(frozen=True)
+class IndexInstall:
+    """What an install from an index did: the plugin the guard installed, and the held identity
+    of a previous install (another signer) whose data waits for the admin's confirmed word."""
+
+    installed: Installed
+    held: str | None = None
 
 
 def _record(row: Any) -> RepoRecord:
@@ -372,15 +405,22 @@ class RepoStore:
     # -- the wheel -------------------------------------------------------------------------------
 
     async def fetch_wheel(
-        self, entry: IndexEntry, fetcher: IndexFetcher, destination: Path
+        self,
+        entry: IndexEntry,
+        fetcher: IndexFetcher,
+        destination: Path,
+        *,
+        name: str | None = None,
     ) -> Path:
         """Fetch a wheel the index vouches for and check its sha256 before anything else sees it.
 
         The Fetcher streams it to a staging file of `destination` (never the whole wheel in
         memory); a hash that is not the one the index signed is a refusal and leaves nothing
-        behind — the guard of M1b never sees a file the index did not vouch for.
+        behind — the guard of M1b never sees a file the index did not vouch for. `name` stages
+        the wheel under the name the index vouches for: the installer reads the tags of the
+        filename (M6 L08).
         """
-        handle, path = stage_wheel(destination)
+        handle, path = stage_wheel(destination, name)
         digest = hashlib.sha256()
         accepted = False
         try:
@@ -409,3 +449,98 @@ class RepoStore:
         finally:
             if not accepted:  # nothing of a refused wheel stays on disk, whatever refused it
                 discard_staged_wheel(path)
+
+    # -- the install from an index (M6 L08, EF-SRC-017 passe 8, GAP-8-13) -----------------------
+
+    def _previous_pin(self, key: str) -> tuple[str | None, str | None] | None:
+        """The (index, signer) the previous install of this key was pinned to, if any: the row
+        outlives the removal, which is the point — the pin says whose word installed it."""
+        with self._engine.connect() as connection:
+            row = connection.execute(
+                sa.select(
+                    acquisition.plugin_install.c.index_url,
+                    acquisition.plugin_install.c.signer_pubkey,
+                ).where(acquisition.plugin_install.c.plugin_id == key)
+            ).first()
+        return None if row is None else (row.index_url, row.signer_pubkey)
+
+    def _pin(self, key: str, installed: Installed, record: RepoRecord) -> None:
+        """Keep the triple (key, index, signer) this install is pinned to. The row is the one
+        `AttestationStore.sync_installed` keeps in step at start-up; it never touches the pin."""
+        digest = (
+            installed.digest
+            if installed.digest.startswith("sha256:")
+            else f"sha256:{installed.digest}"
+        )
+        values = {
+            "version": installed.version,
+            "sha256": digest,
+            "index_url": record.url,
+            "signer_pubkey": record.pubkey,
+        }
+        with write_transaction(self._engine) as connection:
+            connection.execute(
+                sqlite_insert(acquisition.plugin_install)
+                .values(plugin_id=key, api="", origin=THIRD_PARTY_ORIGIN, enabled=False, **values)
+                .on_conflict_do_update(index_elements=["plugin_id"], set_=values)
+            )
+
+    async def install_from(
+        self,
+        record: RepoRecord,
+        key: str,
+        layout: Layout,
+        fetcher: IndexFetcher,
+        *,
+        vault: Vault | None = None,
+    ) -> IndexInstall:
+        """Install the plugin this index vouches for, under the guard, its key pinned to
+        (index, signer).
+
+        The index is refreshed and verified first; the entry must exist and neither the key
+        nor the wheel may be revoked. A key already installed is never overwritten — and when
+        another signer publishes it, the refusal says what to do: remove the installed plugin
+        and install it as a distinct one. The distinct install inherits nothing: what the
+        previous install owns in the host (state, settings, secrets) is held under its
+        signer's fingerprint before the wheel is fetched, and moves only on the admin's
+        confirmed word. The wheel is fetched and verified by `fetch_wheel`, installed by the
+        guard, and the staged file leaves with the install.
+        """
+        outcome = await self.refresh(record, fetcher)
+        entry = next((e for e in outcome.document.plugins if e.key == key), None)
+        if entry is None:
+            raise PluginIndexError("unknown_plugin", f"the index does not list {key!r}")
+        if key in self.revoked_plugin_keys():
+            raise PluginIndexError("plugin_revoked", f"the key of {key!r} was revoked")
+        if entry.sha256 in self.revoked_wheel_sha256():
+            raise PluginIndexError("wheel_revoked", "the index revoked this wheel")
+        previous = self._previous_pin(key)
+        held: str | None = None
+        if previous is not None and previous != (record.url, record.pubkey):
+            if key in installed_keys(layout):
+                raise PluginIndexError(
+                    "signer_pinned",
+                    "another signer publishes this key: this is not an update — remove the "
+                    "installed plugin first and install it as a distinct one",
+                )
+            # the previous install is gone; its data is held, never inherited (GAP-8-13)
+            fingerprint = (
+                "wheel"
+                if previous[1] is None
+                else parse_public_key(previous[1], code="key_mismatch").key_id
+            )
+            held_id = held_identity(key, fingerprint)
+            if hold_plugin_data(self._engine, vault, key, held_id):
+                held = held_id
+        wheel_name = PurePosixPath(urlsplit(entry.wheel_url).path).name
+        if not wheel_name.endswith(".whl") or wheel_name == ".whl" or not wheel_name[:-4]:
+            raise PluginIndexError(
+                "wheel_name_invalid", "the wheel address does not name a wheel file"
+            )
+        wheel = await self.fetch_wheel(entry, fetcher, layout.root / "index", name=wheel_name)
+        try:
+            installed = install_wheel(layout, wheel, entry.sha256)
+        finally:
+            discard_staged_wheel(wheel)  # the installed copy is the guard's own
+        self._pin(key, installed, record)
+        return IndexInstall(installed, held)

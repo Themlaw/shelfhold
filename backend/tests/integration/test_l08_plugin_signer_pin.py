@@ -12,7 +12,6 @@ index vouches for a file's bytes, never for a publisher's conduct.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -35,7 +34,6 @@ from shelfhold.plugin_host.trust_card import TrustLevel, trust_level
 from tests.auth_env import db_rows, run_cli
 from tests.plugin_guard_env import build_wheel
 from tests.plugin_index_env import (
-    WHEEL_URL,
     FakeFetcher,
     IndexKey,
     index_document,
@@ -49,6 +47,7 @@ pytestmark = pytest.mark.req("EF-SRC-017")
 
 URL = "https://index.example.org/index.json"
 OTHER_URL = "https://other.example.org/index.json"
+WHEEL_BASE = "https://index.example.org/wheels/"
 DIST = "acme-plug"
 KEY = "acme"
 MODULE = "acme_plug"
@@ -79,28 +78,26 @@ def _served(
     key: IndexKey,
     *,
     version: int,
+    wheel: Any,
+    url: str = URL,
     plugins: list[dict[str, Any]] | None = None,
     **over: Any,
 ) -> None:
+    """Serve a signed index that vouches for the wheel, and the wheel itself."""
+    wheel_url = WHEEL_BASE + wheel.path.name
+    fetcher.wheels[wheel_url] = wheel.path.read_bytes()
     expires = _expires()
     document = index_document(
         version=version,
         expires=expires,
         plugins=plugins
         if plugins is not None
-        else [plugin_entry(key=KEY, sha256="sha256:" + _wheel_sha(fetcher))],
+        else [plugin_entry(key=KEY, sha256="sha256:" + wheel.sha256, wheel_url=wheel_url)],
         **over,
     )
     fetcher.serving(
-        URL, document, sign_index(document, key, comment=trusted_comment(version, expires))
+        url, document, sign_index(document, key, comment=trusted_comment(version, expires))
     )
-
-
-def _wheel_sha(fetcher: FakeFetcher) -> str:
-    """The sha256 of the wheel the fetcher serves, as the index entry vouches for it."""
-    data = fetcher.wheels.get(WHEEL_URL)
-    assert data is not None
-    return hashlib.sha256(data).hexdigest()
 
 
 def _install(
@@ -147,14 +144,13 @@ def test_plugin_key_pinned_to_signer(
     wheel = _wheel(tmp_path)
 
     fetcher = FakeFetcher()
-    fetcher.wheels[WHEEL_URL] = wheel.path.read_bytes()
-    _served(fetcher, key, version=1)
+    _served(fetcher, key, version=1, wheel=wheel)
     assert _install(monkeypatch, settings, fetcher) == 0
 
     # the triple is pinned: the key, the index it came from, the signer of that index
     assert _pin(settings) == [(URL, key.public_b64)]
     assert _installed(settings) == [DIST]
-    assert WHEEL_URL in fetcher.calls  # the wheel went through the Fetcher, like the index
+    assert WHEEL_BASE + wheel.path.name in fetcher.calls  # through the Fetcher, like the index
 
     # an install over an installed plugin is refused, and the pin does not move
     assert _install(monkeypatch, settings, fetcher) != 0
@@ -195,22 +191,12 @@ def test_signer_change_proposes_distinct_install(
     )
 
     fetcher = FakeFetcher()
-    fetcher.wheels[WHEEL_URL] = wheel.path.read_bytes()
-    _served(fetcher, first, version=1)
+    _served(fetcher, first, version=1, wheel=wheel)
     assert _install(monkeypatch, settings, fetcher) == 0
 
     # a second index publishes the same key, signed by another signer
     other = FakeFetcher()
-    other.wheels[WHEEL_URL] = wheel.path.read_bytes()
-    expires = _expires()
-    document = index_document(
-        version=1,
-        expires=expires,
-        plugins=[plugin_entry(key=KEY, sha256="sha256:" + _wheel_sha(other))],
-    )
-    other.serving(
-        OTHER_URL, document, sign_index(document, second, comment=trusted_comment(1, expires))
-    )
+    _served(other, second, version=1, wheel=wheel, url=OTHER_URL)
     assert _install(monkeypatch, settings, other, url=OTHER_URL) != 0
     out = capsys.readouterr()
     assert "distinct" in (out.out + out.err).lower()  # the refusal proposes the distinct install
@@ -274,28 +260,18 @@ def test_state_and_secrets_moved_only_after_confirmation(
     assert len(fingerprints) == 2
 
     fetcher = FakeFetcher()
-    fetcher.wheels[WHEEL_URL] = wheel.path.read_bytes()
-    _served(fetcher, first, version=1)
+    _served(fetcher, first, version=1, wheel=wheel)
     assert _install(monkeypatch, settings, fetcher) == 0
     assert run_cli(monkeypatch, settings, "plugin", "remove", DIST) == 0
 
     # the distinct install: nothing of the previous signer's is inherited
     other = FakeFetcher()
-    other.wheels[WHEEL_URL] = wheel.path.read_bytes()
-    expires = _expires()
-    document = index_document(
-        version=1,
-        expires=expires,
-        plugins=[plugin_entry(key=KEY, sha256="sha256:" + _wheel_sha(other))],
-    )
-    other.serving(
-        OTHER_URL, document, sign_index(document, second, comment=trusted_comment(1, expires))
-    )
+    _served(other, second, version=1, wheel=wheel, url=OTHER_URL)
     assert _install(monkeypatch, settings, other, url=OTHER_URL) == 0
     held = f"{KEY}@{first.key_id}"
     assert _plugin_rows(settings, "plugin_state") == [(held,)]
     assert _plugin_rows(settings, "source_config") == [(held,)]
-    assert _plugin_rows(settings, "source_secret") == [(held,)]
+    assert _plugin_rows(settings, "source_secret") == [(held,), (held,)]  # the key and the jar
     assert db_rows(
         settings, "SELECT kind, field, fingerprint FROM source_secret WHERE plugin_id = ?", held
     ) == sorted(fingerprints)  # sealed again, the same values, the same fingerprints
@@ -309,7 +285,7 @@ def test_state_and_secrets_moved_only_after_confirmation(
     assert run_cli(monkeypatch, settings, "plugin", "adopt", KEY) == 0
     assert _plugin_rows(settings, "plugin_state") == [(KEY,)]
     assert _plugin_rows(settings, "source_config") == [(KEY,)]
-    assert _plugin_rows(settings, "source_secret") == [(KEY,)]
+    assert _plugin_rows(settings, "source_secret") == [(KEY,), (KEY,)]
     loaded = store.load(KEY)  # the secret opens again, with the value it always had
     assert loaded.values["api_key"] == "secret-value-7f3a51"
     assert loaded.cookies == {"sid": "cookie-4471"}
@@ -335,8 +311,7 @@ def test_signed_index_alone_never_makes_a_module_community(
         == 0
     )
     fetcher = FakeFetcher()
-    fetcher.wheels[WHEEL_URL] = wheel.path.read_bytes()
-    _served(fetcher, key, version=1)
+    _served(fetcher, key, version=1, wheel=wheel)
     assert _install(monkeypatch, settings, fetcher) == 0
     assert _pin(settings) == [(URL, key.public_b64)]  # installed from a signed index
 
@@ -376,38 +351,37 @@ def test_index_install_refusals_leave_no_trace(
         == 0
     )
 
-    def _refused(fetcher: FakeFetcher, expected: str) -> None:
+    def _refused(fetcher: FakeFetcher, wheel: Any, expected: str) -> None:
         assert _install(monkeypatch, settings, fetcher) != 0
-        assert db_rows(
+        rows = db_rows(
             settings, "SELECT action, target FROM audit WHERE action = 'plugin.install_refused'"
-        ) == [("plugin.install_refused", f"{KEY}:{expected}")]
+        )
+        assert rows[-1] == ("plugin.install_refused", f"{KEY}:{expected}")  # the latest refusal
         plugins = settings.data_dir / "plugins"
         assert not plugins.exists() or not any(plugins.iterdir())  # nothing of a refusal stays
         assert _pin(settings) == []
 
     # a key the index does not list
     fetcher = FakeFetcher()
-    fetcher.wheels[WHEEL_URL] = wheel.path.read_bytes()
-    _served(fetcher, key, version=1, plugins=[plugin_entry(key="other")])
-    _refused(fetcher, "unknown_plugin")
+    _served(fetcher, key, version=1, wheel=wheel, plugins=[plugin_entry(key="other")])
+    _refused(fetcher, wheel, "unknown_plugin")
+
+    # a wheel the index revoked (before the key: a revocation stays seen, whichever index said it)
+    fetcher = FakeFetcher()
+    _served(fetcher, key, version=2, wheel=wheel, wheel_sha256=["sha256:" + wheel.sha256])
+    _refused(fetcher, wheel, "wheel_revoked")
 
     # a key the index revoked
     fetcher = FakeFetcher()
-    fetcher.wheels[WHEEL_URL] = wheel.path.read_bytes()
-    _served(fetcher, key, version=2, plugin_keys=[KEY])
-    _refused(fetcher, "plugin_revoked")
-
-    # a wheel the index revoked
-    fetcher = FakeFetcher()
-    fetcher.wheels[WHEEL_URL] = wheel.path.read_bytes()
-    _served(fetcher, key, version=3, wheel_sha256=["sha256:" + _wheel_sha(fetcher)])
-    _refused(fetcher, "wheel_revoked")
+    _served(fetcher, key, version=3, wheel=wheel, plugin_keys=[KEY])
+    _refused(fetcher, wheel, "plugin_revoked")
 
     # a repository nobody pinned
     assert (
         _install(monkeypatch, settings, FakeFetcher(), url="https://nowhere.example.org/index.json")
         != 0
     )
-    assert db_rows(
+    rows = db_rows(
         settings, "SELECT action, target FROM audit WHERE action = 'plugin.install_refused'"
-    ) == [("plugin.install_refused", f"{KEY}:not_found")]
+    )
+    assert rows[-1] == ("plugin.install_refused", f"{KEY}:not_found")

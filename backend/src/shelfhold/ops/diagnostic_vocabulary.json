@@ -341,6 +341,7 @@
   "PermissionError",
   "PlanExecutorUnboundError",
   "PlanRefusedError",
+  "PluginDataError",
   "PluginEventError",
   "PluginFailed",
   "PluginIndexError",

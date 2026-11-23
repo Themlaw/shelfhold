@@ -48,7 +48,13 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import metadata as schema
 from shelfhold.infrastructure.secrets.atomic import write_private
-from shelfhold.plugin_host.registry import normalise_name as normalise_name
+from shelfhold.plugin_host.registry import (
+    InstalledPlugin,
+    third_party_candidates,
+)
+from shelfhold.plugin_host.registry import (
+    normalise_name as normalise_name,
+)
 
 ENV_ALLOW = "SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS"
 CONFIRMATION = "mêmes droits que Shelfhold"
@@ -215,6 +221,18 @@ def unexpected_entries(layout: Layout, state: PluginFile) -> list[str]:
         n for i in state.installed.values() for n in on_disk(layout.site, i.top_levels, i.dist_info)
     }
     return sorted(p.name for p in layout.site.iterdir() if p.name not in expected)
+
+
+def installed_keys(layout: Layout) -> frozenset[str]:
+    """The plugin keys the installed third-party plugins declare, by their entry points. Nothing
+    is imported: the distributions the guard recorded are read from the third-party directory
+    alone. A key is how an index (and an attestation) names a plugin; a distribution name is how
+    the guard does — this is the bridge between the two."""
+    state = read_state(layout)
+    if not state.installed:
+        return frozenset()
+    installed = [InstalledPlugin(i.name, i.top_levels) for i in state.installed.values()]
+    return frozenset(c.key for c in third_party_candidates(layout.site, installed, blocked={}))
 
 
 def safe_component(name: str) -> bool:

@@ -1,9 +1,13 @@
-"""``shelfhold plugin install|enable|disable|remove|list|attest|withdraw|settings|set|set-secret|
-set-cookies`` and ``plugin index add|list|refresh|remove`` (EF-SRC-019, ENF-SEC-009, EF-SRC-013,
-EF-EXP-065, EF-SRC-017).
+"""``shelfhold plugin install|enable|disable|remove|adopt|list|attest|withdraw|settings|set|
+set-secret|set-cookies`` and ``plugin index add|list|refresh|remove`` (EF-SRC-019, ENF-SEC-009,
+EF-SRC-013, EF-EXP-065, EF-SRC-017).
 
-Third-party plugins are off by default and isolated is their mode (D13, M6 L06). ``install`` only
-unpacks a local wheel whose sha256 you give; ``enable`` is a **reserved action** — the host CLI is
+Third-party plugins are off by default and isolated is their mode (D13, M6 L06). ``install``
+unpacks a local wheel whose sha256 you give, or — with ``--index`` — installs the plugin a pinned
+signed index vouches for, its key pinned to (index, signer): another signer publishing the same
+key is a distinct install, never an update, and the state, the settings and the secrets of the
+previous install move only on the admin's confirmed word (``adopt``, a reserved action);
+``enable`` is a **reserved action** — the host CLI is
 one of its two credentials — and activates the plugin in its mode: isolated needs nothing else,
 the in-process mode (``--in-process``) needs ``SHELFHOLD_ALLOW_UNSANDBOXED_PLUGINS=1`` in the
 environment and a sentence typed on standard input, and no phrase ever crosses the network. Every
@@ -51,9 +55,12 @@ from shelfhold.plugin_host.public import installed_versions, start_plugins
 from shelfhold.plugin_host.settings import (
     LNCRAWL_RIGHTS_WARNING,
     USE_READBACK,
+    PluginDataError,
     SettingsSchema,
     SettingValueError,
     SourceSettings,
+    adopt_plugin_data,
+    held_plugin_data,
     parse_settings_schema,
 )
 
@@ -63,9 +70,14 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     actions = group.add_subparsers(dest="plugin_command", required=True)
 
     add = actions.add_parser("install", help=t("cli.plugin_install_help"), allow_abbrev=False)
-    add.add_argument("wheel", type=Path, help=t("cli.plugin_wheel_help"))
-    add.add_argument("--sha256", required=True, help=t("cli.plugin_sha256_help"))
+    add.add_argument("wheel", help=t("cli.plugin_wheel_help"))
+    add.add_argument("--sha256", help=t("cli.plugin_sha256_help"))
+    add.add_argument("--index", help=t("cli.plugin_install_index_help"))
     add.set_defaults(handler=run_install)
+
+    adopt = actions.add_parser("adopt", help=t("cli.plugin_adopt_help"), allow_abbrev=False)
+    adopt.add_argument("key", help=t("cli.plugin_key_help"))
+    adopt.set_defaults(handler=run_adopt)
 
     for name, handler, help_text in (
         ("enable", run_enable, t("cli.plugin_enable_help")),
@@ -173,12 +185,73 @@ def _audited(resolved: ResolvedSettings, action: str, target: str) -> bool:
     return True
 
 
+def _vault_or_none(resolved: ResolvedSettings) -> SecretVault | None:
+    """The keyring when it is there, else None: only a move of sealed secrets needs it, and the
+    move refuses on its own when it does (fail closed)."""
+    try:
+        return SecretVault(boot_check(resolved.values, create=False, announce=False))
+    except SecretsError:
+        return None
+
+
+def _install_from_index(args: argparse.Namespace, resolved: ResolvedSettings, layout: Any) -> int:
+    """Install a plugin a pinned index vouches for (M6 L08, EF-SRC-017 passe 8): the key is
+    pinned to (index, signer), another signer is a distinct install, and the previous install's
+    data waits for the admin's confirmed word."""
+    if args.sha256:
+        return _fail(t("plugin.sha256_with_index"))
+    engine = _engine(resolved)
+    if engine is None:
+        return 1
+    store = RepoStore(engine, now=SystemClock().now)
+    try:
+        record = next((r for r in store.list() if r.url == args.index), None)
+        if record is None:
+            _audited(resolved, "plugin.install_refused", f"{args.wheel}:not_found")
+            return _fail(t("plugin.index_refused", code="not_found", detail=""))
+        from shelfhold.composition import default_network
+
+        async def _run() -> Any:
+            fetcher = index_fetcher(default_network())
+            try:
+                return await store.install_from(
+                    record, args.wheel, layout, fetcher, vault=_vault_or_none(resolved)
+                )
+            finally:
+                await fetcher.aclose()
+
+        try:
+            done = asyncio.run(_run())
+        except (PluginIndexError, guard.PluginInstallError, PluginDataError) as exc:
+            code = getattr(exc, "code", "install_failed")
+            detail = getattr(exc, "detail", str(exc))
+            _audited(resolved, "plugin.install_refused", f"{args.wheel}:{code}")
+            return _fail(t("plugin.install_refused", code=code, detail=detail))
+        target = f"{done.installed.name}@{done.installed.version}:{done.installed.wheel_sha256}"
+        if not _audited(resolved, "plugin.install", target):
+            guard.remove_plugin(layout, done.installed.name)  # no audit row, no installation
+            return 1
+        if done.held is not None:  # the previous install's data waits, it is not inherited
+            _audited(resolved, "plugin.state_held", done.held)
+            print(t("plugin.state_held", name=args.wheel, held=done.held))
+    finally:
+        engine.dispose()
+    _sync_attestations(resolved)  # a new version: the word given for the old one lapses
+    print(t("plugin.installed", name=done.installed.name, version=done.installed.version))
+    print(t("plugin.disabled_by_default"))
+    return 0
+
+
 def run_install(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     layout = guard.Layout.of(resolved.values.data_dir)
+    if args.index is not None:
+        return _install_from_index(args, resolved, layout)
+    if not args.sha256:
+        return _fail(t("plugin.sha256_required"))
     try:
-        plugin = guard.install_wheel(layout, args.wheel, args.sha256)
+        plugin = guard.install_wheel(layout, Path(args.wheel), args.sha256)
     except guard.PluginInstallError as exc:
-        _audited(resolved, "plugin.install_refused", f"{args.wheel.name}:{exc.code}")
+        _audited(resolved, "plugin.install_refused", f"{Path(args.wheel).name}:{exc.code}")
         return _fail(t("plugin.install_refused", code=exc.code, detail=exc.detail))
     if not _audited(
         resolved, "plugin.install", f"{plugin.name}@{plugin.version}:{plugin.wheel_sha256}"
@@ -188,6 +261,36 @@ def run_install(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     _sync_attestations(resolved)  # a new version: the word given for the old one lapses
     print(t("plugin.installed", name=plugin.name, version=plugin.version))
     print(t("plugin.disabled_by_default"))
+    return 0
+
+
+def run_adopt(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    """The admin's confirmed transfer (a reserved action, EF-SRC-017 passe 8): the state, the
+    settings and the secrets a previous install (another signer) left held move to the
+    installed plugin. Nothing is overwritten: a plugin that already has data of its own is
+    refused, and so is a key with nothing held."""
+    layout = guard.Layout.of(resolved.values.data_dir)
+    key = guard.normalise_name(args.key)
+    if key not in guard.installed_keys(layout):
+        _audited(resolved, "plugin.adopt_refused", f"{key}:unknown")
+        return _fail(t("errors.plugin.unknown.title"))
+    engine = _engine(resolved)
+    if engine is None:
+        return 1
+    try:
+        held = held_plugin_data(engine, key)
+        if held is None:
+            _audited(resolved, "plugin.adopt_refused", f"{key}:nothing_held")
+            return _fail(t("plugin.nothing_held", name=key))
+        if not _audited(resolved, "plugin.adopt", held):  # before the change, not after
+            return 1
+        try:
+            adopt_plugin_data(engine, _vault_or_none(resolved), key, held)
+        except PluginDataError as exc:
+            return _fail(t("plugin.adopt_refused", code=exc.code, detail=exc.detail))
+    finally:
+        engine.dispose()
+    print(t("plugin.adopted", name=key, held=held))
     return 0
 
 
