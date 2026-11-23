@@ -4939,6 +4939,35 @@
         "title": "LanguagesOut",
         "type": "object"
       },
+      "LinkIn": {
+        "additionalProperties": false,
+        "description": "The key and, for an adult, the name of the Kavita account it opens. Nothing else: a child's\naccount is the one her parent declared.",
+        "properties": {
+          "remote_user": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remote User"
+          },
+          "token": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "LinkIn",
+        "type": "object"
+      },
       "LinkItem": {
         "description": "One line of the listing: the fingerprint stays off it — the answers of the list carry\nno field whose name even says \"token\" (EF-INT-010).",
         "properties": {
@@ -11871,6 +11900,23 @@
         "title": "ToShelveOut",
         "type": "object"
       },
+      "TrackerLinkIn": {
+        "additionalProperties": false,
+        "description": "The remote account's token, once. Nothing else: the plugin knows the rest.",
+        "properties": {
+          "token": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "TrackerLinkIn",
+        "type": "object"
+      },
       "TrafficDayOut": {
         "properties": {
           "bytes_in": {
@@ -13772,35 +13818,6 @@
         "title": "ItemOut",
         "type": "object"
       },
-      "shelfhold__interfaces__http_api__destination_accounts__LinkIn": {
-        "additionalProperties": false,
-        "description": "The key and, for an adult, the name of the Kavita account it opens. Nothing else: a child's\naccount is the one her parent declared.",
-        "properties": {
-          "remote_user": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Remote User"
-          },
-          "token": {
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "token"
-        ],
-        "title": "LinkIn",
-        "type": "object"
-      },
       "shelfhold__interfaces__http_api__destinations__DetachIn": {
         "additionalProperties": false,
         "properties": {
@@ -14533,23 +14550,6 @@
           "trackers"
         ],
         "title": "ItemOut",
-        "type": "object"
-      },
-      "shelfhold__interfaces__http_api__trackers__LinkIn": {
-        "additionalProperties": false,
-        "description": "The remote account's token, once. Nothing else: the plugin knows the rest.",
-        "properties": {
-          "token": {
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "token"
-        ],
-        "title": "LinkIn",
         "type": "object"
       }
     }
@@ -25850,7 +25850,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/shelfhold__interfaces__http_api__destination_accounts__LinkIn"
+                "$ref": "#/components/schemas/LinkIn"
               }
             }
           },
@@ -26187,7 +26187,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/shelfhold__interfaces__http_api__trackers__LinkIn"
+                "$ref": "#/components/schemas/TrackerLinkIn"
               }
             }
           },

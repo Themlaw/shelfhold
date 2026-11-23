@@ -2915,6 +2915,23 @@ export type LanguagesOut = {
 };
 
 /**
+ * LinkIn
+ *
+ * The key and, for an adult, the name of the Kavita account it opens. Nothing else: a child's
+ * account is the one her parent declared.
+ */
+export type LinkIn = {
+    /**
+     * Remote User
+     */
+    remote_user?: string | null;
+    /**
+     * Token
+     */
+    token: string;
+};
+
+/**
  * LinkItem
  *
  * One line of the listing: the fingerprint stays off it — the answers of the list carry
@@ -7127,6 +7144,18 @@ export type ToShelveOut = {
 };
 
 /**
+ * TrackerLinkIn
+ *
+ * The remote account's token, once. Nothing else: the plugin knows the rest.
+ */
+export type TrackerLinkIn = {
+    /**
+     * Token
+     */
+    token: string;
+};
+
+/**
  * TrafficDayOut
  */
 export type TrafficDayOut = {
@@ -8305,23 +8334,6 @@ export type ShelfholdInterfacesHttpApiCollectionsItemOut = {
 };
 
 /**
- * LinkIn
- *
- * The key and, for an adult, the name of the Kavita account it opens. Nothing else: a child's
- * account is the one her parent declared.
- */
-export type ShelfholdInterfacesHttpApiDestinationAccountsLinkIn = {
-    /**
-     * Remote User
-     */
-    remote_user?: string | null;
-    /**
-     * Token
-     */
-    token: string;
-};
-
-/**
  * DetachIn
  */
 export type ShelfholdInterfacesHttpApiDestinationsDetachIn = {
@@ -8803,18 +8815,6 @@ export type ShelfholdInterfacesHttpApiTachibkImportItemOut = {
      * Trackers
      */
     trackers: number;
-};
-
-/**
- * LinkIn
- *
- * The remote account's token, once. Nothing else: the plugin knows the rest.
- */
-export type ShelfholdInterfacesHttpApiTrackersLinkIn = {
-    /**
-     * Token
-     */
-    token: string;
 };
 
 export type ReaderResolveConflictData = {
@@ -15457,7 +15457,7 @@ export type RevokeAccountResponses = {
 export type RevokeAccountResponse = RevokeAccountResponses[keyof RevokeAccountResponses];
 
 export type LinkAccount2Data = {
-    body: ShelfholdInterfacesHttpApiDestinationAccountsLinkIn;
+    body: LinkIn;
     path: {
         /**
          * User Id
@@ -15659,7 +15659,7 @@ export type GetLinkResponses = {
 export type GetLinkResponse = GetLinkResponses[keyof GetLinkResponses];
 
 export type LinkData = {
-    body: ShelfholdInterfacesHttpApiTrackersLinkIn;
+    body: TrackerLinkIn;
     path: {
         /**
          * User Id

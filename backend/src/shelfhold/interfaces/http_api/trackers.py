@@ -32,7 +32,7 @@ _OPT_IN = reserved_action(RESERVED_ACTIONS["tracker.push_opt_in"], roles=_ANY_RO
 _ALLOW_CHILD = reserved_action(RESERVED_ACTIONS["tracker.allow_child"], audit=False)
 
 
-class LinkIn(BaseModel):
+class TrackerLinkIn(BaseModel):
     """The remote account's token, once. Nothing else: the plugin knows the rest."""
 
     model_config = ConfigDict(extra="forbid")
@@ -150,7 +150,7 @@ def build_trackers_router(get_host: Callable[[], TrackerHost]) -> APIRouter:
     def link(
         user_id: str,
         plugin_key: str,
-        body: LinkIn,
+        body: TrackerLinkIn,
         principal: Annotated[Principal, Depends(_LINK)],
     ) -> Any:
         view = run(lambda: get_host().link(principal, user_id, plugin_key, body.token))
