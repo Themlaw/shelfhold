@@ -33,6 +33,16 @@ export function idbEnv(scope: { indexedDB: IDBFactory; caches: CacheStorage; nav
     caches: scope.caches,
     now: () => Date.now(),
     lock: (name, work) => (scope.navigator?.locks ? scope.navigator.locks.request(name, work) : work()),
+    // the names of the databases the browser holds; an engine that cannot list them (or a listing
+    // that fails, a version change in flight) simply finds no orphan: the next open tries again
+    listKv: async () => {
+      if (!factory.databases) return [];
+      try {
+        return (await factory.databases()).flatMap((db) => (db.name ? [db.name] : []));
+      } catch {
+        return [];
+      }
+    },
     deleteKv: (name) =>
       new Promise((resolve, reject) => {
         const request = factory.deleteDatabase(name);

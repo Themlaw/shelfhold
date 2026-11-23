@@ -3,7 +3,7 @@
 // wiped when the profile changes, and a book is never kept in a cache shared by profiles.
 import { describe, expect, it } from 'vitest';
 import type { PublicationOut } from '#lib/api/types.gen.ts';
-import { copyCacheName, copyUrl } from './env.ts';
+import { ACTIVE_KV, copyCacheName, copyUrl, profileKvName } from './env.ts';
 import { createOfflineStore, serveCopyEntry } from './store.ts';
 import { memoryEnv } from './testing.ts';
 
@@ -182,6 +182,31 @@ describe('one change at a time, and the session the copies were kept under (revi
     await store.activate(ALICE);
     await store.setSince(ALICE, 't');
     expect(taken).toEqual(['shelfhold-offline', 'shelfhold-offline']);
+  });
+});
+
+describe('the store of a profile nobody knows goes at open', () => {
+  // req: EF-LEC-012, ENF-SEC-010
+  it('orphan profile database is removed', async () => {
+    const env = memoryEnv();
+    const store = createOfflineStore(env);
+    // a database of a profile no tab remembers: left by a crash between the wipe of a profile and
+    // the write of `known`, by a race of two tabs, or by a version before `known` existed
+    env.memory.kvs.set(profileKvName('01JGONE0000000000000000GX'), new Map([['copy:content:C1', { title: 'Tale' }]]));
+    await store.activate(ALICE); // a profile signs in: the stores of the others are found by name
+    expect([...env.memory.kvs.keys()].filter((name) => name !== ACTIVE_KV)).toEqual([]);
+    expect(await store.activeProfile()).toBe(ALICE);
+  });
+
+  // req: EF-LEC-012, ENF-SEC-010
+  it('sign-out removes the stores of every profile, known or not', async () => {
+    const env = memoryEnv();
+    const store = createOfflineStore(env);
+    await keepFor(store, ALICE);
+    env.memory.kvs.set(profileKvName('01JGONE0000000000000000GX'), new Map([['copy:content:C2', { title: 'Left' }]]));
+    await store.wipeAll();
+    expect([...env.memory.kvs.keys()]).toEqual([]); // the active store itself goes too
+    expect(await env.caches.keys()).toEqual([]);
   });
 });
 

@@ -12,6 +12,7 @@
   // order is the ADR's: the bar, the content, then the pagination.
   import { onDestroy, onMount } from 'svelte';
   import { readerPublication, readerPutPosition, readerPutSettings, readerSettings } from '#lib/api/index.ts';
+  import OfflineKeep from '#lib/offline/OfflineKeep.svelte';
   import { offlineStore } from '#lib/offline/runtime.ts';
   import { createQueueingPut } from '#lib/offline/sync.ts';
   import type { PositionIn, PublicationOut } from '#lib/api/types.gen.ts';
@@ -87,6 +88,9 @@
 
   const asksExcerpt = $derived(scope === 'excerpt');
   const isExcerpt = $derived(view?.scope === 'excerpt');
+  // « Lire hors ligne » (M6 L20, D-P7 (b)): every profile that opens a book may keep it — an
+  // extract never offers it (D-P1: an extract is never kept)
+  const keepable = $derived(view !== null && view.scope === 'full' && !asksExcerpt);
   // The EPUB engine exposes no way to apply a choice (L12): a book of pages reads with the
   // setting, an EPUB keeps the direction of its publication.
   const direction = $derived(
@@ -390,6 +394,7 @@
           onclick={() => (panel = !panel)}>{t('reader.settings')}</button
         >
       {/if}
+      {#if keepable}<OfflineKeep {carrierType} {carrierId} />{/if}
       <button type="button" aria-expanded={help} onclick={() => (help = !help)}>?</button>
     </header>
     <p class="hint">{t('reader.keys')}</p>
