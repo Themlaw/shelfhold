@@ -367,13 +367,21 @@ def wheel_plugin_keys(wheel: Path) -> frozenset[str]:
         raise PluginInstallError("bad_wheel", str(exc)) from exc
 
 
-def _normalise_section_header(header: str) -> str:
-    """Normalise a section header like importlib.metadata does: [[group]] -> group."""
-    if header.startswith("[[") and header.endswith("]]"):
-        return header[2:-2]
-    elif header.startswith("[") and header.endswith("]"):
-        return header[1:-1]
-    return header
+class _ArchivedDistribution(metadata.Distribution):
+    """A distribution read from a wheel that is not installed: its files come from the archive,
+    nothing is located on disk."""
+
+    def __init__(self, read: Callable[[str], bytes]) -> None:
+        self._read = read
+
+    def read_text(self, filename: str) -> str | None:
+        try:
+            return self._read(filename).decode("utf-8", "replace")
+        except KeyError:
+            return None
+
+    def locate_file(self, path: str | os.PathLike[str]) -> Path:
+        raise FileNotFoundError(path)  # never installed: no file of it is on disk
 
 
 def _entry_point_keys(names: list[str], read: Callable[[str], bytes]) -> frozenset[str]:
@@ -382,21 +390,10 @@ def _entry_point_keys(names: list[str], read: Callable[[str], bytes]) -> frozens
     keys: set[str] = set()
     infos = sorted({PurePosixPath(n).parts[0] for n in names if n.endswith("/entry_points.txt")})
     for info in infos:
-        try:
-            raw = read(f"{info}/entry_points.txt").decode("utf-8", "replace")
-        except KeyError:
-            continue  # no entry points: the wheel declares no plugin key
-        in_group = False
-        for line in raw.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("[") and stripped.endswith("]"):
-                in_group = _normalise_section_header(stripped) == ENTRY_POINT_GROUP
-                continue  # a section header, never an entry point
-            if not in_group or not stripped or stripped[0] in "#;":
-                continue
-            name, _, _ = stripped.partition("=")
-            if name.strip():
-                keys.add(name.strip())
+        # parsed by the very reader the loader uses (`dist.entry_points`), so no header or line a
+        # hand-written parser would read otherwise can hide a key from this check
+        dist = _ArchivedDistribution(lambda f, info=info: read(f"{info}/{f}"))
+        keys.update(ep.name for ep in dist.entry_points if ep.group == ENTRY_POINT_GROUP)
     return frozenset(keys)
 
 
