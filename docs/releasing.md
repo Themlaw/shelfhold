@@ -96,8 +96,10 @@ d'auteur (`docs/plugins/gabarit`) — et sur le plugin d'exemple dès qu'il exis
    dépôt, le workflow et l'environnement, jamais le ref : seul l'environnement l'arrête. L'environnement `testpypi`
    peut tout accepter : il ne publie que sur l'index d'essai.
 4. **Étiquettes protégées** : ajouter `refs/tags/sdk-v*` à la règle du dépôt qui protège les étiquettes
-   `refs/tags/v*` (ou créer une règle dédiée) : personne ne crée, ne déplace ni ne supprime une étiquette `sdk-v*`
-   sans revue — sans elle, l'étiquette qui déclenche la publication resterait libre à quiconque peut pousser.
+   `refs/tags/v*` (ou créer une règle dédiée), **et** y cocher la restriction de création (« Restrict creations »,
+   règle `creation`), le mainteneur seul en contournement. La règle des étiquettes `v*` n'interdit que la
+   suppression, la mise à jour et l'écrasement : sans `creation`, quiconque peut pousser crée `sdk-v9.9.9` sur un
+   commit non fusionné, l'environnement `pypi` l'accepte, et seule l'approbation manuelle arrête la publication.
 5. **Publication à l'essai** : lancer `publish-sdk.yml` par `workflow_dispatch` (onglet Actions) depuis le ref voulu :
    l'environnement `testpypi` publie sur TestPyPI. C'est le seul geste pour vérifier la chaîne avant PyPI.
 6. **Publication réelle** : pousser l'étiquette `sdk-vX.Y.Z` sur `main` — le nom doit être exactement celui de
