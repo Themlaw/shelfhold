@@ -1,5 +1,6 @@
 """``shelfhold plugin install|enable|disable|remove|list|attest|withdraw|settings|set|set-secret|
-set-cookies`` (EF-SRC-019, ENF-SEC-009, EF-SRC-013, EF-EXP-065).
+set-cookies`` and ``plugin index add|list|refresh|remove`` (EF-SRC-019, ENF-SEC-009, EF-SRC-013,
+EF-EXP-065, EF-SRC-017).
 
 Third-party plugins are off by default and isolated is their mode (D13, M6 L06). ``install`` only
 unpacks a local wheel whose sha256 you give; ``enable`` is a **reserved action** — the host CLI is
@@ -13,11 +14,17 @@ step is written to the audit log, and a refusal too; ``list`` says why a plugin 
 installed version only; ``withdraw`` takes it back. ``settings`` shows a source's settings, and of a
 secret only whether it is set and its fingerprint; ``set-secret`` and ``set-cookies`` read the
 value from a file or stdin, never from argv. All of them are audited.
+
+``index`` pins a repository of signed plugin indexes (D14): by its URL **and** the public key of
+its signer — never without the key, and none is preconfigured. A refresh goes through the host's
+Fetcher (SSRF guard) and verifies the minisign signature, the trusted comment, the monotone
+version, the expiry and the revocations; a rotation moves the pin only on a double signature.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import sys
@@ -27,6 +34,7 @@ from typing import Any
 from shelfhold.config import ResolvedSettings
 from shelfhold.headless.actor import Actor
 from shelfhold.i18n import t
+from shelfhold.infrastructure.clock import SystemClock
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.errors import SecretsError
@@ -38,6 +46,7 @@ from shelfhold.plugin_host.attestation import (
     AttestationNotNeeded,
     AttestationStore,
 )
+from shelfhold.plugin_host.index import PluginIndexError, RepoStore, index_fetcher
 from shelfhold.plugin_host.public import installed_versions, start_plugins
 from shelfhold.plugin_host.settings import (
     LNCRAWL_RIGHTS_WARNING,
@@ -112,6 +121,34 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
     jar.add_argument("key", help=t("cli.plugin_key_help"))
     jar.add_argument("--cookies-file", required=True, help=t("cli.plugin_cookies_file_help"))
     jar.set_defaults(handler=run_set_cookies)
+
+    # M6 L07 (EF-SRC-017, D14): the repositories of signed plugin indexes, the admin's alone
+    index = actions.add_parser("index", help=t("cli.plugin_index_help"), allow_abbrev=False)
+    index_actions = index.add_subparsers(dest="plugin_index_command", required=True)
+
+    index_add = index_actions.add_parser(
+        "add", help=t("cli.plugin_index_add_help"), allow_abbrev=False
+    )
+    index_add.add_argument("url", help=t("cli.plugin_index_url_help"))
+    index_add.add_argument("--pubkey", help=t("cli.plugin_index_pubkey_help"))
+    index_add.set_defaults(handler=run_index_add)
+
+    index_list = index_actions.add_parser(
+        "list", help=t("cli.plugin_index_list_help"), allow_abbrev=False
+    )
+    index_list.set_defaults(handler=run_index_list)
+
+    index_refresh = index_actions.add_parser(
+        "refresh", help=t("cli.plugin_index_refresh_help"), allow_abbrev=False
+    )
+    index_refresh.add_argument("url", nargs="?", help=t("cli.plugin_index_url_help"))
+    index_refresh.set_defaults(handler=run_index_refresh)
+
+    index_remove = index_actions.add_parser(
+        "remove", help=t("cli.plugin_index_remove_help"), allow_abbrev=False
+    )
+    index_remove.add_argument("url", help=t("cli.plugin_index_url_help"))
+    index_remove.set_defaults(handler=run_index_remove)
 
 
 def _fail(message: str) -> int:
@@ -444,3 +481,115 @@ def run_set_cookies(args: argparse.Namespace, resolved: ResolvedSettings) -> int
         resolved, args.key,
         lambda store, _schema: store.set_cookies(args.key, cookies, actor=_actor()),
     )  # fmt: skip
+
+
+# -- the repositories of signed indexes (M6 L07, EF-SRC-017, D14) ------------------------------
+
+
+def _repo_store(resolved: ResolvedSettings) -> RepoStore | None:
+    engine = _engine(resolved)
+    if engine is None:
+        return None
+    return RepoStore(engine, now=SystemClock().now)
+
+
+def _index_fail(error: PluginIndexError) -> int:
+    return _fail(t("plugin.index_refused", code=error.code, detail=error.detail))
+
+
+def run_index_add(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    store = _repo_store(resolved)
+    if store is None:
+        return 1
+    try:
+        record = store.add(args.url, args.pubkey or "")
+    except PluginIndexError as exc:
+        _audited(resolved, "plugin.index_add_refused", f"{args.url}:{exc.code}")
+        return _index_fail(exc)
+    if not _audited(resolved, "plugin.index_add", f"{record.url}:{record.key_id}"):
+        store.remove(record.url)  # no audit row, no pin
+        return 1
+    print(t("plugin.index_added", url=record.url, key_id=record.key_id))
+    return 0
+
+
+def run_index_list(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    store = _repo_store(resolved)
+    if store is None:
+        return 1
+    records = store.list()
+    if not records:
+        print(t("plugin.index_none"))
+        return 0
+    for record in records:
+        expires = "-" if record.expires is None else record.expires.strftime("%Y-%m-%d")
+        print(
+            t(
+                "plugin.index_row",
+                url=record.url,
+                key_id=record.key_id,
+                version=record.last_version,
+                expires=expires,
+            )
+        )
+    return 0
+
+
+def run_index_refresh(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    store = _repo_store(resolved)
+    if store is None:
+        return 1
+    records = store.list()
+    if args.url is not None:
+        records = [record for record in records if record.url == args.url]
+    if not records:
+        return _fail(t("plugin.index_refused", code="not_found", detail=""))
+    from shelfhold.composition import default_network
+
+    async def _run() -> int:
+        fetcher = index_fetcher(default_network())
+        try:
+            for record in records:
+                if not _audited(resolved, "plugin.index_refresh", record.url):  # before, not after
+                    return 1
+                try:
+                    outcome = await store.refresh(record, fetcher)
+                except PluginIndexError as exc:
+                    _audited(resolved, "plugin.index_refresh_refused", f"{record.url}:{exc.code}")
+                    return _index_fail(exc)
+                if outcome.applied:
+                    print(
+                        t(
+                            "plugin.index_refreshed",
+                            url=record.url,
+                            version=outcome.document.version,
+                            rotated=int(outcome.rotated),
+                        )
+                    )
+                else:
+                    print(
+                        t(
+                            "plugin.index_unchanged",
+                            url=record.url,
+                            version=outcome.document.version,
+                        )
+                    )
+        finally:
+            await fetcher.aclose()  # one client for every repository, closed once
+        return 0
+
+    return asyncio.run(_run())
+
+
+def run_index_remove(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    store = _repo_store(resolved)
+    if store is None:
+        return 1
+    if not _audited(resolved, "plugin.index_remove", args.url):  # before the change
+        return 1
+    try:
+        store.remove(args.url)
+    except PluginIndexError as exc:
+        return _index_fail(exc)
+    print(t("plugin.index_removed", url=args.url))
+    return 0

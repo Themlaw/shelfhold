@@ -44,6 +44,12 @@ CODES: tuple[ErrorCode, ...] = (
     # EF-EXP-065 (5): only a declared trust value of a third-party plugin is attested
     ErrorCode("plugin.attestation_invalid", 422, "admin"),
     ErrorCode("plugin.attestation_not_needed", 409, "admin"),
+    # M6 L07 (EF-SRC-017, D14): the signed plugin index — a repository is pinned by URL and key
+    ErrorCode("plugin.index_invalid", 422, "admin"),
+    ErrorCode("plugin.index_rollback", 409, "admin"),
+    ErrorCode("plugin.index_expired", 409, "admin"),
+    ErrorCode("plugin.index_not_found", 404, "admin"),
+    ErrorCode("plugin.index_fingerprint_required", 422, "admin"),
     # M6 L06 (D13): the in-process mode keeps its typed phrase, which never crosses the wire
     ErrorCode("plugin.not_isolated", 409, "admin"),
     ErrorCode("plugin.enable_refused", 422, "admin"),  # the guard refused (files, state)

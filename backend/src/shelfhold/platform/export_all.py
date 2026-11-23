@@ -109,6 +109,9 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     # the host's setup
     "physical_root": _HOST, "mount_sentinel": _HOST, "instance": _HOST, "app_setting": _HOST,
     "schedule": _HOST, "time_window": _HOST, "plugin_install": _HOST, "plugin_state": _HOST,
+    # the repositories of signed plugin indexes the admin pinned and the revocations seen
+    # (M6 L07, D14): the host's own trust decisions, pinned again on the new instance
+    "plugin_repo": _HOST, "plugin_revocation": _HOST,
     "shelf_destination": _HOST, "shelf_destination_remote_library": _HOST,
     "tree": _HOST, "tree_indexer": _HOST,
     "remote_library": _HOST, "kavita_instance": _HOST, "kavita_access_audit": _HOST,

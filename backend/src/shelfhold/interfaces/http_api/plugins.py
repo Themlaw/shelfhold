@@ -7,6 +7,12 @@
   (a fresh session, never a key), audited.
 - `GET|POST /api/v1/plugins/{key}/attestations`, `DELETE .../attestations/{field}`: the reserved
   action `plugin.attest` (and `plugin.attest_partitioning` for `access_partitioning`), audited.
+- `GET|POST /api/v1/plugin-repos`, `DELETE .../plugin-repos/{url}`, `POST .../refresh`: the
+  repositories of signed plugin indexes (M6 L07, D14, EF-SRC-017). Adding and removing are the
+  reserved actions `plugin.index_add` and `plugin.index_remove` (a fresh admin session or the
+  host CLI, never a key); the add pins the URL **and** the public key of the signer — without
+  the key there is no pin. A refresh goes through the host's Fetcher and verifies the minisign
+  signature, the trusted comment, the monotone version, the expiry and the revocations.
 - `GET /api/v1/plugins`: every installed third-party plugin, its mode and why it is not loaded
   (EF-SRC-019: the UI explains).
 - `POST|DELETE /api/v1/plugins/{name}/enabled`: the reserved action `plugin.enable_isolated`
@@ -37,6 +43,7 @@ from shelfhold.plugin_host.attestation import (
     AttestationNotNeeded,
     AttestationStore,
 )
+from shelfhold.plugin_host.index import PluginIndexError, RepoStore
 from shelfhold.plugin_host.settings import (
     SecretState,
     SettingsSchema,
@@ -50,6 +57,11 @@ __all__ = ["build_plugins_router"]
 _SECRET = reserved_action(RESERVED_ACTIONS["source.set_secret"])
 _ATTEST = reserved_action(RESERVED_ACTIONS["plugin.attest"])
 _ATTEST_PARTITIONING = reserved_action(RESERVED_ACTIONS["plugin.attest_partitioning"])
+# the audit line of the index actions carries its target (`url:key_id`), like the CLI: the
+# route writes it, in the transaction that pins or unpins (audit=False) — and writes the
+# refusal's own line (`plugin.index_*_refused`, `url:code`) when the store refuses
+_INDEX_ADD = reserved_action(RESERVED_ACTIONS["plugin.index_add"], audit=False)
+_INDEX_REMOVE = reserved_action(RESERVED_ACTIONS["plugin.index_remove"], audit=False)
 # M6 L06: the gate checks the credentials and writes no line — the route writes its own, with
 # the plugin as its target, once the guard has agreed (a refusal leaves no "allowed" row)
 _ENABLE_ISOLATED = reserved_action(RESERVED_ACTIONS["plugin.enable_isolated"], audit=False)
@@ -97,6 +109,47 @@ class AttestationsOut(BaseModel):
     items: list[AttestationOut]
 
 
+class RepoIn(BaseModel):
+    url: str
+    # optional in the schema on purpose: a repository without the signer's key is a typed
+    # refusal (`plugin.index_fingerprint_required`), not a validation error
+    pubkey: str | None = None
+
+
+class RepoOut(BaseModel):
+    url: str
+    key_id: str
+    last_version: int
+    expires: datetime | None
+    added_at: datetime
+
+
+class ReposOut(BaseModel):
+    items: list[RepoOut]
+
+
+class RefreshOut(BaseModel):
+    url: str
+    version: int
+    applied: bool
+    rotated: bool
+
+
+_INDEX_PROBLEMS = {
+    "fingerprint_required": "plugin.index_fingerprint_required",
+    "rollback": "plugin.index_rollback",
+    "same_version": "plugin.index_rollback",
+    "expired": "plugin.index_expired",
+    "expires_too_far": "plugin.index_expired",
+    "not_found": "plugin.index_not_found",
+}
+
+
+def _index_problem(error: PluginIndexError) -> ProblemError:
+    code = _INDEX_PROBLEMS.get(error.code, "plugin.index_invalid")
+    return ProblemError(code, detail=error.detail)
+
+
 class PluginOut(BaseModel):
     """One installed third-party plugin: its mode (D13) and why it is not loaded."""
 
@@ -142,6 +195,8 @@ def build_plugins_router(
     schema_for: Callable[[str], SettingsSchema | None],
     data_dir: Callable[[], Path],
     engine: Callable[[], Engine],
+    repos: Callable[[], RepoStore],
+    index_fetcher_for: Callable[[], Any],
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["sources"])
 
@@ -262,6 +317,89 @@ def build_plugins_router(
         attestations().withdraw(key, name, actor=_actor(principal))
         return listed(key)
 
+    # -- the repositories of signed plugin indexes (M6 L07, EF-SRC-017, D14) ---------------------
+
+    def _audit(principal: Principal, action: str, target: str) -> None:
+        guard.audit(
+            engine(),
+            action,
+            target,
+            actor_id=audit_actor(principal),
+            session_id=principal.session_id,
+            auth_time=principal.auth_time,
+        )
+
+    def _repo(record: Any) -> RepoOut:
+        return RepoOut(
+            url=record.url,
+            key_id=record.key_id,
+            last_version=record.last_version,
+            expires=record.expires,
+            added_at=record.added_at,
+        )
+
+    def _repos() -> ReposOut:
+        return ReposOut(items=[_repo(record) for record in repos().list()])
+
+    @router.get("/plugin-repos")
+    def read_plugin_repos(_principal: Principal = Depends(admin_only)) -> ReposOut:  # noqa: B008
+        return _repos()
+
+    @router.post("/plugin-repos", status_code=201)
+    def add_plugin_repo(
+        body: RepoIn,
+        principal: Principal = Depends(_INDEX_ADD),  # noqa: B008
+    ) -> RepoOut:
+        try:
+            record = repos().add(body.url, body.pubkey or "", principal=principal)
+        except PluginIndexError as error:
+            # a refusal leaves its trace too, like the CLI: the address and the closed code
+            _audit(principal, "plugin.index_add_refused", f"{body.url}:{error.code}")
+            raise _index_problem(error) from None
+        return _repo(record)
+
+    @router.delete("/plugin-repos/{url:path}")
+    def remove_plugin_repo(
+        url: str,
+        principal: Principal = Depends(_INDEX_REMOVE),  # noqa: B008
+    ) -> ReposOut:
+        try:
+            repos().remove(url, principal=principal)
+        except PluginIndexError as error:
+            raise _index_problem(error) from None
+        return _repos()
+
+    @router.post("/plugin-repos/{url:path}/refresh")
+    async def refresh_plugin_repo(
+        url: str,
+        request: Request,
+        principal: Principal = Depends(admin_only),  # noqa: B008
+    ) -> RefreshOut:
+        record = next((r for r in repos().list() if r.url == url), None)
+        if record is None:
+            raise ProblemError(
+                "plugin.index_not_found",
+                detail=t_lang(
+                    "plugin.index_not_found_detail",
+                    language=negotiate(request.headers.get("accept-language")),
+                ),
+            )
+        fetcher = index_fetcher_for()
+        try:
+            outcome = await repos().refresh(record, fetcher, principal=principal)
+        except PluginIndexError as error:
+            # a refusal leaves its trace too, like the CLI: the address and the closed code
+            _audit(principal, "plugin.index_refresh_refused", f"{url}:{error.code}")
+            raise _index_problem(error) from None
+        finally:
+            await fetcher.aclose()
+        return RefreshOut(
+            url=url,
+            version=outcome.document.version,
+            applied=outcome.applied,
+            rotated=outcome.rotated,
+        )
+
     # -- the guard of M6 L06 (D13, EF-SRC-019): the mode, the activation, the reason -----------
     # The gate checks the credentials and writes no line (`audit=False`): each route writes its
     # own, with the plugin as its target, once the guard has agreed — a refusal (unknown plugin,
@@ -287,16 +425,6 @@ def build_plugins_router(
     @router.get("/plugins")
     def read_plugins(_principal: Principal = Depends(admin_only)) -> PluginsOut:  # noqa: B008
         return _plugins()
-
-    def _audit(principal: Principal, action: str, target: str) -> None:
-        guard.audit(
-            engine(),
-            action,
-            target,
-            actor_id=audit_actor(principal),
-            session_id=principal.session_id,
-            auth_time=principal.auth_time,
-        )
 
     def _one(layout: guard.Layout, name: str, *, notice: str | None = None) -> PluginOut:
         state = guard.read_state(layout)

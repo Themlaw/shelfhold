@@ -153,6 +153,10 @@ WHEN_CLOSED_AUDITED = {
     # subscription, in the transaction that makes or removes it; the empty body below is a 422
     # and an unknown identifier a 404: no line
     "webhook.manage",
+    # M6 L07: pinning and unpinning an index repository: the store writes the line, with its
+    # target (`url:key_id`), in the transaction that pins or unpins; the empty body below is a
+    # 422 and an unknown address a 404: no line
+    "plugin.index_add", "plugin.index_remove",
     # M4 L46: the doors that create a Komga and switch the progress sync write none (`audit=False`):
     # the service writes the line, with its target, when it acts; the empty body below is a 422
     "target.add_komga", "destination.sync_progress",

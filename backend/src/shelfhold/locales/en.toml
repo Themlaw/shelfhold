@@ -133,6 +133,13 @@
   plugin_set_secret_help = "Sets a secret from a source, read from a file or from standard input (audited)."
   plugin_set_cookies_help = "Replaces a source's cookies with a name → value JSON object (audited; an empty object clears them)."
   plugin_cookies_file_help = "Cookie JSON file, or - for standard input."
+  plugin_index_help = "Signed plugin index repositories: pinned by URL and public key, verified refresh."
+  plugin_index_add_help = "Pins a signed index repository (URL and minisign public key, audited)."
+  plugin_index_list_help = "Lists the pinned index repositories and the last version believed."
+  plugin_index_refresh_help = "Refreshes the pinned indexes (or one, by URL): signature, version, expiry."
+  plugin_index_remove_help = "Unpins an index repository (audited); an add starts from zero again."
+  plugin_index_url_help = "Address of the index document (plain http(s) URL)."
+  plugin_index_pubkey_help = "Signer's minisign public key, base64 (without it, no pin)."
   secrets_help = "Manages encrypted secrets at rest: export, rotation, keychain status."
   secrets_export_help = "Exports the keychain to a passphrase-protected age file."
   secrets_import_help = "Merges the keys from an export age into the keychain, then replays the pending tombstones (action reserved)."
@@ -262,6 +269,14 @@
   runner_refused = "The plugin runner refuses to start: {problems}"
   runner_ready = "The plugin runner's sandbox is as required (uid {uid}, no /data, no network, read-only root)."
   runner_listening = "The plugin runner listens on {socket}."
+  index_refused = "Refused ({code}): {detail}"
+  index_added = "Repository {url} pinned (key {key_id}): the first refresh will have to be signed by this key."
+  index_none = "No index repository pinned."
+  index_row = "{url} {key_id} v{version} expires {expires}"
+  index_refreshed = "Index of {url} applied: version {version}{rotated, plural, =0 {} other { (key rotated)}}."
+  index_unchanged = "Index of {url} unchanged: version {version} already applied."
+  index_removed = "Repository {url} removed; a new add starts from zero."
+  index_not_found_detail = "No index repository is pinned at this address."
 
 [secrets]
   exported = "Exported keychain (age, scrypt): {path}"
@@ -1838,6 +1853,30 @@
     action = "Nothing to attest."
     cause = "A plugin provided with Shelfhold is already deemed secure: its values ​​do not need attestation."
 
+  [errors."plugin.index_invalid"]
+    title = "The signed index was not accepted."
+    action = "Check the repository address and the key fingerprint, then run the refresh again."
+    cause = "The document received is not a valid index, or its signature does not match the pinned key."
+
+  [errors."plugin.index_rollback"]
+    title = "This index is older than the one already known."
+    action = "No action: Shelfhold keeps the last verified version."
+    cause = "The version number of the received index is lower than or equal to the one already applied, or two indexes carry the same number."
+
+  [errors."plugin.index_expired"]
+    title = "This index has expired."
+    action = "Wait for the repository to publish a current index, then run the refresh again."
+    cause = "The expiry date of the index has passed, or is too far ahead (more than 90 days)."
+
+  [errors."plugin.index_not_found"]
+    title = "No repository pinned at this address."
+    action = "Add the repository with “plugin index add” before refreshing or removing it."
+    cause = "The given address does not match any index repository pinned by the administrator."
+
+  [errors."plugin.index_fingerprint_required"]
+    title = "A repository is pinned with the fingerprint of its signer's key."
+    action = "Start the add again with the repository's minisign public key."
+    cause = "Without the pinned public key, no index of this repository can be verified: the add is refused."
   [errors."plugin.not_isolated"]
     title = "This plugin is not in isolated mode."
     action = "The in-process mode is enabled from the host, by the CLI, with the variable and the typed phrase."

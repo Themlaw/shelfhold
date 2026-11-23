@@ -4876,6 +4876,28 @@ export type RecheckOut = {
 };
 
 /**
+ * RefreshOut
+ */
+export type RefreshOut = {
+    /**
+     * Applied
+     */
+    applied: boolean;
+    /**
+     * Rotated
+     */
+    rotated: boolean;
+    /**
+     * Url
+     */
+    url: string;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
  * RejectIn
  */
 export type RejectIn = {
@@ -5133,6 +5155,56 @@ export type ReplayOut = {
      * Replayed
      */
     replayed: boolean;
+};
+
+/**
+ * RepoIn
+ */
+export type RepoIn = {
+    /**
+     * Pubkey
+     */
+    pubkey?: string | null;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
+ * RepoOut
+ */
+export type RepoOut = {
+    /**
+     * Added At
+     */
+    added_at: string;
+    /**
+     * Expires
+     */
+    expires: string | null;
+    /**
+     * Key Id
+     */
+    key_id: string;
+    /**
+     * Last Version
+     */
+    last_version: number;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
+ * ReposOut
+ */
+export type ReposOut = {
+    /**
+     * Items
+     */
+    items: Array<RepoOut>;
 };
 
 /**
@@ -14629,6 +14701,148 @@ export type ApplyResponses = {
 };
 
 export type ApplyResponse = ApplyResponses[keyof ApplyResponses];
+
+export type ReadPluginReposData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/plugin-repos';
+};
+
+export type ReadPluginReposErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReadPluginReposError = ReadPluginReposErrors[keyof ReadPluginReposErrors];
+
+export type ReadPluginReposResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReposOut;
+};
+
+export type ReadPluginReposResponse = ReadPluginReposResponses[keyof ReadPluginReposResponses];
+
+export type AddPluginRepoData = {
+    body: RepoIn;
+    path?: never;
+    query?: never;
+    url: '/api/v1/plugin-repos';
+};
+
+export type AddPluginRepoErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AddPluginRepoError = AddPluginRepoErrors[keyof AddPluginRepoErrors];
+
+export type AddPluginRepoResponses = {
+    /**
+     * Successful Response
+     */
+    201: RepoOut;
+};
+
+export type AddPluginRepoResponse = AddPluginRepoResponses[keyof AddPluginRepoResponses];
+
+export type RemovePluginRepoData = {
+    body?: never;
+    path: {
+        /**
+         * Url
+         */
+        url: string;
+    };
+    query?: never;
+    url: '/api/v1/plugin-repos/{url}';
+};
+
+export type RemovePluginRepoErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RemovePluginRepoError = RemovePluginRepoErrors[keyof RemovePluginRepoErrors];
+
+export type RemovePluginRepoResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReposOut;
+};
+
+export type RemovePluginRepoResponse = RemovePluginRepoResponses[keyof RemovePluginRepoResponses];
+
+export type RefreshPluginRepoData = {
+    body?: never;
+    path: {
+        /**
+         * Url
+         */
+        url: string;
+    };
+    query?: never;
+    url: '/api/v1/plugin-repos/{url}/refresh';
+};
+
+export type RefreshPluginRepoErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RefreshPluginRepoError = RefreshPluginRepoErrors[keyof RefreshPluginRepoErrors];
+
+export type RefreshPluginRepoResponses = {
+    /**
+     * Successful Response
+     */
+    200: RefreshOut;
+};
+
+export type RefreshPluginRepoResponse = RefreshPluginRepoResponses[keyof RefreshPluginRepoResponses];
 
 export type ReadPluginsData = {
     body?: never;

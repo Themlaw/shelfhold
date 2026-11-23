@@ -342,6 +342,10 @@ CLOSED = (
     "POST /api/v1/plans/naming-preview",
     "POST /api/v1/plans/renames",
     "POST /api/v1/plans/{plan_id}/apply",
+    "GET /api/v1/plugin-repos",
+    "POST /api/v1/plugin-repos",
+    "DELETE /api/v1/plugin-repos/{url:path}",
+    "POST /api/v1/plugin-repos/{url:path}/refresh",
     "GET /api/v1/plugins/{key}/attestations",
     "POST /api/v1/plugins/{key}/attestations",
     "DELETE /api/v1/plugins/{key}/attestations/{name}",
@@ -514,6 +518,10 @@ BODIES = {
     "POST /api/v1/request-lists/for-child/{user_id}": {"text": "A title"},
     "POST /api/v1/ops/blocklist": {"source_key": "s", "remote_unit_id": "x", "reason": "other"},
     "POST /api/v1/webhooks": {"url": "https://hooks.example.org/x", "event_types": ["unit.stored"]},
+    "POST /api/v1/plugin-repos": {
+        "url": "https://index.example.org/index.json",
+        "pubkey": "RWR" + "A" * 86,
+    },
 }
 
 # Surfaces that do not exist yet: the lot that builds each one adds its child case, and this
