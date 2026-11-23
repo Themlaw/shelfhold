@@ -1,7 +1,7 @@
 // Pure SPA served by the backend (ADR-0013): no server rendering, no prerendering.
 import { redirect } from '@sveltejs/kit';
 import { rememberAppearance, sanitize, type Appearance } from '#lib/themes/index.ts';
-import { detectLanguage, type Language } from '#lib/i18n/index.ts';
+import { detectLanguage, setUiLanguage, type Language } from '#lib/i18n/index.ts';
 
 export const ssr = false;
 export const prerender = false;
@@ -82,11 +82,14 @@ export async function load({
   // Detect language before any render (ENF-I18N-001): profile preference first, else browser languages.
   // navigator.languages is only available in the browser; in a pure SPA (ssr=false) this is always the case.
   const browserLangs = typeof navigator !== 'undefined' ? navigator.languages : undefined;
+  // set here, before the layout renders: the first screen speaks one language (ENF-I18N-001)
+  const uiLanguage = language(preferences, browserLangs);
+  setUiLanguage(uiLanguage);
   return {
     sourceUrl,
     appearance,
     nav,
-    language: language(preferences, browserLangs),
+    language: uiLanguage,
     profileId,
     sessionLost: meRead.refused
   };

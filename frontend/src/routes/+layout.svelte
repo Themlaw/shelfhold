@@ -13,11 +13,6 @@
 
   let { children, data } = $props();
 
-  // Set the UI language BEFORE any render (ENF-I18N-001): the title and the first screen must
-  // use the same language as the rest. The language was already detected in +layout.ts load()
-  // from the profile preference or the browser languages, and is guaranteed to be set.
-  setUiLanguage(data.language);
-
   // The installable shell (EF-LEC-012): registered by the SPA, never by the reader, and only on a build
   // (the worker is a product of `vite build`).
   onMount(() => {
