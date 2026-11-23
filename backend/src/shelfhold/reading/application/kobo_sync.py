@@ -15,14 +15,20 @@ The pages of one sync are separate requests, and the catalogue changes under the
 lowered, a shelf closed or a book hidden between two pages must not change what one sync says.
 The first page of a sync therefore **freezes one snapshot per device** (the `in_progress`
 document of `kobo_sync_point`, dated of that instant): the walk it serves (the books as they
-were, each marked new or changed), the deletions it will announce, the tags, the reading states.
+were, each marked new or changed), what the device already holds, the tags, the reading states.
 The pages serve from that walk — re-verifying the scope at each page, so a book hidden mid-sync
 is consumed, not served — and the sync point written at the completion holds **what the device
 was given**, not what the last page could see: what it was served and may no longer be seen is
 announced as `DeletedEntitlements` at the last page and stays in the point (the next delta says
 it again), and what became visible on the way was never served, is not in the point, and the
-next delta announces it. The point is dated of the instant of the first page: whatever happened
-on the way is the next delta's to say.
+next delta announces it. A full enumeration started over a device that already holds books (no
+token, an unreadable one, or the cursor of a flight another request replaced) also takes back
+what it holds and may no longer see: the entitlements it held when the sync started are
+announced as deleted at the last page if the profile may no longer see them, and leave the
+point. The point is dated of the instant of the first page: whatever happened on the way is the
+next delta's to say. The snapshot is persisted at each page under the write lock, its served
+books merged with what the lock finds: two pages of one flight never lose each other's work,
+and the completion reads the row in the transaction that writes it.
 
 What the device already has is the **sync point**, one row per device (`kobo_sync_point`): the
 entitlements and the tags of its last completed sync, each book with the fingerprint of what may
@@ -168,7 +174,9 @@ class _Flight:
     kind: str  # "full": everything as new; "delta": the difference against the point
     walk: list[_Book]  # the books to serve, in identifier order, each marked new or changed
     served: list[str]  # the Editions the device was given so far (served, never the skipped)
-    gone: list[str]  # the entitlements the point held and the profile may no longer see
+    gone: list[str]  # the entitlements the device held when the sync started: a delta freezes
+    # the ones the profile may no longer see, a full enumeration re-checks them all at the last
+    # page and takes back what it may no longer see
     tags: dict[str, dict[str, Any]]  # "new", "changed", "deleted": tag id -> name, items
     states: list[dict[str, Any]]  # the reading positions, as the first page read them
 
@@ -338,7 +346,12 @@ class KoboSync:
                     )
                 # the flight is gone, or not the one the token names: the device starts over
                 return self._begin_full(
-                    connection, principal=principal, scope=scope, base=base, device_id=device_id
+                    connection,
+                    principal=principal,
+                    scope=scope,
+                    base=base,
+                    device_id=device_id,
+                    point=point,
                 )
             if (
                 point is not None
@@ -355,7 +368,12 @@ class KoboSync:
                 )
             # a full enumeration: no token, or one whose sync point is gone
             return self._begin_full(
-                connection, principal=principal, scope=scope, base=base, device_id=device_id
+                connection,
+                principal=principal,
+                scope=scope,
+                base=base,
+                device_id=device_id,
+                point=point,
             )
 
     # -- the first page of a sync: the snapshot is frozen here ------------------------------------
@@ -368,10 +386,14 @@ class KoboSync:
         scope: ReaderScope,
         base: str,
         device_id: str,
+        point: _Point | None,
     ) -> SyncPage:
         """The first page of a full enumeration: everything the profile may see, as new. The
         walk, the tags and the reading states are frozen here and dated of now — the pages serve
-        from them, whatever the catalogue does on the way."""
+        from them, whatever the catalogue does on the way. What the device already holds is
+        frozen too: a full sync started over an existing point (no token, an unreadable one, or
+        the cursor of a flight another request replaced) takes back what it holds and the
+        profile may no longer see, at the last page."""
         t0 = self._now()
         books = self._books_of(connection, scope)
         tags = self._tags_of(connection, scope, books)
@@ -383,7 +405,7 @@ class KoboSync:
             kind="full",
             walk=books,
             served=[],
-            gone=[],
+            gone=sorted(point.books) if point is not None else [],
             tags={"new": tags, "changed": {}, "deleted": {}},
             states=states,
         )
@@ -470,18 +492,26 @@ class KoboSync:
         served_all = sorted(set(flight.served) | {book.edition_id for book in served_page})
         first_page = after is None
         delta = flight.kind == "delta"
+        if more:
+            deletions: list[str] = []
+        elif delta:
+            # what the first page froze as gone, and what was served and may no longer be seen
+            deletions = sorted(
+                set(flight.gone) | {entitlement_of(e) for e in served_all if e not in visible}
+            )
+        else:
+            # a full enumeration takes back what the device holds and may no longer see: what it
+            # held when the sync started and what it was served, minus what is still visible
+            deletions = sorted(
+                ({entitlement_of(e) for e in served_all} | set(flight.gone))
+                - {entitlement_of(e) for e in visible}
+            )
         result: dict[str, Any] = {
             "NewEntitlements": [
                 self._entitlement(book, base) for book in served_page if book.kind == "new"
             ],
             "ChangedEntitlements": [],
-            "DeletedEntitlements": (
-                sorted(
-                    set(flight.gone) | {entitlement_of(e) for e in served_all if e not in visible}
-                )
-                if not more
-                else []
-            ),
+            "DeletedEntitlements": deletions,
             "NewTagging": self._tagging(flight.tags["new"]) if first_page else [],
             "ChangedTagging": self._tagging(flight.tags["changed"]) if first_page and delta else [],
             "DeletedTagging": (
@@ -498,46 +528,62 @@ class KoboSync:
             self._save_flight(device_id, replace(flight, served=served_all))
             nxt = _encode(Cursor(consumed, flight.version))
             return SyncPage({"SyncStateResult": result, "ContinuationToken": nxt}, nxt, True)
-        version = self._complete(connection, device_id=device_id, flight=flight, served=served_all)
+        version = self._complete(device_id=device_id, scope=scope, flight=flight, served=served_all)
         done = _encode(Cursor(None, version))
         return SyncPage({"SyncStateResult": result, "ContinuationToken": done}, done, False)
 
     def _complete(
-        self, connection: Connection, *, device_id: str, flight: _Flight, served: list[str]
+        self, *, device_id: str, scope: ReaderScope, flight: _Flight, served: list[str]
     ) -> int:
         """The last page: the point is written from what the device was given, dated of the
         instant of the first page — whatever changed on the way is the next delta's to say. What
         it was served and may no longer be seen stays in the point (the device holds it: the next
-        delta says it again); what it was never served is not in it (the next delta announces
-        it). Returns the version the completion token carries."""
+        delta says it again); what it was never served is not in it (the next delta announces it).
+        The row is read again under the write lock, in the transaction that writes it: a point
+        another request moved in between is never overwritten from a stale read, and the served
+        books of a concurrent page of the same flight are merged in, never lost. Returns the
+        version the completion token carries."""
         by_edition = {book.edition_id: book for book in flight.walk}
-        books: dict[str, dict[str, str]] = {}
-        tags: dict[str, dict[str, Any]] = {}
-        if flight.kind == "delta":
-            # the point this delta is against has not moved while the flight ran
-            row = connection.execute(
-                sa.select(reading.kobo_sync_point.c.books, reading.kobo_sync_point.c.tags).where(
-                    reading.kobo_sync_point.c.device_id == device_id
-                )
+        with write_transaction(self._engine) as writer:
+            row = writer.execute(
+                sa.select(
+                    reading.kobo_sync_point.c.books,
+                    reading.kobo_sync_point.c.tags,
+                    reading.kobo_sync_point.c.in_progress,
+                ).where(reading.kobo_sync_point.c.device_id == device_id)
             ).first()
-            if row is not None:
+            in_place = _flight_of_document(row.in_progress) if row is not None else None
+            if in_place is not None and in_place.version == flight.version:
+                served = sorted(set(served) | set(in_place.served))
+            books: dict[str, dict[str, str]] = {}
+            tags: dict[str, dict[str, Any]] = {}
+            old_books = row.books if row is not None and isinstance(row.books, dict) else {}
+            old_tags = row.tags if row is not None and isinstance(row.tags, dict) else {}
+            if flight.kind == "delta":
                 gone = set(flight.gone)
-                old_books = row.books if isinstance(row.books, dict) else {}
-                old_tags = row.tags if isinstance(row.tags, dict) else {}
                 books = {e: doc for e, doc in old_books.items() if e not in gone}
                 deleted = set(flight.tags["deleted"])
                 tags = {t: doc for t, doc in old_tags.items() if t not in deleted}
-        for edition_id in served:
-            book = by_edition.get(edition_id)
-            if book is not None:
-                books[book.entitlement_id] = {
-                    "edition": book.edition_id,
-                    "title": book.title,
-                    "fp": book.fingerprint,
-                }
-        tags.update(flight.tags["new"])
-        tags.update(flight.tags["changed"])
-        with write_transaction(self._engine) as writer:
+            else:
+                # what the device still holds and still sees stays in the point even when this
+                # sync did not serve it again (hidden then re-shown on the way): the device was
+                # told nothing about it, and the next delta must not forget it holds it
+                held = set(old_books)
+                books = {}
+                for edition_id in self._visible_ids_of(writer, scope):
+                    entitlement = entitlement_of(edition_id)
+                    if entitlement in held:
+                        books[entitlement] = old_books[entitlement]
+            for edition_id in served:
+                book = by_edition.get(edition_id)
+                if book is not None:
+                    books[book.entitlement_id] = {
+                        "edition": book.edition_id,
+                        "title": book.title,
+                        "fp": book.fingerprint,
+                    }
+            tags.update(flight.tags["new"])
+            tags.update(flight.tags["changed"])
             writer.execute(
                 sa.delete(reading.kobo_sync_point).where(
                     reading.kobo_sync_point.c.device_id == device_id
@@ -557,16 +603,23 @@ class KoboSync:
 
     def _save_flight(self, device_id: str, flight: _Flight) -> None:
         """The flight, persisted at each page: a page the device asks again must find what it was
-        given. The point of a delta stays as it is while the flight runs — the completion reads
-        it to write the next one; a device with no row yet has an empty one, dated of the flight."""
+        given. The row is read again under the write lock, in the transaction that writes it, and
+        two pages of one flight never lose each other's work: the served books are merged with
+        what the lock finds, not written over it. The point of a delta stays as it is while the
+        flight runs (the completion reads it under its own lock); a device with no row yet has an
+        empty one, dated of the flight."""
         document = _flight_document(flight)
         with write_transaction(self._engine) as writer:
-            existing = writer.execute(
-                sa.select(reading.kobo_sync_point.c.id).where(
-                    reading.kobo_sync_point.c.device_id == device_id
-                )
-            ).scalar()
-            if existing is None:
+            row = writer.execute(
+                sa.select(
+                    reading.kobo_sync_point.c.id, reading.kobo_sync_point.c.in_progress
+                ).where(reading.kobo_sync_point.c.device_id == device_id)
+            ).first()
+            if row is not None:
+                in_place = _flight_of_document(row.in_progress)
+                if in_place is not None and in_place.version == flight.version:
+                    document["served"] = sorted(set(document["served"]) | set(in_place.served))
+            if row is None:
                 writer.execute(
                     sa.insert(reading.kobo_sync_point).values(
                         id=new_ulid(),
