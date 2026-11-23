@@ -129,11 +129,15 @@ class ContinueItemOut(BaseModel):
     # `target = kept_copy`: the pair the reader route takes, `/lire/<carrier_type>/<carrier_id>`
     carrier_type: Literal["content"] | None
     carrier_id: str | None
+    # `target` names a destination: the address this entry opens — its own server's, the one the
+    # profile's account is on (two servers of one kind are two addresses), else None
+    open_url: str | None
 
 
 class ContinueOut(BaseModel):
     items: list[ContinueItemOut]
-    # per kind of destination, the address « Ouvrir dans … » opens, read on the server
+    # every server the profile can open something on: the first of a kind under the kind's key,
+    # a second server of the same kind under its target's id — each entry carries its own address
     open_urls: dict[str, str]
 
 
@@ -142,7 +146,9 @@ def _item(found: ContinueEntry) -> ContinueItemOut:
         work_id=found.work_id, title=found.title, unit_id=found.unit_id, number=found.number,
         unit_title=found.unit_title, state=found.state, target=found.target,
         approximate=found.approximate, carrier_type=found.carrier_type,
-        carrier_id=found.carrier_id,
+        carrier_id=found.carrier_id, open_url=None if found.carrier_type else web_address(
+            found.open_url
+        ),
     )  # fmt: skip
 
 
@@ -389,12 +395,16 @@ def build_reader_router(
         response.headers["Cache-Control"] = "no-store"
         entries = get_continue().entries(principal.user_id, limit)
         handed: dict[str, str] = {}
+        servers: set[str] = set()
         for entry in entries:
-            if entry.target == "kept_copy" or entry.target in handed:
+            if entry.target_id is None or entry.target_id in servers:
                 continue
             url = web_address(entry.open_url)
-            if url:
-                handed[entry.target] = url
+            if not url:
+                continue
+            servers.add(entry.target_id)
+            # the first server of a kind is keyed by the kind; a second one, by its target's id
+            handed[entry.target if entry.target not in handed else entry.target_id] = url
         return ContinueOut(
             items=[_item(e) for e in entries],
             open_urls=handed,

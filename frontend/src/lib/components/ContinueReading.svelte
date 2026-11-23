@@ -2,13 +2,13 @@
   // EF-LEC-008: « Reprendre la lecture ». What the server gives for the profile of the session: per
   // series, the Unit being read or the one that comes next. The server filters (a child is shown no
   // series that is hidden from her): the screen shows what it is given, and says nothing when the
-  // list is empty, whatever the reason.
+  // list is empty, whatever the reason. Each entry carries the address it opens — its own server's,
+  // the one the profile's account is on (two servers of one kind are two addresses).
   import type { ContinueItemOut } from '#lib/api/types.gen.ts';
   import { hasMessage, t } from '#lib/i18n/index.ts';
   import { webAddress } from '#lib/links.ts';
 
-  let { items, openUrls = {} }: { items: ContinueItemOut[]; openUrls?: Record<string, string> } =
-    $props();
+  let { items }: { items: ContinueItemOut[] } = $props();
 
   // The kind of the destination, as the interface names it (the slug itself when it is unknown).
   const destinationName = (kind: string): string => {
@@ -40,9 +40,9 @@
             <a class="open" href={`/lire/${encodeURIComponent(item.carrier_type)}/${encodeURIComponent(item.carrier_id)}`} aria-label={label}>
               {t('home.continue_read')}
             </a>
-          {:else if webAddress(openUrls[item.target])}
+          {:else if webAddress(item.open_url)}
             <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the address of another application -->
-            <a class="open" href={webAddress(openUrls[item.target])} rel="noopener noreferrer" aria-label={label}>
+            <a class="open" href={webAddress(item.open_url)} rel="noopener noreferrer" aria-label={label}>
               {verb}
             </a>
           {/if}

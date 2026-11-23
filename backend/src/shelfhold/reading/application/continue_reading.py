@@ -74,6 +74,8 @@ class ContinueEntry:
     # the address « Ouvrir dans <kind> » opens, when `target` names a destination: the target of
     # the destination that answered, the one this profile has an account on — never another's
     open_url: str | None = None
+    # the id of that target: two servers of one kind are two destinations, each entry opens its own
+    target_id: str | None = None
 
 
 def _order(row: Any) -> tuple[bool, float, int, int, str]:
@@ -229,7 +231,7 @@ class ContinueReading:
         found = self._target(connection, user_id, unit_id)
         if found is None:
             return None
-        target, carrier, open_url = found
+        target, carrier, elsewhere = found
         row = connection.execute(
             sa.select(
                 catalog.unit.c.number_raw,
@@ -249,18 +251,20 @@ class ContinueReading:
             number=str(row.number_raw), unit_title=row.title, state=state, target=target,
             approximate=approximate,
             carrier_type="content" if carrier else None, carrier_id=carrier,
-            open_url=None if carrier else open_url,
+            open_url=elsewhere.url if elsewhere else None,
+            target_id=elsewhere.target_id if elsewhere else None,
         )  # fmt: skip
 
     def _target(
         self, connection: sa.Connection, user_id: str, unit_id: str
-    ) -> tuple[Target, str | None, str | None] | None:
+    ) -> tuple[Target, str | None, Elsewhere | None] | None:
         """What the entry opens, judged by the one query (J5-S2): a kept copy of hers that is not
         read elsewhere opens the reader; a Unit read elsewhere names the kind of the destination
         that answered — on each content of the Unit first, then through its coverage (an assembled
         volume is an `export_item` with no content of its own: it is read elsewhere all the same).
-        The answer carries the address of the target the profile's account is on, never one of
-        another's."""
+        The answer is the destination itself: the address of the target the profile's account is
+        on, and that target's id — never one of another's, and never another server of the same
+        kind."""
         try:
             carrier = self._publication.choose(user_id, "unit", unit_id)
             if self._access.resolve(user_id, *carrier).full_allowed:
@@ -285,4 +289,4 @@ class ContinueReading:
             return "kept_copy", str(content_id), None
         if elsewhere is None:  # no content of the Unit said it: the coverage may still hold one
             elsewhere = read_elsewhere_of_unit(connection, user_id=user_id, unit_id=unit_id)
-        return (elsewhere.kind, None, elsewhere.url) if elsewhere else None
+        return (elsewhere.kind, None, elsewhere) if elsewhere else None

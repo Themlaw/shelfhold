@@ -148,7 +148,7 @@ describe('home page', () => {
   it('test_continue_reading_home', async () => {
     resume = [
       { work_id: 'w1', title: 'Série A', unit_id: 'u2', number: '2', unit_title: null, state: 'next', target: 'kept_copy', approximate: true, carrier_type: 'content', carrier_id: 'c2' },
-      { work_id: 'w2', title: 'Série B', unit_id: 'u9', number: '9', unit_title: null, state: 'in_progress', target: 'kavita', approximate: false, carrier_type: null, carrier_id: null }
+      { work_id: 'w2', title: 'Série B', unit_id: 'u9', number: '9', unit_title: null, state: 'in_progress', target: 'kavita', approximate: false, carrier_type: null, carrier_id: null, open_url: KAVITA }
     ];
     render(Page);
     const section = await screen.findByRole('region', { name: 'Reprendre la lecture' });
@@ -169,7 +169,7 @@ describe('home page', () => {
       http.get(`${BASE}/api/reader/continue`, () =>
         HttpResponse.json({
           items: [
-            { work_id: 'w3', title: 'Série C', unit_id: 'u3', number: '3', unit_title: null, state: 'in_progress', target: 'komga', approximate: false, carrier_type: null, carrier_id: null }
+            { work_id: 'w3', title: 'Série C', unit_id: 'u3', number: '3', unit_title: null, state: 'in_progress', target: 'komga', approximate: false, carrier_type: null, carrier_id: null, open_url: KOMGA }
           ],
           open_urls: { komga: KOMGA }
         })
@@ -180,6 +180,34 @@ describe('home page', () => {
     const row = within(section).getByRole('listitem');
     expect(row.textContent?.split(/\s+/).join(' ').trim()).toBe('Série C N° 3 · en cours Ouvrir dans Komga');
     expect(within(row).getByRole('link', { name: 'Ouvrir dans Komga, Série C, n° 3' })).toHaveAttribute('href', KOMGA);
+  });
+
+  // req: EF-LEC-008
+  it('test_continue_reading_two_servers_of_one_kind_each_entry_opens_its_own', async () => {
+    // two Kavita servers, an account on each: each entry carries the address of its own server —
+    // a map keyed by the kind could hand the second series the first server's address
+    server.use(
+      http.get(`${BASE}/api/reader/continue`, () =>
+        HttpResponse.json({
+          items: [
+            { work_id: 'w4', title: 'Série D', unit_id: 'u4', number: '4', unit_title: null, state: 'in_progress', target: 'kavita', approximate: false, carrier_type: null, carrier_id: null, open_url: 'http://kavita-un.test:5000' },
+            { work_id: 'w5', title: 'Série E', unit_id: 'u5', number: '5', unit_title: null, state: 'in_progress', target: 'kavita', approximate: false, carrier_type: null, carrier_id: null, open_url: 'http://kavita-deux.test:5000' }
+          ],
+          open_urls: { kavita: 'http://kavita-un.test:5000', 't-2': 'http://kavita-deux.test:5000' }
+        })
+      )
+    );
+    render(Page);
+    const section = await screen.findByRole('region', { name: 'Reprendre la lecture' });
+    const rows = within(section).getAllByRole('listitem');
+    expect(within(rows[0]!).getByRole('link', { name: 'Ouvrir dans Kavita, Série D, n° 4' })).toHaveAttribute(
+      'href',
+      'http://kavita-un.test:5000'
+    );
+    expect(within(rows[1]!).getByRole('link', { name: 'Ouvrir dans Kavita, Série E, n° 5' })).toHaveAttribute(
+      'href',
+      'http://kavita-deux.test:5000'
+    );
   });
 
   // req: EF-LEC-008
@@ -196,7 +224,7 @@ describe('home page', () => {
     server.use(
       http.get(`${BASE}/api/reader/continue`, () =>
         HttpResponse.json({
-          items: [{ work_id: 'w2', title: 'Série B', unit_id: 'u9', number: '9', unit_title: null, state: 'in_progress', target: 'kavita', approximate: false, carrier_type: null, carrier_id: null }],
+          items: [{ work_id: 'w2', title: 'Série B', unit_id: 'u9', number: '9', unit_title: null, state: 'in_progress', target: 'kavita', approximate: false, carrier_type: null, carrier_id: null, open_url: 'javascript:alert(1)' }],
           open_urls: { kavita: 'javascript:alert(1)' }
         })
       )

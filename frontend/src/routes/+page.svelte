@@ -19,7 +19,6 @@
   let works = $state<WorkItemOut[]>([]);
   let requests = $state<RequestOut[]>([]);
   let resume = $state<ContinueItemOut[]>([]);
-  let openUrls = $state<Record<string, string>>({});
   let loaded = $state(false);
 
   async function load(): Promise<void> {
@@ -29,7 +28,6 @@
       readerContinue({ query: { limit: RESUME } })
     ]);
     resume = again.data?.items ?? [];
-    openUrls = again.data?.open_urls ?? {};
     works = recent.data?.items ?? [];
     requests = own.data?.items ?? [];
     loaded = true;
@@ -54,7 +52,7 @@
   {#if !loaded}
     <p>{t('home.loading')}</p>
   {:else}
-    <ContinueReading items={resume} {openUrls} />
+    <ContinueReading items={resume} />
 
     <section class="recently-arrived" aria-labelledby="recent-title">
       <h2 id="recent-title">{t('home.recently_arrived')}</h2>

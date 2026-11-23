@@ -1240,6 +1240,10 @@ export type ContinueItemOut = {
      */
     number: string;
     /**
+     * Open Url
+     */
+    open_url: string | null;
+    /**
      * State
      */
     state: 'in_progress' | 'next';

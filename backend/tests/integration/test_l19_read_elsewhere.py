@@ -267,11 +267,13 @@ def test_continue_reading_label_names_destination_type(world: World) -> None:
     got = world.admin.get(HOME).json()
     assert [(i["unit_id"], i["target"]) for i in got["items"]] == [(unit, "komga")]
     assert got["open_urls"] == {"komga": "https://komga.test:5000"}
+    assert got["items"][0]["open_url"] == "https://komga.test:5000"  # the entry's own address
     assert (got["items"][0]["carrier_type"], got["items"][0]["carrier_id"]) == (None, None)
     pulled(world, "mum", "export_item", item, done=False)
     hers = items(world.mum.get(HOME))
     assert [(i["unit_id"], i["target"]) for i in hers] == [(unit, "kept_copy")]
     assert (hers[0]["carrier_type"], hers[0]["carrier_id"]) == ("content", content)
+    assert hers[0]["open_url"] is None  # the kept copy opens the reader, not another server
 
 
 # -- PSE follows the bundle rule (J5-S3, D-P7a, ADR-0055) ---------------------------------------

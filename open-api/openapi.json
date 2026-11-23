@@ -2076,6 +2076,17 @@
             "title": "Number",
             "type": "string"
           },
+          "open_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Url"
+          },
           "state": {
             "enum": [
               "in_progress",
@@ -2122,7 +2133,8 @@
           "target",
           "approximate",
           "carrier_type",
-          "carrier_id"
+          "carrier_id",
+          "open_url"
         ],
         "title": "ContinueItemOut",
         "type": "object"

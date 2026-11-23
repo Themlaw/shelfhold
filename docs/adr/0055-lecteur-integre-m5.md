@@ -217,8 +217,10 @@ tout de même. Les clés membres (`live_member_account`) exigent le même compte
 
 **`target` porte le type de la destination.** « Reprendre la lecture » n'écrit plus « kavita » en
 dur : l'entrée porte le type de la destination où l'Unité se lit (« Ouvrir dans Komga » devant un
-serveur Komga), et la réponse donne, par type, l'adresse de la cible où le profil a un compte —
-jamais l'adresse d'une cible sans compte de son profil (`open_urls`).
+serveur Komga) et **l'adresse de la cible où le profil a un compte** — deux serveurs d'un même
+type sont deux destinations, chaque entrée ouvre la sienne ; `open_urls` donne chaque serveur
+ouvrable (le premier d'un type sous la clé du type, un second du même type sous l'identifiant de
+sa cible), jamais l'adresse d'une cible sans compte de son profil.
 
 ## Conséquences
 - **Positives** : le lecteur tient la définition de fini sans concurrencer Kavita ; l'isolation par défaut ne demande rien au porteur ; la sync des liseuses reste sûre ; les contradictions de 01, 02 et 03 sont fermées avant que du code en dépende.

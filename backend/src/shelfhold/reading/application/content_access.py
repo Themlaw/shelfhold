@@ -134,11 +134,13 @@ class ArchiveSource(Protocol):
 
 @dataclass(frozen=True)
 class Elsewhere:
-    """Where a content of the profile's is read: the kind of the destination that holds it and
-    the address of its target, as written — the route words it, `web_address` decides what opens."""
+    """Where a content of the profile's is read: the destination that holds it — the kind of its
+    target, its address as written, and the target's id (two servers of one kind are two answers)
+    — the route words it, `web_address` decides what opens."""
 
     kind: str
     url: str | None
+    target_id: str
 
 
 def read_elsewhere(connection: sa.Connection, *, user_id: str, content_id: str) -> Elsewhere | None:
@@ -193,7 +195,7 @@ def _elsewhere(
             ),
         )
     found = connection.execute(
-        sa.select(target.c.kind, target.c.config)
+        sa.select(target.c.kind, target.c.config, target.c.id)
         .select_from(
             held_elsewhere.join(destination, destination.c.id == record.c.shelf_destination_id)
             .join(target, target.c.id == destination.c.target_id)
@@ -212,7 +214,7 @@ def _elsewhere(
     if found is None:
         return None
     url = found.config.get("url") if isinstance(found.config, dict) else None
-    return Elsewhere(str(found.kind), url if isinstance(url, str) else None)
+    return Elsewhere(str(found.kind), url if isinstance(url, str) else None, str(found.id))
 
 
 class ContentKey:
