@@ -528,21 +528,26 @@ class KoboSync:
             self._save_flight(device_id, replace(flight, served=served_all))
             nxt = _encode(Cursor(consumed, flight.version))
             return SyncPage({"SyncStateResult": result, "ContinuationToken": nxt}, nxt, True)
-        version = self._complete(device_id=device_id, scope=scope, flight=flight, served=served_all)
+        version = self._complete(
+            device_id=device_id, flight=flight, served=served_all, visible=visible
+        )
         done = _encode(Cursor(None, version))
         return SyncPage({"SyncStateResult": result, "ContinuationToken": done}, done, False)
 
     def _complete(
-        self, *, device_id: str, scope: ReaderScope, flight: _Flight, served: list[str]
+        self, *, device_id: str, flight: _Flight, served: list[str], visible: set[str]
     ) -> int:
         """The last page: the point is written from what the device was given, dated of the
         instant of the first page — whatever changed on the way is the next delta's to say. What
         it was served and may no longer be seen stays in the point (the device holds it: the next
         delta says it again); what it was never served is not in it (the next delta announces it).
-        The row is read again under the write lock, in the transaction that writes it: a point
-        another request moved in between is never overwritten from a stale read, and the served
-        books of a concurrent page of the same flight are merged in, never lost. Returns the
-        version the completion token carries."""
+        `visible` is the set the page read for its deletions, passed here and never read again:
+        the deletions and the point are one reading of the scope, so a book hidden between two
+        queries can never leave the point without being announced. The row is read again under
+        the write lock, in the transaction that writes it: a point another request moved in
+        between is never overwritten from a stale read, and the served books of a concurrent
+        page of the same flight are merged in, never lost. Returns the version the completion
+        token carries."""
         by_edition = {book.edition_id: book for book in flight.walk}
         with write_transaction(self._engine) as writer:
             row = writer.execute(
@@ -570,7 +575,7 @@ class KoboSync:
                 # told nothing about it, and the next delta must not forget it holds it
                 held = set(old_books)
                 books = {}
-                for edition_id in self._visible_ids_of(writer, scope):
+                for edition_id in visible:
                     entitlement = entitlement_of(edition_id)
                     if entitlement in held:
                         books[entitlement] = old_books[entitlement]
