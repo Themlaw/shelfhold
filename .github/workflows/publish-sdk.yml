@@ -1,0 +1,76 @@
+name: publish-sdk
+
+# Publication of shelfhold-sdk (ENF-SEC-007, M6 L03, ADR-0056 D-P2): trusted publishing only.
+# The OIDC token of the `publish` job is the one credential — no API token, no secret, nothing
+# referenced from the repository — and the official pypa action, pinned by SHA, turns it into
+# PEP 740 attestations. A tag `sdk-vX.Y.Z` publishes to PyPI behind the protected environment
+# `pypi` (the holder reviews the deployment); a manual run publishes to TestPyPI behind
+# `testpypi`: the first publication is always a dry run on the test index (docs/releasing.md).
+# The build job holds no permission at all and hands over exactly what it built: what is
+# published is never rebuilt. Deliberately not a reusable workflow: trusted publishing does not
+# work from one — the publish job lives here, at the top level. The dry run of every pull
+# request is the `sdk-dist` job of ci.yml, which never uploads anything.
+
+on:
+  push:
+    tags:
+      - 'sdk-v*'
+  workflow_dispatch:  # TestPyPI: the holder's dry run, from the ref it selects
+
+permissions: {}
+
+concurrency:
+  group: publish-sdk
+  cancel-in-progress: false  # a publication is never cancelled mid-flight
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions: {}  # a build needs no token: the publish job holds the only id-token
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: false  # a publish workflow reads no cache a pull request could have poisoned
+      - name: The tag names the version it publishes (a manual run checks nothing)
+        if: github.event_name == 'push'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' sdk/pyproject.toml | head -n1)"
+          [[ "$TAG" =~ ^sdk-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::the tag must be sdk-vX.Y.Z, got ${TAG}"; exit 1; }
+          [ "$TAG" = "sdk-v${version}" ] || { echo "::error::${TAG} does not name the version ${version} of sdk/pyproject.toml"; exit 1; }
+      - name: Build the wheel and the sdist
+        run: uv build --project sdk --out-dir dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sdk-distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      id-token: write  # trusted publishing and PEP 740 attestations, nothing else
+    # The protected environment (the holder reviews the deployment, docs/releasing.md): `pypi`
+    # for the tag that triggered the run, `testpypi` for the holder's manual dry run.
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && 'testpypi' || 'pypi' }}
+      url: ${{ github.event_name == 'workflow_dispatch' && 'https://test.pypi.org/p/shelfhold-sdk' || 'https://pypi.org/p/shelfhold-sdk' }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sdk-distributions
+          path: dist/
+      - name: Publish the distributions (trusted publishing, PEP 740 attestations)
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          repository-url: ${{ github.event_name == 'workflow_dispatch' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
+          attestations: true

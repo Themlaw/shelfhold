@@ -142,8 +142,8 @@ def test_sdk_dist_dry_run_runs_on_pull_requests() -> None:
     # the required check depends on it, and tolerates a skip only when the scope says so
     assert "sdk-dist" in ci["jobs"]["ci-success"]["needs"]
     gate = ci["jobs"]["ci-success"]["steps"][0]
-    assert "SDK_DIST: ${{ needs.sdk-dist.result }}" in gate["env"]
-    assert "SDK_CHANGED: ${{ needs.changes.outputs.sdk }}" in gate["env"]
+    assert gate["env"]["SDK_DIST"] == "${{ needs.sdk-dist.result }}"
+    assert gate["env"]["SDK_CHANGED"] == "${{ needs.changes.outputs.sdk }}"
     assert 'check_filtered "$SDK_DIST" "$SDK_CHANGED"' in gate["run"]
     # the dry run builds, checks, installs — it never sends
     text = yaml.safe_dump(job)

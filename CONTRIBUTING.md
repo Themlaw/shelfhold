@@ -61,13 +61,13 @@ Sur une **PR**, chaque job ne tourne que si ce qu'il teste a pu changer (job `ch
 
 | Fichier changé | Jobs lancés (en plus des toujours-actifs) |
 | --- | --- |
-| `pyproject.toml`, `uv.lock`, `backend/src/**`, `backend/pyproject.toml`, `sdk/**`, `backend/tests/conftest.py`, modules d'aide à la racine de `backend/tests/`, `backend/tests/fixtures/**` (et `fakes`, `support`, `cassettes`), `docker/**`, `frontend/**`, `open-api/**`, `ci.yml` | tout : `backend-unit`, `backend-integration`, `backend-suites` (property, golden, faults), `backend-bench`, `coverage` (+ diff 85 %), `fixtures` ; `frontend`, `openapi`, `client-drift`, e2e front, image + e2e image selon les dossiers touchés |
+| `pyproject.toml`, `uv.lock`, `backend/src/**`, `backend/pyproject.toml`, `sdk/**`, `backend/tests/conftest.py`, modules d'aide à la racine de `backend/tests/`, `backend/tests/fixtures/**` (et `fakes`, `support`, `cassettes`), `docker/**`, `frontend/**`, `open-api/**`, `ci.yml` | tout : `backend-unit`, `backend-integration`, `backend-suites` (property, golden, faults), `backend-bench`, `coverage` (+ diff 85 %), `fixtures` ; `frontend`, `openapi`, `client-drift`, e2e front, image + e2e image selon les dossiers touchés ; `sdk-dist` si `sdk/**`, `pyproject.toml`, `uv.lock` ou `ci.yml` a changé |
 | `backend/tests/unit/**` | `backend-unit`, `fixtures` |
 | `backend/tests/integration/**` | `backend-integration` |
 | `backend/tests/golden/**`, `faults/**`, `property/**` | `backend-suites`, uniquement la suite touchée |
 | `backend/tests/bench/**` | `backend-bench` |
 | `compose*.yaml`, `.env.example`, `.dockerignore` | `backend-unit` (tests statiques du compose), build de l'image et le seul scénario `smoke-install` |
-| `.github/workflows/**` autres que `ci.yml` | `backend-unit` (tests du workflow) ; l'image et tous ses scénarios si `image*.yml` |
+| `.github/workflows/**` autres que `ci.yml` | `backend-unit` (tests du workflow) ; l'image et tous ses scénarios si `image*.yml` ; `sdk-dist` si `publish-sdk.yml` |
 | `e2e/**` | e2e front, image et tous ses scénarios, `reader-bench` (rapport seul, jamais bloquant) |
 | `*.md`, `docs/**` seuls | aucun test lourd |
 
