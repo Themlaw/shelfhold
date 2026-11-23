@@ -424,6 +424,57 @@ class Collections:
             )  # fmt: skip
         return collection_id
 
+    @staticmethod
+    def land_on_reading_shelf(
+        connection: sa.Connection, owner: CollectionViewer, collection_id: str,
+        entries: Sequence[tuple[int, str]],
+    ) -> int:  # fmt: skip
+        """M6 L21 (EF-USR-020): what an arrival puts on a reading shelf, in the caller's
+        transaction. Only what the owner is shown lands on it (the rule of the import: the shelf
+        of a child never holds above her ceiling, whoever made it), a Work already on it is kept
+        once, and the place of each entry is kept when it is free. A shelf that is gone, no
+        longer the owner's, or full refuses nothing: the line stays « arrivée, à classer ».
+        Returns how many Works landed."""
+        row = _row(connection, collection_id)
+        if row is None or row.owner_id != owner.user_id:
+            return 0
+        item = catalog.collection_item.c
+        shown = _shown_works(connection, owner, [work for _p, work in entries])
+        places = {
+            int(r.position)
+            for r in connection.execute(
+                sa.select(item.position).where(item.collection_id == collection_id)
+            )
+        }
+        held = {
+            str(r.work_id)
+            for r in connection.execute(
+                sa.select(item.work_id).where(item.collection_id == collection_id)
+            )
+        }
+        placed = 0
+        for position, work_id in entries:
+            if work_id not in shown or work_id in held or len(places) >= MAX_ITEMS:
+                continue
+            place = position if position not in places else max(places) + 1
+            connection.execute(
+                sa.insert(catalog.collection_item).values(
+                    id=new_ulid(), collection_id=collection_id, position=place,
+                    work_id=work_id,
+                )
+            )  # fmt: skip
+            places.add(place)
+            held.add(work_id)
+            placed += 1
+        if placed:
+            # an item added is a list the admin has not seen: his word for Kavita is taken back
+            connection.execute(
+                sa.update(catalog.collection)
+                .where(catalog.collection.c.id == collection_id)
+                .values(public_approved_at=None)
+            )
+        return placed
+
     # -- the import of a reading-list file -----------------------------------------------------
 
     def import_list(
