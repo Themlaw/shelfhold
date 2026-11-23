@@ -402,7 +402,10 @@ class KavitaClient:
         return found
 
     async def list_libraries(self) -> list[dict[str, Any]]:
-        data = (await self._send(routes.LIBRARIES)).data
+        """The libraries of the server, through the inventory call the destination describes
+        (`inventory_calls`: the inventory of a Kavita is its libraries, whatever library a
+        binding linked)."""
+        data = (await self.execute(self._destination.inventory_calls("")[0])).data
         if not isinstance(data, list):
             raise ProtocolError("libraries did not answer a list")
         return [item for item in data if isinstance(item, dict)]

@@ -1,10 +1,10 @@
 """EF-EXP-047, EF-USR-024, ENF-SEC-010 (M4 L08b): the surfaces a Komga audit reaches.
 
-No route nor command creates a Komga target in this lot: the surfaces are the ones that already
-list and bind destinations (`/api/v1/shelves/{id}/destinations`) and the admin's status page. What
-the audit decides must hold there, for everyone who must not know: a family shelf is bound to a
-Komga only after the audit proved it, a gap shows to the admin and to nobody else, and no key and
-no account name ever comes out of an answer.
+The surfaces are the ones that already list and bind destinations (`/api/v1/shelves/{id}/
+destinations`), the admin's status page, and — L22 — the admin's on-demand audit
+(`/api/v1/audit/komga-accounts`). What the audit decides must hold there, for everyone who must
+not know: a family shelf is bound to a Komga only after the audit proved it, a gap shows to the
+admin and to nobody else, and no key and no account name ever comes out of an answer.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import sqlalchemy as sa
 
 from shelfhold.export.targets.komga import KomgaClient, KomgaKey
 from shelfhold.export.targets.komga.audit import KomgaAuditor
+from shelfhold.i18n import t_lang
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import export
@@ -26,6 +27,7 @@ from tests.komga_env import run
 from tests.visibility_env import add_profile
 
 LIBRARY = "0KIDSLIB01"
+KOMGA_AUDIT = "/api/v1/audit/komga-accounts"
 world = routes.world  # the same world as the binding routes: one shelf below 18+, one adult
 
 
@@ -148,3 +150,71 @@ def test_a_gap_shows_in_health_to_the_admin_without_a_name_or_a_key(world: World
     states = {item["state"] for item in status.json()["waiting"]}
     assert "child_exposure" in states  # the shelf is paused and Health says so
     assert API_KEY not in status.text and "secretname" not in status.text
+
+
+def komga_index_target(world: World) -> str:
+    """A Komga target with an address: the one the audit builds a client for (a row without a
+    sealed key is skipped by the factory, never counted clean)."""
+    target = new_ulid()
+    with write_transaction(world.engine) as connection:
+        connection.execute(
+            sa.insert(export.export_target).values(
+                id=target, kind="komga", name="Index", config={"url": BASE_URL},
+                path_map=[{"local": str(world.library), "remote": "/manga", "mode": "rw"}],
+            )
+        )  # fmt: skip
+    return target
+
+
+@pytest.mark.req("EF-EXP-047", "EF-USR-024", "ENF-SEC-010")
+def test_the_komga_audit_route_is_the_admins_on_demand_twin(world: World) -> None:
+    """L22: `GET /api/v1/audit/komga-accounts` is the last answer of each server, `POST` runs
+    the `target.komga_audit` job now — the proof a waiting family link waits for. Both are the
+    admin's: a member, a child and an anonymous caller are refused, and no key and no account
+    name ever comes out."""
+    target = komga_index_target(world)
+    last = world.api.client.get(KOMGA_AUDIT)
+    assert last.status_code == 200, last.text
+    (entry,) = last.json()["targets"]
+    assert entry["target_id"] == target and entry["state"] == "never_audited"
+    assert entry["reason"] is None and entry["proved"] == 0 and entry["audited_at"] is None
+    now = world.api.post(KOMGA_AUDIT)  # the job runs: no sealed key, the server is skipped
+    assert now.status_code == 200, now.text
+    (entry,) = now.json()["targets"]
+    assert entry["state"] == "never_audited"  # a skipped server is never counted clean
+    assert API_KEY not in now.text and "secretname" not in now.text
+    for role in ("member", "child"):
+        extra = {"max_age_rating": 10} if role == "child" else {}
+        client = add_profile(world.api, role, role, "10.0.0.6", **extra)
+        headers = {"X-CSRF-Token": world.api.csrf(client)}
+        assert client.get(KOMGA_AUDIT, headers=headers).status_code == 403
+        assert client.post(KOMGA_AUDIT, headers=headers).status_code == 403
+    world.api.client.cookies.clear()
+    assert world.api.client.get(KOMGA_AUDIT).status_code == 401  # nobody signed in
+
+
+@pytest.mark.req("EF-EXP-047", "ENF-I18N-001")
+def test_a_folder_not_audited_yet_says_when_its_proof_comes(world: World) -> None:
+    """L22: the refusal of a family link says, in the language of the admin, that the proof
+    will come from the next daily audit (around 7) or from the on-demand one — not the generic
+    sentence of the code."""
+    target = komga_target(world)
+    audit(world, target, age=13)  # /manga/kids is proved; another folder is not
+    owner = world.bind(world.family, "kids")
+    assert owner.status_code == 201, owner.text
+    tree = _tree_of_binding(world, owner.json()["id"])
+    refused = world.bind(world.family, "elsewhere", target=target, tree_id=tree)
+    assert refused.status_code == 409, refused.text
+    body = refused.json()
+    assert body["reason"] == "folder_not_audited"
+    key = "errors.shelf.destination_not_partitioned.reasons.folder_not_audited"
+    fr = t_lang(f"{key}.action", language="fr")
+    assert body["action"] == fr and "audit" in fr
+    switched = world.api.client.patch(
+        "/api/v1/me/preferences", json={"language": "en"},
+        headers={"X-CSRF-Token": world.api.csrf()},
+    )  # fmt: skip
+    assert switched.status_code == 200, switched.text
+    again = world.bind(world.family, "elsewhere", target=target, tree_id=tree)
+    en = t_lang(f"{key}.action", language="en")
+    assert again.json()["action"] == en and en != fr

@@ -6,6 +6,7 @@ exception message: nothing internal (path, SQL, trace) can reach a client. The r
 never echoed.
 """
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
@@ -33,6 +34,9 @@ def is_api_path(path: str) -> bool:
 
 
 _STATUS_TO_CODE = {400: "bad_request", 404: "not_found", 405: "method_not_allowed"}
+
+# the `reason` extension when it is a closed word of the refusing code (L22): never free text
+_CLOSED_REASON = re.compile(r"[a-z0-9_]+")
 
 
 class Problem(BaseModel):
@@ -137,13 +141,23 @@ def problem_body(
     extensions: Mapping[str, Any] | None = None,
     language: str = DEFAULT_LANGUAGE,
 ) -> dict[str, Any]:
+    action, cause = t_lang(spec.action_key, language=language), cause_of(spec, language=language)
+    reason = (extensions or {}).get("reason")
+    # a closed word of the code (never free text): the catalog may say, for that reason alone,
+    # what there is to do (L22: a folder not audited yet waits for the day's audit)
+    if isinstance(reason, str) and _CLOSED_REASON.fullmatch(reason):
+        catalog = load_catalog(language)
+        action_key = f"errors.{spec.code}.reasons.{reason}.action"
+        cause_key = f"errors.{spec.code}.reasons.{reason}.cause"
+        action = t_lang(action_key, language=language) if action_key in catalog else action
+        cause = t_lang(cause_key, language=language) if cause_key in catalog else cause
     body: dict[str, Any] = {
         "type": spec.type_uri,
         "title": t_lang(spec.title_key, language=language),
         "status": status or spec.status,
         "code": spec.code,
-        "action": t_lang(spec.action_key, language=language),
-        "cause": cause_of(spec, language=language),
+        "action": action,
+        "cause": cause,
     }
     if detail:
         body["detail"] = mask_known_secrets(detail)  # a quoted upstream answer may hold one
