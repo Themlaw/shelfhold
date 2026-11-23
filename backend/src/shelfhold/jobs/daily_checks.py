@@ -8,9 +8,12 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Iterable
 
+import sqlalchemy as sa
 import structlog
 from sqlalchemy import Engine
 
+from shelfhold.composition import Composition
+from shelfhold.composition_errors import KeyringUnavailableError
 from shelfhold.export.application.ports import TargetEvents
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import TargetError
@@ -19,8 +22,10 @@ from shelfhold.export.targets.kavita.revalidate import Revalidator
 from shelfhold.export.targets.komga.audit import KomgaAuditor
 from shelfhold.export.targets.komga.client import KomgaClient
 from shelfhold.infrastructure.clock import Clock
+from shelfhold.infrastructure.secrets.errors import EnvelopeError
 
 __all__ = [
+    "connected_komga_clients",
     "komga_accounts_audit",
     "library_type_check",
     "major_update_replay",
@@ -82,6 +87,31 @@ def komga_accounts_audit(
             )  # fmt: skip
 
     return run
+
+
+def connected_komga_clients(
+    comp: Composition,
+) -> Callable[[], Iterable[tuple[str, KomgaClient]]]:
+    """The client factory of the audit of the Komga accounts (the day's job and the admin's
+    on-demand twin): every Komga target that has an address and a sealed key. A row without a
+    secret, or an envelope the vault cannot open, is logged (its class and its target, never
+    the key) and skipped: it must not stop the audit of the targets that follow."""
+
+    def clients() -> Iterable[tuple[str, KomgaClient]]:
+        for target_id in comp.komga_targets():
+            try:
+                yield target_id, comp.komga_client(target_id)
+            except (
+                KeyringUnavailableError, LookupError, EnvelopeError, sa.exc.NoResultFound,
+            ) as error:  # fmt: skip
+                log.info(
+                    "target.komga_client_skipped",
+                    target_id=target_id,
+                    reason=type(error).__name__,
+                )
+                continue
+
+    return clients
 
 
 def major_update_replay(

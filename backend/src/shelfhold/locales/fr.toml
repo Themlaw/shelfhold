@@ -1621,6 +1621,10 @@ title = "Une étagère sous 18+ exige une destination qui cloisonne l'accès."
 action = "Liez-la à une bibliothèque Kavita dédiée, à un Komga dont l'audit des comptes a réussi (la raison est donnée), ou à une destination déclarée et attestée comme cloisonnée."
 cause = "Rien ne garantit que la destination réserve l'accès aux seules personnes concernées : un enfant pourrait y lire des contenus plus âgés."
 
+[errors."shelf.destination_not_partitioned".reasons.folder_not_audited]
+action = "Le dossier n'a encore été prouvé par aucun audit : la preuve viendra du prochain audit quotidien (vers 7 h) ou de l'audit Komga à la demande, réservé à l'administrateur. Reliez l'étagère une fois l'audit passé."
+cause = "Le dossier de cette étagère n'a pas encore été audité sur ce Komga : le lien est refusé jusqu'à ce qu'un audit des comptes le prouve."
+
 [errors."shelf.library_not_dedicated"]
 title = "La bibliothèque Kavita de cette étagère famille contient aussi d'autres dossiers."
 action = "Créez dans Kavita une bibliothèque qui ne regarde que le dossier de l'étagère famille."

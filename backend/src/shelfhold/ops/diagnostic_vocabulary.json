@@ -2075,6 +2075,7 @@
   "shelfhold.ops.kavita",
   "shelfhold.ops.kavita_accounts",
   "shelfhold.ops.keyring",
+  "shelfhold.ops.komga_accounts",
   "shelfhold.ops.lazy_headless",
   "shelfhold.ops.library",
   "shelfhold.ops.maintenance",

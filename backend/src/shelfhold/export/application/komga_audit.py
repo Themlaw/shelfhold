@@ -126,11 +126,12 @@ class KomgaAuditRecorder:
     @staticmethod
     def _pending(connection: Any, target_id: str) -> list[BoundShelf]:
         """The folders of the links that wait: the folders the shelves below 18+ write (the
-        trees a Komga indexes, ADR-0052), under the folders this server's path map maps and
-        not bound to it yet. The day's audit is the production door that proves them (L22): a
-        family shelf is refused only until the next audit, never forever. The shelf is not
-        bound to this server, so a finding withdraws the proof (the link is refused with its
-        reason) but pauses nothing."""
+        trees a Komga indexes, ADR-0052), under the folder the first writable entry of this
+        server's path map maps — the one a binding is written against (`remote_root_of`), so
+        never a folder under another entry. The day's audit is the production door that proves
+        them (L22): a family shelf is refused only until the next audit, never forever. The
+        shelf is not bound to this server, so a finding withdraws the proof (the link is
+        refused with its reason) but pauses nothing."""
         path_map = connection.execute(
             sa.select(export.export_target.c.path_map).where(export.export_target.c.id == target_id)
         ).scalar()
@@ -142,6 +143,11 @@ class KomgaAuditRecorder:
             if isinstance(entry, dict) and entry.get("mode", "rw") == "rw"
         ]
         if not writable:
+            return []
+        # the entry a binding of this server is written against (`remote_root_of` takes the
+        # first): a folder under another entry is a folder no binding can be asked about
+        local, remote = writable[0].get("local"), writable[0].get("remote")
+        if not isinstance(local, str) or not isinstance(remote, str):
             return []
         d, s, t = export.shelf_destination, export.shelf, export.export_target
         rows = connection.execute(
@@ -170,20 +176,12 @@ class KomgaAuditRecorder:
                 continue
             try:
                 folder = clean_absolute(f"{base}/{row.root_subpath}" if row.root_subpath else base)
+                rest = within(folder, clean_absolute(local))
+                root = clean_absolute(f"{remote}/{rest}") if rest else clean_absolute(remote)
             except PathMapError:
                 continue
-            for entry in writable:  # the folder as this server names it, entry by entry
-                local, remote = entry.get("local"), entry.get("remote")
-                if not isinstance(local, str) or not isinstance(remote, str):
-                    continue
-                try:
-                    rest = within(folder, clean_absolute(local))
-                    root = clean_absolute(f"{remote}/{rest}") if rest else clean_absolute(remote)
-                except PathMapError:
-                    continue
-                if rest is not None:
-                    pending.setdefault(root, BoundShelf(None, root, row.max_age_rating))
-                    break
+            if rest is not None:
+                pending.setdefault(root, BoundShelf(None, root, row.max_age_rating))
         return list(pending.values())
 
     def record(
@@ -247,11 +245,13 @@ class KomgaAuditRecorder:
             reason = first[0].code if first else None
         proved = []
         if complete:
-            bad = {f.shelf_id for f in findings}
+            # a finding withdraws the proof of its folder only (L22 counter-review): a pending
+            # folder no library maps must not take the proof of another away
+            bad = {f.folder for f in findings if f.folder}
             proved = [
                 {"root": shelf.root, "ceiling": shelf.ceiling}
                 for shelf in shelves
-                if shelf.root and shelf.shelf_id not in bad
+                if shelf.root and cleaned(shelf.root) not in bad
             ]
         folders = [shelf for shelf in shelves if shelf.root]
         if candidate is not None:  # the question is the shelf about to be linked

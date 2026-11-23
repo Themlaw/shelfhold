@@ -28,6 +28,8 @@ from shelfhold.export.application.komga_audit_state import proved_for
 from shelfhold.export.application.root_bootstrap import RootPolicy
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.target_state import load_health
+from shelfhold.export.domain.bindings import UnpartitionedDestinationError
+from shelfhold.export.domain.naming import DEFAULT_TEMPLATE
 from shelfhold.export.targets.kavita.audit import AccessAuditor
 from shelfhold.export.targets.kavita.linking import ShelfLinker
 from shelfhold.export.targets.komga import KomgaKey, store_komga_key
@@ -45,6 +47,7 @@ from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.jobs.daily_checks import komga_accounts_audit
 from shelfhold.ops.events import BusTargetEvents
+from shelfhold.ops.wiring import open_ops
 from tests.fakes.kavita import API_KEY, FakeKavita
 from tests.fakes.kavita.server import LAN_ADDRESS
 from tests.fakes.komga import API_KEY as KOMGA_KEY
@@ -55,7 +58,7 @@ from tests.fakes.suwayomi import FakeSuwayomi
 from tests.fakes_fetcher import FakeResolver
 from tests.family_env import family_env
 from tests.headless_env import FakeChannels, FakeSuwayomiProbe
-from tests.integration.test_komga_access_audit import LIBRARY, ROOT, bind_indexer, kit
+from tests.integration.test_komga_access_audit import LIBRARY, ROOT, bind_indexer, kit, library
 from tests.komga_env import run
 from tests.l41_env import KAVITA_PASSWORD, context
 from tests.l50_env import Seeded
@@ -80,6 +83,7 @@ class _Exchange:
 class KomgaInstance:
     settings: Settings
     engine: object
+    admin: HeadlessAdmin
     comp: Composition
     komga: FakeKomga
     library: Path
@@ -133,7 +137,7 @@ def komga_instance(
             path_map=[{"local": str(library), "remote": "/manga", "mode": "rw"}],
         )  # fmt: skip
         admin.shelf_create(name="Adultes", max_age="18+", target="k", subpath="Kavita")
-        yield KomgaInstance(settings, engine, comp, komga, library, keyring)
+        yield KomgaInstance(settings, engine, admin, comp, komga, library, keyring)
     finally:
         engine.dispose()
 
@@ -154,7 +158,9 @@ def add_komga_target(inst: KomgaInstance) -> str:
     return target
 
 
-def attach_indexer(inst: KomgaInstance, target: str, destination_id: str, shelf_id: str) -> str:
+def attach_indexer(
+    inst: KomgaInstance, target: str, destination_id: str, shelf_id: str, *, subpath: str = "Kavita"
+) -> str:  # fmt: skip
     """The Komga binding on the tree of the shelf's own binding (J-SIMP-4: it never owns a tree)."""
     with inst.engine.connect() as connection:  # type: ignore[attr-defined]
         tree_id = connection.execute(
@@ -164,7 +170,7 @@ def attach_indexer(inst: KomgaInstance, target: str, destination_id: str, shelf_
         ).scalar_one()
     return ShelfService(inst.engine, clock=inst.comp.clock).bind_destination(  # type: ignore[arg-type]
         shelf_id=shelf_id, target_id=target, transport="tree", plugin_egress="foyer",
-        root_subpath="Kavita", attach_to_tree=tree_id,
+        root_subpath=subpath, attach_to_tree=tree_id,
     )  # fmt: skip
 
 
@@ -271,3 +277,95 @@ def test_komga_family_binding_refused_without_fresh_audit() -> None:
         assert refused is not None and "audit_stale" in refused
         audit()
         assert try_bind(env, target) is None  # the audit of the day proved the folder again
+
+
+@pytest.mark.req("EF-EXP-047", "ENF-SEC-016")
+def test_the_day_audit_translates_a_waiting_folder_as_a_binding_would() -> None:
+    """L22 counter-review: a binding is written against the first writable entry of the path
+    map (`remote_root_of`), and the day's audit translates the folder of a waiting link the
+    same way. A folder under another entry is no folder a binding can be asked about: it is
+    never pending, never proved — however clean the server reads."""
+    with family_env(13) as env:
+        fake, client, _auditor, events, target = kit(env)
+        far = env.lib.manga.parent / "far"  # the local root of a second writable entry
+        (far / "Kavita2").mkdir(parents=True)
+        far_target, second = new_ulid(), new_ulid()
+        with write_transaction(env.engine) as connection:
+            connection.execute(  # a family shelf whose folder is under the second entry
+                sa.insert(export.export_target).values(
+                    id=far_target, kind="kavita", name="Far", access_partitioning="library",
+                    access_partitioning_attested_at=env.clock.now(),
+                    path_map=[{"local": str(far), "remote": "/far", "mode": "rw"}],
+                )
+            )  # fmt: skip
+            connection.execute(
+                sa.insert(export.shelf).values(
+                    id=second, name="Famille 2", phrase="Pour tous aussi", max_age_rating=13
+                )
+            )
+            connection.execute(
+                sa.insert(export.shelf_destination).values(
+                    id=new_ulid(), shelf_id=second, target_id=far_target, transport="tree",
+                    egress="foyer", root_subpath="Kavita2", template=DEFAULT_TEMPLATE.dumps(),
+                    template_origin=f"default@{DEFAULT_TEMPLATE.version}",
+                    kavita_library_type="manga",
+                )
+            )  # fmt: skip
+            connection.execute(  # the Komga now has two writable entries
+                sa.update(export.export_target)
+                .where(export.export_target.c.id == target)
+                .values(
+                    path_map=[
+                        {"local": str(env.lib.manga), "remote": "/manga", "mode": "rw"},
+                        {"local": str(far), "remote": "/far", "mode": "rw"},
+                    ]
+                )
+            )
+        fake.libraries = [
+            library(),
+            {"id": "0FARLIB02", "name": "Far", "root": "/far/Kavita2", "unavailable": False},
+        ]
+        fake.users = [administrator(), reader("teen", [LIBRARY], age=13)]
+        komga_accounts_audit(env.engine, env.clock, events, lambda: [(target, client)])()
+        with env.engine.connect() as connection:
+            assert proved_for(connection, target, ROOT, 13)  # under the first entry
+            assert not proved_for(connection, target, "/far/Kavita2", 13)  # under the second
+
+
+# -- the admin does not wait for the day ---------------------------------------------------------
+
+
+@pytest.mark.req("EF-EXP-047", "ENF-SEC-016")
+def test_the_on_demand_audit_proves_the_folder_of_a_waiting_family_link(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """L22: the admin does not wait for the day. The ops behind `POST
+    /api/v1/audit/komga-accounts` runs the `target.komga_audit` job now, through the client
+    factory of the daily cron (the sealed key, the network of the instance): the folder of a
+    family shelf nothing proved yet is proved, and the link refused just before is accepted."""
+    with komga_instance(settings, tmp_path, monkeypatch) as inst:
+        inst.admin.shelf_create(name="Famille", max_age="13+", target="k", subpath="Famille")
+        target = add_komga_target(inst)
+        inst.komga.libraries = [
+            {"id": "0FAMLILB01", "name": "Famille", "root": "/manga/Famille", "unavailable": False}
+        ]
+        inst.komga.users = [administrator(), reader("teen", ["0FAMLILB01"], age=13)]
+        with inst.engine.connect() as connection:  # type: ignore[attr-defined]
+            shelf_id = connection.execute(
+                sa.select(export.shelf.c.id).where(export.shelf.c.name == "Famille")
+            ).scalar_one()
+            destination_id = connection.execute(
+                sa.select(export.shelf_destination.c.id).where(
+                    export.shelf_destination.c.shelf_id == shelf_id
+                )
+            ).scalar_one()
+        ops = open_ops(inst.settings, engine=inst.engine, composition=inst.comp)  # type: ignore[arg-type]
+        (entry,) = ops.komga_accounts.entries()  # what GET /api/v1/audit/komga-accounts shows
+        assert entry["target_id"] == target and entry["state"] == "never_audited"
+        with pytest.raises(UnpartitionedDestinationError) as refused:  # no proof yet
+            attach_indexer(inst, target, destination_id, shelf_id, subpath="Famille")
+        assert refused.value.reason == "never_audited"
+        ops.komga_accounts.run()  # what POST runs: the job of the day, now
+        (entry,) = ops.komga_accounts.entries()
+        assert entry["state"] == "ok" and entry["proved"] == 1
+        attach_indexer(inst, target, destination_id, shelf_id, subpath="Famille")  # accepted

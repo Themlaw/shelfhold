@@ -176,6 +176,7 @@ from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
 from shelfhold.jobs.daily_checks import (
+    connected_komga_clients,
     komga_accounts_audit,
     library_type_check,
     major_update_replay,
@@ -1500,29 +1501,6 @@ def connected_clients(comp: Composition) -> Callable[[], Iterable[tuple[str, Kav
             try:
                 yield target_id, comp.kavita_client(target_id)
             except (KeyringUnavailableError, KeyError, sa.exc.NoResultFound):
-                continue
-
-    return clients
-
-
-def connected_komga_clients(comp: Composition) -> Callable[[], Iterable[tuple[str, KomgaClient]]]:
-    """The client factory of the daily audit of the Komga accounts: every Komga target that has
-    an address and a sealed key. A row without a secret, or an envelope the vault cannot open,
-    is logged (its class and its target, never the key) and skipped: it must not stop the
-    audit of the targets that follow."""
-
-    def clients() -> Iterable[tuple[str, KomgaClient]]:
-        for target_id in comp.komga_targets():
-            try:
-                yield target_id, comp.komga_client(target_id)
-            except (
-                KeyringUnavailableError, LookupError, EnvelopeError, sa.exc.NoResultFound,
-            ) as error:  # fmt: skip
-                log.info(
-                    "target.komga_client_skipped",
-                    target_id=target_id,
-                    reason=type(error).__name__,
-                )
                 continue
 
     return clients
