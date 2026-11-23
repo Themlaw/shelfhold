@@ -11,9 +11,12 @@ copy): two sources that agree are one row per (profile, Unit), so a series is ne
   query that reads the progress: a series the profile may not see is not an entry, a count, or an
   error: the answer is the one of a profile with no progress. No new rule of visibility.
 * An excerpt (D-P1) writes no position (L07), so it never brings a series here.
-* `target`: `kept_copy` when the profile reads the kept copy in full (ADR-0055 D-P1, the rule of the
-  publication), `kavita` when the Unit is read where it was sent (a written export on a destination
-  where she has a live, verified account); a Unit with neither is dropped.
+* `target`: `kept_copy` when the profile reads a kept copy of the Unit in full (ADR-0055 D-P1,
+  the rule of the publication), else the kind of the destination she reads the Unit on (« Ouvrir
+  dans Komga » in front of a Komga server, J5-S2) — judged by the one query of every surface
+  (`content_access.read_elsewhere`), on each content of hers that covers the Unit, then through
+  the Unit's coverage (an assembled volume has no content of its own); the entry carries the
+  address of the destination that answered, the one her account is on.
 * Bounded: `MAX_ENTRIES` at most, `MAX_WORKS_EXAMINED` series looked at (only those with something
   to offer), `MAX_CANDIDATES` Units tried per series, whatever the library.
 """
@@ -25,9 +28,14 @@ import sqlalchemy as sa
 
 from shelfhold.catalog.public import visible_editions_clause
 from shelfhold.identity.public import reader_scope
-from shelfhold.infrastructure.export_states import LIVE_STATES
-from shelfhold.infrastructure.schema import catalog, export, identity, reading
-from shelfhold.reading.application.content_access import ContentAccess, NoReadableCopyError
+from shelfhold.infrastructure.schema import catalog, reading, storage
+from shelfhold.reading.application.content_access import (
+    ContentAccess,
+    Elsewhere,
+    NoReadableCopyError,
+    read_elsewhere,
+    read_elsewhere_of_unit,
+)
 from shelfhold.reading.application.progress import UnknownCarrierError
 from shelfhold.reading.application.publication import PublicationService
 
@@ -39,7 +47,7 @@ MAX_WORKS_EXAMINED: Final = 120
 _BATCH: Final = 40
 MAX_CANDIDATES: Final = 8  # Units tried for one series before it waits
 
-Target = Literal["kept_copy", "kavita"]
+Target = str  # `kept_copy`, or the kind of the destination the Unit is read on
 
 # The view `reading_progress` (frozen columns, `docs/reference/reading-progress.md`).
 _PROGRESS = sa.table(
@@ -63,6 +71,11 @@ class ContinueEntry:
     # `target` is `kept_copy`
     carrier_type: Literal["content"] | None = None
     carrier_id: str | None = None
+    # the address « Ouvrir dans <kind> » opens, when `target` names a destination: the target of
+    # the destination that answered, the one this profile has an account on — never another's
+    open_url: str | None = None
+    # the id of that target: two servers of one kind are two destinations, each entry opens its own
+    target_id: str | None = None
 
 
 def _order(row: Any) -> tuple[bool, float, int, int, str]:
@@ -218,7 +231,7 @@ class ContinueReading:
         found = self._target(connection, user_id, unit_id)
         if found is None:
             return None
-        target, carrier = found
+        target, carrier, elsewhere = found
         row = connection.execute(
             sa.select(
                 catalog.unit.c.number_raw,
@@ -238,40 +251,42 @@ class ContinueReading:
             number=str(row.number_raw), unit_title=row.title, state=state, target=target,
             approximate=approximate,
             carrier_type="content" if carrier else None, carrier_id=carrier,
+            open_url=elsewhere.url if elsewhere else None,
+            target_id=elsewhere.target_id if elsewhere else None,
         )  # fmt: skip
 
     def _target(
         self, connection: sa.Connection, user_id: str, unit_id: str
-    ) -> tuple[Target, str | None] | None:
+    ) -> tuple[Target, str | None, Elsewhere | None] | None:
+        """What the entry opens, judged by the one query (J5-S2): a kept copy of hers that is not
+        read elsewhere opens the reader; a Unit read elsewhere names the kind of the destination
+        that answered — on each content of the Unit first, then through its coverage (an assembled
+        volume is an `export_item` with no content of its own: it is read elsewhere all the same).
+        The answer is the destination itself: the address of the target the profile's account is
+        on, and that target's id — never one of another's, and never another server of the same
+        kind."""
         try:
             carrier = self._publication.choose(user_id, "unit", unit_id)
             if self._access.resolve(user_id, *carrier).full_allowed:
-                return "kept_copy", carrier[1]  # a kept copy: the manifest's own `content` pair
+                return "kept_copy", carrier[1], None  # the manifest's own `content` pair
         except (NoReadableCopyError, UnknownCarrierError):
             pass
-        record, item, account = (
-            export.export_record, export.export_item, identity.destination_account,
-        )  # fmt: skip
-        held_elsewhere = connection.execute(
-            sa.select(sa.literal(1))
-            .select_from(
-                export.unit_coverage.join(
-                    item,
-                    sa.and_(
-                        export.unit_coverage.c.carrier_type == "export_item",
-                        export.unit_coverage.c.carrier_id == item.c.id,
-                    ),
-                )
-                .join(record, record.c.export_item_id == item.c.id)
-                .join(account, account.c.shelf_destination_id == record.c.shelf_destination_id)
-            )
-            .where(
-                export.unit_coverage.c.unit_id == unit_id,
-                record.c.state.in_(LIVE_STATES),
-                account.c.user_id == user_id,
-                account.c.revoked_at.is_(None),
-                account.c.verified_at.is_not(None),
-            )
-            .limit(1)
-        ).first()
-        return ("kavita", None) if held_elsewhere else None
+        elsewhere: Elsewhere | None = None
+        contents = connection.execute(
+            sa.select(storage.content.c.id)
+            .where(storage.content.c.unit_id == unit_id)
+            .order_by(storage.content.c.id)
+        ).scalars()
+        for content_id in contents:
+            found = read_elsewhere(connection, user_id=user_id, content_id=str(content_id))
+            if found is not None:
+                elsewhere = elsewhere or found  # the first answer, whatever the content
+                continue
+            try:
+                self._access.resolve(user_id, "content", str(content_id))
+            except (NoReadableCopyError, UnknownCarrierError):
+                continue  # not hers to open: another content of the Unit may be
+            return "kept_copy", str(content_id), None
+        if elsewhere is None:  # no content of the Unit said it: the coverage may still hold one
+            elsewhere = read_elsewhere_of_unit(connection, user_id=user_id, unit_id=unit_id)
+        return (elsewhere.kind, None, elsewhere) if elsewhere else None

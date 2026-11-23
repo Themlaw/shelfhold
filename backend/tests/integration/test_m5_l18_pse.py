@@ -68,7 +68,8 @@ class Pse:
     ) -> str:
         """An exported volume of the Edition whose kept file holds `pages`; its `export_item`.
         `live=False`: never written to a destination. `read_elsewhere`: the profiles that have a
-        verified account on the destination that holds it (D-P1: they get an excerpt here)."""
+        verified account on the destination that holds it (they are served the whole volume here
+        too, D-P7a of ADR-0055)."""
         engine = self.world.seed.engine
         content = add_carrier(engine, self.world.seed.editions[edition], format="cbz")
         item = new_ulid()
@@ -529,7 +530,7 @@ def test_opds_pse_link_carries_no_last_read_state(pse: Pse) -> None:
     assert "lastRead" not in text and "lastReadDate" not in text
 
 
-# -- D-P1: an item that was never exported is no stream, and what is read elsewhere is a sample ----
+# -- an item that was never exported is no stream; the whole volume to whoever reads it elsewhere
 
 
 def test_opds_pse_an_item_never_exported_is_not_offered_nor_served(pse: Pse) -> None:
@@ -539,29 +540,29 @@ def test_opds_pse_an_item_never_exported_is_not_offered_nor_served(pse: Pse) -> 
         assert shape(pse.page(who, item, 0)) == shape(pse.page(who, ABSENT_ULID, 0))
 
 
-def test_opds_pse_what_the_profile_reads_elsewhere_is_an_excerpt_here(pse: Pse) -> None:
-    """D-P1: the kid has an account on the destination that holds the volume, so she is given the
-    excerpt the server cuts (the bounds of `/content`: a fifth of the pages at most); the member,
-    who has none there, is given the whole volume."""
+def test_opds_pse_what_the_profile_reads_elsewhere_is_served_whole_here(pse: Pse) -> None:
+    """D-P7a (ADR-0055, M6 L19): the bound of the web reader's excerpt (D-P1) is a rule of that
+    reader, not of the feed — the kid, who has an account on the destination that holds the
+    volume, is given the whole volume, like the member who has none there."""
     world = pse.world
     pages = png_pages(30)
     item = pse.stream("ok", pages, read_elsewhere=("kid",))
     work = f"/opds/works/{world.seed.works['ok']}"
     (kid_link,) = stream_links(parse(world.kid.get(work)))
     (mum_link,) = stream_links(parse(world.mum.get(work)))
+    assert int(kid_link[f"{PSE_NS}count"]) == 30
     assert int(mum_link[f"{PSE_NS}count"]) == 30
-    cut = int(kid_link[f"{PSE_NS}count"])
-    assert 0 < cut <= 6  # a fifth of thirty pages
-    for n in range(cut):
+    for n in (0, 29):
         got = pse.page(world.kid, item, n)
         assert got.status_code == 200 and got.content == pages[f"p{n + 1}.png"]
-    assert shape(pse.page(world.kid, item, cut)) == shape(pse.page(world.kid, ABSENT_ULID, 0))
     assert pse.page(world.mum, item, 29).status_code == 200  # the control: the whole volume
 
 
-def test_opds_pse_a_volume_with_nothing_to_cut_is_not_streamed_to_who_reads_it_elsewhere(
-    pse: Pse,
-) -> None:
-    item = pse.stream("ok", png_pages(1), read_elsewhere=("kid",))  # one page: no excerpt
-    assert stream_links(parse(pse.world.kid.get(f"/opds/works/{pse.world.seed.works['ok']}"))) == []
-    assert shape(pse.page(pse.world.kid, item, 0)) == shape(pse.page(pse.world.kid, ABSENT_ULID, 0))
+def test_opds_pse_a_volume_of_one_page_is_streamed_to_who_reads_it_elsewhere(pse: Pse) -> None:
+    """D-P7a: nothing is cut anymore, so a volume of one page is a stream too — to the profile
+    who reads it elsewhere as well (there is no excerpt that could be unavailable)."""
+    item = pse.stream("ok", png_pages(1), read_elsewhere=("kid",))
+    feed = parse(pse.world.kid.get(f"/opds/works/{pse.world.seed.works['ok']}"))
+    (kid_link,) = stream_links(feed)
+    assert int(kid_link[f"{PSE_NS}count"]) == 1
+    assert pse.page(pse.world.kid, item, 0).status_code == 200

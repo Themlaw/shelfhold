@@ -209,7 +209,7 @@ def test_continue_reading_opens_kavita_for_an_exported_unit(world: World) -> Non
     assert [(i["unit_id"], i["state"], i["target"]) for i in got] == [
         (unit, "in_progress", "kavita")
     ]
-    assert "kavita_url" in world.admin.get(HOME).json()
+    assert "open_urls" in world.admin.get(HOME).json()
     assert (got[0]["carrier_type"], got[0]["carrier_id"]) == (None, None)  # no reader to open
 
 

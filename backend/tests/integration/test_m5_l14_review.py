@@ -25,10 +25,11 @@ from urllib.parse import urlsplit
 import pytest
 
 from shelfhold.config import Settings
-from shelfhold.infrastructure.db import write_transaction
 from tests.integration.test_l05a_content_route import World, _world
+from tests.integration.test_l19_read_elsewhere import sent
 from tests.integration.test_m5_l06_publication import ServerCutArchives
-from tests.integration.test_schema_storage_export import add_target
+from tests.integration.test_m5_l07_positions import kept
+from tests.integration.test_m5_l14_continue_reading import pulled
 
 HOME = "/api/reader/continue"
 
@@ -46,25 +47,25 @@ def world(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World
 
 @pytest.mark.req("EF-LEC-008", "ENF-SEC-004")
 def test_the_kavita_address_never_breaks_the_home_of_every_profile(world: World) -> None:
-    """L'adresse de « Ouvrir dans Kavita » est relue dans la base à chaque réponse, comme une
-    valeur dont on ne se souvient pas qu'elle fut validée (`kavita_open_url` ne regarde que le
-    préfixe http(s)://). Or le port de cette adresse n'est contrôlé par aucun écrivain de la
-    ligne : `_http_url` et `validate_target_url` vérifient le schéma, l'hôte, les identifiants,
-    la requête et le fragment, jamais le port. La surface qui lit le même champ pour le même
-    usage (les points d'entrée des liseuses) traite un port hors plage comme une adresse à
-    refuser, pas à servir (« whose port is out of range gives None », `device_entry_points`,
-    déjà éprouvée par `test_entry_points_refuse_anything_but_a_web_address`). Ici, `web_address`
-    lit `parts.port` hors de son `try` : la valeur lève `ValueError` et `GET /api/reader/continue`
-    casse pour tous les profils — et l'accueil, qui attend cette réponse dans sa `Promise.all`,
-    reste sur son état de chargement, série lue ou non. Le contrat écrit de la fonction (« else
-    None ») demande autre chose : une réponse 200, et jamais une adresse dont le port ne
-    s'ouvre pas."""
-    with write_transaction(world.seed.engine) as connection:
-        add_target(connection, config={"url": BAD_PORT_URL})
+    """L'adresse de « Ouvrir dans Kavita » est celle de la cible où le profil a un compte, relue
+    dans la base à chaque réponse, comme une valeur dont on ne se souvient pas qu'elle fut
+    validée (`web_address` ne regarde que le préfixe http(s)://). Or le port de cette adresse
+    n'est contrôlé par aucun écrivain de la ligne : `_http_url` et `validate_target_url`
+    vérifient le schéma, l'hôte, les identifiants, la requête et le fragment, jamais le port.
+    La surface qui lit le même champ pour le même usage (les points d'entrée des liseuses)
+    traite un port hors plage comme une adresse à refuser, pas à servir (« whose port is out
+    of range gives None », `device_entry_points`, déjà éprouvée par
+    `test_entry_points_refuse_anything_but_a_web_address`). Ici, `web_address` lit `parts.port`
+    hors de son `try` : la valeur lève `ValueError` et `GET /api/reader/continue` casse pour
+    tous les profils — et l'accueil, qui attend cette réponse dans sa `Promise.all`, reste sur
+    son état de chargement, série lue ou non. Le contrat écrit de la fonction (« else None »)
+    demande autre chose : une réponse 200, et jamais une adresse dont le port ne s'ouvre pas."""
+    content, unit = kept(world)
+    item = sent(world, content, unit, readers=("admin",), url=BAD_PORT_URL)
+    pulled(world, "admin", "export_item", item, done=False)
     got = world.admin.get(HOME)
     assert got.status_code == 200, got.text  # une adresse inouvrable n'est pas une raison de casser
-    handed = got.json()["kavita_url"]
-    if handed is not None:  # « else None » : ce qui est rendu doit s'ouvrir dans un navigateur
+    for handed in got.json()["open_urls"].values():  # ce qui est rendu s'ouvre dans un navigateur
         parts = urlsplit(handed)
         try:
             port = parts.port

@@ -1240,13 +1240,17 @@ export type ContinueItemOut = {
      */
     number: string;
     /**
+     * Open Url
+     */
+    open_url: string | null;
+    /**
      * State
      */
     state: 'in_progress' | 'next';
     /**
      * Target
      */
-    target: 'kept_copy' | 'kavita';
+    target: string;
     /**
      * Title
      */
@@ -1274,9 +1278,11 @@ export type ContinueOut = {
      */
     items: Array<ContinueItemOut>;
     /**
-     * Kavita Url
+     * Open Urls
      */
-    kavita_url: string | null;
+    open_urls: {
+        [key: string]: string;
+    };
 };
 
 /**
