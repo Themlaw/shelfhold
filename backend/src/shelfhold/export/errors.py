@@ -36,6 +36,8 @@ CODES: tuple[ErrorCode, ...] = (
     # M4 contradicteur (J-SIMP-4): a Komga binding never owns a tree until M5 — the executor
     # plans no write for one, the shelf would never receive its files (EF-EXP-020, ADR-0052)
     ErrorCode("binding.komga_primary_unsupported", 409, "admin"),
+    # L22 (EF-EXP-020, ADR-0052): a tree whose files Komga would not read as the render does
+    ErrorCode("binding.komga_layout_conflict", 409, "admin"),
     # M4 L04: a plan or a call a destination returned that the host will not run (EF-EXP-001)
     ErrorCode("export.plan_refused", 422, "admin"),
     ErrorCode("shelf.destination_exists", 409, "admin"),

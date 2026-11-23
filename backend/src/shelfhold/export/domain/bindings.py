@@ -101,6 +101,14 @@ class KomgaPrimaryUnsupportedError(BindingError):
     code = "binding.komga_primary_unsupported"
 
 
+class KomgaLayoutConflictError(BindingError):
+    """The tree a Komga would index holds files its folder-as-series reading would not see as
+    the common render does (ADR-0052): the binding is refused and the files are never rewritten
+    (files are frozen)."""
+
+    code = "binding.komga_layout_conflict"
+
+
 class FolderOutsideRootError(BindingError):
     """The folder of a drop box is the folder its target declares, or one below it: never one that
     climbs out of it (`..`), is given as an absolute path, or goes through a link."""

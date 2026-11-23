@@ -372,6 +372,8 @@ CLOSED = (
     "DELETE /api/v1/me/notification-destination",
     "GET /api/v1/audit/kavita-accounts",  # M3 L10: the audit of the Kavita accounts, the admin's
     "POST /api/v1/audit/kavita-accounts",
+    "GET /api/v1/audit/komga-accounts",  # L22: the Komga accounts, the admin's on demand
+    "POST /api/v1/audit/komga-accounts",
     "PUT /api/v1/profiles/{profile_id}/visibility",
     "POST /api/v1/reconcile/adopt-after-restore",
     "POST /api/v1/reconcile/forget-root",

@@ -16,6 +16,10 @@
 - `target.library_type_check` and `target.major_update_replay` (daily, EF-EXP-049): the type of
   each Kavita library read again (a change pauses the shelf), and the names replayed through
   `parse-bulk` when the Kavita line changed; both only report, nothing is renamed or written;
+- `target.komga_audit` (daily, EF-EXP-047): the accounts of every Komga read again over the
+  shelves bound now — it is what keeps the proof of partitioning fresh (36 h, L08b);
+- the export pass relays the targeted scan to every Komga that indexes a tree it wrote
+  (EF-EXP-020): the scan of the library that holds the folder, asked once the writing is done;
 - `intents.prune` (daily): the closed intents older than the retention leave the journal;
 - `notify.dispatch` (EF-INT-006): the sender of the notification queue.
 
@@ -77,8 +81,10 @@ from shelfhold.export.application.fan_out import (
     FanOut,
     HostContentStore,
     TreeBarrier,
+    indexers_of,
 )
 from shelfhold.export.application.intents import IntentJournal
+from shelfhold.export.application.komga_audit_state import remote_root_of
 from shelfhold.export.application.library_repair import LibraryRepair
 from shelfhold.export.application.locks import work_lock_for
 from shelfhold.export.application.migration_detect import SwitchoverDetector, SwitchoverGate
@@ -153,6 +159,7 @@ from shelfhold.export.targets.kavita.series import (
     refresh_names,
 )
 from shelfhold.export.targets.kobo.source import KoboSource
+from shelfhold.export.targets.komga.client import KomgaClient
 from shelfhold.export.targets.komga.target import KomgaDestination
 from shelfhold.export.targets.native_folder.source import NativeFolderSource
 from shelfhold.identity.public import child_kavita_accounts
@@ -164,10 +171,16 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.observability.wiring import daily_access_audit
 from shelfhold.infrastructure.packaging.cbz import PageTarget
 from shelfhold.infrastructure.schema import coherence, export
+from shelfhold.infrastructure.secrets.errors import EnvelopeError
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.wake import WakeDeferred
 from shelfhold.integrations.apprise import NotificationDispatcher, register_notification_job
-from shelfhold.jobs.daily_checks import library_type_check, major_update_replay
+from shelfhold.jobs.daily_checks import (
+    connected_komga_clients,
+    komga_accounts_audit,
+    library_type_check,
+    major_update_replay,
+)
 from shelfhold.jobs.digest_job import register_digest_job
 from shelfhold.jobs.integrity_job import register_integrity_job
 from shelfhold.jobs.public import JobContext, JobFailedError, JobPools
@@ -209,6 +222,7 @@ __all__ = [
     "EXPORT_JOB_KIND",
     "INTENT_PRUNE_KIND",
     "KEY_EXPIRY_KIND",
+    "KOMGA_AUDIT_KIND",
     "LIBRARY_TYPE_CHECK_KIND",
     "MAJOR_UPDATE_REPLAY_KIND",
     "PROGRESS_SYNC_KIND",
@@ -243,10 +257,12 @@ INTENT_PRUNE_KIND = "intents.prune"
 KEY_EXPIRY_KIND = "target.key_expiry"
 LIBRARY_TYPE_CHECK_KIND = "target.library_type_check"
 MAJOR_UPDATE_REPLAY_KIND = "target.major_update_replay"
+KOMGA_AUDIT_KIND = "target.komga_audit"  # EF-EXP-047: the accounts of every Komga, every day
 INTENT_PRUNE_CRON = "41 3 * * *"
 KEY_EXPIRY_CRON = "23 6 * * *"
 LIBRARY_TYPE_CHECK_CRON = "47 6 * * *"
 MAJOR_UPDATE_REPLAY_CRON = "52 6 * * *"
+KOMGA_AUDIT_CRON = "57 6 * * *"  # after the other daily checks, before the day begins
 INTENT_RETENTION = timedelta(days=30)  # a closed intent is kept a month for the audit trail
 RECONCILE_HASH_CRON = "30 3 * * *"  # inside the maintenance window, where files may be hashed
 SCAN_QUIET_S = 31  # the debounce of the scans (30 s of calm per destination)
@@ -692,7 +708,7 @@ class FirstPartyDestinations:
     the CWA drop box (EF-EXP-022) and the Kobo folder (EF-EXP-021) describe a plan of files:
     `NativeFolderSource`, `CwaSource` and `KoboSource` read what was planned and answer for their
     kind. Komga (EF-EXP-020) declares what it is and describes calls of the library; it is not
-    run by the pass yet (its scan is asked by `KomgaClient`, see docs/decisions/M4.md, L08a)."""
+    run by the pass: its scan is relayed by `relay_komga_scans` once the writing is done."""
 
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
@@ -798,6 +814,7 @@ def export_handler(comp: Composition) -> Callable[[JobContext], None]:
             log.info("export.scan_retry_failed", reason=type(error).__name__)
         scans = ScanRelay(comp.engine)
         disks = _Disks(comp, scans)
+        written: set[str] = set()  # the destinations this run wrote: their Komgas rescan
         for destination in destinations:
             if context.stop_requested:
                 return
@@ -809,19 +826,20 @@ def export_handler(comp: Composition) -> Callable[[JobContext], None]:
                 continue  # the target has no sealed key yet
             scans.client, scans.asked = client, []
             try:
-                context.add(
-                    ops_applied=asyncio.run(
-                        _export_one(comp, disks, client, destination, scans, context)
-                    )
-                )
+                applied = asyncio.run(_export_one(comp, disks, client, destination, scans, context))
+                context.add(ops_applied=applied)
+                if applied:
+                    written.add(destination.id)
             except (NoLibraryError, KeyringUnavailableError) as error:
                 log.info("export.run_skipped", reason=type(error).__name__)
                 return
         natives = [*_native_folders(comp, destinations), *drops]
         if disks.opened or natives:  # each shelf's bindings are judged one by one (L06a, L07)
-            _fan_out_pass(
+            written |= _fan_out_pass(
                 comp, disks, [*destinations, *drops] if disks.opened else natives, context
             )
+        if written:
+            relay_komga_scans(comp, written)
 
     return run
 
@@ -844,13 +862,91 @@ def _native_folders(comp: Composition, destinations: list[Destination]) -> list[
     return [d for d in destinations if d.target_id in native]
 
 
+# -- the Komga indexers of a tree (EF-EXP-020) ----------------------------------------------------
+
+
+def komga_indexers(
+    comp: Composition, destination_id: str
+) -> list[tuple[str, str, KomgaClient, str]]:
+    """The Komga bindings that index the tree of this destination, with the client of each and
+    the folder it indexes (its remote root: the library that holds it is the one to scan). A
+    binding whose key cannot be unsealed is skipped: the next pass asks again once it can."""
+    with comp.engine.connect() as connection:
+        others = indexers_of(connection, destination_id)
+        if not others:
+            return []
+        binding, target = export.shelf_destination, export.export_target
+        rows = connection.execute(
+            sa.select(binding.c.id, binding.c.target_id, binding.c.root_subpath, target.c.path_map)
+            .join(target, sa.and_(target.c.id == binding.c.target_id, target.c.kind == "komga"))
+            .where(binding.c.id.in_(others))
+            .order_by(binding.c.id)
+        ).all()
+    found: list[tuple[str, str, KomgaClient, str]] = []
+    for row in rows:
+        try:
+            client = comp.komga_client(row.target_id)
+        except (KeyringUnavailableError, LookupError, EnvelopeError, sa.exc.NoResultFound) as error:
+            log.info(  # the class and the target, never the key the vault could not open
+                "export.komga_client_skipped", target_id=row.target_id,
+                reason=type(error).__name__,
+            )  # fmt: skip
+            continue
+        found.append(
+            (row.id, row.target_id, client, remote_root_of(row.path_map, row.root_subpath))
+        )
+    return found
+
+
+def relay_komga_scans(comp: Composition, written: Iterable[str]) -> None:
+    """The scan of the library that holds the folder each Komga indexer of a written tree
+    indexes: Komga has no scan of a folder, so the pass asks for the scan of the library once
+    its writing is done — never when nothing was written. A Komga that does not answer, a
+    folder no library holds, or a paused destination is logged and left to the next pass (a
+    scan is idempotent); a server is asked once per folder, whatever the number of its
+    bindings (two libraries of the same server are scanned each)."""
+    from shelfhold.export.application.target_state import DestinationPausedError
+
+    indexers: dict[tuple[str, str], tuple[str, str, KomgaClient, str]] = {}  # server and folder
+    for destination_id in written:
+        for binding_id, target_id, client, root in komga_indexers(comp, destination_id):
+            indexers.setdefault((client.base_url, root), (binding_id, target_id, client, root))
+    for _binding_id, target_id, client, root in indexers.values():
+        try:
+            asyncio.run(_scan_komga_library(comp, client, _binding_id, root))
+        except (TargetError, DestinationPausedError) as error:
+            log.info("export.komga_scan_failed", target_id=target_id, reason=type(error).__name__)
+
+
+async def _scan_komga_library(
+    comp: Composition, client: KomgaClient, destination_id: str, remote_root: str
+) -> None:
+    """One indexer: the library that holds its folder is scanned, and its trash emptied when the
+    tree lost files — Komga then forgets the books the host removed, and the records of no other
+    library (`empty-trash` only forgets what a scan no longer finds)."""
+    with comp.engine.connect() as connection:
+        lost = connection.execute(
+            sa.select(export.export_record.c.export_item_id)
+            .where(
+                export.export_record.c.shelf_destination_id == destination_id,
+                export.export_record.c.state.in_(("missing", "recycled")),
+            )
+            .limit(1)
+        ).first()
+    if lost is not None:
+        client.note_deletion(await client.library_of(remote_root))
+    await client.request_scan_for_path(remote_root)
+    await client.flush_scans(now=True)
+
+
 def _fan_out_pass(
     comp: Composition, disks: _Disks, destinations: list[Destination], context: JobContext
-) -> None:
+) -> set[str]:
     """The pass over the bindings of the shelves this run exported: the barrier of a shelf below
     18+ looked at again for each binding, what each is given, and the calls and plans the
     destinations describe through the executor (the gates of the pipeline's doors). Nothing here
-    opens a root: the pipeline of the run is the one that was already built."""
+    opens a root: the pipeline of the run is the one that was already built. Returns the
+    destinations that executed a write (their Komga indexers rescan)."""
     from shelfhold.export.application.target_state import DestinationPausedError
 
     pipeline, _fsops = disks.get()
@@ -867,14 +963,17 @@ def _fan_out_pass(
                 ).scalars()
             )
         )
+    written: set[str] = set()
     for shelf_id in shelves:
         try:
-            fan.run(shelf_id, new_ulid())
+            report = fan.run(shelf_id, new_ulid())
+            written |= {o.destination_id for o in report.outcomes if o.executed}
         except (DestinationPausedError, RestoredBehindError) as error:
             log.info("export.fan_out_waits", reason=type(error).__name__)
         except Exception as error:  # one shelf never stops the job nor the shelves after it
             log.warning("export.fan_out_failed", reason=type(error).__name__)
             context.add(fan_out_failed=1)  # a counter of the run: Health reads it
+    return written
 
 
 def _names_may_refresh(comp: Composition, destination_id: str) -> bool:
@@ -1180,19 +1279,20 @@ def apply_handler(comp: Composition) -> Callable[[JobContext], None]:
             raise JobFailedError("target.route_missing") from None  # no sealed key: nothing to ask
         scans.client = client
         try:
-            context.add(
-                ops_applied=asyncio.run(
-                    _export_one(
-                        comp,
-                        disks,
-                        client,
-                        destination,
-                        scans,
-                        context,
-                        (plan_id, version),
-                    )
+            applied = asyncio.run(
+                _export_one(
+                    comp,
+                    disks,
+                    client,
+                    destination,
+                    scans,
+                    context,
+                    (plan_id, version),
                 )
             )
+            context.add(ops_applied=applied)
+            if applied:  # a plan a person confirmed wrote: the Komga indexers rescan
+                relay_komga_scans(comp, [destination.id])
         except (
             StalePlanError,
             SourceMissingError,
@@ -1676,6 +1776,9 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
     events = BusTargetEvents(comp.engine, comp.bus)
     type_check = library_type_check(comp.engine, comp.clock, events, connected_clients(comp))
     replay = major_update_replay(comp.engine, comp.clock, events, connected_clients(comp))
+    komga_audit = komga_accounts_audit(
+        comp.engine, comp.clock, events, connected_komga_clients(comp)
+    )  # EF-EXP-047: the proof of partitioning, kept fresh by the day's audit
     pools.register(
         LIBRARY_TYPE_CHECK_KIND, pool="io", handler=lambda _context: type_check(), writes=False
     )
@@ -1684,6 +1787,10 @@ def register_runtime_jobs(pools: JobPools, comp: Composition) -> None:
         MAJOR_UPDATE_REPLAY_KIND, pool="io", handler=lambda _context: replay(), writes=False
     )
     pools.scheduler.add(MAJOR_UPDATE_REPLAY_KIND, MAJOR_UPDATE_REPLAY_CRON, jitter_s=300)
+    pools.register(
+        KOMGA_AUDIT_KIND, pool="io", handler=lambda _context: komga_audit(), writes=False
+    )
+    pools.scheduler.add(KOMGA_AUDIT_KIND, KOMGA_AUDIT_CRON, jitter_s=300)
 
     def run_prune(_context: JobContext) -> None:
         prune()

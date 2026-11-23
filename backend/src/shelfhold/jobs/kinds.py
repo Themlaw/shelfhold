@@ -41,6 +41,7 @@ DECLARED: Final[dict[str, KindTraits]] = {
     "reconcile.hash": _REPAIR,
     "integrity_rolling": _REPAIR,  # replaces the damaged copies (L23)
     "target.access_audit": KindTraits(security_repair=True),  # EF-EXP-055; registered by L26/L37
+    "target.komga_audit": KindTraits(security_repair=True),  # EF-EXP-047; the proof of partitioning
     "export.run": _STEPS,
     "read_state.push": KindTraits(background=True),  # EF-SRC-026: the owner's « read », to Suwayomi
     "progress.sync": KindTraits(background=True),  # EF-EXP-026: Kavita's progress, member by member
