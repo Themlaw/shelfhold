@@ -343,6 +343,7 @@ describe('Écran des webhooks', () => {
   });
 
   // Fix: remove() should only clear the secret if it's for the same subscription
+  // req: EF-INT-005
   it('does not clear the secret when deleting a different subscription', async () => {
     let items: unknown[] = [hook(), hook({ id: OTHER_ID, url_host: 'other.example.org' })];
     let deletedId: string | null = null;
@@ -360,10 +361,8 @@ describe('Écran des webhooks', () => {
     const user = userEvent.setup();
     await screen.findByText('hooks.example.org');
     // Rotate the first hook to show its secret
-    let rotated = 0;
     server.use(
       http.post(`${BASE}/api/v1/webhooks/${HOOK_ID}/rotate`, () => {
-        rotated += 1;
         return HttpResponse.json({ ...hook(), secret: SECRET });
       })
     );
@@ -382,6 +381,7 @@ describe('Écran des webhooks', () => {
   });
 
   // Fix: distinguish secret_unreadable error
+  // req: EF-INT-005
   it('shows a dedicated message when the secret cannot be read during rotation', async () => {
     list();
     deliveries(HOOK_ID);
