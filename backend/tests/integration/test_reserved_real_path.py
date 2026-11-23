@@ -156,6 +156,10 @@ WHEN_CLOSED_AUDITED = {
     # M4 L46: the doors that create a Komga and switch the progress sync write none (`audit=False`):
     # the service writes the line, with its target, when it acts; the empty body below is a 422
     "target.add_komga", "destination.sync_progress",
+    # M6 L13: the doors of the tracker link write none (`audit=False`): the host writes the line
+    # (`tracker.linked`, `tracker.unlinked`, `tracker.push_on`, `tracker.allowance_given`) in the
+    # transaction that really acts; the empty body below is a 422 and an unknown profile a 404
+    "tracker.link", "tracker.unlink", "tracker.push_opt_in", "tracker.allow_child",
 }  # fmt: skip
 # any role may do it on its own account (the guard names KNOWN_ROLES): the role loop skips it
 # M4 L12: an adult handles their own Kavita key (a member's session is not refused by role: the
@@ -168,6 +172,9 @@ EVERY_ROLE_OWN_ACCOUNT = {
     "oidc.link_own",  # M5 L03: an adult's own account (a child is refused by the route)
     "oidc.unlink_own",  # M5 L04: the same
     "notify.profile_destination",  # M4 L39: an adult's own (tests/integration/test_m4_l39_*)
+    # M6 L13: a profile's own tracker link, in every role the guard names; the service refuses a
+    # child without the admin's word (403, tests/integration/test_l13_trackers.py)
+    "tracker.link", "tracker.unlink", "tracker.push_opt_in",
 }  # fmt: skip
 
 

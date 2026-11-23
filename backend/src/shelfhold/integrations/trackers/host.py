@@ -337,7 +337,9 @@ class TrackerHost:
             token_fingerprint=fingerprint,
         )
 
-    def unlink(self, principal: Any, user_id: str, plugin_key: str) -> bool:
+    # The name says the domain, not the file system: the link is a row of the database, and the
+    # word `unlink` alone belongs to the writers of files (the architecture guards read it so).
+    def unlink_tracker(self, principal: Any, user_id: str, plugin_key: str) -> bool:
         self._own(principal, user_id)
         with write_transaction(self._engine) as connection:
             gone = connection.execute(

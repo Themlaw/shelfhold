@@ -167,7 +167,7 @@ def build_trackers_router(get_host: Callable[[], TrackerHost]) -> APIRouter:
         plugin_key: str,
         principal: Annotated[Principal, Depends(_UNLINK)],
     ) -> Response:
-        run(lambda: get_host().unlink(principal, user_id, plugin_key))
+        run(lambda: get_host().unlink_tracker(principal, user_id, plugin_key))
         return Response(status_code=204)
 
     @router.put("/{user_id}/trackers/{plugin_key}/push", response_model=PushOut)
