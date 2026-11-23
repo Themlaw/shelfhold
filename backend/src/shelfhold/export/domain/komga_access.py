@@ -111,6 +111,7 @@ class Finding:
     code: str
     library: str | None = None  # the reference of the library of Komga, when the finding has one
     shelf_id: str | None = None
+    folder: str | None = None  # the remote folder the finding is about: the proof of that one goes
 
 
 def restriction_age(age: int, restriction: str) -> int:
@@ -160,11 +161,13 @@ def evaluate(
     holds_more: set[str] = set()  # libraries that hold more than the folder of one of their shelves
     for shelf in shelves:
         if not covering[shelf]:
-            findings.append(Finding(LIBRARY_UNMAPPED, None, shelf.shelf_id))
+            findings.append(Finding(LIBRARY_UNMAPPED, None, shelf.shelf_id, cleaned[shelf]))
         for lib in covering[shelf]:
             if _clean(lib.root) != cleaned[shelf]:
                 holds_more.add(lib.ref)
-                findings.append(Finding(LIBRARY_NOT_DEDICATED, lib.ref, shelf.shelf_id))
+                findings.append(
+                    Finding(LIBRARY_NOT_DEDICATED, lib.ref, shelf.shelf_id, cleaned[shelf])
+                )
     ceilings: dict[str, list[int | None]] = {}
     for shelf in shelves:
         for lib in covering[shelf]:
@@ -179,7 +182,9 @@ def evaluate(
                     continue
                 family = ceiling is not None and is_family(ceiling)
                 if not family or ceiling > (account.age or 0):  # type: ignore[operator]
-                    findings.append(Finding(LIBRARY_ABOVE_RATING, lib.ref, shelf.shelf_id))
+                    findings.append(
+                        Finding(LIBRARY_ABOVE_RATING, lib.ref, shelf.shelf_id, cleaned[shelf])
+                    )
                     break
     family_refs = {
         ref for ref, ceils in ceilings.items()
@@ -192,7 +197,7 @@ def evaluate(
         reached = {lib.ref for lib in libraries if account.reaches(lib.ref)}
         if reached & family_refs and reached & other_refs:
             findings += [
-                Finding(ACCOUNT_UNCLASSIFIED, lib.ref, shelf.shelf_id)
+                Finding(ACCOUNT_UNCLASSIFIED, lib.ref, shelf.shelf_id, cleaned[shelf])
                 for shelf in shelves
                 for lib in covering[shelf]
                 if lib.ref in reached

@@ -2810,6 +2810,46 @@ export type KeyringOut = {
 };
 
 /**
+ * KomgaAccountsAuditOut
+ */
+export type KomgaAccountsAuditOut = {
+    /**
+     * Targets
+     */
+    targets: Array<KomgaAuditOut>;
+};
+
+/**
+ * KomgaAuditOut
+ */
+export type KomgaAuditOut = {
+    /**
+     * Audited At
+     */
+    audited_at?: string | null;
+    /**
+     * Proved
+     */
+    proved?: number;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * Target Id
+     */
+    target_id: string;
+    /**
+     * Version
+     */
+    version?: string | null;
+};
+
+/**
  * KomgaIn
  */
 export type KomgaIn = {
@@ -9822,6 +9862,72 @@ export type AuditNowResponses = {
 };
 
 export type AuditNowResponse = AuditNowResponses[keyof AuditNowResponses];
+
+export type LastAudit2Data = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/audit/komga-accounts';
+};
+
+export type LastAudit2Errors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type LastAudit2Error = LastAudit2Errors[keyof LastAudit2Errors];
+
+export type LastAudit2Responses = {
+    /**
+     * Successful Response
+     */
+    200: KomgaAccountsAuditOut;
+};
+
+export type LastAudit2Response = LastAudit2Responses[keyof LastAudit2Responses];
+
+export type AuditNow2Data = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/audit/komga-accounts';
+};
+
+export type AuditNow2Errors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AuditNow2Error = AuditNow2Errors[keyof AuditNow2Errors];
+
+export type AuditNow2Responses = {
+    /**
+     * Successful Response
+     */
+    200: KomgaAccountsAuditOut;
+};
+
+export type AuditNow2Response = AuditNow2Responses[keyof AuditNow2Responses];
 
 export type LoginData = {
     body: LoginRequest;

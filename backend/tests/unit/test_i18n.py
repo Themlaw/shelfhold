@@ -62,6 +62,14 @@ def test_ui_strings_extracted_no_hardcoded_text() -> None:
     # The cause is the code's own sentence when it has one, else its audience's (EF-UX-003).
     used |= {spec.cause_key for spec in all_error_codes() if spec.cause_key in catalog}
     used |= {f"errors.cause_default.{audience}" for audience in ("admin", "user")}
+    # The texts of a reason are looked up by code and reason (M6 L22, `problems.py`): a reason
+    # section counts as used when its code is declared.
+    declared = {spec.code for spec in all_error_codes()}
+    used |= {
+        key
+        for key in catalog
+        if ".reasons." in key and key.removeprefix("errors.").split(".reasons.", 1)[0] in declared
+    }
     assert used - set(catalog) == set(), "keys missing from the catalog"
     assert set(catalog) - used == set(), "catalog keys never used"
 
