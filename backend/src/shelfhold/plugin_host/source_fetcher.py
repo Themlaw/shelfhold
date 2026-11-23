@@ -58,6 +58,7 @@ class SourceFetchers:
         *,
         cache_enabled: bool = True,
         cache_off_sources: Collection[str] = (),
+        cache_quota_bytes: int = 256 * 1024 * 1024,
         limits: FetchLimits | None = None,
         pace_clock: Callable[[], float] = time.monotonic,
         pace_sleep: Callable[[float], Awaitable[object]] = asyncio.sleep,
@@ -70,13 +71,14 @@ class SourceFetchers:
         self._pacers: dict[str, Pacer] = {}
         self._enabled = cache_enabled
         self._off = frozenset(cache_off_sources)
+        self._quota = cache_quota_bytes
         self._limits = limits
         self._caches: dict[str, HttpCache | None] = {}
         self._robots: dict[str, RobotsPolicy] = {}
 
     def cache_of(self, key: str) -> HttpCache | None:
         if key not in self._caches:
-            self._caches[key] = cache_for(key, self._enabled, self._off)
+            self._caches[key] = cache_for(key, self._enabled, self._off, quota_bytes=self._quota)
         return self._caches[key]
 
     def pacer_of(self, record: PluginRecord) -> Pacer | None:

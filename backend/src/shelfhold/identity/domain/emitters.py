@@ -145,11 +145,14 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         # System emitters (closed list): `system_*` calls name theirs as a literal.
         f"{_FSOPS}/facade.py::Fsops.boot": "staging_orphan_cleanup",
         f"{_FSOPS}/writer.py::_discard": "staging_orphan_cleanup",  # a failed write's staged file
-        # `purge --now` (L34): the service, and the one helper that erases under /data
+        # `purge --now` (L34): the service, and the helpers that erase under /data
         "shelfhold/export/application/purge.py::PurgeService.purge_unit": "purge.now",
         "shelfhold/export/application/purge.py::PurgeService.purge_work": "purge.now",
         "shelfhold/infrastructure/volumes.py::erase_data_path": "purge.now",
         "shelfhold/infrastructure/volumes.py::_remove_tree_at": "purge.now",
+        # the sweep of the derived caches (M6 L12): its eraser of one file under /data, the
+        # /data writer's own, behind the closed allowlist of cache_quotas (its only caller)
+        "shelfhold/infrastructure/volumes.py::_unlink_cache_file": "cache_retention_purge",
         # Removing a destination (L30, EF-EXP-031): "tout retirer" unlinks the files Shelfhold wrote
         # there, one journaled intention each, after the reserved action `destination.remove_all`
         # (fresh session or host CLI, never a key) and the typed phrase.
@@ -218,6 +221,10 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         "shelfhold/interfaces/http_api/library.py::build_library_router.empty_trash": "trash.empty",
         # The early purge under disk pressure (M3 L26): a system emitter, driven by the disk guard
         f"{_EXPORT_APP}/reclaim.py::BinReclaimer._remove_under_pressure": "disk_guard_purge",
+        # The retention and quotas of the derived caches (M6 L12, EF-BIB-018): a system emitter,
+        # the only caller of the /data erasure of the caches; host-created paths only, checked
+        # by the sweep itself before anything is opened (`library.application.cache_quotas`)
+        "shelfhold/library/application/cache_quotas.py::purge_caches": "cache_retention_purge",
         # The probe file of the permission preflight (EF-EXP-054): a name the probe drew itself.
         f"{_FSOPS}/probe.py::_remove_probe_file": ("probe_file_cleanup"),
         # The files of the capability probe of a root (EF-EXP-059): names it drew, in the staging

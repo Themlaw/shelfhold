@@ -148,6 +148,10 @@ SYSTEM_EMITTERS = frozenset(
         # the bin under disk pressure (M3 L26, EF-BIB-030): oldest first, never younger than a
         # week, only while the volume is under its mark, never an irreplaceable Unit's entry
         "disk_guard_purge",
+        # the derived caches under /data (M6 L12, EF-BIB-018): thumbnails, renditions (KEPUB
+        # included), HTTP and metadata caches; host-created paths only, checked by the sweep
+        # itself (`library.application.cache_quotas`), which is also its only caller
+        "cache_retention_purge",
     }
 )
 

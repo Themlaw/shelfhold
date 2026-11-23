@@ -44,6 +44,12 @@ const page = (over: Record<string, unknown> = {}) => ({
     warnings: [{ code: 'backup_stale', action: action('shelfhold backup run') }]
   },
   stats: { human_interventions: { a: 2, b: 1 }, units_exported: 12, arrivals_pending: 0 },
+  caches: [
+    { kind: 'thumbnails', entries: 12, used_bytes: 1000, quota_bytes: 2000, over: false },
+    { kind: 'renditions', entries: 3, used_bytes: 5000, quota_bytes: 4000, over: true },
+    { kind: 'web_responses', entries: 7, used_bytes: null, quota_bytes: 3000, over: false },
+    { kind: 'metadata', entries: 100, used_bytes: 2000, quota_bytes: 268435456, quota_entries: 4096, over: false }
+  ],
   ...over
 });
 const serve = (body: unknown) => http.get(`${BASE}/api/v1/health/page`, () => HttpResponse.json(body as never));
@@ -115,6 +121,19 @@ describe('Health page', () => {
     render(Page);
     await screen.findByRole('region', { name: 'Sources' });
     expect(screen.queryByRole('region', { name: 'Liseuses et relais vers Kavita' })).toBeNull();
+  });
+
+  // req: EF-BIB-018
+  it('shows the use and the quota of each cache, and which one is over', async () => {
+    server.use(serve(page()));
+    render(Page);
+    const region = await screen.findByRole('region', { name: 'Caches' });
+    expect(within(region).getAllByRole('definition')).toHaveLength(4);
+    expect(within(region).getByText(/12 entrées, 1.?000 octets sur un quota de 2.?000/)).toBeInTheDocument();
+    expect(within(region).getByText(/3 entrées, 5.?000 octets sur un quota de 4.?000/)).toBeInTheDocument();
+    expect(within(region).getByText(/7 entrées \(quota : 3.?000 octets\)/)).toBeInTheDocument();
+    expect(within(region).getByText(/100 entrées, 2.?000 octets sur un quota de 268.?435.?456/)).toBeInTheDocument();
+    expect(within(region).getAllByText(/quota dépassé/)).toHaveLength(1);
   });
 
   // req: ENF-OBS-005

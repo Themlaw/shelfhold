@@ -176,6 +176,29 @@
       </dl>
     </section>
 
+    <section aria-labelledby="h-caches">
+      <h2 id="h-caches">{t('health_page.caches')}</h2>
+      <dl>
+        {#each view.caches as cache (cache.kind)}
+          <dt>{t(`health_page.cache_kind_${cache.kind}`)}</dt>
+          <dd>
+            {#if cache.quotaBytes === null}
+              {t('health_page.cache_rows', { entries: cache.entries, quota: cache.quotaEntries ?? 0 })}
+            {:else if cache.usedBytes === null}
+              {t('health_page.cache_entries', { entries: cache.entries, quota: cache.quotaBytes })}
+            {:else}
+              {t('health_page.cache_bytes', {
+                entries: cache.entries,
+                used: cache.usedBytes,
+                quota: cache.quotaBytes
+              })}
+            {/if}
+            {t(cache.over ? 'health_page.cache_over' : 'health_page.cache_within')}
+          </dd>
+        {/each}
+      </dl>
+    </section>
+
     <section aria-labelledby="h-diagnostic">
       <h2 id="h-diagnostic">{t('health_page.diagnostic')}</h2>
       <p>{t('health_page.diagnostic_help')}</p>

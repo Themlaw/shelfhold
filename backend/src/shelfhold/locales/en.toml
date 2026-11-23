@@ -431,6 +431,13 @@
   rights_may_be_protected = "Edition {edition_id} may still be protected in the country of the instance: public domain in the United States does not mean public domain everywhere. Indication only: it blocks nothing."
   rights_translation_may_be_protected = "The translation of the {edition_id} Edition may still be protected in the country of the instance (translator's own rights). Indication only: it prevents nothing."
   identity_header_stripped = "of requests carry identity header \"{header}\", removed and never believed (forward-auth not configured or proxy outside trusted CIDRs). Remove it at the proxy or tunnel level, or configure forward-auth (M3)."
+  cache_kind_thumbnails = "cover thumbnails"
+  cache_kind_renditions = "reading renditions (KEPUB included)"
+  cache_kind_web_responses = "HTTP cache"
+  cache_kind_metadata = "metadata answers"
+  cache_line = "Cache {cache}: {entries} entries, {used} bytes of a {quota} quota — exceeded: {over}."
+  cache_entries_line = "Cache {cache}: {entries} entries (quota: {quota} bytes)."
+  cache_rows_line = "Cache {cache}: {entries} entries of a {quota} quota — exceeded: {over}."
 
 [ops]
   refused = "Refused ({code}): {detail}"

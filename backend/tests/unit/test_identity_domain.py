@@ -202,7 +202,8 @@ def test_reserved_action_needs_at_least_one_effect() -> None:
 
 @pytest.mark.req("EF-USR-024")
 def test_system_emitters_closed_list() -> None:
-    """Passe 13 (N2): the only emitters of deletions exempt from the reserved-action rule."""
+    """Passe 13 (N2): the only emitters of deletions exempt from the reserved-action rule.
+    `cache_retention_purge` is M6 L12's: the daily sweep of the derived caches (EF-BIB-018)."""
     assert (
         frozenset(
             {
@@ -210,6 +211,7 @@ def test_system_emitters_closed_list() -> None:
                 "probe_file_cleanup",
                 "trash_retention_purge",
                 "disk_guard_purge",
+                "cache_retention_purge",
             }
         )
         == SYSTEM_EMITTERS
