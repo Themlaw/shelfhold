@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import json
 import secrets
+import sqlite3
 from collections.abc import Iterator
+from contextlib import closing
 from datetime import timedelta
 from typing import Any
 
@@ -25,6 +27,7 @@ from shelfhold.config import Settings
 from shelfhold.identity.domain.catalogue import RESERVED_ACTIONS
 from shelfhold.identity.public import local_auth
 from shelfhold.infrastructure.db import create_db_engine
+from shelfhold.integrations.trackers import purge_plugin
 from tests.tracker_env import REMOTE_ID, TRACKER_ORIGIN, Fixture, tracker_env, trackers_path
 
 pytestmark = pytest.mark.req("EF-INT-010", "EF-USR-024", "ENF-SEC-005")
@@ -296,3 +299,45 @@ def test_the_tracker_actions_are_declared_in_the_catalogue(fx: Fixture) -> None:
         e.value for e in RESERVED_ACTIONS["tracker.push_opt_in"].effects
     }
     assert "manages_credentials" in {e.value for e in RESERVED_ACTIONS["tracker.unlink"].effects}
+
+
+# --- the uninstall of a plugin takes its links with it ---------------------------------------
+
+
+def test_removing_a_tracker_plugin_purges_its_rows_and_only_its_own(fx: Fixture) -> None:
+    """The uninstall of a tracker plugin takes its links — the sealed tokens with them — and
+    the allowances said in its name; another tracker's rows are not touched."""
+    fx.add("mum", "member")
+    mum = fx.client_of("mum")
+    assert fx.link("mum", _token(), client=mum).status_code == 200
+    kid = fx.add("kid", "child", max_age_rating=10)
+    path = trackers_path(kid, TRACKER_KEY, ALLOWANCE)
+    assert fx.send("PUT", path, {"allowed": True}).status_code == 200
+    # another tracker's link and allowance, rows the host would have written the same way
+    with closing(sqlite3.connect(fx.settings.database_path)) as db:
+        active = db.execute("SELECT kid FROM secret_key WHERE state = 'active'").fetchone()[0]
+        db.execute(
+            "INSERT INTO tracker_link (id, user_id, plugin_key, remote_ref, origin, linked_at,"
+            " secret_kid, secret_v, secret_nonce, secret_ct, token_fingerprint)"
+            " VALUES ('01J00000000000000000000AB9', ?, 'other-tracker', '{}',"
+            " 'https://other.invalid', '2026-11-20 12:00:00', ?, 1, x'00', zeroblob(16), 'xyz')",
+            (fx.users["mum"], active),
+        )
+        db.execute(
+            "INSERT INTO tracker_allowance (user_id, plugin_key, allowed_by, allowed_at)"
+            " VALUES (?, 'other-tracker', ?, '2026-11-20 12:00:00')",
+            (kid, fx.users["mum"]),
+        )
+        db.commit()
+    engine = _engine(fx)
+    try:
+        purge_plugin(engine, [TRACKER_KEY])
+    finally:
+        engine.dispose()
+    # the plugin's link and allowance are gone, the other tracker's stay
+    assert fx.rows("SELECT plugin_key FROM tracker_link ORDER BY plugin_key") == [
+        ("other-tracker",)
+    ]
+    assert fx.rows("SELECT plugin_key FROM tracker_allowance ORDER BY plugin_key") == [
+        ("other-tracker",)
+    ]
