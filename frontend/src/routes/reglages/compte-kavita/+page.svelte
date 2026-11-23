@@ -159,7 +159,7 @@
   <title>{t('kavita.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('kavita.title')}</h1>
   {#if failed}
     <p role="alert">{t('kavita.error')}</p>

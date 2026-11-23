@@ -1,7 +1,7 @@
 // Pure SPA served by the backend (ADR-0013): no server rendering, no prerendering.
 import { redirect } from '@sveltejs/kit';
 import { rememberAppearance, sanitize, type Appearance } from '#lib/themes/index.ts';
-import type { Language } from '#lib/i18n/index.ts';
+import { detectLanguage, type Language } from '#lib/i18n/index.ts';
 
 export const ssr = false;
 export const prerender = false;
@@ -30,10 +30,15 @@ async function readMe(fetcher: Fetch): Promise<{ me: Record<string, unknown> | n
 }
 
 /** The language of the interface is a preference of the profile (ENF-I18N-001); nothing set (nobody
- * signed in, or an unknown value): the browser languages decide (the `Accept-Language`). */
-function language(preferences: Record<string, unknown> | null): Language | null {
+ * signed in, or an unknown value): the browser languages decide. Defaults to French when unknown. */
+function language(preferences: Record<string, unknown> | null, browserLanguages?: readonly string[]): Language {
   const value = preferences?.language;
-  return value === 'fr' || value === 'en' ? value : null;
+  if (value === 'fr' || value === 'en') return value;
+  // No profile preference: use the browser languages (ENF-I18N-001)
+  if (browserLanguages && browserLanguages.length > 0) {
+    return detectLanguage(browserLanguages);
+  }
+  return 'fr'; // Default to French when no browser languages are available
 }
 
 /** What every screen needs: the address of the source (offered to anyone, ENF-LEG-012) and, for
@@ -74,5 +79,15 @@ export async function load({
   // The tabs the server offers to the signed-in role (EF-UX-005); nobody signed in: none.
   const nav = Array.isArray(me?.nav) ? me.nav.filter((id): id is string => typeof id === 'string') : [];
   const profileId = typeof me?.id === 'string' ? me.id : null; // the owner of the offline copies on this browser (L16b)
-  return { sourceUrl, appearance, nav, language: language(preferences), profileId, sessionLost: meRead.refused };
+  // Detect language before any render (ENF-I18N-001): profile preference first, else browser languages.
+  // navigator.languages is only available in the browser; in a pure SPA (ssr=false) this is always the case.
+  const browserLangs = typeof navigator !== 'undefined' ? navigator.languages : undefined;
+  return {
+    sourceUrl,
+    appearance,
+    nav,
+    language: language(preferences, browserLangs),
+    profileId,
+    sessionLost: meRead.refused
+  };
 }

@@ -5,13 +5,18 @@
   import { guardOfflineSession, startOfflineSync, wipeOfflineCopies } from '#lib/offline/runtime.ts';
   import { registerServiceWorker } from '#lib/pwa/register.ts';
   import { applyAppearance } from '#lib/themes/index.ts';
-  import { detectLanguage, setUiLanguage } from '#lib/i18n/index.ts';
+  import { setUiLanguage } from '#lib/i18n/index.ts';
   import '#lib/themes/base.css';
   import '#lib/themes/themes.css';
   import '#lib/themes/eink.css';
   import './global.css';
 
   let { children, data } = $props();
+
+  // Set the UI language BEFORE any render (ENF-I18N-001): the title and the first screen must
+  // use the same language as the rest. The language was already detected in +layout.ts load()
+  // from the profile preference or the browser languages, and is guaranteed to be set.
+  setUiLanguage(data.language);
 
   // The installable shell (EF-LEC-012): registered by the SPA, never by the reader, and only on a build
   // (the worker is a product of `vite build`).
@@ -39,8 +44,8 @@
   // server (another device may have changed it) applies here, once the screen has its data.
   $effect(() => {
     if (data.appearance) applyAppearance(document.documentElement, data.appearance);
-    // the language of the interface: the profile preference, else the browser languages
-    setUiLanguage(data.language ?? detectLanguage(navigator.languages));
+    // Update the UI language when data changes (e.g., preference change or sign-in)
+    setUiLanguage(data.language);
   });
 </script>
 

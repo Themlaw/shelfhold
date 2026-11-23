@@ -72,7 +72,7 @@
   <title>{t('admin.wizard.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('admin.wizard.title')}</h1>
   <WizardSteps current="compte" />
   <h2>{t('admin.wizard.compte.title')}</h2>
