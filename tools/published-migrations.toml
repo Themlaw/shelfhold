@@ -367,7 +367,7 @@ since = "1.3"
 
 [[migration]]
 file = "0111_plugin_signer_pin.py"
-sha256 = "c729815bb9edc5afe0edc38dc44c2b302114b0bce5f8d513647c71b96d77c730"
+sha256 = "771c5dc3cdaff0728c760041f8db57ac71fc8ddbb4c942f6645b879b642d85da"
 since = "1.3"
 
 [[migration]]

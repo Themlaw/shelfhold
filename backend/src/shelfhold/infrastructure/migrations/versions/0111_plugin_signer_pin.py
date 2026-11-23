@@ -11,6 +11,8 @@ an index is then simply forgotten — the files on disk say nothing about it.
 Number: 0111 follows 0110 (the head of L07); 0109 stays with the 1.2.x hotfix.
 """
 
+from typing import Any
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -44,9 +46,18 @@ def _has_check() -> bool:
     return sql is not None and f"CONSTRAINT {_CHECK}" in sql
 
 
+def _batch() -> Any:
+    """Reflection hands `CURRENT_TIMESTAMP` back in a form SQLite re-renders with parentheses: the
+    column is restated so the rebuilt table keeps the DDL `create_all` writes."""
+    installed_at = sa.Column(
+        "installed_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False
+    )
+    return op.batch_alter_table(_TABLE, recreate="always", reflect_args=(installed_at,))
+
+
 def upgrade() -> None:
     present = _columns()
-    with op.batch_alter_table(_TABLE) as batch:
+    with _batch() as batch:
         for column in _COLUMNS:  # a database created since the schema gained them has them
             if column not in present:
                 batch.add_column(sa.Column(column, sa.Text(), nullable=True))
@@ -55,7 +66,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table(_TABLE) as batch:
+    with _batch() as batch:
         if _has_check():
             batch.drop_constraint(op.f(_CHECK), type_="check")
         present = _columns()
