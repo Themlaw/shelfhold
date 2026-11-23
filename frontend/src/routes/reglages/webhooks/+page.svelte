@@ -24,7 +24,7 @@
   import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
 
   type Shown = { hook: WebhookOut; deliveries: DeliveryOut[]; unreadable: boolean };
-  type Secret = { value: string; kind: 'created' | 'rotated' };
+  type Secret = { value: string; kind: 'created' | 'rotated'; hookId: string };
 
   const STATES: Record<string, MessageKey> = {
     delivered: 'webhooks.state.delivered',
@@ -46,8 +46,8 @@
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
   const stateText = (status: string): string =>
-    STATES[status] ? t(STATES[status]) : status;
-  const when = (value: string | null): string => (value ? formatDateTime(value) : '—');
+    STATES[status] ? t(STATES[status]) : t('webhooks.state.unknown');
+  const when = (value: string | null): string => (value ? formatDateTime(value) : t('webhooks.dash'));
 
   function say(text: string, kind: 'status' | 'alert'): void {
     notice = { text, kind };
@@ -67,15 +67,33 @@
       path: { webhook_id: hook.id },
       throwOnError: false
     });
-    if (error || !data) return { hook, deliveries: [], unreadable: true };
+    if (error) {
+      const problem = problemOf(error);
+      // 404 means the subscription was deleted, keep it with empty deliveries
+      if (problem.code === 'webhook.not_found') {
+        return { hook, deliveries: [], unreadable: false };
+      }
+      // For secret_unreadable, we can still show the hook but mark deliveries as unreadable
+      return { hook, deliveries: [], unreadable: true };
+    }
+    if (!data) return { hook, deliveries: [], unreadable: true };
     return { hook, deliveries: data.items, unreadable: false };
   }
 
   async function load(): Promise<void> {
     const { data, error } = await listWebhooks({ throwOnError: false });
     if (error) {
-      adminOnly = isForbidden(error);
-      say(adminOnly ? t('screens.admin_only') : t('webhooks.error'), 'alert');
+      const problem = problemOf(error);
+      if (isForbidden(error)) {
+        adminOnly = true;
+        say(t('screens.admin_only'), 'alert');
+      } else if (problem.code === 'webhook.not_found') {
+        adminOnly = false;
+        say(t('webhooks.not_found'), 'alert');
+      } else {
+        adminOnly = false;
+        say(t('webhooks.error'), 'alert');
+      }
       return;
     }
     adminOnly = false;
@@ -113,7 +131,7 @@
         );
         return;
       }
-      secret = { value: data.secret, kind: 'created' };
+      secret = { value: data.secret, kind: 'created', hookId: data.id };
       url = '';
       types = '';
       allowPrivate = false;
@@ -135,10 +153,16 @@
       });
       if (error) {
         if (askAgain(error, () => rotate(hook))) return;
-        say(t('webhooks.rotate_refused'), 'alert');
+        const problem = problemOf(error);
+        say(
+          problem.code === 'webhook.secret_unreadable'
+            ? t('webhooks.secret_unreadable')
+            : t('webhooks.rotate_refused'),
+          'alert'
+        );
         return;
       }
-      secret = { value: data.secret, kind: 'rotated' };
+      secret = { value: data.secret, kind: 'rotated', hookId: hook.id };
       say(t('webhooks.rotated'), 'status');
     } finally {
       busy = false;
@@ -159,7 +183,7 @@
         say(t('webhooks.delete_refused'), 'alert');
         return;
       }
-      if (secret !== null) secret = null; // the secret of a subscription that is gone is gone
+      if (secret !== null && secret.hookId === hook.id) secret = null; // only clear if it's the same subscription
       say(t('webhooks.deleted'), 'status');
       await load();
     } finally {
@@ -216,7 +240,7 @@
           <span>{shown.hook.url_host}</span>
           <span>{shown.hook.event_types.join(', ')}</span>
           {#if shown.hook.private_target}
-            <span>{t('webhooks.private', { target: shown.hook.private_target })}</span>
+            <span>{t('webhooks.private', { endpoint: shown.hook.private_target })}</span>
           {/if}
           <button type="button" disabled={busy} onclick={() => rotate(shown.hook)}>
             {t('webhooks.rotate')}
@@ -249,10 +273,10 @@
                     <th scope="row">{delivery.event_id}</th>
                     <td>{stateText(delivery.status)}</td>
                     <td>{delivery.attempts}</td>
-                    <td>{delivery.last_status ?? '—'}</td>
-                    <td>{delivery.last_error ?? '—'}</td>
+                    <td>{delivery.last_status ?? t('webhooks.dash')}</td>
+                    <td>{delivery.last_error ?? t('webhooks.dash')}</td>
                     <td>{when(delivery.delivered_at)}</td>
-                    <td>{delivery.status === 'pending' ? when(delivery.next_try_at) : '—'}</td>
+                    <td>{delivery.status === 'pending' ? when(delivery.next_try_at) : t('webhooks.dash')}</td>
                   </tr>
                 {/each}
               </tbody>

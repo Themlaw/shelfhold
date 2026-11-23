@@ -1141,7 +1141,7 @@
   "webhooks.add": "Add",
   "webhooks.rotate": "Rotate the secret",
   "webhooks.delete": "Delete",
-  "webhooks.private": "private address: {target}",
+  "webhooks.private": "private endpoint: {endpoint}",
   "webhooks.created": "Webhook added.",
   "webhooks.rotated": "Secret rotated.",
   "webhooks.deleted": "Webhook deleted.",
@@ -1166,5 +1166,10 @@
   "webhooks.deliveries.next_try": "Next attempt",
   "webhooks.state.delivered": "delivered",
   "webhooks.state.pending": "pending",
-  "webhooks.state.dead": "given up"
+  "webhooks.state.dead": "given up",
+  "webhooks.state.unknown": "unknown",
+  "webhooks.gone": "That subscription is gone. Reload the page to update the list.",
+  "webhooks.not_found": "That subscription no longer exists. Reload the page to update the list.",
+  "webhooks.secret_unreadable": "The current secret of this subscription can no longer be read. Rotate it to get a new one.",
+  "webhooks.dash": "—"
 }

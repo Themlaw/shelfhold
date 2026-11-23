@@ -342,6 +342,64 @@ describe('Écran des webhooks', () => {
     expect(within(second).getByText('livrée')).toBeTruthy();
   });
 
+  // Fix: remove() should only clear the secret if it's for the same subscription
+  it('does not clear the secret when deleting a different subscription', async () => {
+    let items: unknown[] = [hook(), hook({ id: OTHER_ID, url_host: 'other.example.org' })];
+    let deletedId: string | null = null;
+    server.use(
+      http.get(`${BASE}/api/v1/webhooks`, () => HttpResponse.json({ items })),
+      http.get(`${BASE}/api/v1/webhooks/${HOOK_ID}/deliveries`, () => HttpResponse.json({ items: [] })),
+      http.get(`${BASE}/api/v1/webhooks/${OTHER_ID}/deliveries`, () => HttpResponse.json({ items: [] })),
+      http.delete(`${BASE}/api/v1/webhooks/${OTHER_ID}`, () => {
+        deletedId = OTHER_ID;
+        items = [hook()];
+        return new HttpResponse(null, { status: 204 });
+      })
+    );
+    render(Page);
+    const user = userEvent.setup();
+    await screen.findByText('hooks.example.org');
+    // Rotate the first hook to show its secret
+    let rotated = 0;
+    server.use(
+      http.post(`${BASE}/api/v1/webhooks/${HOOK_ID}/rotate`, () => {
+        rotated += 1;
+        return HttpResponse.json({ ...hook(), secret: SECRET });
+      })
+    );
+    const firstLi = (await screen.findByText('hooks.example.org')).closest('li') as HTMLElement;
+    await user.click(within(firstLi).getByRole('button', { name: 'Faire tourner le secret' }));
+    expect(await screen.findByText(SECRET)).toBeTruthy();
+    // Now delete the OTHER hook - the secret should still be shown
+    const secondLi = screen.getByText('other.example.org').closest('li') as HTMLElement;
+    await user.click(within(secondLi).getByRole('button', { name: 'Supprimer' }));
+    expect(deletedId).toBe(OTHER_ID);
+    // The secret should still be visible
+    expect(screen.getByText(SECRET)).toBeTruthy();
+    // Only one hook should remain
+    expect(screen.getAllByText('hooks.example.org')).toHaveLength(1);
+    expect(screen.queryByText('other.example.org')).toBeNull();
+  });
+
+  // Fix: distinguish secret_unreadable error
+  it('shows a dedicated message when the secret cannot be read during rotation', async () => {
+    list();
+    deliveries(HOOK_ID);
+    server.use(
+      http.post(`${BASE}/api/v1/webhooks/${HOOK_ID}/rotate`, () =>
+        HttpResponse.json(
+          { type: '/api/v1/problems/webhook.secret_unreadable', title: 'x', status: 503, code: 'webhook.secret_unreadable' },
+          { status: 503 }
+        )
+      )
+    );
+    render(Page);
+    const user = userEvent.setup();
+    await screen.findByText('hooks.example.org');
+    await user.click(screen.getByRole('button', { name: 'Faire tourner le secret' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/ne peut plus être lu/);
+  });
+
   // req: EF-INT-005
   it('labels every control and every column of the deliveries (a11y contract)', async () => {
     list();

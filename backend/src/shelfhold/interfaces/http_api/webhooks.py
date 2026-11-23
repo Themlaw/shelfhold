@@ -140,13 +140,14 @@ def build_webhooks_router(admin: Callable[[], WebhookAdmin]) -> APIRouter:
         return Response(status_code=204)
 
     @router.get("/{webhook_id}/deliveries")
-    def list_deliveries(webhook_id: str, _principal: _Reader) -> DeliveryList:
+    def list_deliveries(webhook_id: str, _principal: _Reader, response: Response) -> DeliveryList:
         """What became of the last deliveries of this subscription (M6 L23b): the screen's rows,
         read by the administrator alone, like the list. A subscription that is not there answers
         `webhook.not_found`; one that never sent anything answers an empty list."""
         found = admin().deliveries(webhook_id)
         if found is None:
             raise ProblemError("webhook.not_found")
+        response.headers["Cache-Control"] = "no-store"
         return DeliveryList(items=[_delivery(row) for row in found])
 
     @router.post("/{webhook_id}/rotate")

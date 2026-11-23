@@ -122,6 +122,7 @@ def test_the_last_deliveries_of_a_subscription_are_read_newest_first(api: AuthEn
 
     answer = _deliveries(api, sub_id)
     assert answer.status_code == 200, answer.text
+    assert answer.headers.get("Cache-Control") == "no-store"
     items = answer.json()["items"]
     assert len(items) == 5
     assert [item["event_id"] for item in items] == [*dead, *retried, *reversed(delivered)]

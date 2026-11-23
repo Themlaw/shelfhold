@@ -1141,7 +1141,7 @@
   "webhooks.add": "Ajouter",
   "webhooks.rotate": "Faire tourner le secret",
   "webhooks.delete": "Supprimer",
-  "webhooks.private": "adresse privée : {target}",
+  "webhooks.private": "point de terminaison privé : {endpoint}",
   "webhooks.created": "Webhook ajouté.",
   "webhooks.rotated": "Secret tourné.",
   "webhooks.deleted": "Webhook supprimé.",
@@ -1166,5 +1166,10 @@
   "webhooks.deliveries.next_try": "Prochaine tentative",
   "webhooks.state.delivered": "livrée",
   "webhooks.state.pending": "en attente",
-  "webhooks.state.dead": "abandonnée"
+  "webhooks.state.dead": "abandonnée",
+  "webhooks.state.unknown": "inconnu",
+  "webhooks.gone": "Cet abonnement a été supprimé. Rechargez la page pour mettre la liste à jour.",
+  "webhooks.not_found": "Cet abonnement n’existe plus. Rechargez la page pour mettre la liste à jour.",
+  "webhooks.secret_unreadable": "Le secret actuel de cet abonnement ne peut plus être lu. Faites-le tourner pour en obtenir un nouveau.",
+  "webhooks.dash": "—"
 }
