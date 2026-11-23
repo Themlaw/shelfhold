@@ -1591,3 +1591,23 @@ params = "What else was asked (the page of the archive, the JPEG quality), as ca
 content_hash = "Hash of the converted bytes (`sha256:<hex>`); it names the file, so two sources may share one."
 size = "Size of the converted file in bytes."
 created_at = "When it was made (UTC)."
+
+[tables.tracker_link]
+description = "A profile's account on a reading tracker: the reference the plugin returned, the profile's accord to the push, and the remote token sealed to the row (M6 L13)."
+[tables.tracker_link.columns]
+id = "Link identifier (ULID); the sealed envelope is bound to it, so linking again keeps the row."
+user_id = "The profile whose remote account is linked; one link per profile and per tracker, gone with the profile."
+plugin_key = "Key of the tracker plugin the account is linked through."
+remote_ref = "The `TrackerRef` the plugin returned, kept as JSON and handed back to it as it was."
+origin = "The `api` origin the token was sealed for; a plugin that declares another domain under the same key receives nothing."
+linked_at = "When the account was linked, or last linked again (UTC)."
+push_enabled = "Whether the profile gave their explicit accord to the push; off until they do."
+token_fingerprint = "Short keyed digest of the token, the only thing the API shows of it."
+
+[tables.tracker_allowance]
+description = "The admin's word that one tracker may be linked by one child profile: a row means allowed, no row means refused (M6 L13)."
+[tables.tracker_allowance.columns]
+user_id = "The child profile the word is about; gone with the profile."
+plugin_key = "Key of the tracker plugin the child may link."
+allowed_by = "Admin who said the word (`user.id`); NULL once that account is gone."
+allowed_at = "When the word was last said (UTC)."
