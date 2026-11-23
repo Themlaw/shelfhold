@@ -1591,3 +1591,14 @@ params = "What else was asked (the page of the archive, the JPEG quality), as ca
 content_hash = "Hash of the converted bytes (`sha256:<hex>`); it names the file, so two sources may share one."
 size = "Size of the converted file in bytes."
 created_at = "When it was made (UTC)."
+
+[tables.kobo_sync_point]
+description = "The sync point of a Kobo device: what its last completed sync gave it (the entitlements and the tags) and when, so the next sync answers only what changed since the device was last seen; while a sync runs, the snapshot its first page froze."
+[tables.kobo_sync_point.columns]
+id = "ULID; the row is replaced at each completed sync, so it names the point, not the device."
+device_id = "The device the point belongs to; one row per device, and the row goes with it."
+synced_at = "The instant of the first page of the sync that wrote the point (UTC): what the next delta compares against, never the clock of the last page."
+books = "The entitlements the device was given, as JSON: entitlement id -> the Edition behind it, its title and the fingerprint of what may change (title, language, shelf)."
+tags = "The tags the device was given, as JSON: tag id -> the shelf's name and the entitlements it held."
+in_progress = "The sync in flight, as JSON, frozen by its first page (the walk, the deletions, the tags, the reading states, the instant of page 1); empty when no sync is running."
+created_at = "When the row was written (UTC); the point is replaced at each completion, so it dates the last one."
