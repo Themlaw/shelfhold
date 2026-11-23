@@ -74,6 +74,26 @@ def exported(world: World, edition: str = "ok") -> tuple[str, str]:
     return item, unit
 
 
+def exported_with_copy(world: World, edition: str = "ok") -> tuple[str, str, str]:
+    """A Unit sent as a file that is also kept here (the query judges contents, J5-S2):
+    (item id, content id, unit id)."""
+    content, unit = kept(world)
+    item = new_ulid()
+    with write_transaction(world.seed.engine) as connection:
+        connection.execute(
+            sa.insert(export.export_item).values(
+                id=item, edition_id=world.seed.editions[edition], kind="unit", content_id=content
+            )
+        )
+        connection.execute(
+            sa.insert(export.unit_coverage).values(
+                carrier_type="export_item", carrier_id=item, unit_id=unit, position=1,
+                origin="manual",
+            )
+        )  # fmt: skip
+    return item, content, unit
+
+
 def read_there(world: World, who: str, item: str, state: str = "written") -> None:
     """The profile has a live, verified account on a destination that holds `item`, written."""
     import os
@@ -200,16 +220,22 @@ def test_continue_reading_an_excerpt_makes_no_series_appear(world: World) -> Non
 
 
 def test_continue_reading_opens_kavita_for_an_exported_unit(world: World) -> None:
-    """A Unit read where it was sent opens there; the kept copy opens the reader."""
-    item, unit = exported(world)
+    """A Unit read where it was sent opens there; until the destination is hers, the kept copy
+    opens the reader (the query judges contents, J5-S2: one sent with a copy kept here is read
+    in full here while no account of hers holds it)."""
+    item, content, unit = exported_with_copy(world)
     pulled(world, "admin", "export_item", item, done=False)
-    assert items(world.admin.get(HOME)) == []  # no account of hers there: nothing to open
+    got = items(world.admin.get(HOME))  # no account of hers there: the kept copy opens the reader
+    assert [(i["unit_id"], i["state"], i["target"]) for i in got] == [
+        (unit, "in_progress", "kept_copy")
+    ]
+    assert (got[0]["carrier_type"], got[0]["carrier_id"]) == ("content", content)
     read_there(world, "admin", item)
     got = items(world.admin.get(HOME))
     assert [(i["unit_id"], i["state"], i["target"]) for i in got] == [
         (unit, "in_progress", "kavita")
     ]
-    assert "kavita_url" in world.admin.get(HOME).json()
+    assert "open_urls" in world.admin.get(HOME).json()
     assert (got[0]["carrier_type"], got[0]["carrier_id"]) == (None, None)  # no reader to open
 
 
@@ -219,7 +245,7 @@ def test_continue_reading_opens_kavita_once_the_destination_has_scanned_the_file
 ) -> None:
     """A file the destination has since scanned (`scanned`, `resolved`, `adopted`) is still there:
     the book read where it was sent stays one to continue (the E2E of M5 L24 found it dropped)."""
-    item, unit = exported(world)
+    item, _content, unit = exported_with_copy(world)
     pulled(world, "admin", "export_item", item, done=False)
     read_there(world, "admin", item, state)
     got = items(world.admin.get(HOME))

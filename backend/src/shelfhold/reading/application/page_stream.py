@@ -12,10 +12,11 @@ specification counts) is the `n`-th image of its reading order, read from the ke
 - a name is only ever taken from the archive the server chose, never from the client;
 - nothing is written: no position, no history, no mark. Where an e-reader is, is kosync's.
 
-Which scope (ADR-0055 D-P1, unchanged). A stream is offered only for an item that has a live export
-record, and what is streamed is judged on the content it holds: the whole kept copy when the profile
-does not read it where it was sent (no live, verified account of her own on a destination that holds
-it), else an excerpt, cut by the server with the very bounds of `/content`.
+Which scope (ADR-0055, D-P7a of M6). A stream is offered only for an item that has a live export
+record. The scope is the bundle rule's: the whole volume to every profile the feed offers a stream
+to — the bound of the web reader's excerpt (D-P1) is a rule of that reader, not of the feed. The
+one query of every surface (`content_access.read_elsewhere`, J5-S2) is asked on the content all
+the same; its answer bounds nothing here.
 """
 
 from __future__ import annotations
@@ -142,13 +143,14 @@ class PageStream:
 
     def _judge(self, user_id: str, item_id: str) -> tuple[str, Scope]:
         """The content to read and how much of it, judged now: the item and its content are seen by
-        the profile (the one filter), the item is live somewhere, and the scope is the content's
-        own (`full_allowed`), never the item's."""
+        the profile (the one filter), the item is live somewhere, and the scope is the bundle
+        rule's (D-P7a): the whole volume. The judgement asks the one query of every surface
+        (J5-S2, with the `resolve`); its answer bounds nothing here — D-P1 is a rule of the web
+        reader, not of the feed."""
         resolved = self._access.resolve(user_id, _CARRIER, item_id)
         if resolved.format != _FORMAT or not self._live(item_id):
             raise UnknownCarrierError
-        own = self._access.resolve(user_id, "content", resolved.content_id)  # visible, and scope
-        return resolved.content_id, "full" if own.full_allowed else "excerpt"
+        return resolved.content_id, "full"
 
     def _live(self, item_id: str) -> bool:
         record = export.export_record

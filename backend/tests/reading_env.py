@@ -218,6 +218,7 @@ class ReadingEnv:
                     secret_kid="k1",  # noqa: S106 (a key id, not a secret)
                     secret_nonce=os.urandom(12), secret_ct=os.urandom(32),
                     token_fingerprint=account_id[-12:],
+                    verified_at=sa.func.current_timestamp(),  # as the connection flow writes it
                 )
             )  # fmt: skip
         return account_id

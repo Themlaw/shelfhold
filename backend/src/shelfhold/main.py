@@ -121,7 +121,7 @@ from shelfhold.interfaces.local_cli import IdentityDispatcher
 from shelfhold.jobs.mode import MaintenanceMode
 from shelfhold.library.public import ReadableCopies, RenditionService, ThumbnailService
 from shelfhold.ops import OpsServices
-from shelfhold.ops.activity_feed import kavita_open_url_of
+from shelfhold.ops.activity_feed import kavita_open_url_of, open_urls_of
 from shelfhold.ops.health import OpsHealth
 from shelfhold.ops.notifications import subscribe_notifications
 from shelfhold.ops.requests import build_service, resolve_request_ref, subscribe_arrivals
@@ -509,7 +509,7 @@ def create_app(
             lambda: ReaderSettings(engine),
             lambda: ContinueReading(engine, content_access()),  # M5 L14: « Reprendre la lecture »
             lambda: ReadMarks(engine, clock.now),  # M6 L18: undo a read mark
-            lambda: kavita_open_url_of(engine),
+            lambda: open_urls_of(engine),  # M6 L19: « Ouvrir dans <kind> », per destination type
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
             lambda: engine,

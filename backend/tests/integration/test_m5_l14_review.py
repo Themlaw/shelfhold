@@ -63,8 +63,7 @@ def test_the_kavita_address_never_breaks_the_home_of_every_profile(world: World)
         add_target(connection, config={"url": BAD_PORT_URL})
     got = world.admin.get(HOME)
     assert got.status_code == 200, got.text  # une adresse inouvrable n'est pas une raison de casser
-    handed = got.json()["kavita_url"]
-    if handed is not None:  # « else None » : ce qui est rendu doit s'ouvrir dans un navigateur
+    for handed in got.json()["open_urls"].values():  # ce qui est rendu s'ouvre dans un navigateur
         parts = urlsplit(handed)
         try:
             port = parts.port

@@ -18,7 +18,7 @@ mark of a child profile, on a door of their own. The undo is a line of history, 
 a Unit the profile may not see, and a mark that is not there, answer alike.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit, urlunsplit
@@ -123,7 +123,8 @@ class ContinueItemOut(BaseModel):
     number: str
     unit_title: str | None
     state: Literal["in_progress", "next"]  # the Unit being read, or the one after the last read
-    target: Literal["kept_copy", "kavita"]  # the kept copy here, or the file read where it was sent
+    # the kept copy here, or the kind of the destination the Unit is read on (« Ouvrir dans Komga »)
+    target: str
     approximate: bool
     # `target = kept_copy`: the pair the reader route takes, `/lire/<carrier_type>/<carrier_id>`
     carrier_type: Literal["content"] | None
@@ -132,7 +133,8 @@ class ContinueItemOut(BaseModel):
 
 class ContinueOut(BaseModel):
     items: list[ContinueItemOut]
-    kavita_url: str | None  # the address "Ouvrir dans Kavita" opens, read on the server
+    # per kind of destination, the address « Ouvrir dans … » opens, read on the server
+    open_urls: dict[str, str]
 
 
 def _item(found: ContinueEntry) -> ContinueItemOut:
@@ -306,7 +308,7 @@ def build_reader_router(
     get_settings: Callable[[], ReaderSettings],
     get_continue: Callable[[], ContinueReading],
     get_marks: Callable[[], ReadMarks],
-    kavita_url: Callable[[], str | None] = lambda: None,
+    open_urls: Callable[[], Mapping[str, str]] = lambda: {},
 ) -> APIRouter:
     router = APIRouter(prefix="/api/reader", tags=["reader"])
 
@@ -386,9 +388,10 @@ def build_reader_router(
         the session only (the progress is hers, the filter is the one of every surface)."""
         _own_session(principal)
         response.headers["Cache-Control"] = "no-store"
+        found = {kind: web_address(url) for kind, url in open_urls().items()}
         return ContinueOut(
             items=[_item(e) for e in get_continue().entries(principal.user_id, limit)],
-            kavita_url=web_address(kavita_url()),
+            open_urls={kind: url for kind, url in found.items() if url},
         )
 
     @router.get(

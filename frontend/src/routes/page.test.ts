@@ -64,7 +64,7 @@ const server = setupServer(
   }),
   http.get(`${BASE}/api/reader/continue`, ({ request: r }) => {
     resumeQuery = new URL(r.url).searchParams;
-    return HttpResponse.json({ items: resume, kavita_url: KAVITA });
+    return HttpResponse.json({ items: resume, open_urls: { kavita: KAVITA } });
   }),
   http.get(`${BASE}/api/v1/requests`, () => {
     requestCalls += 1;
@@ -197,7 +197,7 @@ describe('home page', () => {
       http.get(`${BASE}/api/reader/continue`, () =>
         HttpResponse.json({
           items: [{ work_id: 'w2', title: 'Série B', unit_id: 'u9', number: '9', unit_title: null, state: 'in_progress', target: 'kavita', approximate: false, carrier_type: null, carrier_id: null }],
-          kavita_url: 'javascript:alert(1)'
+          open_urls: { kavita: 'javascript:alert(1)' }
         })
       )
     );

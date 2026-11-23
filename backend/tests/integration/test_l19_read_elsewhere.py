@@ -118,7 +118,7 @@ def sent(
             sa.insert(export.export_item).values(
                 id=item, edition_id=world.seed.editions[edition], kind="unit", content_id=content,
             )
-        )
+        )  # fmt: skip
         connection.execute(
             sa.insert(export.unit_coverage).values(
                 carrier_type="export_item", carrier_id=item, unit_id=unit, position=1,
@@ -148,7 +148,7 @@ def sent(
 
 
 def session_of(world: Any, name: str, ip: str) -> Any:
-    """A logged-in session for a profile the world created (the OPDS world keeps only the child's)."""
+    """A logged-in session for a profile of the world (the OPDS world keeps the child's only)."""
     client = world.env.other_client(ip)
     assert world.env.login(name, client=client).status_code == 200
     return client
@@ -296,7 +296,7 @@ def test_continue_reading_label_names_destination_type(world: World) -> None:
 
 @pytest.mark.req("EF-INT-007")
 def test_pse_follows_bundle_rule_per_adr_0055(
-    monkeypatch: pytest.MonkeyPatch, settings: Settings,
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
     """The same feed offers the complete file of the series to the profile, so the PSE stream
     serves the whole volume — to the profile who reads it elsewhere too. The bound of the web

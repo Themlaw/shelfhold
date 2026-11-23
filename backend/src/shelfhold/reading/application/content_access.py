@@ -66,6 +66,7 @@ __all__ = [
     "NoReadableCopyError",
     "ResolvedCarrier",
     "ServedEntry",
+    "read_elsewhere",
 ]
 
 _INFO = b"shelfhold/content-ticket/v1"
@@ -127,6 +128,39 @@ class ArchiveSource(Protocol):
         """The file to read for `scope`. For an excerpt the archive shows only the entries of the
         closed list the source computed (`names()` and `read()`), or `ExcerptUnavailableError`."""
         ...
+
+
+def read_elsewhere(connection: sa.Connection, *, user_id: str, content_id: str) -> str | None:
+    """Where a content is read (J5-S2): the kind of the first destination that holds it written —
+    a live export record, an account of the profile's own there, live and verified — or None when
+    it is read here only. The one query every surface asks (the reader, the positions, PSE, KEPUB
+    and « Reprendre »): the rule is written once, by `content_id` and verified account, the
+    strictest reading of it (ADR-0055 D-P1)."""
+    record, item, account = (
+        export.export_record,
+        export.export_item,
+        identity.destination_account,
+    )
+    destination, target = export.shelf_destination, export.export_target
+    kind = connection.execute(
+        sa.select(target.c.kind)
+        .select_from(
+            item.join(record, record.c.export_item_id == item.c.id)
+            .join(destination, destination.c.id == record.c.shelf_destination_id)
+            .join(target, target.c.id == destination.c.target_id)
+            .join(account, account.c.shelf_destination_id == destination.c.id)
+        )
+        .where(
+            item.c.content_id == content_id,
+            record.c.state.in_(sorted(LIVE_STATES)),
+            account.c.user_id == user_id,
+            account.c.revoked_at.is_(None),
+            account.c.verified_at.is_not(None),
+        )
+        .order_by(target.c.kind, destination.c.id)
+        .limit(1)
+    ).scalar()
+    return str(kind) if kind is not None else None
 
 
 class ContentKey:
@@ -361,33 +395,12 @@ class ContentAccess:
     def _full_allowed(
         connection: sa.Connection, user_id: str, carrier_type: str, content_id: str
     ) -> bool:
-        """ADR-0055 D-P1: the full reader is for the kept copy (a `content`) that is not exported
-        to a destination the profile reads (a live, verified account of her own there): that one is
-        read where it was sent. An `export_item` is that exported file: an excerpt only."""
-        if carrier_type != "content":
-            return False
-        record, item, account = (
-            export.export_record,
-            export.export_item,
-            identity.destination_account,
-        )
-        readable_elsewhere = connection.execute(
-            sa.select(sa.literal(1))
-            .select_from(
-                item.join(record, record.c.export_item_id == item.c.id).join(
-                    account, account.c.shelf_destination_id == record.c.shelf_destination_id
-                )
-            )
-            .where(
-                item.c.content_id == content_id,
-                record.c.state.in_(sorted(LIVE_STATES)),
-                account.c.user_id == user_id,
-                account.c.revoked_at.is_(None),
-                account.c.verified_at.is_not(None),
-            )
-            .limit(1)
-        ).first()
-        return readable_elsewhere is None
+        """ADR-0055 D-P1: the full reader is for the kept copy (a `content`) that is not read where
+        it was sent; that one is read there. The query is asked at every judgement (J5-S2, the one
+        query of every surface); what its answer allows is the carrier's: an `export_item` is that
+        exported file, an excerpt only."""
+        elsewhere = read_elsewhere(connection, user_id=user_id, content_id=content_id)
+        return carrier_type == "content" and elsewhere is None
 
 
 def _digest(names: Collection[str]) -> str:

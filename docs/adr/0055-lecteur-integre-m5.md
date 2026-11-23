@@ -196,6 +196,27 @@ Une seule proposition par (profil, support) jusqu'au choix de l'utilisateur ; en
 - **EF-EXP-058** porte son volet M5 : la liaison `pull` (OPDS, kosync Shelfhold) ne sert que depuis un exemplaire lisible (`/store` ou copie d'arbre). Elle est datée « M1a / M5 (volet `pull`) ».
 - Les avertissements de `traceability.py --milestone M5` (« listée par 03 pour M5, mais 01 donne… ») restent acceptés pour les autres volets, comme en M2 à M4.
 
+## Amendement du 2026-11-23 (M6 L19, J5-S2, J5-S3 ; D-P7a du plan M6)
+
+**D-P1 est une règle du lecteur web seul.** La borne d'extrait et le refus d'écriture qui
+l'accompagnent s'appliquent au lecteur intégré (`/lire`, `/content`, les positions) et à KEPUB
+(une copie complète qui sort : un profil qui lit le volume ailleurs ne se voit pas en offrir une).
+Ils ne s'appliquent pas au flux OPDS-PSE : **le volume entier est servi à tout profil auquel le
+flux est offert** (D-P7a — le contradicteur de jalon a relevé qu'un même flux offrait le bloc de
+série complet et un flux PSE réduit à l'extrait ; sans réponse du porteur, la recommandation
+s'applique). La requête « lu ailleurs » reste demandée par PSE, la même que toutes les surfaces ;
+sa réponse ne borne plus rien sur ce flux.
+
+**Une seule requête « lu ailleurs » (J5-S2).** La règle était écrite trois fois (le lecteur,
+« Reprendre la lecture », les clés membres) ; elle l'est une fois : `content_access.read_elsewhere`,
+la plus stricte des trois lectures — par `content_id` et compte vérifié — demandée par le lecteur,
+les positions, PSE, KEPUB et « Reprendre la lecture ». Les clés membres (`live_member_account`)
+exigent le même compte vérifié.
+
+**`target` porte le type de la destination.** « Reprendre la lecture » n'écrit plus « kavita » en
+dur : l'entrée porte le type de la destination où l'Unité se lit (« Ouvrir dans Komga » devant un
+serveur Komga), et la réponse donne, par type, l'adresse à ouvrir (`open_urls`).
+
 ## Conséquences
 - **Positives** : le lecteur tient la définition de fini sans concurrencer Kavita ; l'isolation par défaut ne demande rien au porteur ; la sync des liseuses reste sûre ; les contradictions de 01, 02 et 03 sont fermées avant que du code en dépende.
 - **Négatives** : deux moteurs à maintenir (images et EPUB) ; foliate-js n'a pas de release stable (R13) ; foliate-js impose `allow-same-origin allow-scripts` à son iframe : l'isolation de l'EPUB repose sur la CSP héritée par le `blob:`, le neutraliseur et les filtres, pas sur un sandbox d'iframe ; la CSP du lecteur élargit `style-src` (limité à l'entrée `/lire`) ; l'absence d'exécution de script tient sur deux barrières (CSP héritée, filtre), et un navigateur sous la version minimale n'a pas le moteur EPUB.
@@ -214,7 +235,7 @@ Bonne pour le moteur (derrière `ReaderEngine`) et pour l'origine (un réglage).
 - **01** : EF-LEC-009 (D6), ENF-A11Y-002 et EF-EXP-058 (D9). **02** : `x-auth-key` (route kosync), index des ADR (« OIDC en V2 » devient « OIDC en M5 »). **03** : tests kosync renommés, D7, D8, D-P2. **04** : module `reading/`. **06** : Q22 et Q47 « tranchées ».
 
 ## Exigences liées
-EF-LEC-001, EF-LEC-002, EF-LEC-003, EF-LEC-005, EF-LEC-006, EF-LEC-007, EF-LEC-009, EF-LEC-014, EF-EXP-058, ENF-SEC-004, ENF-A11Y-002.
+EF-LEC-001, EF-LEC-002, EF-LEC-003, EF-LEC-005, EF-LEC-006, EF-LEC-007, EF-LEC-008, EF-LEC-009, EF-LEC-014, EF-EXP-058, EF-INT-007, ENF-SEC-004, ENF-A11Y-002.
 
 ## Sources
 - ADR-0012, ADR-0018, ADR-0020, ADR-0027, ADR-0028, ADR-0045, ADR-0047, ADR-0053 (et son amendement du 2026-11-16)

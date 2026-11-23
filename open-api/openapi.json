@@ -2085,10 +2085,6 @@
             "type": "string"
           },
           "target": {
-            "enum": [
-              "kept_copy",
-              "kavita"
-            ],
             "title": "Target",
             "type": "string"
           },
@@ -2140,21 +2136,17 @@
             "title": "Items",
             "type": "array"
           },
-          "kavita_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Kavita Url"
+          "open_urls": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Open Urls",
+            "type": "object"
           }
         },
         "required": [
           "items",
-          "kavita_url"
+          "open_urls"
         ],
         "title": "ContinueOut",
         "type": "object"

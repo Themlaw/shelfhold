@@ -4,12 +4,17 @@
   // series that is hidden from her): the screen shows what it is given, and says nothing when the
   // list is empty, whatever the reason.
   import type { ContinueItemOut } from '#lib/api/types.gen.ts';
-  import { t } from '#lib/i18n/index.ts';
+  import { hasMessage, t } from '#lib/i18n/index.ts';
   import { webAddress } from '#lib/links.ts';
 
-  let { items, kavitaUrl = null }: { items: ContinueItemOut[]; kavitaUrl?: string | null } =
+  let { items, openUrls = {} }: { items: ContinueItemOut[]; openUrls?: Record<string, string> } =
     $props();
-  const kavita = $derived(webAddress(kavitaUrl));
+
+  // The kind of the destination, as the interface names it (the slug itself when it is unknown).
+  const destinationName = (kind: string): string => {
+    const key = `destination.name.${kind}`;
+    return hasMessage(key) ? t(key) : kind;
+  };
 </script>
 
 {#if items.length > 0}
@@ -17,7 +22,10 @@
     <h2 id="continue-title">{t('home.continue_reading')}</h2>
     <ul role="list">
       {#each items as item (item.work_id)}
-        {@const verb = item.target === 'kept_copy' ? t('home.continue_read') : t('activity.open_in_kavita')}
+        {@const verb =
+          item.target === 'kept_copy'
+            ? t('home.continue_read')
+            : t('home.continue_open_in', { destination: destinationName(item.target) })}
         {@const label = t('home.continue_open', { open: verb, title: item.title, number: item.number })}
         <li>
           <span class="title">{item.title}</span>
@@ -32,10 +40,10 @@
             <a class="open" href={`/lire/${encodeURIComponent(item.carrier_type)}/${encodeURIComponent(item.carrier_id)}`} aria-label={label}>
               {t('home.continue_read')}
             </a>
-          {:else if kavita}
+          {:else if webAddress(openUrls[item.target])}
             <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the address of another application -->
-            <a class="open" href={kavita} rel="noopener noreferrer" aria-label={label}>
-              {t('activity.open_in_kavita')}
+            <a class="open" href={webAddress(openUrls[item.target])} rel="noopener noreferrer" aria-label={label}>
+              {verb}
             </a>
           {/if}
         </li>
