@@ -65,3 +65,49 @@ Sans `--prerelease`, elle deviendrait la « Latest release » ; le workflow `rel
   ```
   puis fixer `ghcr.io/themlaw/shelfhold@${digest}` (ou `:sha-<commit>`) comme image dans `compose.yaml`, à la place de `:1.0`
   qui n'existe qu'à partir de `v1.0.0`.
+
+## Publier le SDK (`sdk-vX.Y.Z`)
+
+Le SDK `shelfhold-sdk` est un composant séparé de l'application ([ADR-0056](adr/0056-plugins-tiers-isoles-index-signe.md),
+D10 et D24) : l'application sort en `v1.3.0`, le SDK en `2.0.0`. Sa publication ([D-P2](adr/0056-plugins-tiers-isoles-index-signe.md),
+ENF-SEC-007) est **de confiance** : le jeton OIDC du job `publish` de `publish-sdk.yml` est la seule
+crédential, **aucun jeton longue durée** — aucun `secrets.*` n'est référencé, aucun jeton d'API n'est créé — et l'action
+officielle `pypa/gh-action-pypi-publish`, épinglée par SHA, signe les **attestations PEP 740** (la page du projet
+sur PyPI les montre, une par fichier publié). Le job `build`, sans aucune permission, construit roue et sdist et les remet telles quelles :
+ce qui est publié n'est jamais reconstruit. Les environnements protégés (`pypi`, `testpypi`) arrêtent la publication
+jusqu'à la relecture du porteur.
+
+Chaque PR fait déjà tourner le repli : le job `sdk-dist` de `ci.yml` construit roue et sdist, contrôle les métadonnées
+**sans envoi**, installe la roue dans un environnement **sans l'hôte** et y joue le kit de conformité sur le gabarit
+d'auteur (`docs/plugins/gabarit`) — et sur le plugin d'exemple dès qu'il existe (L10, convention `examples/<nom>/`).
+
+**Étapes du porteur** (aucune n'est faite par le dépôt ; sans elles, ENF-SEC-007 reste **partielle** pour M6, le repli
+`sdk-dist` tenant lieu) :
+
+1. **Comptes** : réserver le projet `shelfhold-sdk` sur TestPyPI, puis sur PyPI (la première publication se fait
+   toujours sur TestPyPI).
+2. **Éditeur de confiance** : sur chaque projet, déclarer un éditeur de confiance (*trusted publisher*) — le dépôt, le
+   workflow `.github/workflows/publish-sdk.yml`, et l'environnement (`testpypi` pour TestPyPI, `pypi` pour PyPI).
+   **Jamais de jeton d'API** : aucun `PYPI_API_TOKEN` à créer ni à stocker.
+3. **Environnements protégés** : dans les réglages du dépôt GitHub, créer les environnements `pypi` et `testpypi`,
+   relecteur exigé : le porteur (la publication attend son approbation). Dans l'environnement `pypi`, la **règle de
+   déploiement** (étiquettes autorisées) n'accepte que le motif `sdk-v*` : un lancement manuel depuis une branche, ou
+   une étiquette d'un autre motif, n'obtient jamais le jeton OIDC de PyPI — l'éditeur de confiance ne connaît que le
+   dépôt, le workflow et l'environnement, jamais le ref : seul l'environnement l'arrête. L'environnement `testpypi`
+   peut tout accepter : il ne publie que sur l'index d'essai.
+4. **Étiquettes protégées** : ajouter `refs/tags/sdk-v*` à la règle du dépôt qui protège les étiquettes
+   `refs/tags/v*` (ou créer une règle dédiée), **et** y cocher la restriction de création (« Restrict creations »,
+   règle `creation`), le mainteneur seul en contournement. La règle des étiquettes `v*` n'interdit que la
+   suppression, la mise à jour et l'écrasement : sans `creation`, quiconque peut pousser crée `sdk-v9.9.9` sur un
+   commit non fusionné, l'environnement `pypi` l'accepte, et seule l'approbation manuelle arrête la publication.
+5. **Publication à l'essai** : lancer `publish-sdk.yml` par `workflow_dispatch` (onglet Actions) depuis le ref voulu :
+   l'environnement `testpypi` publie sur TestPyPI. C'est le seul geste pour vérifier la chaîne avant PyPI.
+6. **Publication réelle** : pousser l'étiquette `sdk-vX.Y.Z` sur `main` — le nom doit être exactement celui de
+   `version` dans `sdk/pyproject.toml`, et le job `build` le contrôle deux fois : contre `sdk/pyproject.toml` avant
+   de construire, puis contre les fichiers réellement construits dans `dist/` (une roue et un sdist
+   `shelfhold_sdk-<version>`, rien d'autre) — l'environnement `pypi` publie sur PyPI après relecture.
+7. **Un numéro publié ne se republie jamais** : relancer le workflow sur une étiquette déjà publiée échoue (PyPI le
+   refuse) ; un correctif sort sous un nouveau numéro, jamais en écrasant.
+
+Rappel de versions : la publication ne change pas celle de l'application (`v1.3.0` à M6, D24) ; le shim `api` 1 de
+l'hôte (`shelfhold.sdk`) charge les deux numéros pendant 12 mois après la publication (D11, ENF-OPS-008).

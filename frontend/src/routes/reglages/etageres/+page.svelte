@@ -183,7 +183,7 @@
   <title>{t('shelves.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('shelves.title')}</h1>
   {#if adminOnly}
     <p role="alert">{notice?.text}</p>

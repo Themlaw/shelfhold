@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { STORAGE_KEY } from '#lib/themes/index.ts';
+import { setUiLanguage, t } from '#lib/i18n/index.ts';
 import { load } from './+layout.ts';
 
 const json = (body: unknown, status = 200) =>
@@ -150,3 +151,37 @@ describe('root layout load: the session of the offline copies (M5 L16b)', () => 
   });
 });
 
+describe('root layout load sets the language before any render', () => {
+  const nobody = () =>
+    fetcher({
+      '/api/v1/source': () => json({}, 200),
+      '/api/v1/me/preferences': () => json({}, 401),
+      '/api/v1/me': () => json({ status: 401 }, 401),
+      '/api/v1/setup/status': () => json({ needs_admin: false })
+    });
+
+  // req: ENF-I18N-001
+  it('speaks the browser language at once when nobody is signed in', async () => {
+    setUiLanguage('fr');
+    vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-US', 'en']);
+    const data = await load({ fetch: nobody(), url: new URL('http://x/assistant/compte') } as never);
+    expect(data.language).toBe('en');
+    expect(t('admin.wizard.title')).toBe('First Launch Wizard');
+    vi.restoreAllMocks();
+  });
+
+  // req: ENF-I18N-001
+  it('lets the profile preference win over the browser', async () => {
+    setUiLanguage('en');
+    vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-US']);
+    const fetch = fetcher({
+      '/api/v1/source': () => json({}, 200),
+      '/api/v1/me/preferences': () => json({ language: 'fr' }),
+      '/api/v1/me': () => json({ role: 'admin', nav: [] })
+    });
+    const data = await load({ fetch } as never);
+    expect(data.language).toBe('fr');
+    expect(t('admin.wizard.title')).toBe('Assistant de premier lancement');
+    vi.restoreAllMocks();
+  });
+});

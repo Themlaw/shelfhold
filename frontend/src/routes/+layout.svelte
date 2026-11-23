@@ -39,7 +39,8 @@
   // server (another device may have changed it) applies here, once the screen has its data.
   $effect(() => {
     if (data.appearance) applyAppearance(document.documentElement, data.appearance);
-    // the language of the interface: the profile preference, else the browser languages
+    // Update the UI language when data changes (e.g., preference change or sign-in)
+    // a later answer (a sign-in, a changed preference) changes the language too
     setUiLanguage(data.language ?? detectLanguage(navigator.languages));
   });
 </script>

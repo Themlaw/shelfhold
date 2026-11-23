@@ -292,7 +292,7 @@
   <title>{t('destinations.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('destinations.title')}</h1>
   {#if adminOnly}
     <p role="alert">{notice?.text}</p>
