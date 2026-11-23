@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from shelfhold.config import Settings
+from shelfhold.identity.domain.device_secret import kobo_path_credential
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
     Allowed,
@@ -205,3 +206,23 @@ def test_device_tokens_via_socket_audited_as_local_cli_and_listed_without_secret
     ]
     with pytest.raises(RpcFailure):  # no profile named: no default, the pairing refuses
         call(_socket(api), "identity.device_tokens_create", {"name": "x"})
+
+
+@pytest.mark.req("EF-INT-012")
+def test_a_kobo_paired_over_the_socket_gets_its_sync_address_segment(api: AuthEnv) -> None:
+    """The host CLI pairs a kobo too: the reply carries the path segment of its sync address
+    (M6 L17a), once, with the secret, so the operator can write the address on the device."""
+    api.app.state.auth_gate.auth.profile_add(  # type: ignore[attr-defined]
+        "kid", PASSWORD, "child", max_age_rating=7
+    )
+    created = call(
+        _socket(api), "identity.device_tokens_create", {"subject": "kid", "kind": "kobo"}
+    )
+    assert isinstance(created, dict)
+    assert kobo_path_credential(created["kobo_sync_segment"]) == (
+        created["public_id"],
+        created["secret"],
+    )
+    listed = call(_socket(api), "identity.device_tokens_list", {})
+    assert isinstance(listed, list)
+    assert created["kobo_sync_segment"] not in str(listed)  # a listing never carries it

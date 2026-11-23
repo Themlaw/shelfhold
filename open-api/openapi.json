@@ -2870,7 +2870,7 @@
         "type": "object"
       },
       "DeviceTokenPaired": {
-        "description": "What is shown once. `secret` is typed as it is: no separator, case kept.",
+        "description": "What is shown once. `secret` is typed as it is: no separator, case kept. A kobo alone\nalso gets `kobo_sync_segment`: the path segment of its sync address (M6 L17a), the same\ncredential as one word, shown once with the secret and never anywhere else.",
         "properties": {
           "device_id": {
             "title": "Device Id",
@@ -2887,6 +2887,17 @@
               }
             ],
             "title": "Expires At"
+          },
+          "kobo_sync_segment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kobo Sync Segment"
           },
           "public_id": {
             "title": "Public Id",

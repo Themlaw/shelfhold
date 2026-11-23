@@ -149,6 +149,9 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "collection_remote": _REBUILT,  # the next sync of collections makes them again (M4 L18a)
     "traffic_counter": _NOISE,  # what the Fetcher carried per day: a counter, counted again (L29)
     "page_issue": _REBUILT,  # found again by the next look at the content (M4 L53)
+    # the cursor of a kobo's last sync (M6 L17a): the registry of the devices stays behind, and
+    # a device whose point is not there takes a full sync, which is its own recovery
+    "kobo_sync_point": _NOISE,
 }  # fmt: skip
 
 # Columns of an exported table that never leave: the password hash is the only secret in one.

@@ -1677,7 +1677,9 @@ export type DeviceTokenPairIn = {
 /**
  * DeviceTokenPaired
  *
- * What is shown once. `secret` is typed as it is: no separator, case kept.
+ * What is shown once. `secret` is typed as it is: no separator, case kept. A kobo alone
+ * also gets `kobo_sync_segment`: the path segment of its sync address (M6 L17a), the same
+ * credential as one word, shown once with the secret and never anywhere else.
  */
 export type DeviceTokenPaired = {
     /**
@@ -1688,6 +1690,10 @@ export type DeviceTokenPaired = {
      * Expires At
      */
     expires_at: string | null;
+    /**
+     * Kobo Sync Segment
+     */
+    kobo_sync_segment?: string | null;
     /**
      * Public Id
      */

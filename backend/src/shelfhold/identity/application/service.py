@@ -77,6 +77,7 @@ from shelfhold.identity.domain.device_secret import (
     PUBLIC_ID_LENGTH,
     key_digest,
     kobo_path_credential,
+    kobo_path_token,
     new_device_credential,
     secret_digest,
 )
@@ -237,13 +238,16 @@ class SessionAuth:
 
 @dataclass(frozen=True)
 class CreatedDeviceToken:
-    """What is shown once, at pairing. `secret` stays out of the `repr` and `str`."""
+    """What is shown once, at pairing. `secret` stays out of the `repr` and `str`, and so does
+    `kobo_sync_segment`: the credential of a kobo as one path segment (M6 L17a), another form
+    of the same secret, given only to that kind of device."""
 
     public_id: str
     secret: str = field(repr=False)
     subject_user_id: str
     expires_at: datetime | None
     device_id: str = ""
+    kobo_sync_segment: str | None = field(default=None, repr=False)
 
     def __str__(self) -> str:
         return f"CreatedDeviceToken(public_id={self.public_id!r})"
@@ -1490,6 +1494,11 @@ class LocalAuth:
                 subject_user_id=subject.id,
                 expires_at=expires_at,
                 device_id=device_id,
+                kobo_sync_segment=(
+                    kobo_path_token(credential.public_id, credential.secret)
+                    if device_type == KOBO_KIND
+                    else None
+                ),
             )
         raise RuntimeError("device_token_id_exhausted")
 
@@ -1561,6 +1570,11 @@ class LocalAuth:
             subject_user_id=found.device.subject_user_id,
             expires_at=expires_at or found.expires_at,
             device_id=found.device.id,
+            kobo_sync_segment=(
+                kobo_path_token(found.public_id, credential.secret)
+                if found.device.kind == KOBO_KIND
+                else None
+            ),
         )
 
     def retire_device(self, device_id: str, *, by: Principal | None = None) -> bool:
