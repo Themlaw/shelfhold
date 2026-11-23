@@ -1,17 +1,49 @@
 // The offline copies in the browser (M5 L16b): the store on IndexedDB and Cache Storage, the calls
 // of the API behind the seam of `sync.ts`, and the moments the sync runs (at start, when the
-// network comes back, and after the delay a busy server asked for).
+// network comes back, and after the delay a busy server asked for). M6 L20: every change of the
+// copies is said to the screens and the other tabs (`events.ts`).
 import { listWorks, readerPublication, readerPutPosition } from '#lib/api/index.ts';
 import { csrfToken } from '#lib/passkeys.ts';
+import { OFFLINE_CHANGED, createOfflineEvents, notifying, type OfflineChannel, type OfflineEvents } from './events.ts';
 import { idbEnv } from './idb.ts';
 import type { KeepApi } from './keep.ts';
 import { createOfflineStore, type OfflineStore } from './store.ts';
 import { syncOffline } from './sync.ts';
 
+/** The channel between the tabs of this browser, when the browser offers one; nothing otherwise (a
+ * channel never delivers to the context that posted, which is why the events also tell locally). */
+function channelOf(name: string): OfflineChannel | null {
+  if (typeof BroadcastChannel === 'undefined') return null;
+  try {
+    const real = new BroadcastChannel(name);
+    return {
+      postMessage: (message) => real.postMessage(message),
+      hear: (listener) => (real.onmessage = (event) => listener(event.data)),
+      close: () => real.close()
+    };
+  } catch {
+    return null; // no channel in this context: the tab that changes is the one that hears
+  }
+}
+
+let events: OfflineEvents | null = null;
+
+/** The one place the changes of the copies are said (M6 L20). */
+export function offlineEvents(): OfflineEvents {
+  events ??= createOfflineEvents(channelOf(OFFLINE_CHANGED));
+  return events;
+}
+
+/** What the screens hear: a copy kept, evicted or wiped, in this tab or in another one. */
+export function onOfflineChanged(listener: () => void): () => void {
+  return offlineEvents().onChanged(listener);
+}
+
 let store: OfflineStore | null = null;
 
 export function offlineStore(): OfflineStore {
-  store ??= createOfflineStore(idbEnv(window));
+  // every change goes through `notifying`: the screens that show the copies read again
+  store ??= notifying(createOfflineStore(idbEnv(window)), offlineEvents());
   return store;
 }
 

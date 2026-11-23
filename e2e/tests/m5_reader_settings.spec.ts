@@ -131,6 +131,7 @@ test('test_keyboard_shortcuts_reader', async ({ page }) => {
   }
   expect(stops).toEqual([
     'Réglages de lecture',
+    'Lire hors ligne',
     '?',
     'Page précédente',
     'Page suivante',
