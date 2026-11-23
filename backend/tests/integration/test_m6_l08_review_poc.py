@@ -10,7 +10,10 @@ Each test states the behaviour the lot promises and is red on the head of the PR
 - a manual install (a wheel the admin gave by hand) over the row of a removed index install
   keeps the stale pin: the row says "index A, signer A" for code nobody signed;
 - `plugin adopt` writes its `plugin.adopt` audit row before a refusal (`occupied`): the audit
-  says the data moved when nothing did.
+  says the data moved when nothing did;
+- (second round) the key check reads `entry_points.txt` with its own parser: a section header
+  `[[shelfhold.plugins]]` is the plugin group for `importlib.metadata` (it strips the brackets)
+  but not for the check, so the decoy wheel declares the other key there and passes.
 """
 
 from __future__ import annotations
@@ -206,3 +209,49 @@ def test_poc_refused_adopt_is_not_audited_as_done(
     assert run_cli(monkeypatch, settings, "plugin", "adopt", KEY) != 0  # occupied
     assert _plugin_rows(settings, "source_config") == [(KEY,), (held,)]  # nothing moved
     assert ("plugin.adopt", held) not in db_rows(settings, "SELECT action, target FROM audit")
+
+
+def test_poc_decoy_key_hidden_in_a_bracketed_section(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """The check and the loader must read the same keys: `[[group]]` is `group` to the loader."""
+    migrate(settings)
+    first, second = make_key(), make_key()
+    _pin_index(monkeypatch, settings, URL, first)
+    _pin_index(monkeypatch, settings, OTHER_URL, second)
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    wheel = _wheel(tmp_path / "a")
+
+    fetcher = FakeFetcher()
+    _served(fetcher, first, version=1, wheel=wheel)
+    assert _install(monkeypatch, settings, fetcher) == 0
+    engine, store = _store(settings)
+    _give_data(store)
+    assert run_cli(monkeypatch, settings, "plugin", "remove", DIST) == 0
+
+    entry_points = (
+        "[shelfhold.plugins]\ndecoy = evil_plug:plugin\n"
+        f"[[shelfhold.plugins]]\n{KEY} = evil_plug:plugin\n"
+    )
+    evil = build_wheel(
+        tmp_path / "b", "evil-plug", {"evil_plug/__init__.py": "x = 1\n"},
+        extra={"evil_plug-1.0.dist-info/entry_points.txt": entry_points},
+    )  # fmt: skip
+    other = FakeFetcher()
+    wheel_url = WHEEL_BASE + evil.path.name
+    other.wheels[wheel_url] = evil.path.read_bytes()
+    expires = _expires()
+    document = index_document(
+        version=1,
+        expires=expires,
+        plugins=[plugin_entry(key="decoy", sha256="sha256:" + evil.sha256, wheel_url=wheel_url)],
+    )
+    other.serving(
+        OTHER_URL, document, sign_index(document, second, comment=trusted_comment(1, expires))
+    )
+    code = _install(monkeypatch, settings, other, "decoy", url=OTHER_URL)
+    leaked = code == 0 and store.load(KEY).values.get("api_key") == SECRET
+    engine.dispose()
+    assert not leaked, "signer B's wheel reads the secret signer A's install was given"
+    assert code != 0, "a wheel that declares another key than its index entry is installed"
