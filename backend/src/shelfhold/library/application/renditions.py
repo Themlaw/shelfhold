@@ -308,8 +308,8 @@ class RenditionService:
         """Drop the hold a lookup took: `cached`, `render` and `render_kepub` hand back a
         rendition **pinned** — the pin is taken before the check read, so the window from the
         lookup to the read is the request's, and a sweep that runs in it must find the pin.
-        `holding` drops it at the end of its block; this is the same release, for a caller
-        that cannot hold the block."""
+        `holding` performs this release at the end of its block; a caller that cannot hold the
+        block calls it itself."""
         self._leave(rendition.content_hash)
 
     @contextmanager
@@ -317,11 +317,12 @@ class RenditionService:
         """The hold a lookup took, kept for the length of the block and dropped here whatever
         happens: the caller of `cached`, `render` or `render_kepub` wraps its read in this, and
         a sweep that runs inside the block leaves the file to the request. The pin itself was
-        taken by the lookup, before its check read — never after it."""
+        taken by the lookup, before its check read — never after it; the release is `unpin`'s,
+        the one form of it."""
         try:
             yield rendition
         finally:
-            self._leave(rendition.content_hash)
+            self.unpin(rendition)
 
     @classmethod
     def _leave(cls, key: str) -> None:

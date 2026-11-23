@@ -284,6 +284,17 @@ def _yes_no(value: object) -> str:
     return t("status.yes") if value else t("status.no")
 
 
+def _cache_kind(kind: str) -> str:
+    """The label of one derived cache (M6 L12, EF-BIB-018): the four keys are literals, each
+    named here — a key the catalogue ships is a key the code says."""
+    return {
+        "thumbnails": t("status.cache_kind_thumbnails"),
+        "renditions": t("status.cache_kind_renditions"),
+        "http": t("status.cache_kind_http"),
+        "metadata": t("status.cache_kind_metadata"),
+    }[kind]
+
+
 def report_lines(ops: dict[str, object]) -> list[str]:
     """The sections of `status` that are not a wait: silent series, series buried upstream, what
     each root can do, and the age of the `known_bad_versions` list."""
@@ -306,7 +317,7 @@ def report_lines(ops: dict[str, object]) -> list[str]:
         lines.append(t("status.koreader_reset_line", unit_id=u["unit_id"], at=u["at"]))
     for c in ops.get("caches", []):  # type: ignore[attr-defined]
         # M6 L12 (EF-BIB-018): the use and the quota of each derived cache, from the database
-        kind = t(f"status.cache_kind_{c['kind']}")
+        kind = _cache_kind(str(c["kind"]))
         if c.get("quota_bytes") is None:  # the metadata cache is counted in rows
             lines.append(
                 t(
