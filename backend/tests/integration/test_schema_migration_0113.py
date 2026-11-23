@@ -45,38 +45,41 @@ def test_the_tables_arrive_with_their_constraints(settings: Settings) -> None:
         _user(conn, OTHER)
         conn.execute("INSERT INTO secret_key (kid, state) VALUES ('k1', 'active')")
         conn.execute(
-            "INSERT INTO tracker_link (id, user_id, plugin_key, remote_ref, linked_at,"
+            "INSERT INTO tracker_link (id, user_id, plugin_key, remote_ref, origin, linked_at,"
             " push_enabled, secret_kid, secret_v, secret_nonce, secret_ct, token_fingerprint)"
             " VALUES ('01J00000000000000000000AB1', ?, 'fake-tracker', '{}',"
-            " '2026-11-20 12:00:00', 0, 'k1', 1, x'00', zeroblob(16), 'abc')",
+            " 'https://tracker.invalid', '2026-11-20 12:00:00', 0, 'k1', 1, x'00',"
+            " zeroblob(16), 'abc')",
             (USER,),
         )
         # the push is never on by default
         conn.execute(
-            "INSERT INTO tracker_link (id, user_id, plugin_key, remote_ref, linked_at,"
+            "INSERT INTO tracker_link (id, user_id, plugin_key, remote_ref, origin, linked_at,"
             " secret_kid, secret_v, secret_nonce, secret_ct, token_fingerprint)"
             " VALUES ('01J00000000000000000000AB2', ?, 'other-tracker', '{}',"
-            " '2026-11-20 12:00:00', 'k1', 1, x'00', zeroblob(16), 'def')",
+            " 'https://tracker.invalid', '2026-11-20 12:00:00', 'k1', 1, x'00', zeroblob(16),"
+            " 'def')",
             (USER,),
         )
         assert conn.execute("SELECT push_enabled FROM tracker_link").fetchall() == [(0,), (0,)]
         # one link per profile and per tracker
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
-                "INSERT INTO tracker_link (id, user_id, plugin_key, remote_ref, linked_at,"
-                " secret_kid, secret_v, secret_nonce, secret_ct, token_fingerprint)"
+                "INSERT INTO tracker_link (id, user_id, plugin_key, remote_ref, origin,"
+                " linked_at, secret_kid, secret_v, secret_nonce, secret_ct, token_fingerprint)"
                 " VALUES ('01J00000000000000000000AB3', ?, 'fake-tracker', '{}',"
-                " '2026-11-20 12:00:00', 'k1', 1, x'00', zeroblob(16), 'abc')",
+                " 'https://tracker.invalid', '2026-11-20 12:00:00', 'k1', 1, x'00',"
+                " zeroblob(16), 'abc')",
                 (USER,),
             )
         # a link belongs to a profile that exists
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
-                "INSERT INTO tracker_link (id, user_id, plugin_key, remote_ref, linked_at,"
-                " secret_kid, secret_v, secret_nonce, secret_ct, token_fingerprint)"
+                "INSERT INTO tracker_link (id, user_id, plugin_key, remote_ref, origin,"
+                " linked_at, secret_kid, secret_v, secret_nonce, secret_ct, token_fingerprint)"
                 " VALUES ('01J00000000000000000000AB4', '01JZZZZZZZZZZZZZZZZZZZZZZZ',"
-                " 'fake-tracker', '{}', '2026-11-20 12:00:00', 'k1', 1, x'00', zeroblob(16),"
-                " 'abc')"
+                " 'fake-tracker', '{}', 'https://tracker.invalid', '2026-11-20 12:00:00',"
+                " 'k1', 1, x'00', zeroblob(16), 'abc')"
             )
         # the allowance: one row per profile and per tracker, naming who allowed it
         conn.execute(

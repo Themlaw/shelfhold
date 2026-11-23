@@ -100,6 +100,8 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "device": _CREDENTIAL,  # M5 L02: the registry of the e-readers whose tokens stay behind
     "oidc_identity": _CREDENTIAL,  # M5 L03: who of the provider may sign in as whom, linked again
     "notify_destination": _CREDENTIAL,
+    "tracker_link": _CREDENTIAL,  # M6 L13: a remote account's token, sealed to the row
+    "tracker_allowance": _CREDENTIAL,  # M6 L13: the admin's word for a child, said again
     "source_secret": _CREDENTIAL, "source_config": _CREDENTIAL, "plugin_attestation": _CREDENTIAL,
     "provider_secret": _CREDENTIAL, "webhook_subscription": _CREDENTIAL,
     "idempotency_key": _CREDENTIAL,

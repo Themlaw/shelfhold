@@ -2,10 +2,14 @@
 
 One link per profile and per tracker plugin. The profile links the tracker of their own remote
 account: the token is in the request once, sealed by the `SecretVault` to the `tracker_link` row,
-and injected into the Fetcher the host hands the plugin (`AuthInjectingFetcher`, EF-SRC-023) —
-the plugin never sees it: no argument, no log line, no answer carries it. A child profile is
-refused unless the admin allowed this tracker to this profile (`tracker_allowance`, the reserved
-action `tracker.allow_child`); withdrawing the allowance takes the child's link away.
+and injected into the Fetcher behind the facade the host hands the plugin (`get` and `post` only,
+over `AuthInjectingFetcher`, EF-SRC-023) — the plugin never sees it: no argument, no log line, no
+answer carries it, and nothing that reads it back is handed over. A child profile is refused
+unless the admin allowed this tracker to this profile (`tracker_allowance`, the reserved action
+`tracker.allow_child`); withdrawing the allowance takes the child's link away, and the word is
+read again under the lock that writes, and at every push and pull. The token follows the origin
+it was linked for (`origin`), never the plugin key alone: another `api` domain under the same key
+receives nothing.
 
 The push leaves only after the profile's explicit accord (`push_enabled`, the reserved action
 `tracker.push_opt_in`), and a pull is a `TrackerHint`: the host shows it and writes nothing —
@@ -17,12 +21,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final
 
 import sqlalchemy as sa
+from shelfhold_sdk.fetcher import Response
 from shelfhold_sdk.models import AuthApiKey, AuthBasic, PluginKind, SessionState
 from shelfhold_sdk.tracker import TrackerHint, TrackerManifest, TrackerRef, TrackProgress
 from sqlalchemy import Engine
@@ -71,6 +76,54 @@ class LinkView:
     linked_at: datetime
     push_enabled: bool
     token_fingerprint: str | None
+
+
+class _TrackerFetcher:
+    """Only `get` and `post` reach a tracker plugin. The wrapper that carries the token is the
+    host's: its `ref_secret`, its `secret_values`, its `authorize` are ways of reading the
+    credential back, and none of them is handed over (EF-SRC-023, ENF-SEC-005)."""
+
+    def __init__(self, inner: AuthInjectingFetcher) -> None:
+        self._inner = inner
+
+    def __repr__(self) -> str:
+        return "TrackerFetcher()"
+
+    async def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+        referer: str | None = None,
+        cache_ttl: int | None = None,
+    ) -> Response:
+        return await self._inner.get(
+            url, headers=headers, params=params, referer=referer, cache_ttl=cache_ttl
+        )
+
+    async def post(
+        self,
+        url: str,
+        *,
+        data: dict[str, Any] | None = None,
+        json: Any = None,
+        headers: dict[str, str] | None = None,
+    ) -> Response:
+        return await self._inner.post(url, data=data, json=json, headers=headers)
+
+
+def purge_plugin(engine: Engine, plugin_keys: Iterable[str]) -> None:
+    """A plugin is gone from the instance: its links — the sealed tokens with them — and the
+    allowances said in its name go too, in one transaction. A token must not outlive the code
+    it was handed to."""
+    keys = list(plugin_keys)
+    if not keys:
+        return
+    with write_transaction(engine) as connection:
+        for key in keys:
+            connection.execute(sa.delete(_link).where(_link.c.plugin_key == key))
+            connection.execute(sa.delete(_allowance).where(_allowance.c.plugin_key == key))
 
 
 def _check_token(token: object) -> str:
@@ -140,6 +193,21 @@ class TrackerHost:
                 is not None
             )
 
+    def _child_still_allowed(self, principal: Any, user_id: str, plugin_key: str) -> None:
+        """The word that allowed a child is read again at every push and pull: withdrawing it
+        takes the link away, and what would remain of one is refused all the same."""
+        if principal.role != "child":
+            return
+        if not self._child_allowed(user_id, plugin_key):
+            raise TrackerError("child_refused")
+
+    def _same_origin(self, row: Any, manifest: TrackerManifest) -> None:
+        """The token was sealed for the origin the plugin declared at link time. A plugin
+        installed again under the same key that declares another `api` domain does not receive
+        it: the profile links again, or nothing leaves."""
+        if _origin_of(manifest) != row.origin:
+            raise TrackerError("refused")
+
     def _plugin(self, plugin_key: str) -> tuple[PluginRecord, TrackerManifest]:
         plugins = self._registry_of()
         record = plugins.get(plugin_key) if plugins is not None else None
@@ -152,7 +220,8 @@ class TrackerHost:
 
     def _fetcher(self, manifest: TrackerManifest, token: str) -> Any:
         """The Fetcher the plugin is handed: the guarded one of the declared origin, wrapped so
-        that it carries the account's credential. The token stays in the wrapper (EF-SRC-023)."""
+        that it carries the account's credential. The token stays in the wrapper (EF-SRC-023),
+        and the plugin sees the facade only: `get` and `post`, nothing that reads back."""
         origin = _origin_of(manifest)
         flow = manifest.auth
         if origin is None or not isinstance(flow, AuthApiKey | AuthBasic):
@@ -162,7 +231,9 @@ class TrackerHost:
             if isinstance(flow, AuthApiKey)
             else {"username": "", "password": token}
         )
-        return AuthInjectingFetcher(self._fetcher_for(origin), flow, secret, origin=origin)
+        return _TrackerFetcher(
+            AuthInjectingFetcher(self._fetcher_for(origin), flow, secret, origin=origin)
+        )
 
     def _entry(self, action: str, principal: Any, target: str) -> AuditEntry:
         return AuditEntry(
@@ -199,6 +270,9 @@ class TrackerHost:
             raise TrackerError("child_refused")
         record, manifest = self._plugin(plugin_key)
         secret = _check_token(token)
+        origin = _origin_of(manifest)
+        if origin is None:
+            raise TrackerError("refused")
         fetcher = self._fetcher(manifest, secret)
         try:
             ref = asyncio.run(record.instance.link(fetcher, SessionState(), {}))
@@ -208,6 +282,22 @@ class TrackerHost:
             raise TrackerError("refused")
         now = self._clock.now()
         with write_transaction(self._engine) as connection:
+            # the role and the word that allowed a child are read again under the lock that
+            # writes the link: a demotion or a withdrawal that lands while the remote service
+            # answers wins, whatever the order of the two writes
+            who = connection.execute(sa.select(_user.c.role).where(_user.c.id == user_id)).first()
+            if who is None:
+                raise TrackerError("not_found")
+            if who.role == "child" and (
+                connection.execute(
+                    sa.select(_allowance.c.user_id).where(
+                        _allowance.c.user_id == user_id,
+                        _allowance.c.plugin_key == plugin_key,
+                    )
+                ).first()
+                is None
+            ):
+                raise TrackerError("child_refused")
             existing = connection.execute(
                 sa.select(_link.c.id, _link.c.push_enabled).where(
                     _link.c.user_id == user_id, _link.c.plugin_key == plugin_key
@@ -222,6 +312,7 @@ class TrackerHost:
             fingerprint = self._fingerprint(row_id, secret)
             values: dict[str, Any] = {
                 "remote_ref": ref.model_dump_json(),
+                "origin": origin,
                 "linked_at": now,
                 "token_fingerprint": fingerprint,
                 **envelope.to_columns(),
@@ -316,12 +407,14 @@ class TrackerHost:
 
     def push(self, principal: Any, user_id: str, plugin_key: str, progress: TrackProgress) -> None:
         self._own(principal, user_id)
+        self._child_still_allowed(principal, user_id, plugin_key)
         row = self._row(user_id, plugin_key)
         if row is None:
             raise TrackerError("not_linked")
         if not row.push_enabled:
             raise TrackerError("push_refused")
         record, manifest = self._plugin(plugin_key)
+        self._same_origin(row, manifest)
         ref = TrackerRef.model_validate_json(row.remote_ref)
         fetcher = self._fetcher(manifest, self._open_token(row))
         try:
@@ -333,10 +426,12 @@ class TrackerHost:
 
     def pull(self, principal: Any, user_id: str, plugin_key: str) -> TrackerHint | None:
         self._own(principal, user_id)
+        self._child_still_allowed(principal, user_id, plugin_key)
         row = self._row(user_id, plugin_key)
         if row is None:
             raise TrackerError("not_linked")
         record, manifest = self._plugin(plugin_key)
+        self._same_origin(row, manifest)
         ref = TrackerRef.model_validate_json(row.remote_ref)
         fetcher = self._fetcher(manifest, self._open_token(row))
         try:

@@ -362,7 +362,7 @@ since = "1.2"
 
 [[migration]]
 file = "0113_tracker_link.py"
-sha256 = "a723070b250baea7e1a93acb2843932170831c1441fcd39b0904ba391fec1473"
+sha256 = "31e523515d1c1aeac2fc3901236fa8deacfb2ee9168624346ec39837555a6a3e"
 since = "1.3"
 
 [[migration]]

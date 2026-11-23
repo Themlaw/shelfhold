@@ -2,7 +2,9 @@
 
 One row per profile and per tracker plugin: the `TrackerRef` the plugin returned, the profile's
 explicit accord to the push (never on by default), and the remote account's token sealed to the
-row (ENF-SEC-005) with the fingerprint the API shows. `tracker_allowance` is the admin's word
+row (ENF-SEC-005) with the fingerprint the API shows. `origin` is the api origin the token was
+sealed for: the token follows the origin it was linked for, never the plugin key alone.
+`tracker_allowance` is the admin's word
 that one tracker may be linked by one child profile: a row means allowed, no row means refused.
 Nothing existing is touched; reversible.
 
@@ -28,6 +30,7 @@ CREATE TABLE tracker_link (
 	user_id VARCHAR(26) NOT NULL,
 	plugin_key VARCHAR NOT NULL,
 	remote_ref TEXT NOT NULL,
+	origin VARCHAR NOT NULL,
 	linked_at DATETIME NOT NULL,
 	push_enabled BOOLEAN DEFAULT 0 NOT NULL,
 	secret_kid VARCHAR,
@@ -41,6 +44,7 @@ CREATE TABLE tracker_link (
 	CONSTRAINT ck_tracker_link_id_ulid CHECK (length("id") = 26 AND "id" NOT GLOB '*[^0-9A-HJKMNP-TV-Z]*'),
 	CONSTRAINT ck_tracker_link_remote_ref_json CHECK (json_valid("remote_ref")),
 	CONSTRAINT ck_tracker_link_plugin_key_not_empty CHECK ("plugin_key" <> ''),
+	CONSTRAINT ck_tracker_link_origin_not_empty CHECK ("origin" <> ''),
 	CONSTRAINT ck_tracker_link_sealed CHECK ("secret_ct" IS NOT NULL),
 	CONSTRAINT ck_tracker_link_fingerprint_iff_sealed CHECK (("token_fingerprint" IS NULL) = ("secret_ct" IS NULL)),
 	CONSTRAINT uq_tracker_link_user_id_plugin_key UNIQUE (user_id, plugin_key),

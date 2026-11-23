@@ -349,6 +349,9 @@ tracker_link = sa.Table(
     ),
     sa.Column("plugin_key", sa.String(), nullable=False),
     sa.Column("remote_ref", sa.Text(), nullable=False),  # the TrackerRef, as JSON
+    sa.Column(
+        "origin", sa.String(), nullable=False
+    ),  # the api origin the token was sealed for: it follows the origin, not the key
     sa.Column("linked_at", UtcDateTime(), nullable=False),
     bool_column("push_enabled", default=False),  # the push leaves only after the profile's yes
     *sealed_secret_columns(),
@@ -357,6 +360,7 @@ tracker_link = sa.Table(
     ulid_check("id"),
     sa.CheckConstraint('json_valid("remote_ref")', name="remote_ref_json"),
     sa.CheckConstraint("\"plugin_key\" <> ''", name="plugin_key_not_empty"),
+    sa.CheckConstraint("\"origin\" <> ''", name="origin_not_empty"),
     sa.CheckConstraint('"secret_ct" IS NOT NULL', name="sealed"),
     sa.CheckConstraint(
         '("token_fingerprint" IS NULL) = ("secret_ct" IS NULL)', name="fingerprint_iff_sealed"

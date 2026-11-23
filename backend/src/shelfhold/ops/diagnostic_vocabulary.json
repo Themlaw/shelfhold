@@ -4045,6 +4045,7 @@
   "tracker.unlink",
   "tracker_hints",
   "tracker_link",
+  "tracker_links",
   "transfer",
   "translation_type",
   "trash.empty",
@@ -4252,6 +4253,7 @@
    "store_true",
    "target.rotate_komga_key",
    "tombstone.lifted",
+   "tracker.unlinked_role_change",
    "unit.restore",
    "unit.upstream_purged"
   ],
