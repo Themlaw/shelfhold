@@ -193,7 +193,8 @@ def _converted(
             rendition = service.cached(served.content_id, params, served.body)
             if rendition is None:  # a conversion starts a worker
                 rendition = service.render(served.content_id, served.body, params)
-            data = service.read(rendition)
+            with service.holding(rendition):  # the lookup's hold, kept until the read is done
+                data = service.read(rendition)
         except (UnknownSourceError, TombstonedContentError):
             raise absent() from None
         except (ImageRejected, UnsupportedSourceError, RemoteProcessorRefusedError):

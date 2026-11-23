@@ -18,7 +18,13 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import identity, metadata, platform
 from shelfhold.jobs.retention import RetentionPolicy, expire_audit, expire_events_and_jobs
-from shelfhold.retention_jobs import EARLY_PURGE_KIND, RECYCLE_KIND, RETENTION_KIND, sweep_recycle
+from shelfhold.retention_jobs import (
+    CACHES_KIND,
+    EARLY_PURGE_KIND,
+    RECYCLE_KIND,
+    RETENTION_KIND,
+    sweep_recycle,
+)
 from tests.l41_env import instance
 
 NOW = datetime(2026, 11, 8, 4, tzinfo=UTC)
@@ -185,4 +191,5 @@ def test_retention_jobs_are_registered_and_classed(settings: Settings, tmp_path:
         RETENTION_KIND: False,  # the database alone: no disk woken, any hour
         RECYCLE_KIND: True,  # the bins are on /library: window only
         EARLY_PURGE_KIND: False,  # a full disk waits for no window (EF-BIB-030)
+        CACHES_KIND: False,  # the derived caches are on /data: no library disk woken (EF-BIB-018)
     }

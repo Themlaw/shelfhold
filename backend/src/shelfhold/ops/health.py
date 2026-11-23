@@ -34,7 +34,7 @@ from shelfhold.i18n import t
 from shelfhold.infrastructure.health import HealthProbe
 from shelfhold.infrastructure.schema import acquisition, bundle, platform, storage, webhooks
 from shelfhold.infrastructure.stats import DEFAULT_SINCE, compute_stats, parse_since
-from shelfhold.library.public import irreplaceability, page_issue_counts
+from shelfhold.library.public import CachePolicy, cache_state, irreplaceability, page_issue_counts
 from shelfhold.ops.backup.run import backup_warnings
 from shelfhold.ops.ports import PausedQueue, WaitingItem
 from shelfhold.ops.services import OpsServices
@@ -582,6 +582,7 @@ def build_health_page(
             "page_map_warnings": [*_page_map_warnings(connection), *_page_issues(connection)],
             "unreadable_webhooks": _unreadable_webhooks(connection),
             "kosync_unknown": _kosync_unknown(kosync_unknown),
+            "caches": cache_state(connection, CachePolicy.from_settings(settings)),
         }
     page["backup"] = _backup(engine, settings, now)
     page["stats"] = compute_stats(engine, now=now, since_days=parse_since(DEFAULT_SINCE)).as_dict()

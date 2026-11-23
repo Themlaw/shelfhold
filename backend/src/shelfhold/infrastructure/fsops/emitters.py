@@ -23,6 +23,9 @@ TRASH_RETENTION_S = 30 * 86400  # ENF-OPS-009
 # pressure: a deletion made last week can still be undone (a choice to validate, the card gives no
 # floor). Read from the file system by fsops, like the 30 days.
 EARLY_PURGE_MIN_AGE_S = 7 * 86400
+# The cache purge (M6 L12) has no path under a library root: this pattern matches no file name,
+# so the perimeter of that emitter admits nothing (see EMITTER_PERIMETERS).
+NOT_A_LIBRARY_PATH = re.compile(r"(?!x)x")
 
 
 def new_probe_name(*, epub: bool = False) -> str:
@@ -71,6 +74,12 @@ EMITTER_PERIMETERS: Mapping[str, Perimeter] = MappingProxyType(
         # EF-BIB-030: the bin under disk pressure, oldest first (the order is the caller's, the
         # minimum age and the pressure are fsops's own reading): the same perimeter as the sweep
         "disk_guard_purge": Perimeter(below=RECYCLE_DIR),
+        # M6 L12 (EF-BIB-018): the derived caches live under /data, where fsops has no root and
+        # never deletes: this perimeter admits no path at all (fsops refuses everything for the
+        # emitter). The real perimeter is the closed allowlist of cache paths and host-written
+        # name patterns that `library.application.cache_quotas` checks before every erasure,
+        # and its test proves it.
+        "cache_retention_purge": Perimeter(name=NOT_A_LIBRARY_PATH, tree=False, needs_file=True),
     }
 )
 

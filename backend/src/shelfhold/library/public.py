@@ -155,6 +155,13 @@ from shelfhold.library.application.anti_echo import (
     own_export_of,
     received_content_hash,
 )
+from shelfhold.library.application.cache_quotas import (
+    CACHE_PURGE_EMITTER,
+    CachePolicy,
+    CacheSweep,
+    cache_state,
+    purge_caches,
+)
 from shelfhold.library.application.disk_guard import (
     EMPTY_TRASH_ACTION,
     GIB,
@@ -360,6 +367,7 @@ from shelfhold.library.tombstones.screen import CatalogScreenAdapter
 __all__ = [
     "BIN_DAYS",
     "CACHE_CONTROL",
+    "CACHE_PURGE_EMITTER",
     "CANDIDATE_AFTER",
     "CONFIRMATION_CODE",
     "CONTENT_HASH_BY",
@@ -399,6 +407,8 @@ __all__ = [
     "BinnedFile",
     "BinnedUnitFile",
     "ByteSource",
+    "CachePolicy",
+    "CacheSweep",
     "Candidate",
     "CatalogScreenAdapter",
     "ChapterSpan",
@@ -536,6 +546,7 @@ __all__ = [
     "binned_for_unit",
     "bulk",
     "byte_sources",
+    "cache_state",
     "check_add_fits",
     "clear_page_issue",
     "closed_request_ids",
@@ -607,6 +618,7 @@ __all__ = [
     "payload_hash_at",
     "plan_batch",
     "plan_version",
+    "purge_caches",
     "readable_unit_ids",
     "receive_cbz",
     "received_content_hash",

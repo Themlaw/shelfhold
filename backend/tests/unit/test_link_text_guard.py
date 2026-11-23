@@ -129,6 +129,7 @@ SAFE_USES: dict[str, dict[str, int]] = {
         'libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6", use_errno=True)': 1
     },
     "infrastructure/volumes.py": {
+        "found = os.stat(name, dir_fd=parent, follow_symlinks=False)": 1,
         "if stat.S_ISDIR(os.stat(child, dir_fd=fd, follow_symlinks=False).st_mode):": 1,
         "mode = os.stat(name, dir_fd=parent, follow_symlinks=False).st_mode": 1,
         "return stat.S_ISREG(os.stat(name, dir_fd=self._fd, follow_symlinks=False).st_mode)": 1,

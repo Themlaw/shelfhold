@@ -45,7 +45,13 @@ from shelfhold.infrastructure.imaging import (
     reencode_image,
 )
 from shelfhold.infrastructure.schema import catalog, storage
-from shelfhold.infrastructure.volumes import erase_data_path, open_data_folder, write_data_file
+from shelfhold.infrastructure.volumes import (
+    DataFolder,
+    erase_data_path,
+    open_data_folder,
+    touch_data_file,
+    write_data_file,
+)
 from shelfhold.library.application.kepub import KepubError, kepubify
 from shelfhold.library.domain.content_hash import FILE_HASH_BY
 from shelfhold.library.domain.failures import TombstonedContentError
@@ -82,6 +88,14 @@ CACHE_DIR: Final = "cache/renditions"  # under /data
 MAX_RENDITION_BYTES: Final = 128 * 1024 * 1024  # the byte cap of a page: what may be read back
 Converter = Callable[[bytes, RenditionParams, ImageCaps], Reencoded]
 STRAY_GRACE: Final = timedelta(minutes=10)  # a render writes its file, then its row: seconds
+# The access of a rendition is recorded on its file at most once a day (a screen of pages is not
+# a write each): that time is the LRU key of the retention sweep (L12, EF-BIB-018).
+TOUCH_GRACE: Final = timedelta(days=1)
+# The renditions an in-flight request is reading right now (content hash -> how many), shared by
+# every service of the process: the reader serves, the sweep of the quotas asks `pinned` and
+# leaves a file a ticket still needs (L12: a derivative being served is never evicted).
+_PIN_LOCK: Final = threading.Lock()
+_PINNED: dict[str, int] = {}
 _SHARD: Final = re.compile(r"[0-9a-f]{2}")
 _NAME: Final = re.compile(r"([0-9a-f]{64})\.(jpeg|png|kepub)")
 KEPUB_PARAMS: Final = RenditionParams(kind=KEPUB_KIND)
@@ -269,24 +283,103 @@ class RenditionService:
         return _Origin(str(row.original_sha256), bool(row.watermarked), place)
 
     # -- reading ---------------------------------------------------------------------------
+    @classmethod
+    def pinned(cls) -> frozenset[str]:
+        """The renditions an in-flight request is reading right now (their content hashes): the
+        retention sweep of the caches never evicts one of them (EF-BIB-018)."""
+        with _PIN_LOCK:
+            return frozenset(_PINNED)
+
+    @contextmanager
+    def serving(self, rendition: Rendition) -> Iterator[None]:
+        """Pin `rendition` for the length of what the caller does with it: a read of the cache
+        holds this for its own length, so a file a `/content` ticket is serving is never evicted
+        under it. The registry is the process's, not the instance's: the sweep runs in the same
+        process, on its own service."""
+        key = rendition.content_hash
+        with _PIN_LOCK:
+            _PINNED[key] = _PINNED.get(key, 0) + 1
+        try:
+            yield
+        finally:
+            self._leave(key)
+
+    def unpin(self, rendition: Rendition) -> None:
+        """Drop the hold a lookup took: `cached`, `render` and `render_kepub` hand back a
+        rendition **pinned** — the pin is taken before the check read, so the window from the
+        lookup to the read is the request's, and a sweep that runs in it must find the pin.
+        `holding` performs this release at the end of its block; a caller that cannot hold the
+        block calls it itself."""
+        self._leave(rendition.content_hash)
+
+    @contextmanager
+    def holding(self, rendition: Rendition) -> Iterator[Rendition]:
+        """The hold a lookup took, kept for the length of the block and dropped here whatever
+        happens: the caller of `cached`, `render` or `render_kepub` wraps its read in this, and
+        a sweep that runs inside the block leaves the file to the request. The pin itself was
+        taken by the lookup, before its check read — never after it; the release is `unpin`'s,
+        the one form of it."""
+        try:
+            yield rendition
+        finally:
+            self.unpin(rendition)
+
+    @classmethod
+    def _leave(cls, key: str) -> None:
+        with _PIN_LOCK:
+            left = _PINNED[key] - 1
+            if left:
+                _PINNED[key] = left
+            else:
+                del _PINNED[key]
+
+    @classmethod
+    @contextmanager
+    def erasable(cls, content_hash: str) -> Iterator[bool]:
+        """The pin lock held around one erasure of a rendition file: True when no request holds
+        `content_hash` (erase inside the block, the lock keeps a read from taking it meanwhile),
+        False when one does — leave the file and its rows to the next pass. The sweep asks this
+        at every file it unlinks: the picture it started from is already stale."""
+        with _PIN_LOCK:
+            yield content_hash not in _PINNED
+
+    def _touch(self, folder: DataFolder, name: str) -> None:
+        """Record the access on the file, unless it was recorded less than a day ago: the LRU
+        key of the retention sweep is this time, never the creation. The date is written
+        through the `/data` writer (`touch_data_file`), never around it."""
+        stat = folder.stat_of(name)
+        if stat is None:
+            return
+        at = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
+        if self._clock.now() - at < TOUCH_GRACE:
+            return
+        touch_data_file(folder, name, at=self._clock.now().timestamp())
+
     def read(self, rendition: Rendition) -> bytes | None:
         """The converted bytes, only when they are the ones whose hash is the name; None when
-        the file is gone, is not a regular file, or was altered. Never a partial answer."""
+        the file is gone, is not a regular file, or was altered. Never a partial answer. The
+        read pins the file for its own length (a ticket in flight is serving it) and records
+        the access on it, at most once a day."""
         digest = _hex(rendition.content_hash)
-        try:
-            with open_data_folder(self._data, f"{CACHE_DIR}/{digest[:2]}") as folder:
-                data = folder.read(f"{digest}.{rendition.kind}", MAX_RENDITION_BYTES + 1)
-        except (OSError, ValueError):
-            return None
-        if len(data) != rendition.size or "sha256:" + hashlib.sha256(data).hexdigest() != (
-            rendition.content_hash
-        ):
-            return None
-        return data
+        name = f"{digest}.{rendition.kind}"
+        with self.serving(rendition):
+            try:
+                with open_data_folder(self._data, f"{CACHE_DIR}/{digest[:2]}") as folder:
+                    data = folder.read(name, MAX_RENDITION_BYTES + 1)
+                    if (
+                        len(data) != rendition.size
+                        or "sha256:" + hashlib.sha256(data).hexdigest() != rendition.content_hash
+                    ):
+                        return None
+                    self._touch(folder, name)
+                    return data
+            except (OSError, ValueError):
+                return None
 
     def cached(self, content_id: str, params: RenditionParams, data: bytes) -> Rendition | None:
         """The rendition already made from these bytes of this content, if its file is there and
-        intact."""
+        intact. Handed back **pinned**: the caller holds it with `holding` until it has read the
+        file, so a sweep that runs between the lookup and the read keeps the file."""
         origin = self._origin(content_id)
         if self._tombstoned(origin):  # as `render` refuses: nothing is handed back during a purge
             return None
@@ -304,7 +397,19 @@ class RenditionService:
         if row is None:
             return None
         found = Rendition(source, params.kind, key, row.content_hash, row.size)
-        return found if self.read(found) is not None else None
+        self._pinned(found)  # before the check read: the hold covers it, and the window after
+        if self.read(found) is None:
+            self._leave(found.content_hash)  # the file is not there: the hold goes with it
+            return None
+        return found  # handed back pinned: the caller holds it with `holding` until it is read
+
+    def _pinned(self, rendition: Rendition) -> Rendition:
+        """Take the hold the caller will drop with `holding`: from the lookup (before its check
+        read) to the read, the file is the request's, and a sweep that runs in that window finds
+        the pin."""
+        with _PIN_LOCK:
+            _PINNED[rendition.content_hash] = _PINNED.get(rendition.content_hash, 0) + 1
+        return rendition
 
     # -- the bound on threads --------------------------------------------------------------
     @contextmanager
@@ -340,7 +445,8 @@ class RenditionService:
         max_bytes: int | None = None,
     ) -> Rendition:
         """The rendition of `data`, read from the content `content_id`, made now if it is not
-        there. The caps can be lowered by the caller, never raised past the worker's.
+        there. The caps can be lowered by the caller, never raised past the worker's. Handed
+        back **pinned**: the caller holds it with `holding` until it has read the file.
 
         Raises `UnknownSourceError`, `RemoteProcessorRefusedError` (a remote processor and a
         watermarked file), `UnsupportedSourceError` (not AVIF or WebP) and `ImageRejected`
@@ -378,6 +484,7 @@ class RenditionService:
         if it is not there (rule X4: the caller judged the profile first and read these bytes from
         the content it names). Pure Python, nothing leaves the host, so nothing here depends on
         `watermarked`. Bounded by the size of the input, and by the conversions that run at once.
+        Handed back **pinned**: the caller holds it with `holding` until it has read the file.
 
         Raises `UnknownSourceError`, `TombstonedContentError`, `RenditionBusyError` (no conversion
         slot came free in time) and `KepubError` (not an EPUB it can convert, or too large)."""
@@ -402,9 +509,12 @@ class RenditionService:
             self._converting.release()
 
     def kepub_bytes(self, content_id: str, data: bytes) -> bytes:
-        """`render_kepub`, then the bytes, checked against their hash as they are read."""
+        """`render_kepub`, then the bytes, checked against their hash as they are read. The
+        lookup hands back a pinned rendition and `holding` keeps the hold until the read is
+        done: a sweep that runs in the window leaves the file to the request."""
         rendition = self.render_kepub(content_id, data)
-        found = self.read(rendition)
+        with self.holding(rendition):
+            found = self.read(rendition)
         if found is None:
             raise KepubError("unavailable", "the file of the KEPUB is gone")
         return found
@@ -412,13 +522,15 @@ class RenditionService:
     def _store(self, origin: _Origin, params: RenditionParams, key: str, data: bytes) -> Rendition:
         out_hash = "sha256:" + hashlib.sha256(data).hexdigest()
         rendition = Rendition(origin.source, params.kind, key, out_hash, len(data))
-        write_data_file(self._data, rendition.rel, data)
+        self._pinned(rendition)  # before the file: from its first byte to the caller's read
         try:
+            write_data_file(self._data, rendition.rel, data)
             self._record(rendition, origin)
         except BaseException:
+            self._leave(rendition.content_hash)  # nothing is handed back: the hold goes too
             self._drop_if_unreferenced(rendition.content_hash, rendition.kind)
             raise
-        return rendition
+        return rendition  # handed back pinned, like a hit of the cache
 
     def _record(self, rendition: Rendition, origin: _Origin) -> None:
         table = storage.rendition

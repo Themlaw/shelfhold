@@ -704,6 +704,7 @@ class Composition:
                 self.network,
                 cache_enabled=self.settings.fetcher_cache,
                 cache_off_sources=self.settings.fetcher_cache_off_sources,
+                cache_quota_bytes=self.settings.cache_plugin_quota_mib * 1024 * 1024,
                 traffic=SqlTrafficCounter(self.engine),  # EF-INT-020, after the guard
             )
         return self._fetchers
