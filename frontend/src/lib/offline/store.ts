@@ -7,7 +7,7 @@
 // everything. Nothing here reads a cookie or a secret: an offline copy is as far as the browser can
 // go, and R66 says what it cannot do (a copy cannot be revoked from the server while offline).
 import type { PositionIn, PublicationOut } from '#lib/api/types.gen.ts';
-import { ACTIVE_KV, COPY_CACHE_PREFIX, COPY_PATH, copyCacheName, profileKvName, type OfflineEnv } from './env.ts';
+import { ACTIVE_KV, COPY_CACHE_PREFIX, COPY_PATH, copyCacheName, profileKvName, profileOfKvName, type OfflineEnv } from './env.ts';
 
 export type CopyCarrier = 'content' | 'export_item';
 
@@ -117,10 +117,17 @@ export function createOfflineStore(env: OfflineEnv): OfflineStore {
   }
 
   async function activateNow(profileId: string): Promise<void> {
-    // one profile at a time on a browser: the others' copies go, they are not hidden
+    // one profile at a time on a browser: the others' copies go, they are not hidden. Their stores
+    // are found by name as well: a database of a profile no tab remembers — a crash between the
+    // wipe of a profile and the write of `known`, a race of two tabs, an older version — is
+    // deleted at open, not only the ones `known` lists.
     const others = new Set((await known()).filter((id) => id !== profileId));
     for (const name of await env.caches.keys()) {
       if (name.startsWith(COPY_CACHE_PREFIX) && name !== copyCacheName(profileId)) others.add(name.slice(COPY_CACHE_PREFIX.length));
+    }
+    for (const name of (await env.listKv?.()) ?? []) {
+      const id = profileOfKvName(name);
+      if (id !== null && id !== profileId) others.add(id);
     }
     for (const id of others) await wipeNow(id);
     await active.set('profile', profileId);
@@ -177,6 +184,10 @@ export function createOfflineStore(env: OfflineEnv): OfflineStore {
     const ids = new Set(await known());
     for (const name of await env.caches.keys()) {
       if (name.startsWith(COPY_CACHE_PREFIX)) ids.add(name.slice(COPY_CACHE_PREFIX.length));
+    }
+    for (const name of (await env.listKv?.()) ?? []) {
+      const id = profileOfKvName(name);
+      if (id !== null) ids.add(id);
     }
     for (const id of ids) await wipeNow(id);
     await env.deleteKv(ACTIVE_KV);

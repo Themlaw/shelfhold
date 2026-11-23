@@ -8,7 +8,7 @@ import { memoryEnv, type MemoryEnv } from './testing.ts';
 const held = vi.hoisted(() => ({ env: null as unknown as MemoryEnv }));
 vi.mock('./idb.ts', () => ({ idbEnv: () => held.env }));
 
-const { guardOfflineSession, offlineStore, startOfflineSync, wipeOfflineCopies } = await import('./runtime.ts');
+const { guardOfflineSession, offlineStore, onOfflineChanged, startOfflineSync, wipeOfflineCopies } = await import('./runtime.ts');
 const ALICE = '01JALICE00000000000000000A';
 
 const api = (over: Partial<KeepApi> = {}): KeepApi => ({
@@ -75,6 +75,21 @@ describe('wipeOfflineCopies', () => {
     await store.activate(ALICE);
     await expect(wipeOfflineCopies()).resolves.toBeUndefined();
     held.env.deleteKv = original;
+  });
+});
+
+describe('the wired store', () => {
+  // req: EF-LEC-012
+  it('every change through offlineStore() is told to the screens (notifying is the wiring)', async () => {
+    const heard = vi.fn();
+    const stop = onOfflineChanged(heard);
+    // the store the app wires, not a bare one: a change through it must be heard by the page and
+    // the other tabs, else the list of `/hors-ligne` goes stale after an eviction
+    await offlineStore().activate(ALICE);
+    expect(heard).toHaveBeenCalledTimes(1);
+    stop();
+    await offlineStore().wipeAll();
+    expect(heard).toHaveBeenCalledTimes(1); // stopped hearing: nothing more is told
   });
 });
 

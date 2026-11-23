@@ -1,10 +1,11 @@
 <script lang="ts">
   // The copies kept on this device (M5 L16b, EF-LEC-012): the signed-in profile's, and nobody
   // else's. It opens with no network (the shell is kept by the worker, the list is read from the
-  // device). Titles are inserted as text.
+  // device). M6 L20: the list follows the changes — a copy kept or evicted, in this tab or in
+  // another, is read again without a reload. Titles are inserted as text.
   import { onMount } from 'svelte';
   import { formatDate, t } from '#lib/i18n/index.ts';
-  import { offlineStore } from '#lib/offline/runtime.ts';
+  import { offlineStore, onOfflineChanged } from '#lib/offline/runtime.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import type { CopyMeta } from '#lib/offline/store.ts';
 
@@ -31,7 +32,11 @@
     await load();
   }
 
-  onMount(() => void load());
+  onMount(() => {
+    void load();
+    // what the profile's copies became, here or in another tab: the list is read again
+    return onOfflineChanged(() => void load());
+  });
 </script>
 
 <main>

@@ -6,12 +6,14 @@ et ce qui l'efface.
 
 ## Ce qui est gardé, et pour qui
 
-- Sur la fiche d'une série, **Lire hors ligne** garde le livre **sur cet appareil**, pour **le profil
-  connecté** : ses pages, et de quoi ouvrir le lecteur sans réseau. Seul un livre qui se lit en entier
-  se garde ; un extrait ne se garde jamais.
+- **Lire hors ligne** garde le livre **sur cet appareil**, pour **le profil connecté** : ses pages,
+  et de quoi ouvrir le lecteur sans réseau. Le bouton est **dans le lecteur**, ouvert par chaque
+  profil — le membre, l'enfant, l'administrateur ; la fiche d'une série l'offre aussi à
+  l'administrateur. Seul un livre qui se lit en entier se garde ; un extrait ne se garde jamais.
 - La copie est **à vous seul**. Sur un appareil partagé, quelqu'un d'autre qui se connecte ne voit
   rien de ce que vous avez gardé : ses copies sont effacées quand le profil change, pas seulement
-  cachées. **Copies hors ligne** (sur la fiche, ou `/hors-ligne`) liste celles de votre profil.
+  cachées. **Copies hors ligne** (sur la fiche, ou `/hors-ligne`) liste celles de votre profil, et
+  la liste suit ce qui arrive aux copies — même gardées ou retirées dans un autre onglet.
 - Une page lue hors ligne retient **où vous en êtes**. Au retour du réseau, la position est envoyée
   avec l'heure à laquelle vous l'avez lue : si vous avez lu ailleurs entre-temps, la plus récente
   l'emporte et l'autre entre dans l'historique. Si le serveur est occupé, la position attend et repart
@@ -32,7 +34,8 @@ et ce qui l'efface.
 ## Ce qui ne s'efface pas (risque accepté R66)
 
 Tant que l'appareil n'a pas de réseau, rien ne peut lui retirer une copie : un livre reclassé pendant
-ce temps reste lisible jusqu'à la reconnexion. Et un fichier **téléchargé par OPDS ou par `/lite`**, ou
-copié dans une liseuse, est sorti de Shelfhold : il ne peut pas être repris, comme avec Kavita. Seules
-les copies du lecteur installé sont sous contrôle. Pour un appareil d'enfant, passez par ces copies
-et par les jetons d'appareil révocables, plutôt que par un téléchargement.
+ce temps reste lisible jusqu'à la reconnexion — et c'est vrai pour chaque profil, l'enfant comme les
+adultes. Et un fichier **téléchargé par OPDS ou par `/lite`**, ou copié dans une liseuse, est sorti de
+Shelfhold : il ne peut pas être repris, comme avec Kavita. Seules les copies du lecteur installé sont
+sous contrôle. Pour un appareil d'enfant, passez par ces copies et par les jetons d'appareil
+révocables, plutôt que par un téléchargement.

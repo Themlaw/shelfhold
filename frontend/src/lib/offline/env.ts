@@ -14,6 +14,10 @@ export interface OfflineEnv {
   caches: CacheStorage;
   openKv(name: string): Kv;
   deleteKv(name: string): Promise<void>;
+  /** The names of the stores that exist, when the browser can list them (IndexedDB `databases()`):
+   * a store of a profile nobody remembers is found by its name and deleted at open. Absent: such a
+   * store stays until its profile is known again. */
+  listKv?(): Promise<string[]>;
   now(): number;
   /** Runs `work` while no other tab does the same (Web Locks); absent: only this page's own order. */
   lock?<T>(name: string, work: () => Promise<T>): Promise<T>;
@@ -26,6 +30,13 @@ export const ACTIVE_KV = `${KV_PREFIX}active`;
 
 export const copyCacheName = (profileId: string): string => `${COPY_CACHE_PREFIX}${profileId}`;
 export const profileKvName = (profileId: string): string => `${KV_PREFIX}p-${profileId}`;
+
+/** The profile a store belongs to when its name is one of ours; null for any other name (the
+ * active store itself, a store of another feature). */
+export const profileOfKvName = (name: string): string | null => {
+  const within = name.startsWith(`${KV_PREFIX}p-`) ? name.slice(`${KV_PREFIX}p-`.length) : '';
+  return within === '' ? null : within;
+};
 
 const ULID = /^[0-9A-Za-z]{1,40}$/;
 export const isCarrierId = (value: string): boolean => ULID.test(value);
