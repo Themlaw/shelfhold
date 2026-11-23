@@ -140,13 +140,26 @@ def exposure_for(
     return None
 
 
-def audit_reason(connection: Connection, target_id: str) -> str:
-    """Why this target is not proved: a closed code, for the refusal and for the admin."""
+def audit_reason(connection: Connection, target_id: str, remote_root: str | None = None) -> str:
+    """Why a folder of this target is not proved: a closed code, for the refusal and for the
+    admin. With `remote_root`, the reason of **that** folder — its own finding when the audit
+    kept one (a complete audit keeps a finding per folder), never the gap of another folder;
+    a folder no finding names was simply not audited (`folder_not_audited`). Without it, the
+    reason of the target: a failure or a refusal of the reading, the first gap otherwise."""
     state = load(connection, target_id)
     if not state:
         return NEVER_AUDITED
     if not _fresh(state):
         return AUDIT_STALE
+    findings = state.get("findings")
+    if remote_root and isinstance(findings, list) and findings:
+        for finding in findings:
+            if not isinstance(finding, dict):
+                continue
+            code = finding.get("code")
+            if finding.get("folder") == remote_root and isinstance(code, str):
+                return code
+        return FOLDER_NOT_AUDITED  # the gaps kept are other folders': this one was not audited
     reason = state.get("reason")
     return reason if isinstance(reason, str) and reason else FOLDER_NOT_AUDITED
 

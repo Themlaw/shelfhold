@@ -57,7 +57,7 @@ class ExitUnavailableError(OpsError):
 
 
 class AuditRunningError(OpsError):
-    """An audit of the Kavita accounts is already running: nothing was started."""
+    """An audit of the accounts is already running: nothing was started."""
 
     code = "ops.audit_running"
 

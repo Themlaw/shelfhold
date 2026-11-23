@@ -212,9 +212,11 @@ class KomgaClient:
             raise ProtocolError("GET /api/v2/users: an account cannot be read") from None
 
     async def list_libraries(self) -> list[Library]:
-        """The libraries of the server. Strict, like the accounts: more than the bound or a row
-        that cannot be read fails the reading (an audit never skips a library)."""
-        result = await self._send(routes.LIBRARIES, routes.LIBRARIES.path)
+        """The libraries of the server, through the inventory call the destination describes
+        (`inventory_calls`: the inventory of a Komga is its libraries, whatever library a
+        binding linked). Strict, like the accounts: more than the bound or a row that cannot
+        be read fails the reading (an audit never skips a library)."""
+        result = await self.execute(self._destination.inventory_calls("")[0])
         rows = result.data
         if not isinstance(rows, list) or len(rows) > MAX_LIBRARIES:
             raise ProtocolError("GET /api/v1/libraries did not answer a readable list")

@@ -30,6 +30,7 @@ from shelfhold.infrastructure.fsops import Fsops
 from shelfhold.infrastructure.instance.generation import GenerationCounter
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.control import QueueControl
+from shelfhold.jobs.daily_checks import connected_komga_clients, komga_accounts_audit
 from shelfhold.jobs.window import MaintenanceWindow
 from shelfhold.library.public import CachePolicy
 from shelfhold.ops.acquire import AcquireOps
@@ -55,6 +56,7 @@ from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.kavita import KavitaTargetOps
 from shelfhold.ops.kavita_accounts import KavitaAccountsOps
 from shelfhold.ops.keyring import TombstoneKeyringExit
+from shelfhold.ops.komga_accounts import KomgaAccountsOps
 from shelfhold.ops.lazy_headless import LazyHeadless
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.maintenance import MaintenanceOps
@@ -191,6 +193,11 @@ def open_ops(
             engine, ChildAccountsAuditor(engine, clock, events), clock=clock,
             targets=composition.kavita_targets, client_for=composition.kavita_client,
             children=lambda: child_kavita_accounts(engine),
+        ),
+        komga_accounts=KomgaAccountsOps(  # the `target.komga_audit` job, run on demand
+            engine, clock=clock,
+            job=komga_accounts_audit(engine, clock, events, connected_komga_clients(composition)),
+            targets=composition.komga_targets,
         ),
         destination_accounts=open_destination_accounts(
             engine, composition.vault, clock=clock, fetcher_for=composition.network.one_shot

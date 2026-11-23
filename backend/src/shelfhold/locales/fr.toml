@@ -1628,6 +1628,10 @@ title = "Une étagère sous 18+ exige une destination qui cloisonne l'accès."
 action = "Liez-la à une bibliothèque Kavita dédiée, à un Komga dont l'audit des comptes a réussi (la raison est donnée), ou à une destination déclarée et attestée comme cloisonnée."
 cause = "Rien ne garantit que la destination réserve l'accès aux seules personnes concernées : un enfant pourrait y lire des contenus plus âgés."
 
+[errors."shelf.destination_not_partitioned".reasons.folder_not_audited]
+action = "Le dossier n'a encore été prouvé par aucun audit : la preuve viendra du prochain audit quotidien (vers 7 h) ou de l'audit Komga à la demande, réservé à l'administrateur. Reliez l'étagère une fois l'audit passé."
+cause = "Le dossier de cette étagère n'a pas encore été audité sur ce Komga : le lien est refusé jusqu'à ce qu'un audit des comptes le prouve."
+
 [errors."shelf.library_not_dedicated"]
 title = "La bibliothèque Kavita de cette étagère famille contient aussi d'autres dossiers."
 action = "Créez dans Kavita une bibliothèque qui ne regarde que le dossier de l'étagère famille."
@@ -1937,6 +1941,11 @@ cause = "Une boîte de dépôt n'a ni arbre à indexer ni serveur à lire : un a
 title = "Komga ne peut pas être la destination principale d'une étagère."
 action = "Liez d'abord l'étagère à une destination qui écrit son arbre (Kavita ou un dossier natif), puis liez Komga à cet arbre : une destination secondaire qui l'indexe. Jusqu'à M5, Komga ne reçoit aucun fichier à lui."
 cause = "L'exécuteur n'écrit pas de plan pour un arbre appartenant à Komga : une étagère dont Komga serait la destination principale ne recevrait jamais ses fichiers."
+
+[errors."binding.komga_layout_conflict"]
+title = "Ce Komga indexerait l'arbre de l'étagère avec une disposition qui ne colle pas à ses fichiers."
+action = "Vérifiez dans Komga la bibliothèque qui regarde ce dossier (une série par dossier, sans autre racine dedans), puis reliez l'étagère."
+cause = "Komga range une série par dossier : des fichiers déjà écrits dans l'arbre de l'étagère y seraient découpés ou regroupés autrement que dans Shelfhold."
 
 [errors."target.folder_outside_root"]
 title = "Ce dossier n'est pas dans le dossier de la destination."

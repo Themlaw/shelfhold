@@ -1659,6 +1659,10 @@
     action = "Link it to a dedicated Kavita library, to a Komga whose account audit succeeded (the reason is given), or to a destination declared and certified as partitioned."
     cause = "There is no guarantee that the destination reserves access only to the people concerned: a child could read older content there."
 
+  [errors."shelf.destination_not_partitioned".reasons.folder_not_audited]
+    action = "The folder has not been proven by any audit yet: the proof will come from the next daily audit (around 7 a.m.) or from the on-demand Komga audit, reserved to the administrator. Link the shelf once the audit has run."
+    cause = "The folder of this shelf has not been audited on this Komga yet: the link is refused until an audit of the accounts proves it."
+
   [errors."shelf.library_not_dedicated"]
     title = "The Kavita library on this family shelf also holds other files."
     action = "Create a library in Kavita that only looks at the family shelf folder."
@@ -1968,6 +1972,11 @@
     title = "Komga cannot be the primary destination of a shelf."
     action = "Bind the shelf to a destination that writes its tree first (Kavita or a native folder), then bind Komga to that tree: a secondary destination that indexes it. Until M5, Komga receives no file of its own."
     cause = "The executor plans no write for a tree owned by Komga: a shelf whose primary destination is Komga would never receive its files."
+
+  [errors."binding.komga_layout_conflict"]
+    title = "This Komga would index the shelf's tree with a layout that does not match its files."
+    action = "Check in Komga the library that watches this folder (one series per folder, no other root inside it), then link the shelf again."
+    cause = "Komga makes one series per folder: files already written in the shelf's tree would be split or grouped there differently than in Shelfhold."
 
   [errors."target.folder_outside_root"]
     title = "This folder is not inside the folder of the destination."
