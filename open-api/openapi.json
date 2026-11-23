@@ -3886,6 +3886,14 @@
             "title": "Backup",
             "type": "object"
           },
+          "caches": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Caches",
+            "type": "array"
+          },
           "generated_at": {
             "title": "Generated At",
             "type": "string"
@@ -3985,6 +3993,7 @@
           "page_map_warnings",
           "unreadable_webhooks",
           "kosync_unknown",
+          "caches",
           "backup",
           "stats"
         ],

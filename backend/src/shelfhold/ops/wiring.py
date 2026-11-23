@@ -31,6 +31,7 @@ from shelfhold.infrastructure.instance.generation import GenerationCounter
 from shelfhold.infrastructure.schema import platform
 from shelfhold.jobs.control import QueueControl
 from shelfhold.jobs.window import MaintenanceWindow
+from shelfhold.library.public import CachePolicy
 from shelfhold.ops.acquire import AcquireOps
 from shelfhold.ops.adoption import LibraryAdoptionExit
 from shelfhold.ops.assembly import VolumeAssemblyOps
@@ -201,4 +202,5 @@ def open_ops(
         ),
         teardown=DetachOps(composition, lazy_headless, flagged_names=flagged_names),
         window=window,
+        cache_policy=CachePolicy.from_settings(settings),  # M6 L12: the state of the caches
     )  # fmt: skip

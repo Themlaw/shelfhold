@@ -2318,6 +2318,12 @@ export type HealthPageOut = {
         [key: string]: unknown;
     };
     /**
+     * Caches
+     */
+    caches: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
      * Generated At
      */
     generated_at: string;

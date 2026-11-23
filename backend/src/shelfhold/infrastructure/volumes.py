@@ -160,6 +160,13 @@ class DataFolder:
         except OSError:
             return False
 
+    def touch(self, name: str, *, at: float | None = None) -> None:
+        """Set the access and modification times of `name` (`at`, or now when None): the last
+        access of a cache file, its LRU key (EF-BIB-018). A plain name only, never a link."""
+        if not name or "/" in name or name in (".", ".."):
+            raise ValueError(f"not a plain name: {name!r}")
+        os.utime(name, (at, at) if at is not None else None, dir_fd=self._fd)
+
     def read(self, name: str, limit: int) -> bytes:
         """The regular file `name` of the folder, never through a link, at most `limit` bytes.
         `ValueError` for a link, a special file or a name that is not plain."""

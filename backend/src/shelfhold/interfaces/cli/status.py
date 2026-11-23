@@ -244,7 +244,7 @@ def _waiting(resolved: ResolvedSettings) -> dict[str, object]:
             "capabilities": [], "known_bad": {}, "service_urls": [], "unverifiable_dirs": [],
             "content_error_candidates": [], "jurisdiction": None, "rights_warnings": [],
             "kept_in_service": [], "wal_pending": [],
-            "koreader_resets": [],
+            "koreader_resets": [], "caches": [],
         }  # fmt: skip
     engine = create_db_engine(database)
     try:
@@ -304,6 +304,32 @@ def report_lines(ops: dict[str, object]) -> list[str]:
             lines.append(t("status.rights_may_be_protected", edition_id=w["edition_id"]))
     for u in ops.get("koreader_resets", []):  # type: ignore[attr-defined]
         lines.append(t("status.koreader_reset_line", unit_id=u["unit_id"], at=u["at"]))
+    for c in ops.get("caches", []):  # type: ignore[attr-defined]
+        # M6 L12 (EF-BIB-018): the use and the quota of each derived cache, from the database
+        kind = t(f"status.cache_kind_{c['kind']}")
+        if c.get("quota_bytes") is None:  # the metadata cache is counted in rows
+            lines.append(
+                t(
+                    "status.cache_rows_line", cache=kind, entries=c["entries"],
+                    quota=c["quota_entries"], over=_yes_no(c["over"]),
+                )
+            )  # fmt: skip
+        elif c.get("used_bytes") is None:  # the bodies of the HTTP cache are not sized by the base
+            lines.append(
+                t(
+                    "status.cache_entries_line",
+                    cache=kind,
+                    entries=c["entries"],
+                    quota=c["quota_bytes"],
+                )
+            )
+        else:
+            lines.append(
+                t(
+                    "status.cache_line", cache=kind, entries=c["entries"], used=c["used_bytes"],
+                    quota=c["quota_bytes"], over=_yes_no(c["over"]),
+                )
+            )  # fmt: skip
     for s in ops.get("tombstoned_upstream", []):  # type: ignore[attr-defined]
         lines.append(t("status.tombstoned_upstream_line", **s))
     for w in ops.get("wal_pending", []):  # type: ignore[attr-defined]

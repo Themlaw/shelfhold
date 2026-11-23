@@ -45,7 +45,12 @@ from shelfhold.infrastructure.imaging import (
     reencode_image,
 )
 from shelfhold.infrastructure.schema import catalog, storage
-from shelfhold.infrastructure.volumes import erase_data_path, open_data_folder, write_data_file
+from shelfhold.infrastructure.volumes import (
+    DataFolder,
+    erase_data_path,
+    open_data_folder,
+    write_data_file,
+)
 from shelfhold.library.application.kepub import KepubError, kepubify
 from shelfhold.library.domain.content_hash import FILE_HASH_BY
 from shelfhold.library.domain.failures import TombstonedContentError
@@ -82,6 +87,14 @@ CACHE_DIR: Final = "cache/renditions"  # under /data
 MAX_RENDITION_BYTES: Final = 128 * 1024 * 1024  # the byte cap of a page: what may be read back
 Converter = Callable[[bytes, RenditionParams, ImageCaps], Reencoded]
 STRAY_GRACE: Final = timedelta(minutes=10)  # a render writes its file, then its row: seconds
+# The access of a rendition is recorded on its file at most once a day (a screen of pages is not
+# a write each): that time is the LRU key of the retention sweep (L12, EF-BIB-018).
+TOUCH_GRACE: Final = timedelta(days=1)
+# The renditions an in-flight request is reading right now (content hash -> how many), shared by
+# every service of the process: the reader serves, the sweep of the quotas asks `pinned` and
+# leaves a file a ticket still needs (L12: a derivative being served is never evicted).
+_PIN_LOCK: Final = threading.Lock()
+_PINNED: dict[str, int] = {}
 _SHARD: Final = re.compile(r"[0-9a-f]{2}")
 _NAME: Final = re.compile(r"([0-9a-f]{64})\.(jpeg|png|kepub)")
 KEPUB_PARAMS: Final = RenditionParams(kind=KEPUB_KIND)
@@ -269,20 +282,63 @@ class RenditionService:
         return _Origin(str(row.original_sha256), bool(row.watermarked), place)
 
     # -- reading ---------------------------------------------------------------------------
+    @classmethod
+    def pinned(cls) -> frozenset[str]:
+        """The renditions an in-flight request is reading right now (their content hashes): the
+        retention sweep of the caches never evicts one of them (EF-BIB-018)."""
+        with _PIN_LOCK:
+            return frozenset(_PINNED)
+
+    @contextmanager
+    def serving(self, rendition: Rendition) -> Iterator[None]:
+        """Pin `rendition` for the length of what the caller does with it: a read of the cache
+        holds this for its own length, so a file a `/content` ticket is serving is never evicted
+        under it. The registry is the process's, not the instance's: the sweep runs in the same
+        process, on its own service."""
+        key = rendition.content_hash
+        with _PIN_LOCK:
+            _PINNED[key] = _PINNED.get(key, 0) + 1
+        try:
+            yield
+        finally:
+            with _PIN_LOCK:
+                left = _PINNED[key] - 1
+                if left:
+                    _PINNED[key] = left
+                else:
+                    del _PINNED[key]
+
+    def _touch(self, folder: DataFolder, name: str) -> None:
+        """Record the access on the file, unless it was recorded less than a day ago: the LRU
+        key of the retention sweep is this time, never the creation."""
+        stat = folder.stat_of(name)
+        if stat is None:
+            return
+        at = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
+        if self._clock.now() - at < TOUCH_GRACE:
+            return
+        folder.touch(name, at=self._clock.now().timestamp())
+
     def read(self, rendition: Rendition) -> bytes | None:
         """The converted bytes, only when they are the ones whose hash is the name; None when
-        the file is gone, is not a regular file, or was altered. Never a partial answer."""
+        the file is gone, is not a regular file, or was altered. Never a partial answer. The
+        read pins the file for its own length (a ticket in flight is serving it) and records
+        the access on it, at most once a day."""
         digest = _hex(rendition.content_hash)
-        try:
-            with open_data_folder(self._data, f"{CACHE_DIR}/{digest[:2]}") as folder:
-                data = folder.read(f"{digest}.{rendition.kind}", MAX_RENDITION_BYTES + 1)
-        except (OSError, ValueError):
-            return None
-        if len(data) != rendition.size or "sha256:" + hashlib.sha256(data).hexdigest() != (
-            rendition.content_hash
-        ):
-            return None
-        return data
+        name = f"{digest}.{rendition.kind}"
+        with self.serving(rendition):
+            try:
+                with open_data_folder(self._data, f"{CACHE_DIR}/{digest[:2]}") as folder:
+                    data = folder.read(name, MAX_RENDITION_BYTES + 1)
+                    if (
+                        len(data) != rendition.size
+                        or "sha256:" + hashlib.sha256(data).hexdigest() != rendition.content_hash
+                    ):
+                        return None
+                    self._touch(folder, name)
+                    return data
+            except (OSError, ValueError):
+                return None
 
     def cached(self, content_id: str, params: RenditionParams, data: bytes) -> Rendition | None:
         """The rendition already made from these bytes of this content, if its file is there and

@@ -29,6 +29,16 @@ export interface RelayEntry {
   count: number;
 }
 
+/** A derived cache of the library: its use, its quota and whether it is over (EF-BIB-018). */
+export interface CacheEntryView {
+  kind: 'thumbnails' | 'renditions' | 'http' | 'metadata';
+  entries: number;
+  usedBytes: number | null; // null when the bodies are not sized by the database
+  quotaBytes: number | null; // null when the quota is counted in rows
+  quotaEntries: number | null;
+  over: boolean;
+}
+
 export interface HealthView {
   sources: SourceEntry[];
   irreplaceable: {
@@ -44,6 +54,7 @@ export interface HealthView {
   libraryTypeChanges: Entry[];
   unreadableWebhooks: Entry[];
   relay: RelayEntry[];
+  caches: CacheEntryView[];
   jurisdiction: { country: string; confirmed: boolean; action: HealthAction | null } | null;
   stats: { waitingStates: number; unitsExported: number; arrivalsPending: number };
 }
@@ -102,6 +113,25 @@ function relay(page: HealthPageOut): RelayEntry[] {
   return found;
 }
 
+const CACHE_KINDS = ['thumbnails', 'renditions', 'http', 'metadata'] as const;
+
+function caches(value: unknown): CacheEntryView[] {
+  const found: CacheEntryView[] = [];
+  for (const doc of docs(value)) {
+    const kind = CACHE_KINDS.find((k) => k === doc.kind);
+    if (kind === undefined) continue;
+    found.push({
+      kind,
+      entries: num(doc.entries),
+      usedBytes: typeof doc.used_bytes === 'number' ? doc.used_bytes : null,
+      quotaBytes: typeof doc.quota_bytes === 'number' ? doc.quota_bytes : null,
+      quotaEntries: typeof doc.quota_entries === 'number' ? doc.quota_entries : null,
+      over: doc.over === true
+    });
+  }
+  return found;
+}
+
 export function healthView(page: HealthPageOut): HealthView {
   const irreplaceable = page.irreplaceable;
   const store = isDoc(irreplaceable.store_backup) ? irreplaceable.store_backup : {};
@@ -125,6 +155,7 @@ export function healthView(page: HealthPageOut): HealthView {
     libraryTypeChanges: entries(page.library_type_changes),
     unreadableWebhooks: entries(page.unreadable_webhooks),
     relay: relay(page),
+    caches: caches(page.caches),
     jurisdiction:
       jurisdiction !== null && str(jurisdiction.country) !== null
         ? {

@@ -11,7 +11,6 @@ itself created — the cache folders under `/data`, by the name patterns their w
 from __future__ import annotations
 
 import os
-import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -19,13 +18,6 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.library.application.cache_quotas import (
-    CACHE_PURGE_EMITTER,
-    CachePolicy,
-    cache_state,
-    erase_cache_path,
-    purge_caches,
-)
 from sqlalchemy import Engine
 
 from shelfhold.config import Settings
@@ -35,6 +27,13 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.fsops import EMITTER_PERIMETERS, EmitterPerimeterError
 from shelfhold.infrastructure.fsops.emitters import require_inside
 from shelfhold.infrastructure.schema import metadata, platform, storage
+from shelfhold.library.application.cache_quotas import (
+    CACHE_PURGE_EMITTER,
+    CachePolicy,
+    cache_state,
+    erase_cache_path,
+    purge_caches,
+)
 from shelfhold.library.application.renditions import Rendition, RenditionService
 from shelfhold.ops.health import build_health_page
 from shelfhold.ops.services import OpsServices
@@ -400,7 +399,7 @@ def test_a_rendition_served_by_an_inflight_ticket_is_not_evicted(
         assert (data / served.rel).exists()  # the pinned one stays
     assert RenditionService.pinned() == frozenset()
 
-    purge_caches(engine, data, ManualClock(NOW), policy(renditions_quota_bytes=1500))
+    purge_caches(engine, data, ManualClock(NOW), policy(renditions_quota_bytes=500))
     assert not (data / served.rel).exists()  # no ticket any more: the quota takes it
 
 
@@ -428,9 +427,10 @@ def test_rendition_access_updates_the_lru_key(engine: Engine, data: Path) -> Non
 
     assert service.read(rendition) == body
     touched = os.stat(data / rendition.rel).st_mtime
-    assert touched >= time.time() - 60  # the access was recorded, not the creation of a month ago
+    # the access was recorded at the clock of the service, not the creation of a month ago
+    assert touched == pytest.approx(NOW.timestamp(), abs=2)
 
-    recent = time.time() - 3600
+    recent = NOW.timestamp() - 3600  # an hour ago: within the once-a-day grace, not touched again
     os.utime(data / rendition.rel, (recent, recent))
     assert service.read(rendition) == body
     assert os.stat(data / rendition.rel).st_mtime == pytest.approx(recent, abs=2)  # once a day
@@ -447,6 +447,7 @@ def test_cache_state_in_status_and_health(engine: Engine, data: Path) -> None:
     add_rendition(engine, data, "K", age_days=1, size=4096)
     add_http(engine, data, "h", age_days=1, max_age=DAY)
     add_metadata(engine, "m", fetched_age_days=1, expires_age_days=1)
+    add_metadata(engine, "m2", fetched_age_days=2, expires_age_days=-1)  # two rows, a quota of one
 
     limits = policy(thumbnails_quota_bytes=1024, renditions_quota_bytes=1024, metadata_rows=1)
     with engine.connect() as connection:
@@ -457,7 +458,7 @@ def test_cache_state_in_status_and_health(engine: Engine, data: Path) -> None:
     assert state["renditions"]["used_bytes"] == 4096 and state["renditions"]["over"] is True
     assert state["http"]["entries"] == 1
     assert state["metadata"] == {
-        "kind": "metadata", "entries": 1, "used_bytes": None, "quota_bytes": None,
+        "kind": "metadata", "entries": 2, "used_bytes": None, "quota_bytes": None,
         "quota_entries": 1, "over": True,
     }  # fmt: skip
 
@@ -471,8 +472,10 @@ def test_cache_state_in_status_and_health(engine: Engine, data: Path) -> None:
         state["metadata"],
     ]
 
-    page = build_health_page(engine, Settings(data_dir=data), NOW)
+    settings = Settings(data_dir=data)
+    page = build_health_page(engine, settings, NOW)
     assert [entry["kind"] for entry in page["caches"]] == [
         "thumbnails", "renditions", "http", "metadata"
     ]  # fmt: skip
-    assert page["caches"][0]["over"] is True
+    with engine.connect() as connection:  # the page shows the state under the settings' own policy
+        assert page["caches"] == cache_state(connection, CachePolicy.from_settings(settings))

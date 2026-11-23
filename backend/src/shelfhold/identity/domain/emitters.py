@@ -218,6 +218,10 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         "shelfhold/interfaces/http_api/library.py::build_library_router.empty_trash": "trash.empty",
         # The early purge under disk pressure (M3 L26): a system emitter, driven by the disk guard
         f"{_EXPORT_APP}/reclaim.py::BinReclaimer._remove_under_pressure": "disk_guard_purge",
+        # The retention and quotas of the derived caches (M6 L12, EF-BIB-018): a system emitter,
+        # the only caller of the /data erasure of the caches; host-created paths only, checked
+        # by the sweep itself before anything is opened (`library.application.cache_quotas`)
+        "shelfhold/library/application/cache_quotas.py::purge_caches": "cache_retention_purge",
         # The probe file of the permission preflight (EF-EXP-054): a name the probe drew itself.
         f"{_FSOPS}/probe.py::_remove_probe_file": ("probe_file_cleanup"),
         # The files of the capability probe of a root (EF-EXP-059): names it drew, in the staging

@@ -12,6 +12,11 @@
   the lease, the perimeter (the bin, nothing else) and the age (`trash_retention_purge`, read
   from the file system, never from here). The removal is announced first as an intention
   (`delete`), so a crash leaves a trace that the next start settles.
+- `retention.caches` (daily, M6 L12, EF-BIB-018): the quotas and the retention of the derived
+  caches (thumbnails, renditions and KEPUB, HTTP and metadata caches), LRU by last access, by
+  the system emitter `cache_retention_purge` — host-created paths only. Only `/data` is touched
+  (no library disk is woken), so it runs at any hour; a rendition an in-flight `/content` ticket
+  is serving is pinned and stays.
 
 Both stand outside the freeze: the scheduler does not run a job while the instance is frozen.
 """
@@ -31,10 +36,12 @@ from shelfhold.export.application.recycle_sweep import (
 )
 from shelfhold.jobs.public import JobContext, JobPools
 from shelfhold.jobs.retention import RetentionPolicy, expire_audit, expire_events_and_jobs
+from shelfhold.library.public import CachePolicy, CacheSweep, RenditionService, purge_caches
 from shelfhold.ops.reclaim import backups_of
 from shelfhold.reading.bundle import prune_versions
 
 __all__ = [
+    "CACHES_KIND",
     "EARLY_PURGE_KIND",
     "RECYCLE_KIND",
     "RETENTION_KIND",
@@ -42,6 +49,7 @@ __all__ = [
     "RecycleReport",
     "early_purge_trash",
     "register_retention_jobs",
+    "sweep_caches",
     "sweep_recycle",
 ]
 
@@ -50,9 +58,11 @@ log = structlog.get_logger(__name__)
 RETENTION_KIND: Final = "retention.expire"
 RECYCLE_KIND: Final = "retention.recycle"
 EARLY_PURGE_KIND: Final = "retention.early_purge"
+CACHES_KIND: Final = "retention.caches"
 EARLY_PURGE_CRON: Final = "*/10 * * * *"
 RETENTION_CRON: Final = "35 4 * * *"
 RECYCLE_CRON: Final = "50 3 * * *"  # inside the default window; clamped into any other
+CACHES_CRON: Final = "05 5 * * *"  # after the history and the bins: /data only, any hour
 
 
 def sweep_recycle(comp: Composition) -> RecycleReport:
@@ -82,6 +92,18 @@ def early_purge_trash(comp: Composition) -> ReclaimReport:
             w.fsops, journal, roots, clock=comp.clock, backups=backups_of(comp)
         )
         return reclaimer.early_purge(pressure=lambda: any(pressure(root) for root in roots))
+
+
+def sweep_caches(comp: Composition) -> CacheSweep:
+    """One pass of the quotas and the retention over the derived caches (EF-BIB-018): what an
+    in-flight `/content` ticket is serving is pinned and stays."""
+    return purge_caches(
+        comp.engine,
+        comp.settings.data_dir,
+        comp.clock,
+        CachePolicy.from_settings(comp.settings),
+        pinned=RenditionService.pinned(),
+    )
 
 
 def register_retention_jobs(pools: JobPools, comp: Composition) -> None:
@@ -121,9 +143,23 @@ def register_retention_jobs(pools: JobPools, comp: Composition) -> None:
             failed=report.failed,
         )
 
+    def caches(context: JobContext) -> None:
+        sweep = sweep_caches(comp)
+        context.record(
+            thumbnails_files=sweep.thumbnails_files,
+            thumbnails_rows=sweep.thumbnails_rows,
+            renditions_files=sweep.renditions_files,
+            renditions_rows=sweep.renditions_rows,
+            http_files=sweep.http_files,
+            http_rows=sweep.http_rows,
+            metadata_rows=sweep.metadata_rows,
+        )
+
     pools.register(RETENTION_KIND, pool="maint", handler=expire, writes=False)
     pools.register(EARLY_PURGE_KIND, pool="maint", handler=early_purge, writes=False)
     pools.scheduler.add(EARLY_PURGE_KIND, EARLY_PURGE_CRON, jitter_s=30)
     pools.scheduler.add(RETENTION_KIND, RETENTION_CRON, jitter_s=300)
+    pools.register(CACHES_KIND, pool="maint", handler=caches, writes=False)
+    pools.scheduler.add(CACHES_KIND, CACHES_CRON, jitter_s=300)
     pools.register(RECYCLE_KIND, pool="maint", handler=recycle, windowed=True)
     pools.scheduler.add(RECYCLE_KIND, RECYCLE_CRON, jitter_s=120, windowed=True)

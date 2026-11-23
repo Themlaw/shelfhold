@@ -20,6 +20,7 @@ symbols = [
   "shelfhold.infrastructure.observability.failure_matrix:M1A_BEHAVIOURS",
   "shelfhold.infrastructure.observability.failure_matrix:rows_for",
   "shelfhold.interfaces.http_api.catalog:error_code_modules",
+  "shelfhold.library.application.cache_quotas:CACHE_PURGE_EMITTER",
   "shelfhold.library.tombstones.cited:CITABLE_NORMALIZERS",
   "shelfhold.library.tombstones.cited:missing_citable",
   "shelfhold.ops.exits:CLI_PENDING",
