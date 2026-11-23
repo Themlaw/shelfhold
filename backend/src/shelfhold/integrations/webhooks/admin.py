@@ -79,6 +79,20 @@ class WebhookAdmin:
             self._audit(connection, principal, "webhook.unsubscribe", subscription_id, now)
         return True
 
+    def rotate(self, principal: Principal, subscription_id: str) -> tuple[Subscription, str] | None:
+        """Turn the signing secret (M6 L23a): the previous one keeps signing for 24 h, the new one
+        is returned here and nowhere again. None when the subscription is not there; a sealed
+        document that cannot be opened is not rotated (`SubscriptionUnreadable`)."""
+        now = self._now()
+        with write_transaction(self._engine) as connection:
+            turned = SubscriptionStore(self._vault()).rotate(
+                connection, subscription_id, now=now
+            )  # fmt: skip
+            if turned is None:
+                return None
+            self._audit(connection, principal, "webhook.rotate", subscription_id, now)
+            return turned
+
     @staticmethod
     def _audit(
         connection: Connection,

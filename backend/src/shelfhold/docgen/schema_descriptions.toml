@@ -1550,6 +1550,7 @@ private_addresses = "The addresses that target had when it was allowed; a record
 enabled = "Whether the outbox makes rows for it."
 last_event_id = "The last event it was offered; moved in the same transaction as the rows it made."
 created_at = "When it was registered (UTC)."
+rotated_at = "When its secret was last rotated (UTC); the previous secret still signs for 24 h after it, empty when never rotated."
 
 [tables.webhook_outbox]
 description = "What is still to be sent to a webhook: one row per subscription, event and version of the event's shape."

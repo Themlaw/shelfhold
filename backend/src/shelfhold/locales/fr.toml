@@ -3109,3 +3109,8 @@ cause = "Le document scellé qui garde l'adresse et le secret n'a pas pu être o
 title = "Ces types d'événements ne sont pas disponibles."
 action = "Choisissez un ou plusieurs types dans la liste fermée proposée."
 cause = "La liste est vide, trop longue, ou nomme un événement que les webhooks n'envoient pas."
+
+[errors."webhook.dead"]
+title = "Un webhook a abandonné un envoi."
+action = "Ouvrez la liste des webhooks, vérifiez l'adresse qui ne répond pas, puis faites tourner le secret ou supprimez l'abonnement."
+cause = "Un envoi a épuisé ses tentatives, son événement a disparu, ou le profil qui l'avait créé n'est plus administrateur : le destinataire n'a pas répondu, ou a refusé la livraison."
