@@ -69,6 +69,15 @@ Version du schéma de `config.toml` : `1.0`. Précédence : variable d'environne
 | `SHELFHOLD_TIMEZONE` | `timezone` | str | `Europe/Paris` |  | `SHELFHOLD_TIMEZONE_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_RETENTION_EVENTS_DAYS` | `retention_events_days` | int | `90` | >= 7, <= 3650 | `SHELFHOLD_RETENTION_EVENTS_DAYS_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_RETENTION_AUDIT_DAYS` | `retention_audit_days` | int | `365` | >= 90, <= 3650 | `SHELFHOLD_RETENTION_AUDIT_DAYS_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_CACHE_THUMBNAILS_QUOTA_MIB` | `cache_thumbnails_quota_mib` | int | `2048` | >= 8, <= 65536 | `SHELFHOLD_CACHE_THUMBNAILS_QUOTA_MIB_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_CACHE_THUMBNAILS_RETENTION_DAYS` | `cache_thumbnails_retention_days` | int | `90` | >= 7, <= 3650 | `SHELFHOLD_CACHE_THUMBNAILS_RETENTION_DAYS_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_CACHE_RENDITIONS_QUOTA_MIB` | `cache_renditions_quota_mib` | int | `5120` | >= 8, <= 65536 | `SHELFHOLD_CACHE_RENDITIONS_QUOTA_MIB_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_CACHE_RENDITIONS_RETENTION_DAYS` | `cache_renditions_retention_days` | int | `90` | >= 1, <= 3650 | `SHELFHOLD_CACHE_RENDITIONS_RETENTION_DAYS_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_CACHE_HTTP_QUOTA_MIB` | `cache_http_quota_mib` | int | `512` | >= 1, <= 65536 | `SHELFHOLD_CACHE_HTTP_QUOTA_MIB_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_CACHE_HTTP_RETENTION_DAYS` | `cache_http_retention_days` | int | `90` | >= 1, <= 3650 | `SHELFHOLD_CACHE_HTTP_RETENTION_DAYS_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_CACHE_METADATA_ROWS` | `cache_metadata_rows` | int | `4096` | >= 16, <= 1000000 | `SHELFHOLD_CACHE_METADATA_ROWS_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_CACHE_METADATA_QUOTA_MIB` | `cache_metadata_quota_mib` | int | `256` | >= 1, <= 65536 | `SHELFHOLD_CACHE_METADATA_QUOTA_MIB_FILE` en lit la valeur dans un fichier |
+| `SHELFHOLD_CACHE_PLUGIN_QUOTA_MIB` | `cache_plugin_quota_mib` | int | `256` | >= 1, <= 65536 | `SHELFHOLD_CACHE_PLUGIN_QUOTA_MIB_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_STREAM_MAX_PER_PROFILE` | `stream_max_per_profile` | int | `4` | >= 1, <= 64 | `SHELFHOLD_STREAM_MAX_PER_PROFILE_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_ADOPT_PROBE_WORKERS` | `adopt_probe_workers` | int | `2` | >= 1, <= 8 | `SHELFHOLD_ADOPT_PROBE_WORKERS_FILE` en lit la valeur dans un fichier |
 | `SHELFHOLD_BACKUP_DIR` | `backup_dir` | Path (optionnel) | aucun |  | `SHELFHOLD_BACKUP_DIR_FILE` en lit la valeur dans un fichier |
