@@ -1,9 +1,10 @@
 """What the activity screen reads (EF-USR-016, D19, M3 L41): the rows of the events and of the
 download requests, the owner and the title behind each, the one entry an unmask names, and the
-address that "Ouvrir dans Kavita" opens. The HTTP route holds none of these queries (ENF-QUAL-002):
-it asks here, hands each row to `project_event` (the filter of L09) and words the result.
+addresses « Ouvrir dans Kavita » (and every other kind of destination, J5-S2) open. The HTTP route
+holds none of these queries (ENF-QUAL-002): it asks here, hands each row to `project_event` (the
+filter of L09) and words the result.
 
-The address is the one of the Kavita target the admin connected (a web address of the local
+The addresses are the ones of the targets the admin connected (web addresses of the local
 network, nothing secret), read here and never from the client.
 """
 
@@ -29,6 +30,7 @@ __all__ = [
     "entry_of",
     "kavita_open_url",
     "kavita_open_url_of",
+    "open_urls",
     "recent_events",
     "recent_requests",
     "request_edition",
@@ -55,16 +57,26 @@ def recent_requests(connection: Connection, limit: int) -> list[Any]:
     )
 
 
+def open_urls(connection: Connection) -> dict[str, str]:
+    """The address of the first target of each kind that has one (a web address of the local
+    network, nothing secret), read here and never from the client: what « Ouvrir dans <kind> »
+    opens, whatever the kind of the destination (J5-S2)."""
+    found: dict[str, str] = {}
+    rows = connection.execute(
+        sa.select(export.export_target.c.kind, export.export_target.c.config).order_by(
+            export.export_target.c.kind, export.export_target.c.id
+        )
+    )
+    for kind, config in rows:
+        url = config.get("url") if isinstance(config, dict) else None
+        if isinstance(url, str) and url.startswith(_SCHEMES) and str(kind) not in found:
+            found[str(kind)] = url
+    return found
+
+
 def kavita_open_url(connection: Connection) -> str | None:
     """The first Kavita target's address, or None (nothing is connected: no link is invented)."""
-    config = connection.execute(
-        sa.select(export.export_target.c.config)
-        .where(export.export_target.c.kind == "kavita")
-        .order_by(export.export_target.c.id)
-        .limit(1)
-    ).scalar()
-    url = config.get("url") if isinstance(config, dict) else None
-    return url if isinstance(url, str) and url.startswith(_SCHEMES) else None
+    return open_urls(connection).get("kavita")
 
 
 def kavita_open_url_of(engine: Engine) -> str | None:
