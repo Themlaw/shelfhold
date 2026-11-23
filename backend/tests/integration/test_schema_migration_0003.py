@@ -43,6 +43,7 @@ ACQUISITION_TABLES = {
     "activity_block",  # migration 0091 (M4 L29)
     "tachibk_import", "read_marker", "tracker_hint",  # migration 0095 (M4 L26)
     "team_switch",  # migration 0097 (M4 L35)
+    "plugin_repo", "plugin_revocation",  # migration 0110 (M6 L07)
 }  # fmt: skip
 
 
