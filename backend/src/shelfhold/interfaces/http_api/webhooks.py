@@ -8,7 +8,9 @@ member, a read-only key and nobody are refused before anything is read, so a sub
 exists and one that does not give one answer.
 
 The secret is in the answer to the creation, and in the answer to the rotation, once each. No
-other answer carries it, and what is shown of the address is its host.
+other answer carries it, and what is shown of the address is its host. The last deliveries of a
+subscription (M6 L23b) are read the same way as the list: the rows of the outbox, never the
+sealed document.
 """
 
 from collections.abc import Callable
@@ -20,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from shelfhold.identity.public import RESERVED_ACTIONS, Principal
 from shelfhold.integrations.webhooks import (
+    Delivery,
     Subscription,
     SubscriptionUnreadable,
     WebhookAdmin,
@@ -64,6 +67,35 @@ class WebhookList(BaseModel):
     items: list[WebhookOut]
 
 
+class DeliveryOut(BaseModel):
+    """One delivery as the screen shows it (M6 L23b): the identity the receiver deduplicates on,
+    the event, the version of its shape, the state, the attempts, the HTTP status of the last try
+    and its closed code. Never the address, its path or the secret."""
+
+    id: str
+    event_id: int
+    schema_version: int
+    status: str
+    attempts: int
+    last_status: int | None
+    last_error: str | None
+    delivered_at: datetime | None
+    next_try_at: datetime
+
+
+class DeliveryList(BaseModel):
+    items: list[DeliveryOut]
+
+
+def _delivery(row: Delivery) -> DeliveryOut:
+    return DeliveryOut(
+        id=row.id, event_id=row.event_id, schema_version=row.schema_version,
+        status=row.status, attempts=row.attempts, last_status=row.last_status,
+        last_error=row.last_error, delivered_at=row.delivered_at,
+        next_try_at=row.next_try_at,
+    )  # fmt: skip
+
+
 def _out(sub: Subscription) -> WebhookOut:
     return WebhookOut(
         id=sub.id, url_host=sub.url_host, event_types=list(sub.event_types),
@@ -106,6 +138,16 @@ def build_webhooks_router(admin: Callable[[], WebhookAdmin]) -> APIRouter:
         if not admin().delete(principal, webhook_id):
             raise ProblemError("webhook.not_found")
         return Response(status_code=204)
+
+    @router.get("/{webhook_id}/deliveries")
+    def list_deliveries(webhook_id: str, _principal: _Reader) -> DeliveryList:
+        """What became of the last deliveries of this subscription (M6 L23b): the screen's rows,
+        read by the administrator alone, like the list. A subscription that is not there answers
+        `webhook.not_found`; one that never sent anything answers an empty list."""
+        found = admin().deliveries(webhook_id)
+        if found is None:
+            raise ProblemError("webhook.not_found")
+        return DeliveryList(items=[_delivery(row) for row in found])
 
     @router.post("/{webhook_id}/rotate")
     def rotate_webhook(webhook_id: str, principal: _Manager, response: Response) -> WebhookCreated:

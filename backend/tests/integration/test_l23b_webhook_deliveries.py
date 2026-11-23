@@ -107,7 +107,8 @@ def _deliver(
 
 
 def _deliveries(api: AuthEnv, subscription_id: str, client: Any = None) -> Any:
-    return _send(api, client or api.client, "GET", DELIVERIES.format(base=BASE, sub=subscription_id))
+    path = DELIVERIES.format(base=BASE, sub=subscription_id)
+    return _send(api, client or api.client, "GET", path)
 
 
 @pytest.mark.req("EF-INT-005")
@@ -165,7 +166,9 @@ def test_the_deliveries_of_one_subscription_never_come_with_those_of_another(api
 
     answer = _deliveries(api, mine)
     assert answer.status_code == 200
-    assert [item["event_id"] for item in answer.json()["items"]] == sorted(mine_events, reverse=True)
+    assert [item["event_id"] for item in answer.json()["items"]] == sorted(
+        mine_events, reverse=True
+    )
     assert not set(other_events) & {item["event_id"] for item in answer.json()["items"]}
 
 
