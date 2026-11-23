@@ -29,20 +29,20 @@ def _tables(database: object) -> set[str]:
         return {row[0] for row in rows}
 
 
-def test_the_revision_is_0110_the_head_on_0108() -> None:
+def test_the_revision_is_0110_the_head_on_0114() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0110"]  # the head is pinned here, by the newest
-    assert script.get_revision("0110").down_revision == "0108"
+    assert script.get_revision("0110").down_revision == "0114"
 
 
 def test_the_tables_come_and_go_with_the_migration(settings: Settings) -> None:
     database = settings.database_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(database), "0108")
+    command.upgrade(alembic_config(database), "0114")
     assert not TABLES & _tables(database)
     assert "0110" in migrate(settings).applied
     assert _tables(database) >= TABLES
-    command.downgrade(alembic_config(database), "0108")
+    command.downgrade(alembic_config(database), "0114")
     assert not TABLES & _tables(database)
 
 
