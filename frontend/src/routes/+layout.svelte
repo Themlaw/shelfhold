@@ -5,7 +5,7 @@
   import { guardOfflineSession, startOfflineSync, wipeOfflineCopies } from '#lib/offline/runtime.ts';
   import { registerServiceWorker } from '#lib/pwa/register.ts';
   import { applyAppearance } from '#lib/themes/index.ts';
-  import { setUiLanguage } from '#lib/i18n/index.ts';
+  import { detectLanguage, setUiLanguage } from '#lib/i18n/index.ts';
   import '#lib/themes/base.css';
   import '#lib/themes/themes.css';
   import '#lib/themes/eink.css';
@@ -40,7 +40,8 @@
   $effect(() => {
     if (data.appearance) applyAppearance(document.documentElement, data.appearance);
     // Update the UI language when data changes (e.g., preference change or sign-in)
-    setUiLanguage(data.language);
+    // a later answer (a sign-in, a changed preference) changes the language too
+    setUiLanguage(data.language ?? detectLanguage(navigator.languages));
   });
 </script>
 

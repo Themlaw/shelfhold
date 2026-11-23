@@ -170,6 +170,10 @@ canvas {
     z-index: 1;
     background: var(--color-bg);
   }
+  /* a form screen's submit is the accent button: its text colour is meant for that background */
+  .form-screen form > button[type='submit']:last-child {
+    background: var(--color-accent);
+  }
 }
 
 /* ENF-A11Y-003: nothing moves for someone who asked the system for less motion. */

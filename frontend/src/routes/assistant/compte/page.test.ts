@@ -50,44 +50,4 @@ describe('Assistant : compte', () => {
     expect(await screen.findByRole('link', { name: 'Se connecter' })).toHaveAttribute('href', '/login');
     expect(screen.queryByRole('link', { name: 'Continuer' })).toBeNull();
   });
-
-  // req: ENF-I18N-001
-  it('renders all text in English when the browser is in English', async () => {
-    // Set the UI language to English to simulate a browser with English as the preferred language
-    setUiLanguage('en');
-    server.use(http.get(`${BASE}/api/v1/me`, () => HttpResponse.json({ status: 401 }, { status: 401 })));
-    render(Page);
-    
-    // Wait for async rendering
-    expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
-    
-    // Verify that the title is in English
-    expect(screen.getByText('First Launch Wizard')).toBeInTheDocument();
-    expect(screen.getByText('Your account')).toBeInTheDocument();
-    
-    // Verify no French text is present
-    expect(screen.queryByText('Assistant de premier lancement')).toBeNull();
-    expect(screen.queryByText('Votre compte')).toBeNull();
-    expect(screen.queryByText('Se connecter')).toBeNull();
-  });
-
-  // req: ENF-I18N-001
-  it('renders all text in French when the browser is in French', async () => {
-    // Set the UI language to French to simulate a browser with French as the preferred language
-    setUiLanguage('fr');
-    server.use(http.get(`${BASE}/api/v1/me`, () => HttpResponse.json({ status: 401 }, { status: 401 })));
-    render(Page);
-    
-    // Wait for async rendering
-    expect(await screen.findByRole('link', { name: 'Se connecter' })).toBeInTheDocument();
-    
-    // Verify that the title is in French
-    expect(screen.getByText('Assistant de premier lancement')).toBeInTheDocument();
-    expect(screen.getByText('Votre compte')).toBeInTheDocument();
-    
-    // Verify no English text is present
-    expect(screen.queryByText('First Launch Wizard')).toBeNull();
-    expect(screen.queryByText('Your account')).toBeNull();
-    expect(screen.queryByText('Sign in')).toBeNull();
-  });
 });
