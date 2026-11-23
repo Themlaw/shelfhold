@@ -137,6 +137,7 @@
   plugin_index_add_help = "Pins a signed index repository (URL and minisign public key, audited)."
   plugin_install_index_help = "Pinned index repository to install from, by plugin key (the index is verified, the key pinned to its signer)."
   plugin_adopt_help = "Moves to an installed plugin the state, settings and secrets of a previous install held aside (reserved action, audited)."
+  plugin_adopt_held_help = "Held identity to move, as shown by the refusal of an ambiguous transfer (key@fingerprint)."
   plugin_index_list_help = "Lists the pinned index repositories and the last version believed."
   plugin_index_refresh_help = "Refreshes the pinned indexes (or one, by URL): signature, version, expiry."
   plugin_index_remove_help = "Unpins an index repository (audited); an add starts from zero again."
@@ -284,6 +285,8 @@
   state_held = "The state, settings and secrets of the previous install are held aside ({held}): “shelfhold plugin adopt {name}” moves them only after your confirmation."
   adopted = "State, settings and secrets of the previous install moved to {name} (from {held})."
   nothing_held = "Nothing is held aside for {name}: there is nothing to move."
+  adopt_ambiguous = "Several previous installs are held aside for {name} ({held}): name the one to move with --held."
+  held_unknown = "Nothing is held aside for {name} under {held}."
   adopt_refused = "Transfer refused ({code}): {detail}"
 
 [secrets]

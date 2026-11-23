@@ -623,10 +623,12 @@ def held_identity(plugin_id: str, fingerprint: str) -> str:
     return f"{plugin_id}{HELD_MARK}{fingerprint}"
 
 
-def held_plugin_data(engine: Engine, plugin_id: str) -> str | None:
-    """The held identity of a previous install of this key, if any data waits there. A plugin
-    key normalises to `[a-z0-9-]`, so the mark and a fingerprint of the held form cannot be a
-    plugin's own identity."""
+def held_plugin_data(engine: Engine, plugin_id: str) -> list[str]:
+    """The held identities of the previous installs of this key that still have data waiting,
+    in sorted order. The held form is ``<key>@<fingerprint of the signer the previous install
+    was pinned to>``; a plugin key that itself carried the mark would be read as held data —
+    the runner's wire refuses such a key in the isolated mode, and the in-process mode has no
+    check of the entry point's name yet (M6 L08 review)."""
     prefix = plugin_id + HELD_MARK
     found: set[str] = set()
     with engine.connect() as connection:
@@ -639,7 +641,7 @@ def held_plugin_data(engine: Engine, plugin_id: str) -> str | None:
                 sa.select(table.c.plugin_id).where(table.c.plugin_id.like(prefix + "%"))
             )
             found.update(row[0] for row in rows if _HELD_SUFFIX.match(row[0].removeprefix(prefix)))
-    return sorted(found)[-1] if found else None
+    return sorted(found)
 
 
 def _vault_of(vault: Vault | None) -> SecretVault | None:
@@ -693,11 +695,20 @@ def _move_secrets(connection: Connection, vault: SecretVault, source: str, desti
     return moved
 
 
-def hold_plugin_data(engine: Engine, vault: Vault | None, plugin_id: str, held_id: str) -> bool:
+def hold_plugin_data(
+    engine: Engine,
+    vault: Vault | None,
+    plugin_id: str,
+    held_id: str,
+    *,
+    audit: Callable[[Connection], None] | None = None,
+) -> bool:
     """Move the state, the settings and the secrets of a previous install under its held
     identity: a new signer is a new install, and nothing of the previous one is inherited.
     Fail closed: secrets that cannot be sealed again (no keyring) stop the move, and the
-    transaction with it. False: there was nothing under the key."""
+    transaction with it. False: there was nothing under the key. `audit`, when given, runs in
+    the move's own transaction: the hold and its trace commit or fail together, so the data is
+    never held aside without its audit row, whatever the install does next."""
     keyring = _vault_of(vault)
     with write_transaction(engine) as connection:
         if keyring is None and _secrets_of(connection, plugin_id):
@@ -707,13 +718,24 @@ def hold_plugin_data(engine: Engine, vault: Vault | None, plugin_id: str, held_i
         moved = _move_plain(connection, plugin_id, held_id)
         if keyring is not None:
             moved += _move_secrets(connection, keyring, plugin_id, held_id)
+        if moved and audit is not None:
+            audit(connection)
     return moved > 0
 
 
-def adopt_plugin_data(engine: Engine, vault: Vault | None, plugin_id: str, held_id: str) -> bool:
+def adopt_plugin_data(
+    engine: Engine,
+    vault: Vault | None,
+    plugin_id: str,
+    held_id: str,
+    *,
+    audit: Callable[[Connection], None] | None = None,
+) -> bool:
     """The admin's confirmed transfer: the held state, settings and secrets of a previous
     install move to the installed plugin. Refused when the plugin already has data of its own
-    — nothing is silently overwritten — and fail closed on secrets that cannot be sealed."""
+    — nothing is silently overwritten — and fail closed on secrets that cannot be sealed.
+    `audit`, when given, runs in the move's own transaction, after the refusals and before the
+    move: a refused transfer leaves no row that says it happened."""
     keyring = _vault_of(vault)
     with write_transaction(engine) as connection:
         for table in (acquisition.plugin_state, acquisition.source_config):
@@ -727,6 +749,8 @@ def adopt_plugin_data(engine: Engine, vault: Vault | None, plugin_id: str, held_
             raise PluginDataError("occupied", f"{plugin_id} already has a secret of its own")
         if keyring is None and _secrets_of(connection, held_id):
             raise PluginDataError("keyring_unreadable", "the held secrets cannot be moved back")
+        if audit is not None:
+            audit(connection)
         moved = _move_plain(connection, held_id, plugin_id)
         if keyring is not None:
             moved += _move_secrets(connection, keyring, held_id, plugin_id)

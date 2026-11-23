@@ -49,8 +49,7 @@ from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import metadata as schema
 from shelfhold.infrastructure.secrets.atomic import write_private
 from shelfhold.plugin_host.registry import (
-    InstalledPlugin,
-    third_party_candidates,
+    ENTRY_POINT_GROUP,
 )
 from shelfhold.plugin_host.registry import (
     normalise_name as normalise_name,
@@ -223,18 +222,6 @@ def unexpected_entries(layout: Layout, state: PluginFile) -> list[str]:
     return sorted(p.name for p in layout.site.iterdir() if p.name not in expected)
 
 
-def installed_keys(layout: Layout) -> frozenset[str]:
-    """The plugin keys the installed third-party plugins declare, by their entry points. Nothing
-    is imported: the distributions the guard recorded are read from the third-party directory
-    alone. A key is how an index (and an attestation) names a plugin; a distribution name is how
-    the guard does — this is the bridge between the two."""
-    state = read_state(layout)
-    if not state.installed:
-        return frozenset()
-    installed = [InstalledPlugin(i.name, i.top_levels) for i in state.installed.values()]
-    return frozenset(c.key for c in third_party_candidates(layout.site, installed, blocked={}))
-
-
 def safe_component(name: str) -> bool:
     """One path component: no separator, no `..`, not empty, not hidden from a plain listing."""
     return (
@@ -361,6 +348,47 @@ def _inspect_names(names: list[str], read: Callable[[str], bytes]) -> WheelInfo:
     if not tops:
         raise PluginInstallError("bad_wheel", "no module")
     return WheelInfo(name, match.group("version"), tuple(tops), dist_info)
+
+
+def wheel_plugin_keys(wheel: Path) -> frozenset[str]:
+    """The plugin keys the wheel's entry points declare (the ``shelfhold.plugins`` group), read
+    from the archive alone: nothing is imported and nothing is installed. An install from an
+    index requires these to be exactly the key the index entry names — a wheel that answers
+    under another key than the one vouchsafed for it is not installed (M6 L08)."""
+    try:
+        # A wheel is a ZIP; the opener knows it by extension, so the stream is given as `.zip`.
+        with (
+            wheel.open("rb") as stream,
+            safe_open_archive(stream, name="wheel.zip") as archive,  # audited, never extracted
+        ):
+            names = [e.name for e in archive.entries if not e.is_dir]
+            return _entry_point_keys(names, lambda n: bytes(archive.read(n)))
+    except (UnsafeArchiveError, OSError, KeyError) as exc:
+        raise PluginInstallError("bad_wheel", str(exc)) from exc
+
+
+def _entry_point_keys(names: list[str], read: Callable[[str], bytes]) -> frozenset[str]:
+    """The names of the entry points of the plugin group, one per line of the section, in every
+    dist-info of the archive (the guard refuses a wheel with more than one at install time)."""
+    keys: set[str] = set()
+    infos = sorted({PurePosixPath(n).parts[0] for n in names if n.endswith("/entry_points.txt")})
+    for info in infos:
+        try:
+            raw = read(f"{info}/entry_points.txt").decode("utf-8", "replace")
+        except KeyError:
+            continue  # no entry points: the wheel declares no plugin key
+        in_group = False
+        for line in raw.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                in_group = stripped == f"[{ENTRY_POINT_GROUP}]"
+                continue  # a section header, never an entry point
+            if not in_group or not stripped or stripped[0] in "#;":
+                continue
+            name, _, _ = stripped.partition("=")
+            if name.strip():
+                keys.add(name.strip())
+    return frozenset(keys)
 
 
 # -- conflicts ---------------------------------------------------------------------------------

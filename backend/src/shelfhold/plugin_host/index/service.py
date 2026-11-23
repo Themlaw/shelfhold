@@ -34,6 +34,7 @@ from urllib.parse import urlsplit
 import sqlalchemy as sa
 import structlog
 from shelfhold_sdk.fetcher import Response
+from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from shelfhold.identity.public import AuditEntry, Principal, audit_actor, audit_insert
@@ -61,8 +62,9 @@ from shelfhold.plugin_host.install import (
     Installed,
     Layout,
     install_wheel,
-    installed_keys,
+    wheel_plugin_keys,
 )
+from shelfhold.plugin_host.public import installed_keys
 from shelfhold.plugin_host.settings import Vault, held_identity, hold_plugin_data
 
 __all__ = [
@@ -363,6 +365,19 @@ class RepoStore:
                     content_sha256=content,
                 )
             )
+            if pubkey != record.pubkey:
+                # A verified rotation is the same signer under a new key, never a new publisher:
+                # the installs pinned to the retired key stay pinned to that signer. Without
+                # this, the next install from the same index would hold the previous install's
+                # data as if another signer had taken the key over (M6 L08 review).
+                connection.execute(
+                    sa.update(acquisition.plugin_install)
+                    .where(
+                        acquisition.plugin_install.c.index_url == record.url,
+                        acquisition.plugin_install.c.signer_pubkey == record.pubkey,
+                    )
+                    .values(signer_pubkey=pubkey)
+                )
             for plugin_key in sorted(document.revoked_plugin_keys):
                 connection.execute(
                     sqlite_insert(acquisition.plugin_revocation)
@@ -485,6 +500,16 @@ class RepoStore:
                 .on_conflict_do_update(index_elements=["plugin_id"], set_=values)
             )
 
+    def unpin(self, key: str) -> None:
+        """Take the index pin of a key away: a wheel the admin gave by hand is pinned by the
+        admin's own act, and the row must not say an index signed code nobody signed (M6 L08)."""
+        with write_transaction(self._engine) as connection:
+            connection.execute(
+                sa.update(acquisition.plugin_install)
+                .where(acquisition.plugin_install.c.plugin_id == key)
+                .values(index_url=None, signer_pubkey=None)
+            )
+
     async def install_from(
         self,
         record: RepoRecord,
@@ -493,20 +518,26 @@ class RepoStore:
         fetcher: IndexFetcher,
         *,
         vault: Vault | None = None,
+        held_audit: Callable[[str, Connection], None] | None = None,
     ) -> IndexInstall:
         """Install the plugin this index vouches for, under the guard, its key pinned to
         (index, signer).
 
         The index is refreshed and verified first; the entry must exist and neither the key
-        nor the wheel may be revoked. A key already installed is never overwritten — and when
-        another signer publishes it, the refusal says what to do: remove the installed plugin
-        and install it as a distinct one. The distinct install inherits nothing: what the
-        previous install owns in the host (state, settings, secrets) is held under its
-        signer's fingerprint before the wheel is fetched, and moves only on the admin's
-        confirmed word. The wheel is fetched and verified by `fetch_wheel`, installed by the
-        guard, and the staged file leaves with the install.
+        nor the wheel may be revoked. The wheel must declare exactly the key its entry names:
+        an entry is the index's word for *this* plugin, and a wheel that answers under another
+        key would inherit that key's state, settings and secrets (M6 L08 review). A key already
+        installed is never overwritten — and when another signer publishes it, the refusal
+        says what to do: remove the installed plugin and install it as a distinct one. The
+        distinct install inherits nothing: what the previous install owns in the host (state,
+        settings, secrets) is held under its signer's fingerprint before the wheel is fetched,
+        and moves only on the admin's confirmed word. The wheel is fetched and verified by
+        `fetch_wheel`, installed by the guard, and the staged file leaves with the install.
         """
         outcome = await self.refresh(record, fetcher)
+        # The refresh may have rotated the pin: the signer this install is pinned to is the one
+        # the repository pins now, never the key the caller read before the network answered.
+        record = next((r for r in self.list() if r.url == record.url), record)
         entry = next((e for e in outcome.document.plugins if e.key == key), None)
         if entry is None:
             raise PluginIndexError("unknown_plugin", f"the index does not list {key!r}")
@@ -530,7 +561,15 @@ class RepoStore:
                 else parse_public_key(previous[1], code="key_mismatch").key_id
             )
             held_id = held_identity(key, fingerprint)
-            if hold_plugin_data(self._engine, vault, key, held_id):
+            if hold_plugin_data(
+                self._engine,
+                vault,
+                key,
+                held_id,
+                audit=(lambda connection: held_audit(held_id, connection))
+                if held_audit is not None
+                else None,
+            ):
                 held = held_id
         wheel_name = PurePosixPath(urlsplit(entry.wheel_url).path).name
         if not wheel_name.endswith(".whl") or wheel_name == ".whl" or not wheel_name[:-4]:
@@ -539,6 +578,11 @@ class RepoStore:
             )
         wheel = await self.fetch_wheel(entry, fetcher, layout.root / "index", name=wheel_name)
         try:
+            if wheel_plugin_keys(wheel) != frozenset({key}):
+                raise PluginIndexError(
+                    "wheel_key_mismatch",
+                    "the wheel does not declare exactly the key its index entry names",
+                )
             installed = install_wheel(layout, wheel, entry.sha256)
         finally:
             discard_staged_wheel(wheel)  # the installed copy is the guard's own

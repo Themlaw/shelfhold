@@ -51,7 +51,7 @@ from shelfhold.plugin_host.attestation import (
     AttestationStore,
 )
 from shelfhold.plugin_host.index import PluginIndexError, RepoStore, index_fetcher
-from shelfhold.plugin_host.public import installed_versions, start_plugins
+from shelfhold.plugin_host.public import installed_keys, installed_versions, start_plugins
 from shelfhold.plugin_host.settings import (
     LNCRAWL_RIGHTS_WARNING,
     USE_READBACK,
@@ -62,6 +62,7 @@ from shelfhold.plugin_host.settings import (
     adopt_plugin_data,
     held_plugin_data,
     parse_settings_schema,
+    write_audit,
 )
 
 
@@ -77,6 +78,7 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
 
     adopt = actions.add_parser("adopt", help=t("cli.plugin_adopt_help"), allow_abbrev=False)
     adopt.add_argument("key", help=t("cli.plugin_key_help"))
+    adopt.add_argument("--held", help=t("cli.plugin_adopt_held_help"))
     adopt.set_defaults(handler=run_adopt)
 
     for name, handler, help_text in (
@@ -194,6 +196,12 @@ def _vault_or_none(resolved: ResolvedSettings) -> SecretVault | None:
         return None
 
 
+def _held_audit(held: str, connection: Any) -> None:
+    """The audit row of a hold, written in the hold's own transaction: the data is held the
+    moment the row says so, whatever the install does next (M6 L08 review)."""
+    write_audit(connection, "plugin.state_held", held, _actor())
+
+
 def _install_from_index(args: argparse.Namespace, resolved: ResolvedSettings, layout: Any) -> int:
     """Install a plugin a pinned index vouches for (M6 L08, EF-SRC-017 passe 8): the key is
     pinned to (index, signer), another signer is a distinct install, and the previous install's
@@ -215,7 +223,12 @@ def _install_from_index(args: argparse.Namespace, resolved: ResolvedSettings, la
             fetcher = index_fetcher(default_network())
             try:
                 return await store.install_from(
-                    record, args.wheel, layout, fetcher, vault=_vault_or_none(resolved)
+                    record,
+                    args.wheel,
+                    layout,
+                    fetcher,
+                    vault=_vault_or_none(resolved),
+                    held_audit=_held_audit,
                 )
             finally:
                 await fetcher.aclose()
@@ -232,7 +245,6 @@ def _install_from_index(args: argparse.Namespace, resolved: ResolvedSettings, la
             guard.remove_plugin(layout, done.installed.name)  # no audit row, no installation
             return 1
         if done.held is not None:  # the previous install's data waits, it is not inherited
-            _audited(resolved, "plugin.state_held", done.held)
             print(t("plugin.state_held", name=args.wheel, held=done.held))
     finally:
         engine.dispose()
@@ -240,6 +252,22 @@ def _install_from_index(args: argparse.Namespace, resolved: ResolvedSettings, la
     print(t("plugin.installed", name=done.installed.name, version=done.installed.version))
     print(t("plugin.disabled_by_default"))
     return 0
+
+
+def _unpin_index_install(resolved: ResolvedSettings, dist: str) -> None:
+    """A wheel the admin gave by hand is pinned by the admin's own act (M6 L08): the pin of an
+    earlier install from an index does not survive it — the row says whose word installed the
+    plugin, and no index vouched for this one."""
+    engine = _engine(resolved)
+    if engine is None:
+        return
+    try:
+        store = RepoStore(engine, now=SystemClock().now)
+        for key, version in installed_versions(resolved.values).items():
+            if version.dist == dist:
+                store.unpin(key)
+    finally:
+        engine.dispose()
 
 
 def run_install(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
@@ -258,6 +286,7 @@ def run_install(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     ):
         guard.remove_plugin(layout, plugin.name)  # no audit row, no installation
         return 1
+    _unpin_index_install(resolved, plugin.name)
     _sync_attestations(resolved)  # a new version: the word given for the old one lapses
     print(t("plugin.installed", name=plugin.name, version=plugin.version))
     print(t("plugin.disabled_by_default"))
@@ -268,25 +297,40 @@ def run_adopt(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     """The admin's confirmed transfer (a reserved action, EF-SRC-017 passe 8): the state, the
     settings and the secrets a previous install (another signer) left held move to the
     installed plugin. Nothing is overwritten: a plugin that already has data of its own is
-    refused, and so is a key with nothing held."""
+    refused, and so is a key with nothing held. Several previous installs may wait under
+    different signers: the transfer then names which one, never a silent pick."""
     layout = guard.Layout.of(resolved.values.data_dir)
     key = guard.normalise_name(args.key)
-    if key not in guard.installed_keys(layout):
+    if key not in installed_keys(layout):
         _audited(resolved, "plugin.adopt_refused", f"{key}:unknown")
         return _fail(t("errors.plugin.unknown.title"))
     engine = _engine(resolved)
     if engine is None:
         return 1
     try:
-        held = held_plugin_data(engine, key)
-        if held is None:
+        found = held_plugin_data(engine, key)
+        if not found:
             _audited(resolved, "plugin.adopt_refused", f"{key}:nothing_held")
             return _fail(t("plugin.nothing_held", name=key))
-        if not _audited(resolved, "plugin.adopt", held):  # before the change, not after
-            return 1
+        if args.held is None and len(found) > 1:
+            _audited(resolved, "plugin.adopt_refused", f"{key}:ambiguous")
+            return _fail(t("plugin.adopt_ambiguous", name=key, held=", ".join(found)))
+        held = found[-1] if args.held is None else args.held
+        if held not in found:
+            _audited(resolved, "plugin.adopt_refused", f"{key}:unknown_held")
+            return _fail(t("plugin.held_unknown", name=key, held=held))
         try:
-            adopt_plugin_data(engine, _vault_or_none(resolved), key, held)
+            # the audit row and the move are one transaction: a refused transfer (occupied,
+            # keyring) leaves no row that says the data moved (M6 L08 review)
+            adopt_plugin_data(
+                engine,
+                _vault_or_none(resolved),
+                key,
+                held,
+                audit=lambda connection: write_audit(connection, "plugin.adopt", held, _actor()),
+            )
         except PluginDataError as exc:
+            _audited(resolved, "plugin.adopt_refused", f"{key}:{exc.code}")
             return _fail(t("plugin.adopt_refused", code=exc.code, detail=exc.detail))
     finally:
         engine.dispose()
