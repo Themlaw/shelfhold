@@ -103,10 +103,3 @@ symbols = [
   "shelfhold.plugin_host.rpc.protocol:SecretLeak",
 ]
 
-[[allow]]
-category = "unwired-m6-index-wheel"
-reason = "2026-11-22 (M6 L07): the signed index is fetched, verified and kept (the pin, the refresh, the revocations, the rotation), and the sha256 of every wheel an index vouches for is checked before the file is handed over — but nothing installs from an index yet: `fetch_wheel` is the door L08 opens (the install of a plugin from a pinned index, through the M1b guard). Until then it is cited by its req tests only; wiring it earlier would let the core download a wheel no lot is ready to unpack."
-until = "M6"  # M6 L08 (2026-11-22, ADR-0056 D14): the install from a pinned index calls it
-symbols = [
-  "shelfhold.plugin_host.index.service:RepoStore.fetch_wheel",
-]
