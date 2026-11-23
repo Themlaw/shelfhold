@@ -1,6 +1,7 @@
-"""The daily Kavita checks of EF-EXP-049: the library types read again, and the names replayed
-after a major update. Both are idempotent: a type already reported, or a version already
-replayed, is not said twice, and neither writes anything to Kavita or to a library."""
+"""The daily checks of EF-EXP-049 and EF-EXP-047: the Kavita library types read again, the names
+replayed after a major update, and the accounts of every Komga audited. All three are idempotent:
+a type already reported, a version already replayed or a proof already recorded is not said twice,
+and none writes anything to a server or to a library."""
 
 from __future__ import annotations
 
@@ -15,13 +16,20 @@ from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.errors import TargetError
 from shelfhold.export.targets.kavita.library_type import LibraryTypeService
 from shelfhold.export.targets.kavita.revalidate import Revalidator
+from shelfhold.export.targets.komga.audit import KomgaAuditor
+from shelfhold.export.targets.komga.client import KomgaClient
 from shelfhold.infrastructure.clock import Clock
 
-__all__ = ["library_type_check", "major_update_replay"]
+__all__ = [
+    "komga_accounts_audit",
+    "library_type_check",
+    "major_update_replay",
+]
 
 log = structlog.get_logger(__name__)
 
 Clients = Callable[[], Iterable[tuple[str, KavitaClient]]]
+KomgaClients = Callable[[], Iterable[tuple[str, KomgaClient]]]
 
 
 def library_type_check(
@@ -42,6 +50,34 @@ def library_type_check(
                 )  # fmt: skip
                 continue
             log.info("target.library_type_check", target_id=target_id, changed=len(report.changed))
+
+    return run
+
+
+def komga_accounts_audit(
+    engine: Engine, clock: Clock, events: TargetEvents, clients: KomgaClients
+) -> Callable[[], None]:
+    """The body of `target.komga_audit` (EF-EXP-047, ENF-SEC-016): the accounts of every Komga
+    read again over the shelves bound now. It is what keeps the proof of partitioning fresh
+    (36 h, the value of L08b) — a proof nobody refreshed is no proof, and a shelf below 18+ is
+    refused with its reason. The audit itself never writes to Komga; a server that does not
+    answer is recorded as failed (nothing proved) and tried again tomorrow."""
+    auditor = KomgaAuditor(engine, clock, events)
+
+    def run() -> None:
+        for target_id, client in clients():
+            try:
+                report = asyncio.run(auditor.audit(client, target_id))
+            except TargetError as error:
+                log.warning(
+                    "target.komga_audit_failed",
+                    target_id=target_id, error=type(error).__name__,
+                )  # fmt: skip
+                continue
+            log.info(
+                "target.komga_audit", target_id=target_id, proved=report.proved,
+                findings=len(report.findings), failed=report.failed,
+            )  # fmt: skip
 
     return run
 

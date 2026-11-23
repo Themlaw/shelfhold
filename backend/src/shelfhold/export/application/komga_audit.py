@@ -107,6 +107,21 @@ class KomgaAuditRecorder:
             for r in rows
         ]  # fmt: skip
 
+    @staticmethod
+    def _kept(previous: dict[str, Any]) -> list[BoundShelf]:
+        """The folders the state proved before, with the ceiling each was proved for: the day's
+        audit keeps their proof fresh — a binding refused for a stale one is reopened by the
+        audit of the day, not by a new link alone (L22)."""
+        kept: list[BoundShelf] = []
+        for entry in previous.get("proved") or []:
+            if not (isinstance(entry, dict) and isinstance(entry.get("root"), str)):
+                continue
+            ceiling = entry.get("ceiling")
+            kept.append(
+                BoundShelf(None, entry["root"], ceiling if isinstance(ceiling, int) else None)
+            )
+        return kept
+
     def record(
         self, target_id: str, candidate: BoundShelf | None, reading: Reading | None,
         *, failed: str | None = None, stamp: Stamp | None = None,
@@ -133,7 +148,12 @@ class KomgaAuditRecorder:
         reading: Reading | None, failed: str | None, stamp: Stamp, previous: dict[str, Any],
     ) -> KomgaAuditReport:  # fmt: skip
         bound = self._bound(connection, target_id)
-        shelves = [*bound, *([candidate] if candidate else [])]
+        # the day's audit replays the shelves bound now and the proofs the state holds (a
+        # folder proved the day before stays proved only through it); a link (`admit`) asks
+        # about its candidate alone.
+        roots = {b.root for b in bound}
+        kept = [k for k in self._kept(previous) if k.root not in roots] if candidate is None else []
+        shelves = [*bound, *kept, *([candidate] if candidate else [])]
         findings: tuple[Finding, ...] = ()
         reason: str | None = None
         must_pause: set[str] = set()

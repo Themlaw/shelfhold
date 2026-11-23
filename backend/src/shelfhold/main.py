@@ -25,6 +25,7 @@ from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline, roots_signature
 from shelfhold.export.targets.kavita import page_probe
+from shelfhold.export.targets.komga import KomgaDestination
 from shelfhold.headless import HeadlessAdmin, wiring
 from shelfhold.headless.applied import record_applied_public_url
 from shelfhold.identity.adapters.preferences import SqlNotificationPrefsStore, SqlPreferencesStore
@@ -438,6 +439,7 @@ def create_app(
                 clock=clock,
                 root_check=RootGuard().check_root,
                 on_audience_change=relations_after_audience_change,
+                layout_check=KomgaDestination().layout_conflicts,  # L22: ADR-0052 at the binding
             ),
             ops_services,
         ),

@@ -12,8 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
-from datetime import timedelta
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import httpx2
@@ -84,6 +83,13 @@ class KomgaInstance:
     komga: FakeKomga
     library: Path
     keyring: Keyring
+
+
+def export_job() -> object:
+    """The context of the export job as the queue builds it: a ULID for its id — the holder of a
+    `resource_lock` row is one by schema, and this pass writes (the helper of l41 is for the runs
+    whose plan is empty)."""
+    return replace(context("export.run"), job_id=new_ulid())  # type: ignore[arg-type]
 
 
 @contextmanager
@@ -204,13 +210,13 @@ def test_komga_pass_relays_targeted_scan(
         attach_indexer(inst, target, seeded.destination_id, seeded.shelf_id)
         series = seeded.new_series()
         seeded.add_chapter(series, "1")
-        rj.export_handler(inst.comp)(context("export.run"))  # type: ignore[arg-type]
+        rj.export_handler(inst.comp)(export_job())  # type: ignore[arg-type]
         assert inst.komga.scans == ["0SYNTHMANGA01"]  # the library whose root holds /manga/Kavita
         assert inst.komga.requests_to("empty-trash") == []  # nothing was removed
         assert seeded.exported_files()  # the pass really wrote
         # a pass with nothing to write asks for nothing
         inst.komga.scans.clear()
-        rj.export_handler(inst.comp)(context("export.run"))  # type: ignore[arg-type]
+        rj.export_handler(inst.comp)(export_job())  # type: ignore[arg-type]
         assert inst.komga.scans == []
 
 
@@ -253,7 +259,7 @@ def test_komga_family_binding_refused_without_fresh_audit() -> None:
         fake, client, auditor, _events, target = kit(env)
         fake.users = [administrator(), reader("teen", [LIBRARY], age=13)]
         assert admit(env, auditor, client, target).proved
-        env.clock.advance(timedelta(hours=37))  # the proof is older than the 36 h of L08b
+        env.clock.advance(hours=37)  # the proof is older than the 36 h of L08b
         from tests.integration.test_komga_access_audit import try_bind
 
         refused = try_bind(env, target)
