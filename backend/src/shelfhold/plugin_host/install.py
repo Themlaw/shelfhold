@@ -367,6 +367,15 @@ def wheel_plugin_keys(wheel: Path) -> frozenset[str]:
         raise PluginInstallError("bad_wheel", str(exc)) from exc
 
 
+def _normalise_section_header(header: str) -> str:
+    """Normalise a section header like importlib.metadata does: [[group]] -> group."""
+    if header.startswith("[[") and header.endswith("]]"):
+        return header[2:-2]
+    elif header.startswith("[") and header.endswith("]"):
+        return header[1:-1]
+    return header
+
+
 def _entry_point_keys(names: list[str], read: Callable[[str], bytes]) -> frozenset[str]:
     """The names of the entry points of the plugin group, one per line of the section, in every
     dist-info of the archive (the guard refuses a wheel with more than one at install time)."""
@@ -381,7 +390,7 @@ def _entry_point_keys(names: list[str], read: Callable[[str], bytes]) -> frozens
         for line in raw.splitlines():
             stripped = line.strip()
             if stripped.startswith("[") and stripped.endswith("]"):
-                in_group = stripped == f"[{ENTRY_POINT_GROUP}]"
+                in_group = _normalise_section_header(stripped) == ENTRY_POINT_GROUP
                 continue  # a section header, never an entry point
             if not in_group or not stripped or stripped[0] in "#;":
                 continue

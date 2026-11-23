@@ -314,7 +314,8 @@ def run_adopt(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             return _fail(t("plugin.nothing_held", name=key))
         if args.held is None and len(found) > 1:
             _audited(resolved, "plugin.adopt_refused", f"{key}:ambiguous")
-            return _fail(t("plugin.adopt_ambiguous", name=key, held=", ".join(found)))
+            joined = t("status.list_separator").join(found)
+            return _fail(t("plugin.adopt_ambiguous", name=key, held=joined))
         held = found[-1] if args.held is None else args.held
         if held not in found:
             _audited(resolved, "plugin.adopt_refused", f"{key}:unknown_held")

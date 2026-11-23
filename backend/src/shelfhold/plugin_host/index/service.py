@@ -65,6 +65,7 @@ from shelfhold.plugin_host.install import (
     wheel_plugin_keys,
 )
 from shelfhold.plugin_host.public import installed_keys
+from shelfhold.plugin_host.rpc.runner_wire import KEY as PLUGIN_KEY
 from shelfhold.plugin_host.settings import Vault, held_identity, hold_plugin_data
 
 __all__ = [
@@ -578,12 +579,24 @@ class RepoStore:
             )
         wheel = await self.fetch_wheel(entry, fetcher, layout.root / "index", name=wheel_name)
         try:
+            # Validate the key format matches the expected pattern (runner_wire.KEY)
+            if not PLUGIN_KEY.fullmatch(key):
+                raise PluginIndexError(
+                    "key_invalid",
+                    f"the key {key!r} does not match the expected plugin key pattern",
+                )
             if wheel_plugin_keys(wheel) != frozenset({key}):
                 raise PluginIndexError(
                     "wheel_key_mismatch",
                     "the wheel does not declare exactly the key its index entry names",
                 )
             installed = install_wheel(layout, wheel, entry.sha256)
+            # Re-verify after install: the wheel's declared key must be the one installed
+            if key not in installed_keys(layout):
+                raise PluginIndexError(
+                    "wheel_key_not_installed",
+                    "the wheel declared the key but it was not installed",
+                )
         finally:
             discard_staged_wheel(wheel)  # the installed copy is the guard's own
         self._pin(key, installed, record)
