@@ -98,7 +98,7 @@
   <title>{t('settings.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('settings.title')}</h1>
 
   {#if !adminOnly}

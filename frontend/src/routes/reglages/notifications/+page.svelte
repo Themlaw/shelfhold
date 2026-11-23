@@ -68,7 +68,7 @@
   <title>{t('notifications.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('notifications.title')}</h1>
   {#if prefs}
     <form onsubmit={save}>
