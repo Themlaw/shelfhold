@@ -60,6 +60,7 @@ export function memoryEnv(start = Date.parse('2026-11-19T10:00:00Z')): MemoryEnv
     caches: caches as unknown as CacheStorage,
     openKv: open,
     deleteKv: async (name) => void kvs.delete(name),
+    listKv: async () => [...kvs.keys()],
     now: () => clock,
     memory: { caches, kvs },
     advance: (ms) => void (clock += ms)

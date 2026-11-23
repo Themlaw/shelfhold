@@ -10,7 +10,9 @@ import { memoryEnv } from '#lib/offline/testing.ts';
 import Page from './+page.svelte';
 
 const held = vi.hoisted(() => ({ store: null as unknown as OfflineStore }));
-vi.mock('#lib/offline/runtime.ts', () => ({ offlineStore: () => held.store }));
+// M6 L20: the page also hears the changes of the copies (`onOfflineChanged`); nothing here
+// changes the list from the outside, so the ear is a silent one.
+vi.mock('#lib/offline/runtime.ts', () => ({ offlineStore: () => held.store, onOfflineChanged: () => () => undefined }));
 
 const ADULT = '01JADULT00000000000000000A';
 beforeEach(() => void (held.store = createOfflineStore(memoryEnv())));
