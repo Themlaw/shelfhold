@@ -78,6 +78,7 @@ from shelfhold.ops.import_folder import ImportOps
 from shelfhold.ops.intents import IntentOps
 from shelfhold.ops.job_actions import reserved_job_action
 from shelfhold.ops.kavita_accounts import KavitaAccountsOps
+from shelfhold.ops.komga_accounts import KomgaAccountsOps
 from shelfhold.ops.library import LibraryOps
 from shelfhold.ops.maintenance import MaintenanceOps
 from shelfhold.ops.meta import MetaOps
@@ -250,6 +251,7 @@ class OpsServices:
         roots: RootOps | None = None,
         maintenance: MaintenanceOps | None = None,
         kavita_accounts: KavitaAccountsOps | None = None,
+        komga_accounts: KomgaAccountsOps | None = None,
         destination_accounts: DestinationAccounts | None = None,
         teardown: DetachOps | None = None,
         window: MaintenanceWindow | None = None,
@@ -299,6 +301,7 @@ class OpsServices:
         self._roots = roots
         self._maintenance = maintenance
         self._kavita_accounts = kavita_accounts
+        self._komga_accounts = komga_accounts
         self._destination_accounts = destination_accounts
         self._teardown = teardown
 
@@ -835,6 +838,13 @@ class OpsServices:
         if self._kavita_accounts is None:
             raise ExitUnavailableError("the Kavita accounts audit is not connected")
         return self._kavita_accounts
+
+    @property
+    def komga_accounts(self) -> KomgaAccountsOps:
+        """The audit of the accounts of the Komga servers, read only (EF-EXP-047)."""
+        if self._komga_accounts is None:
+            raise ExitUnavailableError("the Komga accounts audit is not connected")
+        return self._komga_accounts
 
     @property
     def destination_accounts(self) -> DestinationAccounts:
