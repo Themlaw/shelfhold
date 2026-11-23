@@ -243,6 +243,15 @@ LOGGED_SETTINGS: dict[str, str] = {
     "adopt_probe_workers": "adopt_probe_workers",
     "comicvine_enabled": "comicvine_enabled",  # a switch
     "googlebooks_daily_budget": "googlebooks_daily_budget",  # a number, no secret
+    "cache_thumbnails_quota_mib": "cache_thumbnails_quota_mib",
+    "cache_thumbnails_retention_days": "cache_thumbnails_retention_days",
+    "cache_renditions_quota_mib": "cache_renditions_quota_mib",
+    "cache_renditions_retention_days": "cache_renditions_retention_days",
+    "cache_http_quota_mib": "cache_http_quota_mib",
+    "cache_http_retention_days": "cache_http_retention_days",
+    "cache_metadata_rows": "cache_metadata_rows",
+    "cache_metadata_quota_mib": "cache_metadata_quota_mib",
+    "cache_plugin_quota_mib": "cache_plugin_quota_mib",  # quotas and ages, no secret
 }  # fmt: skip
 SECRET_SETTINGS = frozenset(
     {

@@ -47,7 +47,7 @@ const page = (over: Record<string, unknown> = {}) => ({
   caches: [
     { kind: 'thumbnails', entries: 12, used_bytes: 1000, quota_bytes: 2000, over: false },
     { kind: 'renditions', entries: 3, used_bytes: 5000, quota_bytes: 4000, over: true },
-    { kind: 'http', entries: 7, used_bytes: null, quota_bytes: 3000, over: false },
+    { kind: 'web_responses', entries: 7, used_bytes: null, quota_bytes: 3000, over: false },
     { kind: 'metadata', entries: 100, used_bytes: 2000, quota_bytes: 268435456, quota_entries: 4096, over: false }
   ],
   ...over

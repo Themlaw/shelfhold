@@ -433,7 +433,7 @@
   identity_header_stripped = "of requests carry identity header \"{header}\", removed and never believed (forward-auth not configured or proxy outside trusted CIDRs). Remove it at the proxy or tunnel level, or configure forward-auth (M3)."
   cache_kind_thumbnails = "cover thumbnails"
   cache_kind_renditions = "reading renditions (KEPUB included)"
-  cache_kind_http = "HTTP cache"
+  cache_kind_web_responses = "HTTP cache"
   cache_kind_metadata = "metadata answers"
   cache_line = "Cache {cache}: {entries} entries, {used} bytes of a {quota} quota — exceeded: {over}."
   cache_entries_line = "Cache {cache}: {entries} entries (quota: {quota} bytes)."

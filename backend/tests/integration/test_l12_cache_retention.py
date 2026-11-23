@@ -457,7 +457,7 @@ def test_cache_state_in_status_and_health(engine: Engine, data: Path) -> None:
         "kind": "thumbnails", "entries": 1, "used_bytes": 2048, "quota_bytes": 1024, "over": True
     }  # fmt: skip
     assert state["renditions"]["used_bytes"] == 4096 and state["renditions"]["over"] is True
-    assert state["http"]["entries"] == 1
+    assert state["web_responses"]["entries"] == 1
     metadata = state["metadata"]
     assert metadata["kind"] == "metadata" and metadata["entries"] == 2
     assert metadata["quota_entries"] == 1  # the inner bound, in rows
@@ -471,14 +471,14 @@ def test_cache_state_in_status_and_health(engine: Engine, data: Path) -> None:
     assert services.status().as_dict()["caches"] == [
         state["thumbnails"],
         state["renditions"],
-        state["http"],
+        state["web_responses"],
         state["metadata"],
     ]
 
     settings = Settings(data_dir=data)
     page = build_health_page(engine, settings, NOW)
     assert [entry["kind"] for entry in page["caches"]] == [
-        "thumbnails", "renditions", "http", "metadata"
+        "thumbnails", "renditions", "web_responses", "metadata"
     ]  # fmt: skip
     with engine.connect() as connection:  # the page shows the state under the settings' own policy
         assert page["caches"] == cache_state(connection, CachePolicy.from_settings(settings))

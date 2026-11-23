@@ -4427,7 +4427,8 @@
    "security",
    "sidecar",
    "unknown_file",
-   "unsettled_intent"
+   "unsettled_intent",
+   "web_responses"
   ],
   "level": [
    "critical",

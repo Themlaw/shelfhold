@@ -511,7 +511,7 @@
   "health_page.caches": "Caches",
   "health_page.cache_kind_thumbnails": "vignettes de couverture",
   "health_page.cache_kind_renditions": "dérivés de lecture (KEPUB compris)",
-  "health_page.cache_kind_http": "cache HTTP",
+  "health_page.cache_kind_web_responses": "cache HTTP",
   "health_page.cache_kind_metadata": "réponses de métadonnées",
   "health_page.cache_bytes": "{entries, plural, one {# entrée} other {# entrées}}, {used, number} octets sur un quota de {quota, number}.",
   "health_page.cache_entries": "{entries, plural, one {# entrée} other {# entrées}} (quota : {quota, number} octets).",

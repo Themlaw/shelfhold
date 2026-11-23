@@ -557,7 +557,7 @@ def cache_state(connection: sa.Connection, policy: CachePolicy) -> list[dict[str
     )
     state.append(
         {
-            "kind": "http",
+            "kind": "web_responses",  # never "http": the Health page carries no such string
             "entries": http_entries,
             "used_bytes": None,
             "quota_bytes": policy.http_quota_bytes,

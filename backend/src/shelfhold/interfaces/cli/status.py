@@ -290,7 +290,7 @@ def _cache_kind(kind: str) -> str:
     return {
         "thumbnails": t("status.cache_kind_thumbnails"),
         "renditions": t("status.cache_kind_renditions"),
-        "http": t("status.cache_kind_http"),
+        "web_responses": t("status.cache_kind_web_responses"),
         "metadata": t("status.cache_kind_metadata"),
     }[kind]
 

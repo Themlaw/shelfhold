@@ -113,7 +113,7 @@ function relay(page: HealthPageOut): RelayEntry[] {
   return found;
 }
 
-const CACHE_KINDS = ['thumbnails', 'renditions', 'http', 'metadata'] as const;
+const CACHE_KINDS = ['thumbnails', 'renditions', 'web_responses', 'metadata'] as const;
 
 function caches(value: unknown): CacheEntryView[] {
   const found: CacheEntryView[] = [];
