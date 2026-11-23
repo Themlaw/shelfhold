@@ -4840,6 +4840,78 @@
         "title": "KeyringOut",
         "type": "object"
       },
+      "KomgaAccountsAuditOut": {
+        "properties": {
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/KomgaAuditOut"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets"
+        ],
+        "title": "KomgaAccountsAuditOut",
+        "type": "object"
+      },
+      "KomgaAuditOut": {
+        "properties": {
+          "audited_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audited At"
+          },
+          "proved": {
+            "default": 0,
+            "title": "Proved",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "target_id",
+          "state"
+        ],
+        "title": "KomgaAuditOut",
+        "type": "object"
+      },
       "KomgaIn": {
         "properties": {
           "api_key": {
@@ -16464,6 +16536,106 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AccountsAuditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Audit Now",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/audit/komga-accounts": {
+      "get": {
+        "operationId": "last_audit",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KomgaAccountsAuditOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Last Audit",
+        "tags": [
+          "audit"
+        ]
+      },
+      "post": {
+        "operationId": "audit_now",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KomgaAccountsAuditOut"
                 }
               }
             },
@@ -35775,6 +35947,10 @@
     "/api/v1/problems/bad-request": {
       "code": "bad_request",
       "status": 400
+    },
+    "/api/v1/problems/binding.komga-layout-conflict": {
+      "code": "binding.komga_layout_conflict",
+      "status": 409
     },
     "/api/v1/problems/binding.komga-primary-unsupported": {
       "code": "binding.komga_primary_unsupported",

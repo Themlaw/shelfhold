@@ -262,6 +262,16 @@ def ensure_tree(
     return tree_id
 
 
+def primary_of(connection: Connection, tree_id: str) -> str | None:
+    """The binding that made the tree (its primary indexer): the one whose records the tree
+    holds — a secondary reads them, never owns them."""
+    return connection.execute(
+        sa.select(export.tree_indexer.c.shelf_destination_id).where(
+            export.tree_indexer.c.tree_id == tree_id, export.tree_indexer.c.role == "primary"
+        )
+    ).scalar()
+
+
 def tree_place(connection: Connection, tree_id: str) -> tuple[str, str, str] | None:
     """`(root_id, subpath, shelf_id)` of a tree, the shelf being the one of its primary."""
     tree, indexer, d = export.tree, export.tree_indexer, export.shelf_destination

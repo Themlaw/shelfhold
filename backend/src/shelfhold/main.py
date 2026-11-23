@@ -25,6 +25,7 @@ from shelfhold.export.application.pipeline import ExportPipeline
 from shelfhold.export.application.shelves import ShelfService
 from shelfhold.export.application.wiring import open_pipeline, roots_signature
 from shelfhold.export.targets.kavita import page_probe
+from shelfhold.export.targets.komga import KomgaDestination
 from shelfhold.headless import HeadlessAdmin, wiring
 from shelfhold.headless.applied import record_applied_public_url
 from shelfhold.identity.adapters.preferences import SqlNotificationPrefsStore, SqlPreferencesStore
@@ -56,7 +57,7 @@ from shelfhold.integrations.trackers import TrackerHost
 from shelfhold.integrations.webhooks import WebhookAdmin
 from shelfhold.interfaces.http_api.activity import build_activity_router
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
-from shelfhold.interfaces.http_api.audit import build_audit_router
+from shelfhold.interfaces.http_api.audit import build_audit_router, build_komga_audit_router
 from shelfhold.interfaces.http_api.auth import AuthGate
 from shelfhold.interfaces.http_api.backfill import build_backfill_router
 from shelfhold.interfaces.http_api.bootstrap import build_bootstrap_router
@@ -440,6 +441,7 @@ def create_app(
                 clock=clock,
                 root_check=RootGuard().check_root,
                 on_audience_change=relations_after_audience_change,
+                layout_check=KomgaDestination().layout_conflicts,  # L22: ADR-0052 at the binding
             ),
             ops_services,
         ),
@@ -466,6 +468,7 @@ def create_app(
         build_plans_router(plans),
         build_jobs_router(ops_services),  # EF-INT-001: the URL of a 202
         build_audit_router(ops_services),  # EF-EXP-036: the Kavita accounts of the children
+        build_komga_audit_router(ops_services),  # L22: the Komga accounts, on demand
         build_maintenance_router(ops_services),  # EF-INT-018, EF-INT-017: mode and queue control
         build_intents_router(ops_services),  # EF-INT-014: the open intents and their settlement
         build_revisions_router(ops_services),  # EF-BIB-043: the queue of pending revisions
