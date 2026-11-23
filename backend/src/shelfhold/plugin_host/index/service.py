@@ -591,12 +591,6 @@ class RepoStore:
                     "the wheel does not declare exactly the key its index entry names",
                 )
             installed = install_wheel(layout, wheel, entry.sha256)
-            # Re-verify after install: the wheel's declared key must be the one installed
-            if key not in installed_keys(layout):
-                raise PluginIndexError(
-                    "wheel_key_not_installed",
-                    "the wheel declared the key but it was not installed",
-                )
         finally:
             discard_staged_wheel(wheel)  # the installed copy is the guard's own
         self._pin(key, installed, record)

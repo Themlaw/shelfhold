@@ -23,6 +23,7 @@ or the host CLI) for the isolated one. A plugin runs in one mode at a time.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import importlib.machinery
 import importlib.util
@@ -363,8 +364,13 @@ def wheel_plugin_keys(wheel: Path) -> frozenset[str]:
         ):
             names = [e.name for e in archive.entries if not e.is_dir]
             return _entry_point_keys(names, lambda n: bytes(archive.read(n)))
-    except (UnsafeArchiveError, OSError, KeyError) as exc:
+    except (UnsafeArchiveError, OSError, KeyError, ValueError, TypeError) as exc:
+        # a malformed entry_points.txt is a refused wheel, not a crash
         raise PluginInstallError("bad_wheel", str(exc)) from exc
+
+
+def _read_in(read: Callable[[str], bytes], info: str, filename: str) -> bytes:
+    return read(f"{info}/{filename}")
 
 
 class _ArchivedDistribution(metadata.Distribution):
@@ -392,7 +398,7 @@ def _entry_point_keys(names: list[str], read: Callable[[str], bytes]) -> frozens
     for info in infos:
         # parsed by the very reader the loader uses (`dist.entry_points`), so no header or line a
         # hand-written parser would read otherwise can hide a key from this check
-        dist = _ArchivedDistribution(lambda f, info=info: read(f"{info}/{f}"))
+        dist = _ArchivedDistribution(functools.partial(_read_in, read, info))
         keys.update(ep.name for ep in dist.entry_points if ep.group == ENTRY_POINT_GROUP)
     return frozenset(keys)
 
