@@ -19,7 +19,6 @@
   let works = $state<WorkItemOut[]>([]);
   let requests = $state<RequestOut[]>([]);
   let resume = $state<ContinueItemOut[]>([]);
-  let kavitaUrl = $state<string | null>(null);
   let loaded = $state(false);
 
   async function load(): Promise<void> {
@@ -29,7 +28,6 @@
       readerContinue({ query: { limit: RESUME } })
     ]);
     resume = again.data?.items ?? [];
-    kavitaUrl = again.data?.kavita_url ?? null;
     works = recent.data?.items ?? [];
     requests = own.data?.items ?? [];
     loaded = true;
@@ -54,7 +52,7 @@
   {#if !loaded}
     <p>{t('home.loading')}</p>
   {:else}
-    <ContinueReading items={resume} {kavitaUrl} />
+    <ContinueReading items={resume} />
 
     <section class="recently-arrived" aria-labelledby="recent-title">
       <h2 id="recent-title">{t('home.recently_arrived')}</h2>

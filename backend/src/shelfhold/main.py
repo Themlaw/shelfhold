@@ -517,7 +517,6 @@ def create_app(
             lambda: ReaderSettings(engine),
             lambda: ContinueReading(engine, content_access()),  # M5 L14: « Reprendre la lecture »
             lambda: ReadMarks(engine, clock.now),  # M6 L18: undo a read mark
-            lambda: kavita_open_url_of(engine),
         ),
         build_opds_router(  # M4 L48: the e-reader's feed, behind a device token (ADR-0053)
             lambda: engine,

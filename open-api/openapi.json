@@ -2076,6 +2076,17 @@
             "title": "Number",
             "type": "string"
           },
+          "open_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Url"
+          },
           "state": {
             "enum": [
               "in_progress",
@@ -2085,10 +2096,6 @@
             "type": "string"
           },
           "target": {
-            "enum": [
-              "kept_copy",
-              "kavita"
-            ],
             "title": "Target",
             "type": "string"
           },
@@ -2126,7 +2133,8 @@
           "target",
           "approximate",
           "carrier_type",
-          "carrier_id"
+          "carrier_id",
+          "open_url"
         ],
         "title": "ContinueItemOut",
         "type": "object"
@@ -2140,21 +2148,17 @@
             "title": "Items",
             "type": "array"
           },
-          "kavita_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Kavita Url"
+          "open_urls": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Open Urls",
+            "type": "object"
           }
         },
         "required": [
           "items",
-          "kavita_url"
+          "open_urls"
         ],
         "title": "ContinueOut",
         "type": "object"

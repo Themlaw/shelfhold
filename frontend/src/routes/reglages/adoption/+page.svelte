@@ -107,7 +107,7 @@
   <title>{t('adoption.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('adoption.title')}</h1>
 
   {#if signedOut}
