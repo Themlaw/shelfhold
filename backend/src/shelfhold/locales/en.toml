@@ -1966,6 +1966,11 @@
     action = "Bind the shelf to a destination that writes its tree first (Kavita or a native folder), then bind Komga to that tree: a secondary destination that indexes it. Until M5, Komga receives no file of its own."
     cause = "The executor plans no write for a tree owned by Komga: a shelf whose primary destination is Komga would never receive its files."
 
+  [errors."binding.komga_layout_conflict"]
+    title = "This Komga would index the shelf's tree with a layout that does not match its files."
+    action = "Check in Komga the library that watches this folder (one series per folder, no other root inside it), then link the shelf again."
+    cause = "Komga makes one series per folder: files already written in the shelf's tree would be split or grouped there differently than in Shelfhold."
+
   [errors."target.folder_outside_root"]
     title = "This folder is not inside the folder of the destination."
     action = "Give a sub-folder of the folder the destination declares: a relative name, without “..”, that does not go through a link."
