@@ -87,3 +87,24 @@ def test_poc_l19_open_in_opens_the_server_the_account_is_on(world: World) -> Non
     got = world.admin.get(HOME).json()
     assert [(i["unit_id"], i["target"]) for i in got["items"]] == [(unit, "kavita")]
     assert got["open_urls"]["kavita"] == "https://kavita-deux.test"
+
+
+@pytest.mark.req("EF-LEC-008")
+def test_poc_l19_two_servers_of_one_kind_each_entry_opens_its_own(world: World) -> None:
+    """Contre-relecture : l'admin a un compte sur deux serveurs Kavita et lit une série sur
+    chacun. `open_urls` est indexé par type : la seconde entrée ne peut ouvrir que l'adresse de
+    la première. Chaque entrée doit pouvoir ouvrir le serveur où se trouve son propre compte."""
+    from tests.integration.test_schema_catalog import add_unit
+
+    handed = {}
+    for edition, url in (("ok", "https://kavita-un.test"), ("twelve", "https://kavita-deux.test")):
+        with write_transaction(world.seed.engine) as connection:
+            unit = str(add_unit(connection, world.seed.editions[edition], "500"))
+        item = sent(world, None, unit, readers=("admin",), edition=edition, url=url)
+        pulled(world, "admin", "export_item", item, done=False)
+        handed[unit] = url
+    got = world.admin.get(HOME).json()
+    assert sorted((i["unit_id"], i["target"]) for i in got["items"]) == sorted(
+        (unit, "kavita") for unit in handed
+    )
+    assert set(got["open_urls"].values()) == set(handed.values())  # each server can be opened
