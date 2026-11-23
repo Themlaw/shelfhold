@@ -35,6 +35,7 @@ jobs:
       e2e: ${{ steps.scope.outputs.e2e }}
       image: ${{ steps.scope.outputs.image }}
       image_build: ${{ steps.scope.outputs.image_build }}
+      sdk: ${{ steps.scope.outputs.sdk }}
       backend_shards: ${{ steps.shards.outputs.backend }}
       backend_shard_total: ${{ steps.shards.outputs.backend_total }}
       backend_integration_shards: ${{ steps.shards.outputs.backend_integration }}
@@ -137,6 +138,14 @@ jobs:
               - 'e2e/**'
               - '.github/workflows/image*'
               - '.github/workflows/ci.yml'
+            sdk:
+              - 'sdk/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'docs/plugins/gabarit/**'  # the dry run plays the kit on the author template
+              - 'examples/**'  # the example plugin of L10 (its suite runs the kit too)
+              - '.github/workflows/publish-sdk.yml'
+              - '.github/workflows/ci.yml'
       - id: scope
         env:
           EVENT: ${{ github.event_name }}
@@ -168,6 +177,7 @@ jobs:
             echo "e2e=$(any e2e)"
             echo "image=$(any image)"
             echo "image_build=$(any image compose)"
+            echo "sdk=$(any sdk)"
           } >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
 
@@ -824,6 +834,117 @@ jobs:
       - name: no diff, no uncommitted generated file
         run: python3 tools/client_drift.py
 
+  # The SDK dry run (M6 L03, ENF-SEC-007, D-P2): a pull request never publishes, it proves the
+  # distribution it would publish instead — wheel and sdist built, metadata checked without
+  # anything sent anywhere, the wheel imported where the host is absent, and the conformance
+  # kit of the published wheel played on the example plugins: the author template today, the
+  # example plugin of L10 the day it exists (convention: examples/<name>/ with its suite in
+  # tests/). The publication itself is publish-sdk.yml, trusted publishing, never this job.
+  sdk-dist:
+    name: sdk-dist (dry run, nothing published)
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Build the wheel and the sdist
+        run: uv build --project sdk --out-dir "$RUNNER_TEMP/dist"
+      - name: Check the metadata of what would be published, nothing is sent
+        working-directory: sdk
+        env:
+          DIST: ${{ runner.temp }}/dist
+        run: |
+          # The checks twine would make, with the standard library only: nothing is fetched
+          # to verify the distributions, and no upload happens in this workflow.
+          python3 - "$DIST" <<'PY'
+          import email.parser, email.policy, sys, tarfile, tomllib, zipfile
+          from pathlib import Path
+
+          out = Path(sys.argv[1])
+          wheels, sdists = sorted(out.glob("*.whl")), sorted(out.glob("*.tar.gz"))
+          assert len(wheels) == 1 and len(sdists) == 1, sorted(p.name for p in out.iterdir())
+          project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
+
+          def headers(data: bytes) -> email.message.Message:
+              return email.parser.BytesParser(policy=email.policy.default).parsebytes(data)
+
+          with zipfile.ZipFile(wheels[0]) as wheel:
+              meta = next(n for n in wheel.namelist() if n.endswith(".dist-info/METADATA"))
+              points = next(n for n in wheel.namelist() if n.endswith("entry_points.txt"))
+              wheel_meta, entry_points = headers(wheel.read(meta)), wheel.read(points).decode()
+          with tarfile.open(sdists[0]) as sdist:
+              pkg = next(n for n in sdist.getnames() if n.endswith("/PKG-INFO"))
+              sdist_meta = headers(sdist.extractfile(pkg).read())
+
+          for label, metadata in (("wheel", wheel_meta), ("sdist", sdist_meta)):
+              assert metadata["Name"] == project["name"], (label, "name")
+              assert metadata["Version"] == project["version"], (label, "version")
+              assert metadata["Summary"] == project["description"], (label, "summary")
+              assert metadata["License-Expression"] == project["license"], (label, "licence")
+              assert metadata["Requires-Python"].replace(" ", "") == project[
+                  "requires-python"
+              ].replace(" ", ""), (label, "requires-python")
+              version = tuple(int(part) for part in str(metadata["Metadata-Version"]).split("."))
+              assert version >= (2, 4), (label, "PEP 639 needs metadata 2.4")
+          # the conformance kit travels in the wheel (ENF-QUAL-003): it is a pytest entry point
+          assert "shelfhold_sdk.testing.pytest_plugin" in entry_points, entry_points
+          print(f"metadata checked: {wheels[0].name}, {sdists[0].name}")
+          PY
+      - name: Install the wheel where the host is absent, import it
+        env:
+          DIST: ${{ runner.temp }}/dist
+        run: |
+          # pytest comes from the lockfile of the repository (uv export --locked), never from a
+          # live resolution: the dry run plays the kit on the same pytest as the repository.
+          locked="$(uv export --project backend --locked --only-group dev --no-emit-project --no-header --no-hashes | grep -m1 '^pytest==')"
+          case "$locked" in
+            pytest==*) ;;
+            *) echo "::error::no locked pytest in the dev group of uv export"; exit 1 ;;
+          esac
+          uv venv "$RUNNER_TEMP/without-host" --python 3.13
+          uv pip install --python "$RUNNER_TEMP/without-host/bin/python" "$DIST"/*.whl "$locked"
+          "$RUNNER_TEMP/without-host/bin/python" - <<'PY'
+          import importlib.util
+          import shelfhold_sdk
+
+          assert importlib.util.find_spec("shelfhold") is None, "the wheel must not need the host"
+          from shelfhold_sdk.testing import pytest_plugin  # the kit is delivered by the wheel
+
+          print("kit delivered:", pytest_plugin.__name__)
+          PY
+      - name: Run the conformance kit on the example plugins, without the host
+        env:
+          WITHOUT_HOST: ${{ runner.temp }}/without-host
+        run: |
+          # The author template (docs/plugins/gabarit) ships the example source and the very
+          # test authors keep: its conformance suite plays the kit from the wheel. The example
+          # plugin of L10 will live in examples/<name>/ with its suite in tests/; until it
+          # exists there is nothing more to run (its lot wires it, this job is ready for it).
+          shopt -s nullglob
+          manifests=(examples/*/pyproject.toml)
+          shopt -u nullglob
+          "$WITHOUT_HOST/bin/pytest" docs/plugins/gabarit/tests
+          if [ ${#manifests[@]} -eq 0 ]; then
+            echo "::notice::no example plugin in examples/ yet (L10): the kit ran on the author template only"
+            exit 0
+          fi
+          for manifest in "${manifests[@]}"; do
+            plugin="$(dirname "$manifest")"
+            # an isolated plugin bundles its dependencies (ADR-0056): none is resolved here
+            uv pip install --python "$WITHOUT_HOST/bin/python" --no-deps "$plugin"
+            "$WITHOUT_HOST/bin/pytest" "$plugin/tests"
+          done
+
   # Image: two callers so that packages: write never reaches a pull_request run (including
   # branches of this repository). The reusable workflows narrow the token further.
   # On a pull request the image (amd64 only) is built only when something it contains changed.
@@ -960,7 +1081,7 @@ jobs:
 
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, e2e-reader, frontend-e2e, reader-bench, client-drift, image-pr, image-main, image-publish, scan]
+    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, e2e-reader, frontend-e2e, reader-bench, client-drift, sdk-dist, image-pr, image-main, image-publish, scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions: {}
@@ -1001,10 +1122,12 @@ jobs:
           FRONTEND_E2E: ${{ needs.frontend-e2e.result }}
           READER_BENCH: ${{ needs.reader-bench.result }}
           CLIENT_DRIFT: ${{ needs.client-drift.result }}
+          SDK_DIST: ${{ needs.sdk-dist.result }}
+          SDK_CHANGED: ${{ needs.changes.outputs.sdk }}
         run: |
           echo "dco=${DCO} conventional-title=${TITLE} traceability=${TRACEABILITY} (image changed=${IMAGE_CHANGED})"
           echo "changes=${CHANGES} lint=${LINT} denylist=${DENYLIST} fixtures=${FIXTURES} (changed=${FIXTURES_CHANGED}) image-pr=${IMAGE_PR} image-main=${IMAGE_MAIN} image-publish=${IMAGE_PUBLISH} scan=${SCAN} (informational)"
-          echo "backend-unit=${BACKEND_UNIT} (changed=${UNIT_CHANGED}) backend-integration=${BACKEND_INTEGRATION} (changed=${INTEGRATION_CHANGED}) backend-suites=${BACKEND_SUITES} (changed=${SUITES_CHANGED}) backend-bench=${BACKEND_BENCH} (changed=${BENCH_CHANGED}) coverage=${COVERAGE} (changed=${BACKEND_CHANGED}) frontend=${FRONTEND} (changed=${FRONTEND_CHANGED})"
+          echo "backend-unit=${BACKEND_UNIT} (changed=${UNIT_CHANGED}) backend-integration=${BACKEND_INTEGRATION} (changed=${INTEGRATION_CHANGED}) backend-suites=${BACKEND_SUITES} (changed=${SUITES_CHANGED}) backend-bench=${BACKEND_BENCH} (changed=${BENCH_CHANGED}) coverage=${COVERAGE} (changed=${BACKEND_CHANGED}) frontend=${FRONTEND} (changed=${FRONTEND_CHANGED}) sdk-dist=${SDK_DIST} (changed=${SDK_CHANGED})"
           echo "openapi=${OPENAPI} (changed=${OPENAPI_CHANGED}) e2e-front=${E2E} (changed=${E2E_CHANGED}) reader-bench=${READER_BENCH} (report only)"
           ok=1
           for r in "$CHANGES" "$LINT" "$DENYLIST" "$TRACEABILITY"; do
@@ -1026,6 +1149,7 @@ jobs:
           check_filtered "$COVERAGE" "$BACKEND_CHANGED"
           check_filtered "$FRONTEND" "$FRONTEND_CHANGED"
           check_filtered "$OPENAPI" "$OPENAPI_CHANGED"
+          check_filtered "$SDK_DIST" "$SDK_CHANGED"
           check_filtered "$E2E" "$E2E_CHANGED"
           check_filtered "$E2E_READER" "$E2E_CHANGED"
           check_filtered "$FRONTEND_E2E" "$E2E_CHANGED"

@@ -4,7 +4,7 @@ Two tables, created from the schema so the DDL stays identical to `metadata.crea
 (ENF-OPS-002). Nothing existing is touched; reversible. No repository is preconfigured: the
 tables start empty, and the admin pins one by its URL and the public key of its signer.
 
-Number: 0110 follows 0108 (the head of main when this lot was frozen; 0109 stays with the
+Number: 0110 follows 0114 (the head of main when this lot was frozen; 0109 stays with the
 1.2.x hotfix).
 """
 
@@ -13,7 +13,7 @@ from alembic import op
 from shelfhold.infrastructure.schema import acquisition
 
 revision = "0110"
-down_revision = "0108"
+down_revision = "0114"
 branch_labels = None
 depends_on = None
 

@@ -11,6 +11,10 @@ an age, which is the rating of the book (B2): applied at once when the Work exis
 the request and applied when the Work appears when it does not (a followed series is made by the
 next cycle). The decision is claimed in its own transaction before anything is asked of a source,
 so a replay or a second worker cannot follow twice; a failure puts the request back to pending.
+
+A child's request that came from an imported list lands its Work on that list's reading shelf
+when it arrives (M6 L21): only what she is shown, only her own shelf, or the line stays
+« arrivée, à classer ».
 """
 
 from __future__ import annotations
@@ -36,6 +40,8 @@ from shelfhold.acquisition.domain.request_target import (
     pick_edition,
 )
 from shelfhold.catalog.public import (
+    Collections,
+    CollectionViewer,
     RatingService,
     ceiling_of,
     fold_title,
@@ -737,7 +743,10 @@ class RequestService:
     def arrived(self, work_id: str) -> int:
         """A book of this Work was filed: the approved requests that asked for it are `arrived`,
         the age chosen at approval is applied to a Work nobody rated, and each requester hears of
-        it, in the view of the request (private, or household). A replay finds nothing to do."""
+        it, in the view of the request (private, or household). A child's request that came
+        from an imported list lands its Work on the reading shelf of that list, when her age and
+        the shelf still allow it (M6 L21); otherwise the line stays « arrivée, à classer ». A
+        replay finds nothing to do."""
         published: list[PublishedEvent] = []
         now = self._clock.now()
         with write_transaction(self._engine) as connection:
@@ -770,8 +779,33 @@ class RequestService:
                             visibility=row.visibility,
                         )
                     )
+                    self._land_on_reading_shelf(connection, work_id, row)
         self._bus.deliver(published)
         return len(published)
+
+    def _land_on_reading_shelf(self, connection: Connection, work_id: str, row: Any) -> None:
+        """M6 L21 (EF-USR-020): the reading shelf of a child's list gets the Work its line asked
+        for, the day it arrives. The line the request came from says which shelf was meant; what
+        she is shown and her own shelf decide whether it lands (the rule of the import); anything
+        else leaves the line « arrivée, à classer »: the request is arrived, the shelf is not
+        filled. An adult files their own shelf."""
+        item, batch = identity.request_list_item, identity.request_list_import
+        lines = connection.execute(
+            sa.select(item.c.position, batch.c.collection_id)
+            .select_from(item.join(batch, batch.c.id == item.c.import_id))
+            .where(item.c.request_id == row.id, batch.c.collection_id.is_not(None))
+        ).all()
+        if not lines:
+            return  # an ordinary request, or the shelf went with its deletion
+        if not needs_age(self._owner(connection, row.requester_user_id).role):
+            return
+        viewer = CollectionViewer(
+            row.requester_user_id, False, reader_scope(connection, row.requester_user_id)
+        )
+        for line in lines:  # the same book asked in two lists lands on both shelves
+            Collections.land_on_reading_shelf(
+                connection, viewer, str(line.collection_id), [(int(line.position), work_id)]
+            )
 
     def arrived_from_import(self, work_id: str) -> int:
         """A file of the import folder was filed as this Work (EF-USR-019): the requests put aside

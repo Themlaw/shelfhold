@@ -96,7 +96,7 @@
   <title>{t('admin.wizard.kavita.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('admin.wizard.title')}</h1>
   <WizardSteps current="kavita" />
   <h2>{t('admin.wizard.kavita.title')}</h2>

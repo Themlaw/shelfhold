@@ -52,6 +52,7 @@ from shelfhold.export.domain.reconcile import (
     Thresholds,
 )
 from shelfhold.export.targets.kavita import AdminKey, load_admin_key, store_admin_key
+from shelfhold.export.targets.komga import KomgaDestination
 from shelfhold.export.targets.komga.credentials import KomgaKey, load_komga_key, store_komga_key
 from shelfhold.headless import records
 from shelfhold.headless.actor import Actor
@@ -311,7 +312,11 @@ class HeadlessAdmin:
         self._resolve = resolve
         self._roots = roots
         self._linker = linker
-        self._shelves = ShelfService(engine, root_check=RootGuard().check_root)
+        self._shelves = ShelfService(
+            engine,
+            root_check=RootGuard().check_root,
+            layout_check=KomgaDestination().layout_conflicts,  # L22: ADR-0052 at the binding
+        )
         self._store = ChannelStore(vault, clock)
 
     def _wake(self) -> None:

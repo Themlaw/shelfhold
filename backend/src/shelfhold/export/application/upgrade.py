@@ -50,7 +50,7 @@ from shelfhold.export.application.intents import (
     OpenIntent,
     open_intent_paths,
 )
-from shelfhold.export.application.locks import ResourceLocks
+from shelfhold.export.application.locks import HeldLocks, ResourceLocks
 from shelfhold.export.application.mirror import ProvenanceMirror
 from shelfhold.export.application.rendering import CbzRenderer, comicinfo_xml
 from shelfhold.export.application.snapshot import (
@@ -506,12 +506,14 @@ class SamePathUpgrade:
         content_hash: str,
         source_hash: str,
         spine_count: int,
+        held: HeldLocks | None = None,
     ) -> UpgradeResult:
         """The tail of a volume (an EPUB of a range, EF-BIB-044) replaced at its path by the new
         file, which the caller has rendered: the same guards as a chapter (root frozen, a Unit a
         reader finished, an irreplaceable Unit, a file someone else rewrote), the same intent, bin
         and manifest. The caller holds the locks of the Work and the folder, as the export
-        pipeline does from its last look to its write: they are not taken twice. The length of
+        pipeline does from its last look to its write: they are not taken twice, and `held`
+        carries them to the mirror of the folder, which writes through them. The length of
         the new file is kept for the guard of the next replacement (L17)."""
         with self._engine.connect() as connection:
             served = _served(connection, destination_id, export_item_id)
@@ -543,8 +545,9 @@ class SamePathUpgrade:
             return UpgradeResult(UpgradeOutcome.SUSPECT_REVISION)
         new = _New(data, file_hash, content_hash, source_hash, None, spine_count)
         return self._replace_held(
-            served, new, reason="better_version", automatic=True, restores=None, read_guard=True
-        )
+            served, new, reason="better_version", automatic=True, restores=None,
+            read_guard=True, held=held,
+        )  # fmt: skip
 
     def upgrade_unit(
         self, unit_id: str, content_id: str, *, reason: str = "better_version"
@@ -679,12 +682,12 @@ class SamePathUpgrade:
         with self._locks.hold(
             job_id or new_ulid(), work=served.work_id,
             series=f"{served.ctx.destination_id}/{served.folder}", timeout=30.0,
-        ):  # fmt: skip
-            return self._replace_held(served, new, reason, automatic, restores, read_guard)
+        ) as held:  # fmt: skip
+            return self._replace_held(served, new, reason, automatic, restores, read_guard, held)
 
     def _replace_held(
         self, served: _Served, new: _New, reason: str, automatic: bool, restores: str | None,
-        read_guard: bool = False,
+        read_guard: bool = False, held: HeldLocks | None = None,
     ) -> UpgradeResult:  # fmt: skip
         target = served.target
         found = self._fsops.hash_and_identity(target)
@@ -722,7 +725,7 @@ class SamePathUpgrade:
         )  # fmt: skip
         if event is not None:
             self._bus.deliver([event])
-        self._after(served)
+        self._after(served, held)
         log.info("upgrade.done", unit_id=served.unit_id, reason=reason)
         return UpgradeResult(UpgradeOutcome.UPGRADED, upgrade_id)
 
@@ -732,11 +735,14 @@ class SamePathUpgrade:
         with write_transaction(self._engine) as connection:
             return _is_read(connection, served.unit_ids)
 
-    def _after(self, served: _Served) -> None:
+    def _after(self, served: _Served, held: HeldLocks | None = None) -> None:
         """The provenance mirror of the folder, then Kavita is asked to look at it again; the
-        file is placed and committed, so a failure here is healed by the next run."""
+        file is placed and committed, so a failure here is healed by the next run. The lock of
+        the folder is ours (`held`): the mirror writes through it, without waiting for it."""
         try:
-            self._mirror.sync_destination(served.ctx.destination_id, folder=served.folder)
+            self._mirror.sync_destination(
+                served.ctx.destination_id, folder=served.folder, held=held
+            )
         except Exception:
             log.warning("mirror_write_failed", destination=served.ctx.destination_id)
         if self._request_scan is not None:

@@ -39,6 +39,8 @@ from shelfhold.export.domain.path_map import PathMap, PathMode
 from shelfhold.export.domain.physical_roots import RECEIVED_DIR, RootState
 from shelfhold.export.targets.kavita.client import KavitaClient
 from shelfhold.export.targets.kavita.wiring import open_client
+from shelfhold.export.targets.komga.client import KomgaClient
+from shelfhold.export.targets.komga.wiring import open_client as open_komga_client
 from shelfhold.headless.urls import service_url_problem
 from shelfhold.infrastructure.clock import Clock, SystemClock
 from shelfhold.infrastructure.fetcher import GuardedFetcher, Network
@@ -541,6 +543,38 @@ class Composition:
         table = export.export_target
         with self.engine.connect() as connection:
             rows = connection.execute(sa.select(table.c.id, table.c.config).order_by(table.c.id))
+            return [r.id for r in rows if isinstance(r.config, dict) and r.config.get("url")]
+
+    # -- Komga ------------------------------------------------------------------------------
+
+    def komga_client(self, target_id: str) -> KomgaClient:
+        """The client of a Komga target: its sealed key, its write guard, through the wiring
+        every Komga client of the application is built by (a client built elsewhere would scan
+        through a pause)."""
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                sa.select(export.export_target.c.kind, export.export_target.c.config).where(
+                    export.export_target.c.id == target_id
+                )
+            ).one()
+            if row.kind != "komga":  # a Kavita or a folder is never run by the Komga client
+                raise KeyError(target_id)
+            url = str(row.config["url"])
+        return open_komga_client(
+            self.engine, self.vault(), self.network.integration_fetcher(url),
+            target_id=target_id, base_url=url, clock=self.clock,
+        )  # fmt: skip
+
+    def komga_targets(self) -> list[str]:
+        """The Komga targets with an address: the ones the daily audit and the scan relay
+        build a client for (a target without a sealed key is skipped by the caller)."""
+        table = export.export_target
+        with self.engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(table.c.id, table.c.config)
+                .where(table.c.kind == "komga")
+                .order_by(table.c.id)
+            )
             return [r.id for r in rows if isinstance(r.config, dict) and r.config.get("url")]
 
     # -- Suwayomi ----------------------------------------------------------------------------

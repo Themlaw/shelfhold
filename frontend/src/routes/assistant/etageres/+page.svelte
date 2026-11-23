@@ -86,7 +86,7 @@
   <title>{t('admin.wizard.etageres.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('admin.wizard.title')}</h1>
   <WizardSteps current="etageres" />
   <h2>{t('admin.wizard.etageres.title')}</h2>

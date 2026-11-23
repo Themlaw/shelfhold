@@ -43,6 +43,7 @@ from shelfhold.export.domain.bindings import (
     WRITING_TRANSPORTS,
     BindingFacts,
     Egress,
+    KomgaLayoutConflictError,
     KomgaPrimaryUnsupportedError,
     TargetKindTransportError,
     TreeOverlapError,
@@ -89,6 +90,16 @@ class Actor(Protocol):
     def auth_time(self) -> datetime | None: ...
 
 
+class LayoutConflictLike(Protocol):
+    """A file of a tree a destination would not read as the common render wrote it (the
+    `LayoutConflict` of the Komga adapter is one; the rule itself lives in the adapter)."""
+
+    @property
+    def rel_path(self) -> str: ...
+    @property
+    def reason(self) -> str: ...
+
+
 NATIVE_FOLDER = "native_folder"  # the kind of target of EF-EXP-010
 CWA = "cwa"  # the kind of target of EF-EXP-022: a drop box, bound only as `dropbox`
 KOBO = "kobo"  # the kind of target of EF-EXP-021: a folder a Kobo reads, bound only as `tree`
@@ -130,6 +141,7 @@ class ShelfService:
         rating: RatingService | None = None,
         root_check: Callable[[Connection, str], None] | None = None,
         on_audience_change: Callable[[], None] | None = None,
+        layout_check: Callable[[Sequence[str]], Sequence[LayoutConflictLike]] | None = None,
     ) -> None:
         # who a shelf is open to changed (ceiling, profiles): the relations that the new audience
         # forbids are withdrawn from Kavita now, not at the next export (M4 L19)
@@ -137,6 +149,10 @@ class ShelfService:
         # EF-EXP-010: the guard that a native folder root never meets the local source of Suwayomi
         # (`acquisition` owns it; the composition root hands it over, export never imports it)
         self._root_check = root_check
+        # EF-EXP-020 (ADR-0052): where the files of a tree would not be read by Komga as the
+        # common render writes them. The adapter describes the rule; the composition root hands
+        # it over (application never imports a target).
+        self._layout_check = layout_check
         self._engine = engine
         self._clock = clock or SystemClock()
         self._rating = rating or RatingService()
@@ -621,13 +637,9 @@ class ShelfService:
                 root_subpath=root_subpath,
                 ceiling=shelf.max_age_rating,
             )
+            remote_root = remote_root_of(row.path_map, root_subpath)
             if row.kind == "komga" and (
-                exposed := exposure_for(
-                    connection,
-                    target_id,
-                    remote_root_of(row.path_map, root_subpath),
-                    shelf.max_age_rating,
-                )
+                exposed := exposure_for(connection, target_id, remote_root, shelf.max_age_rating)
             ):  # whatever the shelf: the last audit saw a child reach this folder (#320 M6)
                 raise UnpartitionedDestinationError(
                     f"the last audit of this Komga saw a child account reach it ({exposed})",
@@ -637,7 +649,8 @@ class ShelfService:
                 shelf.max_age_rating,
                 partitioning,
                 reason=(
-                    audit_reason(connection, target_id)
+                    # the reason of the folder the link asks about, never another folder's
+                    audit_reason(connection, target_id, remote_root)
                     if row.kind == "komga" and partitioning not in PARTITIONED
                     else None
                 ),
@@ -655,6 +668,31 @@ class ShelfService:
                 raise KomgaPrimaryUnsupportedError(
                     "Komga is bound as a secondary destination only until M5: attach it to a tree"
                 )
+            if row.kind == KOMGA and attach_to_tree is not None and self._layout_check is not None:
+                # ADR-0052: Komga reads the folder as the series. A tree whose files the common
+                # render would not make it see that way is refused, never rewritten (files are
+                # frozen): the indexer is told of the conflict, not of a repair. The files are
+                # the records of the primary of the tree (its root id is no binding).
+                primary = fan_out.primary_of(connection, attach_to_tree)
+                rel_paths = (
+                    connection.execute(
+                        sa.select(export.export_record.c.rel_path).where(
+                            export.export_record.c.shelf_destination_id == primary,
+                            export.export_record.c.rel_path.is_not(None),
+                        )
+                    )
+                    .scalars()
+                    .all()
+                    if primary is not None
+                    else []
+                )
+                conflicts = self._layout_check(rel_paths)
+                if conflicts:
+                    raise KomgaLayoutConflictError(
+                        f"the tree holds {len(conflicts)} file(s) Komga would not read"
+                        f" as the render does ({conflicts[0].reason})",
+                        reason=conflicts[0].reason,
+                    )
             path_map = PathMap(
                 tuple(
                     PathEntry(e["local"], e["remote"], PathMode(e.get("mode", "rw")))

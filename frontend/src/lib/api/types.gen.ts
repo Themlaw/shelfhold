@@ -1240,13 +1240,17 @@ export type ContinueItemOut = {
      */
     number: string;
     /**
+     * Open Url
+     */
+    open_url: string | null;
+    /**
      * State
      */
     state: 'in_progress' | 'next';
     /**
      * Target
      */
-    target: 'kept_copy' | 'kavita';
+    target: string;
     /**
      * Title
      */
@@ -1274,9 +1278,11 @@ export type ContinueOut = {
      */
     items: Array<ContinueItemOut>;
     /**
-     * Kavita Url
+     * Open Urls
      */
-    kavita_url: string | null;
+    open_urls: {
+        [key: string]: string;
+    };
 };
 
 /**
@@ -1369,6 +1375,62 @@ export type DeletionPreviewIn = {
      * Unit Ids
      */
     unit_ids: Array<string>;
+};
+
+/**
+ * DeliveryList
+ */
+export type DeliveryList = {
+    /**
+     * Items
+     */
+    items: Array<DeliveryOut>;
+};
+
+/**
+ * DeliveryOut
+ *
+ * One delivery as the screen shows it (M6 L23b): the identity the receiver deduplicates on,
+ * the event, the version of its shape, the state, the attempts, the HTTP status of the last try
+ * and its closed code. Never the address, its path or the secret.
+ */
+export type DeliveryOut = {
+    /**
+     * Attempts
+     */
+    attempts: number;
+    /**
+     * Delivered At
+     */
+    delivered_at: string | null;
+    /**
+     * Event Id
+     */
+    event_id: number;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Last Error
+     */
+    last_error: string | null;
+    /**
+     * Last Status
+     */
+    last_status: number | null;
+    /**
+     * Next Try At
+     */
+    next_try_at: string;
+    /**
+     * Schema Version
+     */
+    schema_version: number;
+    /**
+     * Status
+     */
+    status: string;
 };
 
 /**
@@ -2751,6 +2813,46 @@ export type KeyringOut = {
      * Waived
      */
     waived: Array<string>;
+};
+
+/**
+ * KomgaAccountsAuditOut
+ */
+export type KomgaAccountsAuditOut = {
+    /**
+     * Targets
+     */
+    targets: Array<KomgaAuditOut>;
+};
+
+/**
+ * KomgaAuditOut
+ */
+export type KomgaAuditOut = {
+    /**
+     * Audited At
+     */
+    audited_at?: string | null;
+    /**
+     * Proved
+     */
+    proved?: number;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * Target Id
+     */
+    target_id: string;
+    /**
+     * Version
+     */
+    version?: string | null;
 };
 
 /**
@@ -9838,6 +9940,72 @@ export type AuditNowResponses = {
 };
 
 export type AuditNowResponse = AuditNowResponses[keyof AuditNowResponses];
+
+export type LastAudit2Data = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/audit/komga-accounts';
+};
+
+export type LastAudit2Errors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type LastAudit2Error = LastAudit2Errors[keyof LastAudit2Errors];
+
+export type LastAudit2Responses = {
+    /**
+     * Successful Response
+     */
+    200: KomgaAccountsAuditOut;
+};
+
+export type LastAudit2Response = LastAudit2Responses[keyof LastAudit2Responses];
+
+export type AuditNow2Data = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/audit/komga-accounts';
+};
+
+export type AuditNow2Errors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type AuditNow2Error = AuditNow2Errors[keyof AuditNow2Errors];
+
+export type AuditNow2Responses = {
+    /**
+     * Successful Response
+     */
+    200: KomgaAccountsAuditOut;
+};
+
+export type AuditNow2Response = AuditNow2Responses[keyof AuditNow2Responses];
 
 export type LoginData = {
     body: LoginRequest;
@@ -19339,6 +19507,82 @@ export type ReadWebhookResponses = {
 };
 
 export type ReadWebhookResponse = ReadWebhookResponses[keyof ReadWebhookResponses];
+
+export type ListDeliveriesData = {
+    body?: never;
+    path: {
+        /**
+         * Webhook Id
+         */
+        webhook_id: string;
+    };
+    query?: never;
+    url: '/api/v1/webhooks/{webhook_id}/deliveries';
+};
+
+export type ListDeliveriesErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListDeliveriesError = ListDeliveriesErrors[keyof ListDeliveriesErrors];
+
+export type ListDeliveriesResponses = {
+    /**
+     * Successful Response
+     */
+    200: DeliveryList;
+};
+
+export type ListDeliveriesResponse = ListDeliveriesResponses[keyof ListDeliveriesResponses];
+
+export type RotateWebhookData = {
+    body?: never;
+    path: {
+        /**
+         * Webhook Id
+         */
+        webhook_id: string;
+    };
+    query?: never;
+    url: '/api/v1/webhooks/{webhook_id}/rotate';
+};
+
+export type RotateWebhookErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RotateWebhookError = RotateWebhookErrors[keyof RotateWebhookErrors];
+
+export type RotateWebhookResponses = {
+    /**
+     * Successful Response
+     */
+    200: WebhookCreated;
+};
+
+export type RotateWebhookResponse = RotateWebhookResponses[keyof RotateWebhookResponses];
 
 export type ListWorksData = {
     body?: never;

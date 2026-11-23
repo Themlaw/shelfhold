@@ -17,6 +17,7 @@ from shelfhold.identity.public import AuditEntry, Principal, audit_actor, audit_
 from shelfhold.infrastructure.db import read_transaction, write_transaction
 from shelfhold.infrastructure.fetcher import FetchError, Resolver
 from shelfhold.infrastructure.secrets import SecretVault
+from shelfhold.integrations.webhooks.outbox import RECENT, Delivery, recent
 from shelfhold.integrations.webhooks.subscriptions import (
     Subscription,
     SubscriptionStore,
@@ -71,6 +72,13 @@ class WebhookAdmin:
         with read_transaction(self._engine) as connection:
             return SubscriptionStore(self._vault()).get(connection, subscription_id)
 
+    def deliveries(self, subscription_id: str, *, limit: int = RECENT) -> list[Delivery] | None:
+        """The last deliveries of one subscription (M6 L23b), for the screen: the rows of the
+        outbox, newest first, and None when the subscription is not there. The sealed document is
+        not opened — an address that cannot be read still shows what was sent to it."""
+        with read_transaction(self._engine) as connection:
+            return recent(connection, subscription_id, limit=limit)
+
     def delete(self, principal: Principal, subscription_id: str) -> bool:
         now = self._now()
         with write_transaction(self._engine) as connection:
@@ -78,6 +86,20 @@ class WebhookAdmin:
                 return False
             self._audit(connection, principal, "webhook.unsubscribe", subscription_id, now)
         return True
+
+    def rotate(self, principal: Principal, subscription_id: str) -> tuple[Subscription, str] | None:
+        """Turn the signing secret (M6 L23a): the previous one keeps signing for 24 h, the new one
+        is returned here and nowhere again. None when the subscription is not there; a sealed
+        document that cannot be opened is not rotated (`SubscriptionUnreadable`)."""
+        now = self._now()
+        with write_transaction(self._engine) as connection:
+            turned = SubscriptionStore(self._vault()).rotate(
+                connection, subscription_id, now=now
+            )  # fmt: skip
+            if turned is None:
+                return None
+            self._audit(connection, principal, "webhook.rotate", subscription_id, now)
+            return turned
 
     @staticmethod
     def _audit(

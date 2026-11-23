@@ -60,12 +60,15 @@ __all__ = [
     "ContentChangedError",
     "ContentKey",
     "ContentRefusedError",
+    "Elsewhere",
     "ExcerptUnavailableError",
     "FullReadNotAllowedError",
     "IssuedTicket",
     "NoReadableCopyError",
     "ResolvedCarrier",
     "ServedEntry",
+    "read_elsewhere",
+    "read_elsewhere_of_unit",
 ]
 
 _INFO = b"shelfhold/content-ticket/v1"
@@ -127,6 +130,91 @@ class ArchiveSource(Protocol):
         """The file to read for `scope`. For an excerpt the archive shows only the entries of the
         closed list the source computed (`names()` and `read()`), or `ExcerptUnavailableError`."""
         ...
+
+
+@dataclass(frozen=True)
+class Elsewhere:
+    """Where a content of the profile's is read: the destination that holds it — the kind of its
+    target, its address as written, and the target's id (two servers of one kind are two answers)
+    — the route words it, `web_address` decides what opens."""
+
+    kind: str
+    url: str | None
+    target_id: str
+
+
+def read_elsewhere(connection: sa.Connection, *, user_id: str, content_id: str) -> Elsewhere | None:
+    """Where a content is read (J5-S2): the first destination that holds it written — a live
+    export record, an account of the profile's own there, live and verified — or None when it is
+    read here only. The one query every surface that applies the rule asks (the reader, the
+    positions, KEPUB and « Reprendre »): the rule is written once, by `content_id` and verified
+    account, the strictest reading of it (ADR-0055 D-P1)."""
+    return _elsewhere(
+        connection, user_id=user_id, held=export.export_item.c.content_id == content_id
+    )
+
+
+def read_elsewhere_of_unit(
+    connection: sa.Connection, *, user_id: str, unit_id: str
+) -> Elsewhere | None:
+    """The same query, asked of a Unit through its coverage (J5-S2): an assembled volume is an
+    `export_item` with no content of its own (`assembly._complete` writes `content_id=None`) —
+    it is read elsewhere all the same, and « Reprendre » says so. The same account criterion,
+    the same order, one definition of the rule."""
+    coverage = export.unit_coverage
+    held = sa.and_(
+        coverage.c.unit_id == unit_id,
+        coverage.c.carrier_type == "export_item",
+        coverage.c.carrier_id == export.export_item.c.id,
+    )
+    return _elsewhere(connection, user_id=user_id, held=held, through=coverage)
+
+
+def _elsewhere(
+    connection: sa.Connection,
+    *,
+    user_id: str,
+    held: sa.ColumnElement[bool],
+    through: sa.FromClause | None = None,
+) -> Elsewhere | None:
+    """The one definition: the first destination (by kind, then id) that holds what `held` names
+    written, where the profile has a live, verified account of her own."""
+    record, item, account = (
+        export.export_record,
+        export.export_item,
+        identity.destination_account,
+    )
+    destination, target = export.shelf_destination, export.export_target
+    held_elsewhere = item.join(record, record.c.export_item_id == item.c.id)
+    if through is not None:  # what holds it is said by a coverage row, not by the item itself
+        held_elsewhere = through.join(
+            held_elsewhere,
+            sa.and_(
+                export.unit_coverage.c.carrier_type == "export_item",
+                export.unit_coverage.c.carrier_id == item.c.id,
+            ),
+        )
+    found = connection.execute(
+        sa.select(target.c.kind, target.c.config, target.c.id)
+        .select_from(
+            held_elsewhere.join(destination, destination.c.id == record.c.shelf_destination_id)
+            .join(target, target.c.id == destination.c.target_id)
+            .join(account, account.c.shelf_destination_id == destination.c.id)
+        )
+        .where(
+            held,
+            record.c.state.in_(sorted(LIVE_STATES)),
+            account.c.user_id == user_id,
+            account.c.revoked_at.is_(None),
+            account.c.verified_at.is_not(None),
+        )
+        .order_by(target.c.kind, destination.c.id)
+        .limit(1)
+    ).first()
+    if found is None:
+        return None
+    url = found.config.get("url") if isinstance(found.config, dict) else None
+    return Elsewhere(str(found.kind), url if isinstance(url, str) else None, str(found.id))
 
 
 class ContentKey:
@@ -361,33 +449,12 @@ class ContentAccess:
     def _full_allowed(
         connection: sa.Connection, user_id: str, carrier_type: str, content_id: str
     ) -> bool:
-        """ADR-0055 D-P1: the full reader is for the kept copy (a `content`) that is not exported
-        to a destination the profile reads (a live, verified account of her own there): that one is
-        read where it was sent. An `export_item` is that exported file: an excerpt only."""
+        """ADR-0055 D-P1: the full reader is for the kept copy (a `content`) that is not read where
+        it was sent; that one is read there. An `export_item` is that exported file, an excerpt
+        only — the query is not even asked of it: its answer could change nothing here."""
         if carrier_type != "content":
             return False
-        record, item, account = (
-            export.export_record,
-            export.export_item,
-            identity.destination_account,
-        )
-        readable_elsewhere = connection.execute(
-            sa.select(sa.literal(1))
-            .select_from(
-                item.join(record, record.c.export_item_id == item.c.id).join(
-                    account, account.c.shelf_destination_id == record.c.shelf_destination_id
-                )
-            )
-            .where(
-                item.c.content_id == content_id,
-                record.c.state.in_(sorted(LIVE_STATES)),
-                account.c.user_id == user_id,
-                account.c.revoked_at.is_(None),
-                account.c.verified_at.is_not(None),
-            )
-            .limit(1)
-        ).first()
-        return readable_elsewhere is None
+        return read_elsewhere(connection, user_id=user_id, content_id=content_id) is None
 
 
 def _digest(names: Collection[str]) -> str:

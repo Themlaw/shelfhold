@@ -98,7 +98,7 @@
   <title>{t('settings.title')}</title>
 </svelte:head>
 
-<main>
+<main class="form-screen">
   <h1>{t('settings.title')}</h1>
 
   {#if !adminOnly}
@@ -145,6 +145,8 @@
         <li><a href="/reglages/etageres">{t('shelves.title')}</a></li>
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
         <li><a href="/reglages/destinations">{t('destinations.title')}</a></li>
+        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+        <li><a href="/reglages/webhooks">{t('webhooks.title')}</a></li>
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
         <li><a href="/reglages/adoption">{t('settings.link.adoption')}</a></li>
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->

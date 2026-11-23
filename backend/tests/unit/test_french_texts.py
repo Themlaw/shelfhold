@@ -52,10 +52,11 @@ def test_error_catalog_codes_have_fr_texts() -> None:
 
 @pytest.mark.req("EF-UX-003")
 def test_error_texts_belong_to_a_declared_code() -> None:
-    """Both ways: no section of the catalog for a code nobody declares."""
+    """Both ways: no section of the catalog for a code nobody declares. The texts of a reason
+    (`errors.<code>.reasons.<reason>.*`, M6 L22) belong to their code."""
     declared = {spec.code for spec in all_error_codes()}
     in_catalog = {
-        key.removeprefix("errors.").rsplit(".", 1)[0]
+        key.removeprefix("errors.").rsplit(".", 1)[0].split(".reasons.", 1)[0]
         for key in load_catalog("fr")
         if key.startswith("errors.") and not key.startswith("errors.cause_default.")
     }

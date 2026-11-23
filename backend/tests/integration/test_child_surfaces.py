@@ -376,6 +376,8 @@ CLOSED = (
     "DELETE /api/v1/me/notification-destination",
     "GET /api/v1/audit/kavita-accounts",  # M3 L10: the audit of the Kavita accounts, the admin's
     "POST /api/v1/audit/kavita-accounts",
+    "GET /api/v1/audit/komga-accounts",  # L22: the Komga accounts, the admin's on demand
+    "POST /api/v1/audit/komga-accounts",
     "PUT /api/v1/profiles/{profile_id}/visibility",
     "POST /api/v1/reconcile/adopt-after-restore",
     "POST /api/v1/reconcile/forget-root",
@@ -440,6 +442,8 @@ CLOSED = (
     "POST /api/v1/webhooks",
     "GET /api/v1/webhooks/{webhook_id}",
     "DELETE /api/v1/webhooks/{webhook_id}",
+    "POST /api/v1/webhooks/{webhook_id}/rotate",  # M6 L23a: the secret's rotation, reserved
+    "GET /api/v1/webhooks/{webhook_id}/deliveries",  # M6 L23b: what the screen shows, the admin's
     "GET /metrics",  # M4 L25: a key of scope `metrics` alone
     "GET /api/v1/status",
     "POST /api/v1/store/reinit",

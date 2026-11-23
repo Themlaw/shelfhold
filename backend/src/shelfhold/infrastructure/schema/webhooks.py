@@ -41,6 +41,9 @@ webhook_subscription = sa.Table(
     # The last event this subscription has been given the chance to take, moved in the same
     # transaction as the rows it made.
     sa.Column("last_event_id", sa.Integer(), nullable=False),
+    # When the signing secret was last rotated (M6 L23a): for 24 h after it, a delivery carries
+    # two signatures. The previous secret itself stays in the sealed document, never a column.
+    sa.Column("rotated_at", UtcDateTime(), nullable=True),
     *sealed_secret_columns(),
     now_column(),
     ulid_check("id"),
