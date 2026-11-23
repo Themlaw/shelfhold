@@ -19730,6 +19730,102 @@ export type HealthzResponses = {
 
 export type HealthzResponse2 = HealthzResponses[keyof HealthzResponses];
 
+export type KoboAuthDeviceData = {
+    body?: never;
+    path: {
+        /**
+         * Token
+         */
+        token: string;
+    };
+    query?: never;
+    url: '/kobo/{token}/v1/auth/device';
+};
+
+export type KoboAuthDeviceErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type KoboAuthDeviceError = KoboAuthDeviceErrors[keyof KoboAuthDeviceErrors];
+
+export type KoboAuthDeviceResponses = {
+    /**
+     * Response Kobo Auth Device
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type KoboAuthDeviceResponse = KoboAuthDeviceResponses[keyof KoboAuthDeviceResponses];
+
+export type KoboInitializationData = {
+    body?: never;
+    path: {
+        /**
+         * Token
+         */
+        token: string;
+    };
+    query?: never;
+    url: '/kobo/{token}/v1/initialization';
+};
+
+export type KoboInitializationErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type KoboInitializationError = KoboInitializationErrors[keyof KoboInitializationErrors];
+
+export type KoboInitializationResponses = {
+    /**
+     * Response Kobo Initialization
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type KoboInitializationResponse = KoboInitializationResponses[keyof KoboInitializationResponses];
+
+export type KoboLibrarySyncData = {
+    body?: never;
+    path: {
+        /**
+         * Token
+         */
+        token: string;
+    };
+    query?: never;
+    url: '/kobo/{token}/v1/library/sync';
+};
+
+export type KoboLibrarySyncErrors = {
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type KoboLibrarySyncError = KoboLibrarySyncErrors[keyof KoboLibrarySyncErrors];
+
+export type KoboLibrarySyncResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type KosyncUpdateProgressData = {
     /**
      * ProgressBody

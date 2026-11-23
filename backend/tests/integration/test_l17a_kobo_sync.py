@@ -30,10 +30,10 @@ from fastapi.testclient import TestClient
 from structlog.testing import capture_logs
 
 from shelfhold.config import Settings
-from shelfhold.identity.adapters.kobo_token import kobo_path_token
+from shelfhold.identity.domain.device_secret import kobo_path_token
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.logging import redact_value, redact_url, route_of
+from shelfhold.infrastructure.logging import redact_url, redact_value, route_of
 from shelfhold.infrastructure.schema import catalog, export, identity, reading
 from shelfhold.reading.application.kobo_sync import entitlement_of
 from tests.auth_env import AuthEnv, auth_env
@@ -46,8 +46,9 @@ SYNC = "/v1/library/sync"
 INIT = "/v1/initialization"
 AUTH_DEVICE = "/v1/auth/device"
 RATED = datetime(2026, 11, 1, 10, 0, tzinfo=UTC)
-# the editions of the seed a child with a ceiling of 10 sees
+# the editions of the seed a child with a ceiling of 10 sees, and the Work each one carries
 KID_KEYS = ("ok", "ok_second", "adult_shelf", "mixed_rated")
+KID_WORKS = ("ok", "ok", "adult_shelf", "mixed")
 
 
 @dataclass
@@ -208,28 +209,37 @@ def tags_of(pages: list[Any], *lists: str) -> dict[str, dict[str, Any]]:
     return found
 
 
-def add_work(world: World, key: str, *, age: int = 6, shelf: str = "adult") -> str:
-    """A rated Work with one Edition on a shelf of the seed: a book a sync may carry."""
+def add_work(world: World, key: str, *, age: int = 6, shelf: str | None = None) -> str:
+    """A rated Work with one Edition, on a shelf of the seed or on none: a book a sync may
+    carry, filed or loose."""
     work_id, edition_id = new_ulid(), new_ulid()
     title = f"Tale of {key}"
     with world.seed.engine.connect() as connection:
-        kind = str(
-            connection.execute(sa.text("SELECT key FROM work_kind LIMIT 1")).scalar_one()
-        )
+        kind = str(connection.execute(sa.text("SELECT key FROM work_kind LIMIT 1")).scalar_one())
     world.write(
         sa.insert(catalog.work).values(
-            id=work_id, kind=kind, title=title, sort_title=title.lower(),
-            age_rating=age, rated_at=RATED,
-        )  # fmt: skip
+            id=work_id,
+            kind=kind,
+            title=title,
+            sort_title=title.lower(),
+            age_rating=age,
+            rated_at=RATED,
+        )
     )
     world.write(
         sa.insert(catalog.edition).values(
-            id=edition_id, work_id=work_id, lang="en", translation_type="official",
-            media="images", age_rating=age, rated_at=RATED, shelf_id=world.seed.shelves[shelf],
-        )  # fmt: skip
+            id=edition_id,
+            work_id=work_id,
+            lang="en",
+            translation_type="official",
+            media="images",
+            age_rating=age,
+            rated_at=RATED,
+            shelf_id=world.seed.shelves[shelf] if shelf else None,
+        )
     )
-    world.editions[key] = edition_id
-    world.works[key] = work_id
+    world.seed.editions[key] = edition_id
+    world.seed.works[key] = work_id
     return edition_id
 
 
@@ -242,10 +252,16 @@ def add_position(world: World, kobo: Kobo, edition_id: str, *, percent: float) -
     )
     world.write(
         sa.insert(reading.reading_position).values(
-            id=new_ulid(), user_id=world.user_id(kobo.name), carrier_type="export_item",
-            carrier_id=item_id, content_hash="sha256:" + "ab" * 32, locator={"page": 3},
-            percent=percent, client_ts=at, server_ts=at,
-        )  # fmt: skip
+            id=new_ulid(),
+            user_id=world.user_id(kobo.name),
+            carrier_type="export_item",
+            carrier_id=item_id,
+            content_hash="sha256:" + "ab" * 32,
+            locator={"page": 3},
+            percent=percent,
+            client_ts=at,
+            server_ts=at,
+        )
     )
 
 
@@ -277,6 +293,7 @@ def test_kobo_initialization_and_dummy_auth_device(world: World) -> None:
         assert stub.json() == {}
 
     # the credential is the path segment: nothing else opens the surface
+    assert world.env.login().status_code == 200  # the admin's own session, on this client
     key = auth_of(world.env).create_api_key(name="k", scope="admin").value
     basic = "Basic " + base64.b64encode(f"{mum.public_id}:{mum.secret}".encode()).decode()
     refusals = [
@@ -347,9 +364,11 @@ def test_kobo_library_sync_entitlements_tags_continuation_token(world: World) ->
     )
     pages, done = sync_all(mum, done_again)
     assert titles_of(books_of(pages, "NewEntitlements")) == ["Tale of arrived"]
-    assert [entry["BookMetadata"]["Title"] for entry in result_of(pages[0])["ChangedProductMetadata"]] == [  # fmt: skip
+    # every visible Edition of the retitled Work is announced (ok, ok_second, ok_reserved)
+    retitled_entries = result_of(pages[0])["ChangedProductMetadata"]
+    assert [entry["BookMetadata"]["Title"] for entry in retitled_entries] == [
         "Tale of Orchard, retitled"
-    ]
+    ] * 3
 
     # a book goes away: a DeletedEntitlement, its title nowhere in the answer
     world.write(sa.delete(catalog.edition).where(catalog.edition.c.id == arrived))
@@ -367,9 +386,10 @@ def test_kobo_library_sync_entitlements_tags_continuation_token(world: World) ->
     pages, done = sync_all(mum, done)
     changed_tags = tags_of(pages, "ChangedTagging")
     assert [tag["name"] for tag in changed_tags.values()] == ["Adults"]
-    assert entitlement_of(world.seed.editions["adult_shelf"]) not in next(
-        iter(changed_tags.values())
-    )["items"]
+    assert (
+        entitlement_of(world.seed.editions["adult_shelf"])
+        not in next(iter(changed_tags.values()))["items"]
+    )
 
     # a reading position of the profile reaches the device as a changed state
     add_position(world, mum, world.seed.editions["mixed_rated"], percent=0.42)
@@ -415,7 +435,7 @@ def test_kobo_per_device_token_in_path(world: World) -> None:
 def test_kobo_sync_respects_child_visibility(world: World) -> None:
     kid = world.kid
     pages, done = sync_all(kid)
-    assert titles_of(books_of(pages)) == sorted(world.seed.title_of(k) for k in KID_KEYS)
+    assert titles_of(books_of(pages)) == sorted(world.seed.title_of(k) for k in KID_WORKS)
     for page in pages:
         world.clean(page.text)
     # the shelf of the adults is not nameable to her, the family shelf is closed to her: no tag
@@ -437,14 +457,13 @@ def test_kobo_sync_respects_child_visibility(world: World) -> None:
 
     # the scope is re-verified at each page: a ceiling lowered mid-sync empties the next pages
     for index in range(30):
-        add_work(world, f"small{index}", age=8)  # under 10, above 7
+        # under 10, above 7, on the shelf of the adults (open to her, nameable to no child)
+        add_work(world, f"small{index}", age=8, shelf="adult")
     first = kid.get(SYNC)
     assert first.status_code == 200
     assert first.headers.get("x-kobo-sync") == "continue"
     world.write(
-        sa.update(identity.user)
-        .where(identity.user.c.username == "kid")
-        .values(max_age_rating=7)
+        sa.update(identity.user).where(identity.user.c.username == "kid").values(max_age_rating=7)
     )
     rest, _ = sync_all(kid, first.headers["x-kobo-synctoken"])
     for page in rest:

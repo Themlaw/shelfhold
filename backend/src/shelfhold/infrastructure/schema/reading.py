@@ -404,3 +404,32 @@ read_state_push_note = sa.Table(
     in_check("state", READ_PUSH_STATES),
     sa.Index("ix_read_state_push_note_binding", "source_binding_id"),
 )  # fmt: skip
+
+# What one device's last completed Kobo sync gave it (M6 L17a, EF-INT-012, D20): one row per
+# device, holding the entitlements it was given (`books`: the identifier the protocol speaks,
+# the Edition behind it, the title and the fingerprint of what may change) and the tags
+# (`tags`: the shelf's identifier, its name, the entitlements it held). The next sync diffs the
+# catalogue against this and the device hears only of what changed since it was last seen; the
+# scope is re-verified at each page, so the row is written only when a sync completes. It goes
+# with the device: retiring the device ends its sync state, and a rotation (a new secret on the
+# same device) keeps it.
+kobo_sync_point = sa.Table(
+    "kobo_sync_point",
+    metadata,
+    ulid_column("id", primary_key=True),
+    sa.Column(
+        "device_id",
+        sa.String(26),
+        sa.ForeignKey("device.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("synced_at", UtcDateTime(), nullable=False),
+    sa.Column("books", sa.JSON(), nullable=False, server_default="{}"),
+    sa.Column("tags", sa.JSON(), nullable=False, server_default="{}"),
+    now_column(),
+    ulid_check("id"),
+    ulid_check("device_id"),
+    json_shape_check("books", "object"),
+    json_shape_check("tags", "object"),
+    sa.UniqueConstraint("device_id"),
+)

@@ -33375,6 +33375,137 @@
         "summary": "Healthz"
       }
     },
+    "/kobo/{token}/v1/auth/device": {
+      "post": {
+        "description": "The activation the device asks for at each wake: accepted, nothing stored — the\ndevice is already paired, its credential is the path it asked on.",
+        "operationId": "kobo_auth_device",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Kobo Auth Device",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Auth Device",
+        "tags": [
+          "kobo"
+        ]
+      }
+    },
+    "/kobo/{token}/v1/initialization": {
+      "get": {
+        "description": "The resources of this server and of no other: the three routes of the sync, at the\naddress the device already holds, and the profile of the token.",
+        "operationId": "kobo_initialization",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Kobo Initialization",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Initialization",
+        "tags": [
+          "kobo"
+        ]
+      }
+    },
+    "/kobo/{token}/v1/library/sync": {
+      "get": {
+        "description": "One page of the sync of this device: the entitlements, the tags and the reading\nstates it is given, the token of the next page, and whether one follows.",
+        "operationId": "kobo_library_sync",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Library Sync",
+        "tags": [
+          "kobo"
+        ]
+      }
+    },
     "/kosync/syncs/progress": {
       "put": {
         "description": "Where the device is. The page arrives in text; a document the profile does not know,\nmay not see or whose chapter is gone is accepted and nothing is stored.",

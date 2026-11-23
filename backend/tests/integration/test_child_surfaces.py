@@ -34,7 +34,7 @@ from shelfhold.catalog.public import (
 from shelfhold.config import Settings
 from shelfhold.events.activity import ActivityEvent, Viewer
 from shelfhold.events.projection import project_event
-from shelfhold.identity.adapters.kobo_token import kobo_path_token
+from shelfhold.identity.domain.device_secret import kobo_path_token
 from shelfhold.identity.public import local_auth, reader_scope, scope_of
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform

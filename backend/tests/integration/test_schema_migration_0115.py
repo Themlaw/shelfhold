@@ -15,14 +15,15 @@ from alembic import command
 from alembic.script import ScriptDirectory
 
 from shelfhold.config import Settings
+from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.migrate import default_script_location, migrate
 from tests.integration.test_schema_migration_0002 import alembic_config, tables
 
 pytestmark = pytest.mark.req("ENF-OPS-002", "EF-INT-012")
 
 HEAD_BEFORE = "0114"
-USER = "01HZZZZZZZZZZZZZZZZZZZZZZ"
-DEVICE = "01HZZZZZZZZZZZZZZZZZZZZZA"
+USER = new_ulid()
+DEVICE = new_ulid()
 
 
 def _seed_device(database: str) -> None:
@@ -59,7 +60,7 @@ def test_the_table_is_created_and_the_way_back_drops_it(settings: Settings) -> N
         conn.execute(
             "INSERT INTO kobo_sync_point (id, device_id, synced_at, books, tags) "
             "VALUES (?, ?, '2026-11-23 09:00:00', '{}', '{}')",
-            ("01HZZZZZZZZZZZZZZZZZZZZZZB", DEVICE),
+            (new_ulid(), DEVICE),
         )
         assert conn.execute("SELECT count(*) FROM kobo_sync_point").fetchall() == [(1,)]
 

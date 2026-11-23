@@ -67,6 +67,7 @@ from shelfhold.identity.domain.credentials import (
     slid_expiry,
 )
 from shelfhold.identity.domain.device import (
+    KOBO_KIND,
     DeviceKindError,
     device_kind,
     device_name,
@@ -75,6 +76,7 @@ from shelfhold.identity.domain.device import (
 from shelfhold.identity.domain.device_secret import (
     PUBLIC_ID_LENGTH,
     key_digest,
+    kobo_path_credential,
     new_device_credential,
     secret_digest,
 )
@@ -1604,6 +1606,29 @@ class LocalAuth:
     ) -> Principal | None:
         found = self._device_authenticated(public_id, ip=ip, secret=secret, md5_key=md5_key)
         return found[0] if found is not None else None
+
+    def authenticate_kobo_token(self, segment: object, *, ip: str) -> Principal | None:
+        """The profile a Kobo sync address acts as, or None. The credential is the path segment
+        (`identity.domain.device_secret.kobo_path_credential`: both halves of a device credential
+        as one word), and
+        only a token whose device is of the kind `kobo` opens this door — a credential made for
+        another door answers like one that is not there, counted like a wrong guess. The check,
+        the counting and the reading of the subject at each request are those of the e-reader's
+        own door (`_device_authenticated`)."""
+        credential = kobo_path_credential(segment)
+        if credential is None:  # not shaped like a token: a guess with the wrong shape
+            self._device_failed(ip, self.now())
+            return None
+        public_id, secret = credential
+        found = self._device_authenticated(public_id, ip=ip, secret=secret, md5_key=None)
+        if found is None:
+            return None
+        _principal, record = found
+        device = self._store.device_by_id(record.device_id) if record.device_id else None
+        if device is None or device.device.kind != KOBO_KIND:
+            self._device_failed(ip, self.now())  # a valid credential, for another door
+            return None
+        return found[0]
 
     def _device_authenticated(
         self, public_id: str, *, ip: str, secret: str | None, md5_key: str | None
