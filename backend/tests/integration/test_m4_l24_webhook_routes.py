@@ -136,6 +136,7 @@ def test_every_webhook_route_is_declared_reserved_or_admin_only(api: AuthEnv) ->
         ("GET", f"{BASE}/{{webhook_id}}"),
         ("DELETE", f"{BASE}/{{webhook_id}}"),
         ("POST", f"{BASE}/{{webhook_id}}/rotate"),  # M6 L23a: the secret's rotation
+        ("GET", f"{BASE}/{{webhook_id}}/deliveries"),  # M6 L23b: the screen's last deliveries
     }  # fmt: skip
 
 
