@@ -142,6 +142,8 @@ jobs:
               - 'sdk/**'
               - 'pyproject.toml'
               - 'uv.lock'
+              - 'docs/plugins/gabarit/**'  # the dry run plays the kit on the author template
+              - 'examples/**'  # the example plugin of L10 (its suite runs the kit too)
               - '.github/workflows/publish-sdk.yml'
               - '.github/workflows/ci.yml'
       - id: scope
@@ -839,6 +841,7 @@ jobs:
   # example plugin of L10 the day it exists (convention: examples/<name>/ with its suite in
   # tests/). The publication itself is publish-sdk.yml, trusted publishing, never this job.
   sdk-dist:
+    name: sdk-dist (dry run, nothing published)
     needs: changes
     if: needs.changes.outputs.sdk == 'true'
     runs-on: ubuntu-24.04
@@ -901,8 +904,15 @@ jobs:
         env:
           DIST: ${{ runner.temp }}/dist
         run: |
+          # pytest comes from the lockfile of the repository (uv export --locked), never from a
+          # live resolution: the dry run plays the kit on the same pytest as the repository.
+          locked="$(uv export --project backend --locked --only-group dev --no-emit-project --no-header --no-hashes | grep -m1 '^pytest==')"
+          case "$locked" in
+            pytest==*) ;;
+            *) echo "::error::no locked pytest in the dev group of uv export"; exit 1 ;;
+          esac
           uv venv "$RUNNER_TEMP/without-host" --python 3.13
-          uv pip install --python "$RUNNER_TEMP/without-host/bin/python" "$DIST"/*.whl pytest
+          uv pip install --python "$RUNNER_TEMP/without-host/bin/python" "$DIST"/*.whl "$locked"
           "$RUNNER_TEMP/without-host/bin/python" - <<'PY'
           import importlib.util
           import shelfhold_sdk

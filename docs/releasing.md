@@ -90,13 +90,21 @@ d'auteur (`docs/plugins/gabarit`) — et sur le plugin d'exemple dès qu'il exis
    workflow `.github/workflows/publish-sdk.yml`, et l'environnement (`testpypi` pour TestPyPI, `pypi` pour PyPI).
    **Jamais de jeton d'API** : aucun `PYPI_API_TOKEN` à créer ni à stocker.
 3. **Environnements protégés** : dans les réglages du dépôt GitHub, créer les environnements `pypi` et `testpypi`,
-   relecteur exigé : le porteur (la publication attend son approbation).
-4. **Publication à l'essai** : lancer `publish-sdk.yml` par `workflow_dispatch` (onglet Actions) depuis le ref voulu :
+   relecteur exigé : le porteur (la publication attend son approbation). Dans l'environnement `pypi`, la **règle de
+   déploiement** (étiquettes autorisées) n'accepte que le motif `sdk-v*` : un lancement manuel depuis une branche, ou
+   une étiquette d'un autre motif, n'obtient jamais le jeton OIDC de PyPI — l'éditeur de confiance ne connaît que le
+   dépôt, le workflow et l'environnement, jamais le ref : seul l'environnement l'arrête. L'environnement `testpypi`
+   peut tout accepter : il ne publie que sur l'index d'essai.
+4. **Étiquettes protégées** : ajouter `refs/tags/sdk-v*` à la règle du dépôt qui protège les étiquettes
+   `refs/tags/v*` (ou créer une règle dédiée) : personne ne crée, ne déplace ni ne supprime une étiquette `sdk-v*`
+   sans revue — sans elle, l'étiquette qui déclenche la publication resterait libre à quiconque peut pousser.
+5. **Publication à l'essai** : lancer `publish-sdk.yml` par `workflow_dispatch` (onglet Actions) depuis le ref voulu :
    l'environnement `testpypi` publie sur TestPyPI. C'est le seul geste pour vérifier la chaîne avant PyPI.
-5. **Publication réelle** : pousser l'étiquette `sdk-vX.Y.Z` sur `main` — le nom doit être exactement celui de
-   `version` dans `sdk/pyproject.toml` (le job `build` le contrôle et refuse un tag qui ment) — l'environnement `pypi`
-   publie sur PyPI après relecture.
-6. **Un numéro publié ne se republie jamais** : relancer le workflow sur une étiquette déjà publiée échoue (PyPI le
+6. **Publication réelle** : pousser l'étiquette `sdk-vX.Y.Z` sur `main` — le nom doit être exactement celui de
+   `version` dans `sdk/pyproject.toml`, et le job `build` le contrôle deux fois : contre `sdk/pyproject.toml` avant
+   de construire, puis contre les fichiers réellement construits dans `dist/` (une roue et un sdist
+   `shelfhold_sdk-<version>`, rien d'autre) — l'environnement `pypi` publie sur PyPI après relecture.
+7. **Un numéro publié ne se republie jamais** : relancer le workflow sur une étiquette déjà publiée échoue (PyPI le
    refuse) ; un correctif sort sous un nouveau numéro, jamais en écrasant.
 
 Rappel de versions : la publication ne change pas celle de l'application (`v1.3.0` à M6, D24) ; le shim `api` 1 de

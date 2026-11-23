@@ -25,6 +25,7 @@ concurrency:
 
 jobs:
   build:
+    name: Build the distributions
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions: {}  # a build needs no token: the publish job holds the only id-token
@@ -36,16 +37,49 @@ jobs:
         with:
           version: "0.12.x"
           enable-cache: false  # a publish workflow reads no cache a pull request could have poisoned
-      - name: The tag names the version it publishes (a manual run checks nothing)
+      - name: The tag names the version of sdk/pyproject.toml (a manual run checks nothing)
         if: github.event_name == 'push'
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' sdk/pyproject.toml | head -n1)"
-          [[ "$TAG" =~ ^sdk-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::the tag must be sdk-vX.Y.Z, got ${TAG}"; exit 1; }
-          [ "$TAG" = "sdk-v${version}" ] || { echo "::error::${TAG} does not name the version ${version} of sdk/pyproject.toml"; exit 1; }
+          python3 - "$TAG" <<'PY'
+          import re, sys, tomllib
+          from pathlib import Path
+
+          tag = sys.argv[1]
+          assert re.fullmatch(r"sdk-v[0-9]+\.[0-9]+\.[0-9]+", tag), f"the tag must be sdk-vX.Y.Z, got {tag}"
+          project = tomllib.loads(Path("sdk/pyproject.toml").read_text(encoding="utf-8"))["project"]
+          assert tag == f"sdk-v{project['version']}", (
+              f"{tag} does not name the version {project['version']} of sdk/pyproject.toml"
+          )
+          PY
       - name: Build the wheel and the sdist
         run: uv build --project sdk --out-dir dist
+      - name: The distributions built in dist/ are the tag's version, nothing else
+        if: github.event_name == 'push'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 - "$TAG" <<'PY'
+          import email.parser, email.policy, re, sys, zipfile
+          from pathlib import Path
+
+          tag = sys.argv[1]
+          assert re.fullmatch(r"sdk-v[0-9]+\.[0-9]+\.[0-9]+", tag), tag
+          dist = sorted(p.name for p in Path("dist").iterdir())
+          wheels = [n for n in dist if n.endswith(".whl")]
+          sdists = [n for n in dist if n.endswith(".tar.gz")]
+          assert len(wheels) == 1 and len(sdists) == 1 and len(dist) == 2, dist
+          with zipfile.ZipFile(Path("dist") / wheels[0]) as built:
+              meta = next(n for n in built.namelist() if n.endswith(".dist-info/METADATA"))
+              headers = email.parser.BytesParser(policy=email.policy.default).parsebytes(
+                  built.read(meta)
+              )
+          version = str(headers["Version"])  # what was built, not what the tag declares
+          assert wheels[0] == f"shelfhold_sdk-{version}-py3-none-any.whl", wheels[0]
+          assert sdists[0] == f"shelfhold_sdk-{version}.tar.gz", sdists[0]
+          assert tag == f"sdk-v{version}", f"{tag} is not the version {version} that was built"
+          PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdk-distributions
@@ -54,6 +88,7 @@ jobs:
           retention-days: 1
 
   publish:
+    name: Publish to PyPI (trusted publishing)
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 10

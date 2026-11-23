@@ -20,7 +20,14 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github" / "workflows"
 PIN = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
-DISPATCH = "github.event_name == 'workflow_dispatch'"
+# a dispatch ternary routes a manual run to its first value, a tag run to the second
+TERNARY = re.compile(r"github\.event_name == 'workflow_dispatch' && '([^']*)' \|\| '([^']*)'")
+
+
+def _routes(expression: str) -> tuple[str, str] | None:
+    """(manual run, tag run) of the dispatch ternary, None when it is not one."""
+    found = TERNARY.search(str(expression))
+    return (found.group(1), found.group(2)) if found else None
 
 
 def _load(name: str) -> dict[str, Any]:
@@ -104,15 +111,14 @@ def test_publish_sdk_environment_protected_and_tag_bound() -> None:
     assert "pull_request" not in triggers and "pull_request_target" not in triggers
     publish = workflow["jobs"]["publish"]
     # behind the protected environment: `pypi` when the tag triggered the run, `testpypi` when
-    # the holder runs the workflow by hand (the holder reviews the deployment either way)
-    environment = publish.get("environment")
-    if isinstance(environment, dict):
-        environment = environment.get("name")
-    environment = str(environment or "")
-    for needle in (DISPATCH, "'testpypi'", "'pypi'"):
-        assert needle in environment, needle
-    url = str(_pypa_step(publish)["with"].get("repository-url", ""))
-    assert DISPATCH in url and "test.pypi.org/legacy" in url and "upload.pypi.org/legacy" in url
+    # the holder runs the workflow by hand. Both routes are compared exactly: a swapped
+    # aiguillage would publish a manual run, from any ref, on the real index.
+    assert isinstance(publish["environment"], dict)  # the map form carries the deployment card
+    assert _routes(str(publish["environment"]["name"])) == ("testpypi", "pypi")
+    assert _routes(str(_pypa_step(publish)["with"]["repository-url"])) == (
+        "https://test.pypi.org/legacy/",
+        "https://upload.pypi.org/legacy/",
+    )
     # the tag is validated against the version it builds, before anything is published
     build_text = _text(workflow["jobs"]["build"])
     assert "sdk-v[0-9]" in build_text and "sdk/pyproject.toml" in build_text
@@ -135,7 +141,14 @@ def test_sdk_dist_dry_run_runs_on_pull_requests() -> None:
         "filters"
     ]
     paths = yaml.safe_load(filters)["sdk"]
-    for pattern in ("sdk/**", "pyproject.toml", "uv.lock", ".github/workflows/publish-sdk.yml"):
+    for pattern in (
+        "sdk/**",
+        "pyproject.toml",
+        "uv.lock",
+        "docs/plugins/gabarit/**",
+        "examples/**",
+        ".github/workflows/publish-sdk.yml",
+    ):
         assert pattern in paths, pattern
     scope = next(s for s in ci["jobs"]["changes"]["steps"] if s.get("id") == "scope")["run"]
     assert re.search(r'^\s*echo "sdk=\$\(any sdk\)"$', scope, re.M)
@@ -153,6 +166,8 @@ def test_sdk_dist_dry_run_runs_on_pull_requests() -> None:
     assert "uv build --project sdk" in runs
     assert "METADATA" in runs and "PKG-INFO" in runs  # metadata read from the built files
     assert "uv venv" in runs and 'find_spec("shelfhold") is None' in runs
+    # pytest is taken from the lockfile, never from a live resolution
+    assert "uv export --project backend --locked" in runs and "^pytest==" in runs
     # the kit of the published wheel is played on the example plugins, without the host
     assert "docs/plugins/gabarit/tests" in runs
     assert "examples" in runs and "pytest" in runs
@@ -173,6 +188,9 @@ def test_publish_sdk_holder_steps_are_documented() -> None:
     assert "éditeur de confiance" in section
     assert "environnements protégés" in section
     assert "aucun jeton" in section
+    # the environment and the tags are bound: a manual run or a branch never reaches PyPI
+    assert "déploiement" in section.lower() and "sdk-v*" in section
+    assert "refs/tags/sdk-v*" in section
     # a published number is never republished
     assert "ne se republie jamais" in section
     # without the holder's action, ENF-SEC-007 stays partial for the milestone
@@ -210,14 +228,30 @@ def _publish_problems(workflow: dict[str, Any]) -> list[str]:
         problems.append("a username or password is passed: not trusted publishing")
     if "environment" not in publish:
         problems.append("the publish job runs outside any protected environment")
+    # both routes are compared exactly: a swapped aiguillage would publish a manual run,
+    # from any ref, on the real index
+    environment = publish.get("environment")
+    if isinstance(environment, dict):
+        environment = environment.get("name")
+    if _routes(str(environment or "")) != ("testpypi", "pypi"):
+        problems.append("the environment does not route a manual run to testpypi and a tag to pypi")
+    if _routes(str(inputs.get("repository-url", ""))) != (
+        "https://test.pypi.org/legacy/",
+        "https://upload.pypi.org/legacy/",
+    ):
+        problems.append("the endpoint does not route a manual run to TestPyPI and a tag to PyPI")
     triggers = _on(workflow)
     if triggers.get("push", {}).get("tags") != ["sdk-v*"]:
         problems.append(f"not bound to the sdk-v* tags: {triggers.get('push')}")
     if "pull_request" in triggers or "pull_request_target" in triggers:
         problems.append("a pull request can trigger the publication")
     build = jobs.get("build") or {}
-    if "sdk-v[0-9]" not in _text(build) or "sdk/pyproject.toml" not in _text(build):
+    if "sdk-v" not in _text(build) or "pyproject.toml" not in _text(build):
         problems.append("the tag is no longer checked against the version it builds")
+    steps = [str(s.get("name", "")) + str(s.get("run", "")) for s in build.get("steps", [])]
+    after_build = steps[next((i for i, s in enumerate(steps) if "uv build" in s), 0) + 1 :]
+    if not any("TAG" in s and ("dist/" in s or ".whl" in s) for s in after_build):
+        problems.append("the tag is never checked against the built distributions")
     return problems
 
 
@@ -297,6 +331,35 @@ def test_publish_sdk_mutations_are_caught() -> None:
         ]
 
     assert any("checked against the version" in p for p in run(no_tag_check))
+
+    def no_built_check(w: dict[str, Any]) -> None:
+        steps = w["jobs"]["build"]["steps"]
+        built_at = next(i for i, s in enumerate(steps) if "uv build" in str(s.get("run", "")))
+        w["jobs"]["build"]["steps"] = [
+            s for i, s in enumerate(steps) if i <= built_at or "TAG" not in str(s.get("run", ""))
+        ]
+
+    assert any("built distributions" in p for p in run(no_built_check))
+
+    def swapped_routes(w: dict[str, Any]) -> None:
+        # the adverse review's proof: an inverted aiguillage routes a manual run to the real
+        # index — presence of both strings is not enough, the routes are compared
+        publish = w["jobs"]["publish"]
+
+        def swap(expression: str, first: str, second: str) -> str:
+            return expression.replace(first, "\0").replace(second, first).replace("\0", second)
+
+        publish["environment"]["name"] = swap(
+            str(publish["environment"]["name"]), "'testpypi'", "'pypi'"
+        )
+        step = _pypa_step(publish)
+        step["with"]["repository-url"] = swap(
+            str(step["with"]["repository-url"]),
+            "https://test.pypi.org/legacy/",
+            "https://upload.pypi.org/legacy/",
+        )
+
+    assert any("manual run" in p for p in run(swapped_routes))
 
 
 @pytest.mark.req("ENF-SEC-007")
