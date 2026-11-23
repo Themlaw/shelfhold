@@ -145,11 +145,13 @@ _OTHER: Mapping[str, str] = MappingProxyType(
         # System emitters (closed list): `system_*` calls name theirs as a literal.
         f"{_FSOPS}/facade.py::Fsops.boot": "staging_orphan_cleanup",
         f"{_FSOPS}/writer.py::_discard": "staging_orphan_cleanup",  # a failed write's staged file
-        # `purge --now` (L34): the service, and the one helper that erases under /data
+        # `purge --now` (L34): the service, and the helpers that erase under /data
         "shelfhold/export/application/purge.py::PurgeService.purge_unit": "purge.now",
         "shelfhold/export/application/purge.py::PurgeService.purge_work": "purge.now",
         "shelfhold/infrastructure/volumes.py::erase_data_path": "purge.now",
         "shelfhold/infrastructure/volumes.py::_remove_tree_at": "purge.now",
+        # the sweep of the derived caches (M6 L12): its eraser of one file under /data
+        "shelfhold/library/application/cache_quotas.py::_unlink": "cache_retention_purge",
         # Removing a destination (L30, EF-EXP-031): "tout retirer" unlinks the files Shelfhold wrote
         # there, one journaled intention each, after the reserved action `destination.remove_all`
         # (fresh session or host CLI, never a key) and the typed phrase.

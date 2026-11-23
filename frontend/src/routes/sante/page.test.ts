@@ -48,7 +48,7 @@ const page = (over: Record<string, unknown> = {}) => ({
     { kind: 'thumbnails', entries: 12, used_bytes: 1000, quota_bytes: 2000, over: false },
     { kind: 'renditions', entries: 3, used_bytes: 5000, quota_bytes: 4000, over: true },
     { kind: 'http', entries: 7, used_bytes: null, quota_bytes: 3000, over: false },
-    { kind: 'metadata', entries: 100, used_bytes: null, quota_bytes: null, quota_entries: 4096, over: false }
+    { kind: 'metadata', entries: 100, used_bytes: 2000, quota_bytes: 268435456, quota_entries: 4096, over: false }
   ],
   ...over
 });
@@ -132,7 +132,7 @@ describe('Health page', () => {
     expect(within(region).getByText(/12 entrées, 1.?000 octets sur un quota de 2.?000/)).toBeInTheDocument();
     expect(within(region).getByText(/3 entrées, 5.?000 octets sur un quota de 4.?000/)).toBeInTheDocument();
     expect(within(region).getByText(/7 entrées \(quota : 3.?000 octets\)/)).toBeInTheDocument();
-    expect(within(region).getByText(/100 réponses sur un quota de 4.?096/)).toBeInTheDocument();
+    expect(within(region).getByText(/100 entrées, 2.?000 octets sur un quota de 268.?435.?456/)).toBeInTheDocument();
     expect(within(region).getAllByText(/quota dépassé/)).toHaveLength(1);
   });
 

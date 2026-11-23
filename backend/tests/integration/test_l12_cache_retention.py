@@ -169,13 +169,14 @@ def add_metadata(
 
 def policy(**over: int) -> CachePolicy:
     values: dict[str, int] = {
-        "thumbnails_quota_bytes": 256 * MIB,
-        "thumbnails_retention_days": 180,
-        "renditions_quota_bytes": 1024 * MIB,
+        "thumbnails_quota_bytes": 2 * 1024**3,
+        "thumbnails_retention_days": 90,
+        "renditions_quota_bytes": 5 * 1024**3,
         "renditions_retention_days": 90,
-        "http_quota_bytes": 64 * MIB,
-        "http_retention_days": 30,
+        "http_quota_bytes": 512 * 1024**2,
+        "http_retention_days": 90,
         "metadata_rows": 4096,
+        "metadata_quota_bytes": 256 * 1024**2,
     }
     values.update(over)
     return CachePolicy(**values)
@@ -457,10 +458,12 @@ def test_cache_state_in_status_and_health(engine: Engine, data: Path) -> None:
     }  # fmt: skip
     assert state["renditions"]["used_bytes"] == 4096 and state["renditions"]["over"] is True
     assert state["http"]["entries"] == 1
-    assert state["metadata"] == {
-        "kind": "metadata", "entries": 2, "used_bytes": None, "quota_bytes": None,
-        "quota_entries": 1, "over": True,
-    }  # fmt: skip
+    metadata = state["metadata"]
+    assert metadata["kind"] == "metadata" and metadata["entries"] == 2
+    assert metadata["quota_entries"] == 1  # the inner bound, in rows
+    assert metadata["quota_bytes"] == 256 * 1024 * 1024  # the D17 bound, in bytes of payloads
+    assert isinstance(metadata["used_bytes"], int) and metadata["used_bytes"] > 0
+    assert metadata["over"] is True  # two rows, a quota of one
 
     services = OpsServices(
         engine, clock=ManualClock(NOW), bus=EventBus(ManualClock(NOW)), cache_policy=limits
@@ -479,3 +482,34 @@ def test_cache_state_in_status_and_health(engine: Engine, data: Path) -> None:
     ]  # fmt: skip
     with engine.connect() as connection:  # the page shows the state under the settings' own policy
         assert page["caches"] == cache_state(connection, CachePolicy.from_settings(settings))
+
+
+@pytest.mark.req("EF-BIB-018")
+def test_the_d17_defaults_of_an_unconfigured_instance() -> None:
+    """The D17 bounds of an instance nobody configured: two GiB of thumbnails, five of renditions
+    (a KEPUB is one), 512 MiB of HTTP bodies, 256 MiB of metadata payloads, and ninety days
+    without an access everywhere."""
+    policy = CachePolicy.from_settings(Settings(data_dir=Path("/data")))
+    assert policy.thumbnails_quota_bytes == 2 * 1024**3
+    assert policy.renditions_quota_bytes == 5 * 1024**3
+    assert policy.http_quota_bytes == 512 * 1024**2
+    assert policy.metadata_quota_bytes == 256 * 1024**2
+    assert (
+        policy.thumbnails_retention_days,
+        policy.renditions_retention_days,
+        policy.http_retention_days,
+    ) == (90, 90, 90)
+
+
+@pytest.mark.req("EF-BIB-018")
+def test_the_low_disk_guard_passes_before_the_quotas(engine: Engine, data: Path) -> None:
+    """While the guard of M3 says the volume of /data is under its free-space mark, the sweep
+    evicts what the quotas would have kept, until the volume is back above (D17)."""
+    rendition = add_rendition(engine, data, "K", age_days=1, size=100)
+    purge_caches(engine, data, ManualClock(NOW), policy(renditions_quota_bytes=4096))
+    assert (data / rendition.rel).exists()  # under its quota: the sweep leaves it
+
+    purge_caches(
+        engine, data, ManualClock(NOW), policy(renditions_quota_bytes=4096), pressure=lambda: True
+    )
+    assert not (data / rendition.rel).exists()  # the disk is low: the guard passes first

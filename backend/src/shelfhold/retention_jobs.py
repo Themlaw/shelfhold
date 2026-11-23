@@ -96,13 +96,18 @@ def early_purge_trash(comp: Composition) -> ReclaimReport:
 
 def sweep_caches(comp: Composition) -> CacheSweep:
     """One pass of the quotas and the retention over the derived caches (EF-BIB-018): what an
-    in-flight `/content` ticket is serving is pinned and stays."""
+    in-flight request is serving is pinned and stays — the sweep asks the pin again under its
+    lock at every file it unlinks, so a request that began since the pass started is honoured
+    all the same. The low-disk guard of M3 passes before the quotas: while the volume of `/data`
+    is under its free-space mark, the sweep evicts until it is back above."""
+    gate = comp.gates.disk_pressure
     return purge_caches(
         comp.engine,
         comp.settings.data_dir,
         comp.clock,
         CachePolicy.from_settings(comp.settings),
         pinned=RenditionService.pinned(),
+        pressure=None if gate is None else (lambda: gate(str(comp.settings.data_dir))),
     )
 
 

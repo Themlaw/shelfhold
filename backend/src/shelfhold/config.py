@@ -200,17 +200,21 @@ class Settings(BaseModel):
     retention_events_days: int = Field(default=90, ge=7, le=3650)
     retention_audit_days: int = Field(default=365, ge=90, le=3650)
     # EF-BIB-018 (D17): the quotas and the retention of the derived caches, swept daily by the
-    # `retention.caches` job, LRU by last access. The thumbnails and the renditions (a KEPUB is a
-    # kind of rendition) are bounded in bytes; the answers of the metadata providers in rows; the
-    # HTTP cache in bytes. Everything in a cache is made again on demand: nothing irreplaceable
-    # lives in one, and the sweep never touches anything but the paths the host created.
-    cache_thumbnails_quota_mib: int = Field(default=256, ge=8, le=65536)
-    cache_thumbnails_retention_days: int = Field(default=180, ge=7, le=3650)
-    cache_renditions_quota_mib: int = Field(default=1024, ge=8, le=65536)
+    # `retention.caches` job, LRU by last access. The D17 bounds: the thumbnails, the renditions
+    # (a KEPUB is a kind of rendition) and the HTTP cache in bytes, the answers of the metadata
+    # providers in bytes of payloads with an inner bound in rows, the in-memory cache of one
+    # source plugin in bytes too. Ninety days without an access everywhere. Everything in a
+    # cache is made again on demand: nothing irreplaceable lives in one, and the sweep never
+    # touches anything but the paths the host created.
+    cache_thumbnails_quota_mib: int = Field(default=2048, ge=8, le=65536)
+    cache_thumbnails_retention_days: int = Field(default=90, ge=7, le=3650)
+    cache_renditions_quota_mib: int = Field(default=5120, ge=8, le=65536)
     cache_renditions_retention_days: int = Field(default=90, ge=1, le=3650)
-    cache_http_quota_mib: int = Field(default=64, ge=1, le=65536)
-    cache_http_retention_days: int = Field(default=30, ge=1, le=3650)
+    cache_http_quota_mib: int = Field(default=512, ge=1, le=65536)
+    cache_http_retention_days: int = Field(default=90, ge=1, le=3650)
     cache_metadata_rows: int = Field(default=4096, ge=16, le=1_000_000)
+    cache_metadata_quota_mib: int = Field(default=256, ge=1, le=65536)
+    cache_plugin_quota_mib: int = Field(default=256, ge=1, le=65536)
     # M3 L12: how many event streams (SSE) one profile may hold open at once, across its sessions
     # and keys. Each stream holds a subscription and a read on every event; beyond the cap a new
     # one is refused (429) until another closes.

@@ -93,7 +93,7 @@ class CacheEntry:
 class HttpCache:
     max_entries: int = 256
     max_entry_bytes: int = 2 * 1024 * 1024
-    max_total_bytes: int = 32 * 1024 * 1024
+    max_total_bytes: int = 256 * 1024 * 1024  # D17: the cache of one plugin, bounded
     clock: Callable[[], float] = time.time
     _entries: OrderedDict[tuple[str, str], list[CacheEntry]] = field(default_factory=OrderedDict)
     _total: int = 0
@@ -199,9 +199,16 @@ def _freshness(headers: Mapping[str, str], now: float) -> float:
     return 0.0
 
 
-def cache_for(source: str, enabled: bool, off_sources: Collection[str]) -> HttpCache | None:
+def cache_for(
+    source: str,
+    enabled: bool,
+    off_sources: Collection[str],
+    *,
+    quota_bytes: int = 256 * 1024 * 1024,
+) -> HttpCache | None:
     """The cache of one source's Fetcher, or None when the cache is off for it (config
-    `fetcher_cache`, `fetcher_cache_off_sources`)."""
+    `fetcher_cache`, `fetcher_cache_off_sources`). Bounded by `quota_bytes` (D17, the setting
+    `cache_plugin_quota_mib`)."""
     if not enabled or source in off_sources:
         return None
-    return HttpCache()
+    return HttpCache(max_total_bytes=quota_bytes)
