@@ -251,6 +251,66 @@ def _reinstall_kept(layout: Layout, key: str, dist: str, version: str, sha256: s
         discard_staged_wheel(staged)
 
 
+def _next(path: Path) -> Path:
+    """The staged name of a kept wheel, beside it: the rename onto it is the only step after
+    the committed line."""
+    return path.with_name(f"{path.name}.next")
+
+
+def _stage_copies(layout: Layout, key: str, copies: tuple[tuple[Path, Path], ...]) -> None:
+    try:
+        for source, staged in copies:
+            keep_wheel(layout, key, source, dest=staged)
+    except OSError as exc:
+        raise PluginLifecycleError(
+            "kept_unwritable", f"the kept wheels cannot be written: {exc}"
+        ) from exc
+
+
+def _settle(renames: tuple[tuple[Path, Path], ...]) -> None:
+    for staged, final in renames:
+        with contextlib.suppress(OSError):
+            final.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            staged.replace(final)
+
+
+def _drop(*paths: Path) -> None:
+    for path in paths:
+        with contextlib.suppress(OSError):
+            path.unlink(missing_ok=True)
+
+
+def _grant_of(layout: Layout, dist: str) -> tuple[Any, Any]:
+    """The plugin's activation (the in-process confirmation, the isolated grant), read before
+    the files move: a restored version is the same code, its activation comes back with it."""
+    state = guard.read_state(layout)
+    return state.confirmed.get(dist), state.enabled.get(dist)
+
+
+def _restore(
+    layout: Layout, key: str, dist: str, version: str, sha256: str, grant: tuple[Any, Any]
+) -> None:
+    """Undo a failed act: the version that was installed goes back from its kept wheel, with
+    its activation when the files are the same ones byte for byte. If even the reinstall
+    fails, the refusal says what happened and the kept wheel is still there."""
+    with contextlib.suppress(guard.PluginInstallError):
+        remove_plugin(layout, dist)
+    try:
+        _reinstall_kept(layout, key, dist, version, sha256)
+    except (guard.PluginInstallError, OSError):
+        return
+    state = guard.read_state(layout)
+    back = state.installed.get(dist)
+    confirmed, enabled = grant
+    if back is None:
+        return
+    if confirmed is not None and confirmed.digest == back.digest:
+        state.confirmed[dist] = confirmed
+    if enabled is not None and enabled.digest == back.digest:
+        state.enabled[dist] = enabled
+    guard.write_state(layout, state)
+
+
 async def update(
     engine: Engine,
     store: _Store,
@@ -318,45 +378,40 @@ async def update(
         )
     kept = _kept_wheel_of(layout, key, plugin.wheel_sha256)
     wheel = await store.fetch_wheel(entry, fetcher, layout.root / "index", name=wheel_name)
+    aside = previous_wheel_path(layout, key)
+    staged_kept, staged_aside = _next(kept), _next(aside)
     try:
         if wheel_plugin_keys(wheel) != frozenset({key}):
             raise PluginLifecycleError(
                 "wheel_key_mismatch",
                 "the wheel does not declare exactly the key its index entry names",
             )
+        # both kept wheels are written under their staged names before anything moves: a full
+        # disk is a refusal that leaves the plugin as it was, never a step after the line
+        _stage_copies(layout, key, ((wheel, staged_kept), (kept, staged_aside)))
+        grant = _grant_of(layout, dist)
         remove_plugin(layout, dist)
         try:
             installed = install_wheel(layout, wheel, entry.sha256)
-        except guard.PluginInstallError:
-            with contextlib.suppress(guard.PluginInstallError):
-                # the old version back, nothing lost; if even that fails, the refusal says
-                # what happened and the kept wheel is still there to reinstall from
-                _reinstall_kept(layout, key, dist, row.version, plugin.wheel_sha256)
+            # the line and the row in one transaction, the files already the new version: if
+            # the line cannot be written, the act is undone — no act without its line
+            _write(
+                engine,
+                key,
+                audit,
+                version=installed.version,
+                sha256=_prefixed(installed.digest),  # the files digest, like the attestation sync
+                previous_version=row.version,
+                previous_sha256=_prefixed(plugin.wheel_sha256),  # proven byte for byte above
+            )
+        except Exception:
+            _restore(layout, key, dist, row.version, plugin.wheel_sha256, grant)
             raise
-        # Write the audit line first: no act without its line. If this fails, the files are
-        # already the new version, so we must reinstall the old one from the kept wheel.
-        _write(
-            engine,
-            key,
-            audit,
-            version=installed.version,
-            sha256=_prefixed(installed.digest),  # the files digest, like the attestation sync
-            previous_version=row.version,
-            previous_sha256=_prefixed(plugin.wheel_sha256),  # proven byte for byte above
-        )
-        # the update succeeded: the old version's wheel becomes the kept previous
-        aside = previous_wheel_path(layout, key)
-        aside.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        kept.replace(aside)
-        keep_wheel(layout, key, wheel)
-    except Exception:
-        # If the audit write failed, the transaction was rolled back but the files were
-        # already replaced. Remove the new files and reinstall the original version.
-        with contextlib.suppress(Exception):
-            remove_plugin(layout, dist)
-            _reinstall_kept(layout, key, dist, row.version, plugin.wheel_sha256)
-        raise
+        # committed: only renames are left, and a failed one fails closed (the kept wheel no
+        # longer matches the record, the next update or rollback refuses)
+        _settle(((staged_aside, aside), (staged_kept, kept)))
     finally:
+        _drop(staged_kept, staged_aside)
         discard_staged_wheel(wheel)  # the installed copy is the guard's own
     return installed
 
@@ -408,37 +463,35 @@ def rollback(
     # its own metadata answers for — the tags its publisher chose, never a made-up section —
     # and the staged copy leaves with the install
     staged = _stage_kept(layout, previous, _staged_name(dist, row.previous_version, previous))
+    kept = kept_wheel_path(layout, key)
+    staged_kept = _next(kept)
     try:
+        # the rolled-back version's wheel becomes the kept one: written under its staged name
+        # before anything moves, so nothing fallible is left once the line is committed
+        _stage_copies(layout, key, ((previous, staged_kept),))
+        grant = _grant_of(layout, dist)
         remove_plugin(layout, dist)
         try:
             installed = install_wheel(layout, staged, row.previous_sha256)
-        except guard.PluginInstallError:
-            with contextlib.suppress(guard.PluginInstallError):
-                # the version that was installed, back — nothing lost; if even that fails,
-                # the refusal says what happened and both kept wheels are still there
-                _reinstall_kept(layout, key, dist, row.version, plugin.wheel_sha256)
+            _write(
+                engine,
+                key,
+                audit,
+                version=installed.version,
+                sha256=_prefixed(installed.digest),  # the files digest, like the attestation sync
+                previous_version=None,
+                previous_sha256=None,
+            )
+        except Exception:
+            # the version that was installed, back — nothing lost; both kept wheels are still
+            # where they were
+            _restore(layout, key, dist, row.version, plugin.wheel_sha256, grant)
             raise
-        # Write the audit line first: no act without its line. If this fails, the files are
-        # already the previous version, so we must reinstall the current one from its kept wheel.
-        _write(
-            engine,
-            key,
-            audit,
-            version=installed.version,
-            sha256=_prefixed(installed.digest),  # the files digest, like the attestation sync
-            previous_version=None,
-            previous_sha256=None,
-        )
-        # the rolled-back version is the kept one now
-        previous.replace(kept_wheel_path(layout, key))
-    except Exception:
-        # If the audit write failed, the transaction was rolled back but the files were
-        # already replaced. Remove the new files and reinstall the current version.
-        with contextlib.suppress(Exception):
-            remove_plugin(layout, dist)
-            _reinstall_kept(layout, key, dist, row.version, plugin.wheel_sha256)
-        raise
+        _settle(((staged_kept, kept),))
+        with contextlib.suppress(OSError):
+            previous.unlink()  # no previous anymore, as the committed row says
     finally:
+        _drop(staged_kept)
         discard_staged_wheel(staged)
     return installed
 

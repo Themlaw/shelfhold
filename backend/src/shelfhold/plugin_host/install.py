@@ -670,11 +670,13 @@ def previous_wheel_path(layout: Layout, key: str) -> Path:
     return layout.root / "previous" / f"{key}.whl"
 
 
-def keep_wheel(layout: Layout, key: str, wheel: Path) -> Path:
+def keep_wheel(layout: Layout, key: str, wheel: Path, dest: Path | None = None) -> Path:
     """Keep a copy of a verified wheel under the plugins volume (never on ``sys.path``, never in
     ``site-packages``: the guard's stray check does not see it). The caller has verified the
-    wheel; the copy is byte for byte the one the index vouched for."""
-    kept = kept_wheel_path(layout, key)
+    wheel; the copy is byte for byte the one the index vouched for. ``dest`` stages the copy
+    under another name first, for an act that must not leave anything fallible after its line
+    is committed (M6 L09a)."""
+    kept = dest if dest is not None else kept_wheel_path(layout, key)
     kept.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     kept.write_bytes(wheel.read_bytes())
     return kept
