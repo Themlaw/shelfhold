@@ -144,6 +144,9 @@ class RefreshOut(BaseModel):
     version: int
     applied: bool
     rotated: bool
+    # the plugins this refresh deactivated: the process that already runs them keeps serving
+    # until it restarts (ADR-0056)
+    restart_required: list[str] = []
 
 
 _INDEX_PROBLEMS = {
@@ -410,6 +413,7 @@ def build_plugins_router(
             version=outcome.document.version,
             applied=outcome.applied,
             rotated=outcome.rotated,
+            restart_required=list(outcome.disabled),
         )
 
     # -- the guard of M6 L06 (D13, EF-SRC-019): the mode, the activation, the reason -----------

@@ -568,14 +568,9 @@ def file_sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def install_wheel(
-    layout: Layout,
-    wheel: Path,
-    sha256: str,
-    *,
-    runner: Runner = _run,
-    prefix: Sequence[str] | None = None,
-) -> Installed:
+def verify_wheel_sha256(wheel: Path, sha256: str) -> str:
+    """The expected digest, once the file is known to hash to it: a wheel is opened (listed,
+    read) only after this, never before (M6 closure re-check, R5)."""
     expected = sha256.lower().removeprefix("sha256:")
     if not _SHA256.match(expected):
         raise PluginInstallError("hash_invalid", "expected a 64-digit sha256")
@@ -585,6 +580,18 @@ def install_wheel(
         raise PluginInstallError("bad_wheel", str(exc)) from exc
     if actual != expected:
         raise PluginInstallError("hash_mismatch", f"the file hashes to {actual}")
+    return expected
+
+
+def install_wheel(
+    layout: Layout,
+    wheel: Path,
+    sha256: str,
+    *,
+    runner: Runner = _run,
+    prefix: Sequence[str] | None = None,
+) -> Installed:
+    expected = verify_wheel_sha256(wheel, sha256)
     info = inspect_wheel(wheel)
     state = read_state(layout)
     check_conflicts(info, layout, state)

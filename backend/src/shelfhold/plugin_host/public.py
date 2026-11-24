@@ -259,12 +259,14 @@ def installed_keys(layout: Layout) -> frozenset[str]:
     return frozenset(installed_by_key(layout))
 
 
-def refuse_taken_keys(layout: Layout, wheel: Path) -> None:
+def refuse_taken_keys(layout: Layout, wheel: Path, sha256: str) -> None:
     """One key, one install: a wheel whose entry points declare a key an installed distribution
-    already declares is refused (`conflict`). Two distributions under one key both fail at
+    already declares is refused (`conflict`). The wheel is opened only once its sha256 is
+    verified (`hash_mismatch` otherwise). Two distributions under one key both fail at
     start-up (`duplicate_key`), and removing one would retire the other's bindings, attestations
     and trackers; the second would also read the first's secrets. The wheel of a distribution
     already installed is left to the guard's own refusal."""
+    guard.verify_wheel_sha256(wheel, sha256)
     taken = {key: plugin.name for key, plugin in installed_by_key(layout).items()}
     name = guard.inspect_wheel(wheel).name
     for key in sorted(guard.wheel_plugin_keys(wheel) & taken.keys()):

@@ -5028,6 +5028,10 @@ export type RefreshOut = {
      */
     applied: boolean;
     /**
+     * Restart Required
+     */
+    restart_required?: Array<string>;
+    /**
      * Rotated
      */
     rotated: boolean;

@@ -326,37 +326,56 @@ def run_install(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     engine = _engine(resolved)
     if engine is None:
         return 1
+    installed = False
+    previous_of: dict[str, tuple[str | None, str | None] | None] = {}
     try:
         try:
-            refuse_taken_keys(layout, wheel)  # one key, one install (S6)
+            refuse_taken_keys(layout, wheel, args.sha256)  # one key, one install (S6)
+            info = guard.inspect_wheel(wheel)
+            keys = sorted(guard.wheel_plugin_keys(wheel))
+            held_now: list[tuple[str, str]] = []
+            # the previous install's data is held aside BEFORE the wheel is placed: the hand
+            # wheel is never on disk while it could read the data of code someone signed. A
+            # distribution already installed is left to the guard's refusal, its data stays put.
+            if info.name not in guard.read_state(layout).installed:
+                vault = _vault_or_none(resolved)
+                for key in keys:
+                    row = lifecycle.read_install(engine, key)
+                    previous = None if row is None else (row.index_url, row.signer_pubkey)
+                    held = hold_previous_install(
+                        engine, vault, key, previous, (None, None), audit=_held_audit
+                    )
+                    if held is not None:
+                        held_now.append((key, held))
+                    previous_of[key] = previous
             plugin = guard.install_wheel(layout, wheel, args.sha256)
+            installed = True
+        except PluginDataError as exc:  # the data could not be held: no installation
+            _audited(resolved, "plugin.install_refused", f"{wheel.name}:{exc.code}")
+            return _fail(t("plugin.install_refused", code=exc.code, detail=exc.detail))
         except guard.PluginInstallError as exc:
             _audited(resolved, "plugin.install_refused", f"{wheel.name}:{exc.code}")
             return _fail(t("plugin.install_refused", code=exc.code, detail=exc.detail))
-        if not _audited(
-            resolved, "plugin.install", f"{plugin.name}@{plugin.version}:{plugin.wheel_sha256}"
-        ):
-            guard.remove_plugin(layout, plugin.name)  # no audit row, no installation
-            return 1
-        keys = [k for k, v in installed_versions(resolved.values).items() if v.dist == plugin.name]
-        store = _store_of(engine, resolved)
-        vault = _vault_or_none(resolved)
-        reattached = 0
-        for key in keys:
-            row = lifecycle.read_install(engine, key)  # the previous install's pin, read before
-            previous = None if row is None else (row.index_url, row.signer_pubkey)  # it is undone
-            try:
-                held = hold_previous_install(
-                    engine, vault, key, previous, (None, None), audit=_held_audit
-                )
-            except PluginDataError as exc:  # the data could not be held: no installation
-                guard.remove_plugin(layout, plugin.name)
-                _audited(resolved, "plugin.install_refused", f"{wheel.name}:{exc.code}")
-                return _fail(t("plugin.install_refused", code=exc.code, detail=exc.detail))
-            if held is not None:
+        try:
+            if not _audited(
+                resolved, "plugin.install", f"{plugin.name}@{plugin.version}:{plugin.wheel_sha256}"
+            ):
+                guard.remove_plugin(layout, plugin.name)  # no audit row, no installation
+                installed = False
+                return 1
+            reattached = 0
+            for key, held in held_now:
                 print(t("plugin.state_held", name=key, held=held))
-            store.unpin(key)  # a wheel by hand is pinned by the admin's own act (M6 L08)
-            reattached += lifecycle.reattach_if_same_origin(engine, key, previous, None, None)
+            store = _store_of(engine, resolved)
+            for key in keys:
+                store.unpin(key)  # a wheel by hand is pinned by the admin's own act (M6 L08)
+                reattached += lifecycle.reattach_if_same_origin(
+                    engine, key, previous_of.get(key), None, None
+                )
+        except BaseException:  # whatever fails after the placement: no wheel left behind
+            if installed:
+                guard.remove_plugin(layout, plugin.name)
+            raise
     finally:
         engine.dispose()
     _sync_attestations(resolved)  # a new version: the word given for the old one lapses
@@ -950,6 +969,13 @@ def run_index_refresh(args: argparse.Namespace, resolved: ResolvedSettings) -> i
                             rotated=int(outcome.rotated),
                         )
                     )
+                    if outcome.disabled:  # the running processes keep serving until a restart
+                        print(
+                            t(
+                                "plugin.restart_required",
+                                keys=t("status.list_separator").join(outcome.disabled),
+                            )
+                        )
                 else:
                     print(
                         t(

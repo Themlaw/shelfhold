@@ -153,6 +153,9 @@ class RefreshOutcome:
     document: IndexDocument
     applied: bool  # False: the same version, the same content, nothing to do
     rotated: bool = False
+    # the plugin keys this refresh just deactivated (revoked): their code may still run in the
+    # processes already started, until the next restart (ADR-0056, M6 closure re-check R2)
+    disabled: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -196,14 +199,13 @@ def hold_previous_install(
         "wheel" if signer is None else parse_public_key(signer, code="key_mismatch").key_id
     )
     held_id = held_identity(key, fingerprint)
-    moved = hold_plugin_data(
+    return hold_plugin_data(
         engine,
         vault,
         key,
         held_id,
-        audit=(lambda connection: audit(held_id, connection)) if audit is not None else None,
+        audit=(lambda connection, final: audit(final, connection)) if audit is not None else None,
     )
-    return held_id if moved else None
 
 
 def _record(row: Any) -> RepoRecord:
@@ -337,18 +339,19 @@ class RepoStore:
             pubkey, key_id = document.next_pubkey.b64, document.next_pubkey.key_id
             rotated = True
         applied = self._apply(record, document, pubkey, key_id, content, principal=principal)
-        if applied:
-            self._disable_revoked(principal)
-        return RefreshOutcome(document, applied=applied, rotated=rotated)
+        disabled = self._disable_revoked(principal) if applied else ()
+        return RefreshOutcome(document, applied=applied, rotated=rotated, disabled=disabled)
 
-    def _disable_revoked(self, principal: Principal | None) -> None:
+    def _disable_revoked(self, principal: Principal | None) -> tuple[str, ...]:
         """An installation the index just revoked (its key, or the sha256 of its wheel, under the
         repository and signer it is pinned to) loses its activation, and a line says so (D14,
         ADR-0056): a revocation that only blocks the next install leaves the compromised code
-        running at every start-up."""
+        running at every start-up. The keys it disabled: the host process and the companion that
+        already run them are not reached from here, the caller says a restart is required."""
         if self._layout is None:
-            return
-        for key, code in disable_revoked(self._engine, self._layout):
+            return ()
+        disabled = disable_revoked(self._engine, self._layout)
+        for key, code in disabled:
             with write_transaction(self._engine) as connection:
                 if principal is not None:
                     self._audit(connection, principal, "plugin.revoked", f"{key}:{code}")
@@ -363,6 +366,7 @@ class RepoStore:
                             )
                         )
                     )
+        return tuple(key for key, _ in disabled)
 
     async def _get(self, fetcher: IndexFetcher, url: str) -> bytes:
         try:
@@ -703,7 +707,7 @@ class RepoStore:
                     "wheel_key_mismatch",
                     "the wheel does not declare exactly the key its index entry names",
                 )
-            refuse_taken_keys(layout, wheel)  # one key, one install (S6)
+            refuse_taken_keys(layout, wheel, entry.sha256)  # one key, one install (S6)
             installed = install_wheel(layout, wheel, entry.sha256)
             # M6 L09a (EF-SRC-020, D15): the wheel of the installed version is kept (the
             # rollback's own) while the staged copy is still there — the staged file leaves

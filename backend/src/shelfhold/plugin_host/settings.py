@@ -603,7 +603,7 @@ class SourceSettings:
 # -- the data of a previous install, held until the admin confirms (M6 L08, GAP-8-13) -----------
 
 HELD_MARK: Final = "@"  # <key>@<fingerprint of the signer the previous install was pinned to>
-_HELD_SUFFIX = re.compile(r"^[0-9A-F]{16}$|^wheel$")
+_HELD_SUFFIX = re.compile(r"^(?:[0-9A-F]{16}|wheel)(?:\.[2-9]|\.[1-9][0-9]+)?$")
 
 Vault = SecretVault | Callable[[], SecretVault]
 
@@ -695,32 +695,63 @@ def _move_secrets(connection: Connection, vault: SecretVault, source: str, desti
     return moved
 
 
+def _taken(connection: Connection, plugin_id: str) -> bool:
+    """Whether any of the three tables holds a row under this identity."""
+    return any(
+        connection.execute(
+            sa.select(sa.func.count()).where(table.c.plugin_id == plugin_id)
+        ).scalar_one()
+        for table in (
+            acquisition.plugin_state,
+            acquisition.source_config,
+            acquisition.source_secret,
+        )
+    )
+
+
+def _free_identity(connection: Connection, held_id: str) -> str:
+    """The identity a hold goes to: the held form itself, or — when an earlier hold already
+    waits there — the first free `<held>.<n>` (n from 2). A hold never lands on, and never
+    overwrites, another one: what waits stays, and each waits for the admin's own word."""
+    candidate, n = held_id, 1
+    while _taken(connection, candidate):
+        n += 1
+        candidate = f"{held_id}.{n}"
+    return candidate
+
+
 def hold_plugin_data(
     engine: Engine,
     vault: Vault | None,
     plugin_id: str,
     held_id: str,
     *,
-    audit: Callable[[Connection], None] | None = None,
-) -> bool:
+    audit: Callable[[Connection, str], None] | None = None,
+) -> str | None:
     """Move the state, the settings and the secrets of a previous install under its held
     identity: a new signer is a new install, and nothing of the previous one is inherited.
     Fail closed: secrets that cannot be sealed again (no keyring) stop the move, and the
-    transaction with it. False: there was nothing under the key. `audit`, when given, runs in
-    the move's own transaction: the hold and its trace commit or fail together, so the data is
-    never held aside without its audit row, whatever the install does next."""
+    transaction with it. When that identity is already taken by an earlier hold, the data goes
+    under the next free `<held>.<n>`: no hold is ever lost or merged, and the key itself is
+    always left bare. The identity the data waits under, or None when there was nothing under
+    the key. `audit`, when given, receives it and runs in the move's own transaction: the hold
+    and its trace commit or fail together, so the data is never held aside without its audit
+    row, whatever the install does next."""
     keyring = _vault_of(vault)
     with write_transaction(engine) as connection:
         if keyring is None and _secrets_of(connection, plugin_id):
             raise PluginDataError(
                 "keyring_unreadable", "the previous install's secrets cannot be held"
             )
-        moved = _move_plain(connection, plugin_id, held_id)
+        if not _taken(connection, plugin_id):
+            return None
+        destination = _free_identity(connection, held_id)
+        moved = _move_plain(connection, plugin_id, destination)
         if keyring is not None:
-            moved += _move_secrets(connection, keyring, plugin_id, held_id)
-        if moved and audit is not None:
-            audit(connection)
-    return moved > 0
+            moved += _move_secrets(connection, keyring, plugin_id, destination)
+        if audit is not None:
+            audit(connection, destination)
+    return destination if moved else None
 
 
 def adopt_plugin_data(

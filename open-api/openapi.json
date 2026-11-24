@@ -8436,6 +8436,14 @@
             "title": "Applied",
             "type": "boolean"
           },
+          "restart_required": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Restart Required",
+            "type": "array"
+          },
           "rotated": {
             "title": "Rotated",
             "type": "boolean"
