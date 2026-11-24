@@ -4,7 +4,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 ## 1.3.0 - à paraître
 
-Clôture de M6 : plugins tiers isolés et index signé, SDK 2.0 publié sur PyPI, trackers, synchronisation Kobo minimale, dossier Kobo et KEPUB, caches et quotas, écrans (modules, trackers, webhooks, « Même œuvre ? »), copies hors ligne pour tout profil, annulation d'une marque de lecture, Komga (relais de scan, audit quotidien, preuve fraîche), une seule requête « lu ailleurs ». Aucune candidate publiée.
+Clôture de M6 : plugins tiers isolés et index signé, SDK 2.0 prêt à publier sur PyPI, trackers, synchronisation Kobo minimale, dossier Kobo et KEPUB, caches et quotas, écrans (modules, trackers, webhooks, « Même œuvre ? »), copies hors ligne pour tout profil, annulation d'une marque de lecture, Komga (relais de scan, audit quotidien, preuve fraîche), une seule requête « lu ailleurs ». Aucune candidate publiée.
 
 ### Ajouté
 
@@ -12,7 +12,7 @@ Clôture de M6 : plugins tiers isolés et index signé, SDK 2.0 publié sur PyPI
 - **Index de plugins signé (M6 L07, L08, EF-SRC-017, D14)** : signature minisign avec commentaire signé, version monotone, expiration, sha256, révocation, rotation ; installation depuis l'index, clé épinglée à son signataire (un nouveau signataire = une nouvelle installation), état et secrets déplacés seulement après confirmation.
 - **Cycle de vie d'un plugin (M6 L09a, L09b)** : mise à jour, épinglage, retour arrière, désinstallation ; liaisons orphelines signalées sans perte de contenu ; migrations d'état et montée de version de l'hôte (`migrate_state`), refus du retour arrière sur un état plus récent, drapeau d'incompatibilité ABI, `replaced_by` à travers les tombstones.
 - **Exemple et chemin d'auteur (M6 L10, L11)** : exemple de plugin tiers installé depuis un index signé et exécuté isolé ; le kit passe dans les deux modes ; le cœur démarre les plugins isolés autorisés. Chemin d'auteur complet : publication, enregistrement et hébergement d'index, qui signe, `deprecated`/`replaced_by`/`min_host`, `migrate_state`, licence.
-- **SDK 2.0 (M6 L02, L03)** : `shelfhold-sdk` 2.0 comme distribution propre (MIT), publié sur PyPI par publication de confiance (OIDC, environnements protégés, attestations PEP 740), essai à blanc sur chaque PR.
+- **SDK 2.0 (M6 L02, L03)** : `shelfhold-sdk` 2.0 comme distribution propre (MIT), prête à publier sur PyPI par publication de confiance (OIDC, environnements protégés, attestations PEP 740), essai à blanc sur chaque PR.
 - **Contrat `Tracker` et hôte (M6 L13, EF-INT-010, D18, D-P6)** : `link`, `push_progress`, `pull` ; hôte lié par profil, opt-in pour la poussée, tirée comme indice ; jeton distant scellé ; aucune marque « lu » écrite par la tirée.
 - **Émulation de synchronisation Kobo, surface minimale (M6 L17a, EF-INT-012, D20)** : jeton d'appareil dans le chemin, initialisation, synchronisation de la bibliothèque page par page ; trois routes réelles et un attrape-tout ; l'état de lecture GET/PUT, le KEPUB et les couvertures en cache et le proxy du store sont reportés.
 - **Dossier Kobo (M6 L16)** : destination qui écrit un arbre de `.kepub.epub` depuis le dérivé neutralisé.
@@ -54,9 +54,10 @@ Aucun nouvel élément reporté ; les points ouverts restent dans « Limites con
 
 - **Synchronisation Kobo** : surface minimale ; l'état de lecture GET/PUT, le KEPUB et les couvertures en cache et le proxy du store sont reportés ; l'usage passe par KOReader.
 - **Essais sur appareil réel** : KOReader, `/lite` depuis une Kobo et la lecture d'un EPUB sur téléphone ne sont prouvés en CI que par des vecteurs de requêtes ; D-P8 (b) garde trois exigences en `[[partial]]` (EF-LEC-009, EF-LEC-010, ENF-COMP-002).
+- **Publication du SDK sur PyPI** : le workflow de publication de confiance est prêt et essayé à blanc ; la première publication de `shelfhold-sdk` 2.0.0 est faite par le porteur (compte PyPI).
 - **Second registre et miroir (ENF-GOV-004)** : le code est livré, la poussée réelle attend le compte et le secret ; la release part sur GHCR seul.
 - **Plugins en mode intégré** : la façade garde `_inner` ; la vraie frontière n'existe qu'en mode isolé.
-- **Copies hors ligne** : pas de verrou entre onglets sur le navigateur (une base orpheline d'un profil est possible, jamais ouverte par un autre profil) ; une copie déjà téléchargée n'est pas révocable à distance (R66).
+- **Copies hors ligne** : une copie déjà téléchargée n'est pas révocable à distance (R66).
 
 Migration : oui (0110 à 0117 depuis la 1.2.0), réversible : non (`shelfhold migrate` sauvegarde la base avant de migrer).
 
@@ -116,6 +117,7 @@ Détail et raisons dans `docs/decisions/M5.md` (section de clôture) : relais de
 ### Limites connues
 
 - **Essais sur appareil réel** : KOReader, `/lite` depuis une Kobo et la lecture d'un EPUB sur téléphone ne sont prouvés en CI que par des vecteurs de requêtes et un navigateur sans JavaScript ; le porteur les fait sur la candidate avant la release.
+- **Publication du SDK sur PyPI** : le workflow de publication de confiance est prêt et essayé à blanc ; la première publication de `shelfhold-sdk` 2.0.0 est faite par le porteur (compte PyPI).
 - **Second registre et miroir (ENF-GOV-004)** : le code est livré (1.1.0), la poussée réelle attend le compte et le secret ; la release part sur GHCR seul.
 - **Lecteur EPUB** : exige Safari 16.4 ou plus (héritage de la politique de sécurité par les `blob:`) ; un navigateur plus ancien est refusé par le registre du moteur.
 - **Copies hors ligne** : pas de verrou entre onglets (une base orpheline d'un profil est possible, jamais ouverte par un autre profil) ; `/hors-ligne` lit sa liste à l'ouverture seulement.
