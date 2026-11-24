@@ -151,6 +151,16 @@ def read_roots(*extra: Path) -> list[Path]:
     return list(seen)
 
 
+def _attribute(abi: int, handled: int, net: int, scoped: int) -> bytes:
+    """`struct landlock_ruleset_attr` as the kernel of this ABI reads it: the net rights came with
+    ABI 4, the scopes with ABI 6 (a longer structure than the kernel knows is refused)."""
+    if abi >= 6:
+        return struct.pack("QQQ", handled, net, scoped)
+    if abi >= 4:
+        return struct.pack("QQ", handled, net)
+    return struct.pack("Q", handled)
+
+
 class Ruleset:
     """A Landlock ruleset built by the companion, applied by the child before it runs the plugin.
 
@@ -176,12 +186,7 @@ class Ruleset:
             handled |= _READ_FILE | _READ_DIR
         net = (_NET_BIND_TCP | _NET_CONNECT_TCP) if self.abi >= 4 else 0
         scoped = (_SCOPE_ABSTRACT_UNIX_SOCKET | _SCOPE_SIGNAL) if self.abi >= 6 else 0
-        if self.abi >= 6:
-            attr = struct.pack("QQQ", handled, net, scoped)
-        elif self.abi >= 4:
-            attr = struct.pack("QQ", handled, net)
-        else:
-            attr = struct.pack("Q", handled)
+        attr = _attribute(self.abi, handled, net, scoped)
         self._fd = _syscall(_SYS_CREATE, ctypes.c_char_p(attr), len(attr), 0)
         if self._fd < 0:
             raise OSError(ctypes.get_errno(), "landlock_create_ruleset")
@@ -447,7 +452,7 @@ def unconfined_actions() -> tuple[str, ...]:
                 rules = Ruleset([Path(scratch)], read_roots())
                 filt = Filter()
 
-                def bind() -> None:
+                def bind() -> None:  # pragma: no cover - runs in the child, before exec
                     rules.restrict()
                     filt.install()
 

@@ -48,19 +48,31 @@ def closed_environment(source: Mapping[str, str] | None = None) -> dict[str, str
     return {**kept, **_FIXED}
 
 
-def _limits(limits: RpcLimits, tasks: int, confine: Callable[[], None] | None) -> None:
+def ceilings(
+    tasks: int,
+    file_bytes: int,
+    *,
+    hard: tuple[int, int] | None = None,
+) -> tuple[int, int]:
+    """The soft and hard value to set for `RLIMIT_NPROC` and `RLIMIT_FSIZE`: what is asked, or the
+    hard limit the process already has when that is lower (it cannot be raised: a container's)."""
+    now = hard or (
+        resource.getrlimit(resource.RLIMIT_NPROC)[1],
+        resource.getrlimit(resource.RLIMIT_FSIZE)[1],
+    )
+    return (
+        tasks if now[0] == resource.RLIM_INFINITY else min(tasks, now[0]),
+        file_bytes if now[1] == resource.RLIM_INFINITY else min(file_bytes, now[1]),
+    )
+
+
+def _limits(
+    limits: RpcLimits, tasks: int, file_bytes: int, confine: Callable[[], None] | None
+) -> None:
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
     resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds + 1))
-    # a hard limit already set below the ceiling (a container's) is kept: it cannot be raised
-    hard_tasks = resource.getrlimit(resource.RLIMIT_NPROC)[1]
-    if hard_tasks != resource.RLIM_INFINITY:
-        tasks = min(tasks, hard_tasks)
     resource.setrlimit(resource.RLIMIT_NPROC, (tasks, tasks))
-    hard_file = resource.getrlimit(resource.RLIMIT_FSIZE)[1]
-    file_bytes = (
-        MAX_FILE_BYTES if hard_file == resource.RLIM_INFINITY else min(MAX_FILE_BYTES, hard_file)
-    )
     resource.setrlimit(resource.RLIMIT_FSIZE, (file_bytes, file_bytes))
     os.umask(0o077)
     if confine is not None:
@@ -94,6 +106,7 @@ async def spawn_stdio(
     to pick from (`closed_environment`), never what the process receives as it is; `extra_env` is
     what the caller adds (the runner's scratch folder). `confine` runs in the child, after the
     limits and before `exec`: the runner's Landlock sandbox. `max_tasks` is `RLIMIT_NPROC`."""
+    tasks, file_bytes = ceilings(max_tasks, MAX_FILE_BYTES)  # decided here, not in the child
     process = await asyncio.create_subprocess_exec(
         *argv,
         stdin=asyncio.subprocess.PIPE,
@@ -101,7 +114,7 @@ async def spawn_stdio(
         stderr=asyncio.subprocess.DEVNULL,
         env={**closed_environment(env), **(extra_env or {})},
         start_new_session=True,
-        preexec_fn=lambda: _limits(limits, max_tasks, confine),
+        preexec_fn=lambda: _limits(limits, tasks, file_bytes, confine),
     )
     stdin, stdout = process.stdin, process.stdout
     if stdin is None or stdout is None:  # pragma: no cover - PIPE always gives both
