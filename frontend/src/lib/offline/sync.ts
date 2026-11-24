@@ -8,7 +8,8 @@
 // (404, 409, 422: the carrier is gone or the write refused) drops it.
 //
 // Copies: `?since=` of the list of Works names every Work that left this profile's view since the
-// token (deleted, purged, reclassified): its copy is evicted. The token is signed and bound to the
+// token (deleted, purged, reclassified): its copy is evicted. `removed_editions` names the Editions
+// that left it while their Work stayed (another Edition carries it): the copy of each is evicted. The token is signed and bound to the
 // profile's scope, so it cannot be carried to a profile of another scope; a token too old, or one the server
 // does not recognise (410), is a resynchronisation: each copy is asked again and answers 404 for
 // what the profile may not see, which tells nothing about any other Work. A 401 or 403 is a
@@ -17,7 +18,7 @@ import type { PositionIn, PublicationOut } from '#lib/api/types.gen.ts';
 import type { OfflineStore } from './store.ts';
 
 export interface OfflineApi {
-  works(since: string | null): Promise<{ status: number; since?: string; removed?: string[] }>;
+  works(since: string | null): Promise<{ status: number; since?: string; removed?: string[]; removedEditions?: string[] }>;
   publication(carrierType: string, carrierId: string): Promise<{ status: number; publication?: PublicationOut }>;
   putPosition(body: PositionIn): Promise<{ status: number; retryAfter?: number; code?: string }>;
 }
@@ -90,6 +91,10 @@ export async function syncSince({ store, profileId, api }: Options, result: Pick
     if (answer.status === 401 || answer.status === 403) return await lost();
     if (answer.status === 200 && token !== null && answer.since) {
       result.evicted.push(...(await store.evictWorks(profileId, answer.removed ?? [])));
+      // an Edition that left her view while its Work stays visible through another one: its copy goes too
+      for (const work of await store.evictEditions(profileId, answer.removedEditions ?? [])) {
+        if (!result.evicted.includes(work)) result.evicted.push(work);
+      }
       await store.setSince(profileId, answer.since);
       return true;
     }

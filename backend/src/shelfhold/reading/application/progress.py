@@ -29,7 +29,7 @@ import sqlalchemy as sa
 import structlog
 
 from shelfhold.catalog.public import visible_edition_ids, visible_unit_ids
-from shelfhold.identity.public import reader_scope
+from shelfhold.identity.public import AuditEntry, audit_insert, reader_scope
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog as catalog_schema
@@ -590,6 +590,19 @@ def undo_read_mark(
             "reading.read_unmarked", unit=unit_id, marks=undone, actor_id=viewer_id,
             user_id=subject_id,
         )  # fmt: skip
+        if (
+            viewer_id != subject_id
+        ):  # an administrator on a child's mark: a line of the audit table too
+            connection.execute(
+                audit_insert(
+                    AuditEntry(
+                        actor_id=viewer_id,
+                        action="reading.read_mark_undone_by_admin",
+                        target=subject_id,
+                        at=_ts(now or datetime.now(UTC)),
+                    )
+                )
+            )
     return undone
 
 

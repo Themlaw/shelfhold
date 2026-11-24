@@ -25,7 +25,9 @@ et ce qui l'efface.
   se déconnecter sans réseau.
 - **Changer de profil** sur l'appareil efface celles du profil précédent.
 - Au retour du réseau, une œuvre **supprimée, purgée ou devenue invisible** pour votre profil
-  (reclassement, étagère retirée) est retirée de l'appareil. Le serveur ne dit rien d'une œuvre que
+  (reclassement, étagère retirée) est retirée de l'appareil. Il en va de même d'une **édition**
+  devenue invisible alors que l'œuvre reste visible par une autre édition : la copie de cette
+  édition-là est retirée, pas celles des autres. Le serveur ne dit rien d'une œuvre que
   votre profil n'a jamais pu voir.
 - Une session ou un jeton révoqué, ou un profil qui perd l'accès, efface tout au premier retour du
   réseau.
@@ -39,3 +41,8 @@ adultes. Et un fichier **téléchargé par OPDS ou par `/lite`**, ou copié dans
 Shelfhold : il ne peut pas être repris, comme avec Kavita. Seules les copies du lecteur installé sont
 sous contrôle. Pour un appareil d'enfant, passez par ces copies et par les jetons d'appareil
 révocables, plutôt que par un téléchargement.
+
+Une session d'adulte qui **expire sans déconnexion** laisse ses copies lisibles sur ce navigateur :
+l'appareil ne sait pas, hors réseau, que la session est finie, et il n'y a qu'un profil par
+navigateur. Quiconque ouvre alors ce navigateur lit ces copies, un enfant compris. **Se déconnecter
+les efface** : sur un appareil partagé, déconnectez-vous plutôt que de laisser la session expirer.

@@ -54,8 +54,13 @@ def test_child_copy_of_edition_moved_off_her_shelves_is_named_by_since(world: Wo
 
     got = removed(world.kid, token)
     assert got.status_code == 200, got.text
-    # the client evicts only what `removed` names; the copy of the hidden Edition must be named
-    assert work in got.json()["removed"], (
+    # Decision of the closure review (S3): the Work is still hers, so it is not in `removed`; the
+    # Edition she lost is named by `removed_editions`, and the client evicts the copy by edition.
+    assert got.json()["removed"] == []
+    edition = world.seed.editions["ok"]
+    assert edition in got.json()["removed_editions"], (
         "the child's offline copy of an Edition she may no longer see is never evicted: "
-        f"?since= answered 200 with removed={got.json()['removed']!r}"
+        f"?since= answered 200 with removed_editions={got.json().get('removed_editions')!r}"
     )
+    assert work not in got.json()["removed"]
+    assert kept.json()["edition_id"] == edition  # the copy knows its Edition

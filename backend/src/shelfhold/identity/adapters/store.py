@@ -70,6 +70,7 @@ _device = identity.device_token
 _registry = identity.device  # M5 L02: the device a token belongs to
 _passkey = identity.webauthn_credential
 _oidc = identity.oidc_identity  # M5 L03
+_tracker_allowance = platform.tracker_allowance
 _tracker_link = platform.tracker_link  # M6 L13: a child keeps no tracker of her adult days
 
 
@@ -946,6 +947,22 @@ class SqlIdentityStore:
                     .where(_user.c.id == user_id)
                     .values(hide_unrated_remote=True, subject_filter=[])
                 )
+                # the admin's word for a child was said for the role she had: a new role needs a
+                # new word (a demoted adult, or a child who was a member in between, keeps none)
+                lapsed = conn.execute(
+                    sa.delete(_tracker_allowance).where(_tracker_allowance.c.user_id == user_id)
+                ).rowcount
+                if lapsed:
+                    conn.execute(
+                        audit_insert(
+                            AuditEntry(
+                                actor_id=actor_id,
+                                action="tracker.allowance_cleared_role_change",
+                                target=user_id,
+                                at=now,
+                            )
+                        )
+                    )
                 if role == "child":  # a child is never linked to a provider (M5 L03)
                     gone = conn.execute(sa.delete(_oidc).where(_oidc.c.user_id == user_id)).rowcount
                     if gone:

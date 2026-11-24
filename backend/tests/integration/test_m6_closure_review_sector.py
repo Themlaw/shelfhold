@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import secrets
 from collections.abc import Iterator
@@ -30,10 +31,11 @@ def test_allowance_given_to_an_adult_survives_a_demotion_to_child(fx: Fixture) -
     elle survit au changement de rôle (qui efface pourtant le lien et les politiques de source) :
     le profil rétrogradé en enfant lie un tracker sans nouvelle parole de l'admin."""
     teen = fx.add("teen", "member")
-    allowed = fx.send(
-        "PUT", trackers_path(teen, TRACKER_KEY, "/allowance"), {"allowed": True}
-    )
-    assert allowed.status_code == 200  # aucun refus pour un profil adulte
+    allowed = fx.send("PUT", trackers_path(teen, TRACKER_KEY, "/allowance"), {"allowed": True})
+    # Décision de la relecture de clôture (S4) : l'autorisation n'est donnée qu'à un enfant. Le
+    # PoC attendait 200 pour un adulte ; c'est ce que la décision rejette (refus 422, rien d'écrit).
+    assert allowed.status_code == 422
+    assert fx.allowances() == []
     fx.auth().profile_set(teen, role="child", max_age_rating=12)
     kid = fx.client_of("teen")
     done = fx.link("teen", _token(), client=kid)
@@ -63,9 +65,9 @@ def test_rendition_touch_follows_a_symlink(tmp_path: Path) -> None:
     os.utime(outside, (1_000_000_000, 1_000_000_000))
     name = "ab" + "0" * 62 + ".kepub"
     (shard / name).symlink_to(outside)
-    with open_data_folder(data, "cache/renditions/ab") as folder:
-        try:
-            touch_data_file(folder, name, at=1_700_000_000)
-        except (OSError, ValueError):
-            pass  # un refus est le comportement attendu
+    with (
+        open_data_folder(data, "cache/renditions/ab") as folder,
+        contextlib.suppress(OSError, ValueError),  # un refus est le comportement attendu
+    ):
+        touch_data_file(folder, name, at=1_700_000_000)
     assert outside.stat().st_mtime == 1_000_000_000, "le touch a suivi le lien hors de /data"
