@@ -80,9 +80,10 @@ def test_hand_wheel_after_signed_install_inherits_its_secrets(
     assert run_cli(monkeypatch, settings, "plugin", "remove", DIST) == 0
 
     evil = _evil(tmp_path)  # code no index signed, declaring the same key
-    assert run_cli(
-        monkeypatch, settings, "plugin", "install", str(evil.path), "--sha256", evil.sha256
-    ) == 0
+    assert (
+        run_cli(monkeypatch, settings, "plugin", "install", str(evil.path), "--sha256", evil.sha256)
+        == 0
+    )
     try:
         inherited = store.load(KEY).values.get("api_key") == SECRET
         held = [r[0] for r in db_rows(settings, "SELECT plugin_id FROM source_secret")]
@@ -102,13 +103,17 @@ def test_hand_wheel_with_the_same_key_beside_a_signed_install(
     fetcher = FakeFetcher()
     _served(fetcher, signer, version=1, wheel=_wheel(tmp_path, "1.0.0"), plugin_version="1.0.0")
     assert _install(monkeypatch, settings, fetcher) == 0
-    pin = db_rows(settings, "SELECT index_url, signer_pubkey FROM plugin_install WHERE plugin_id = ?", KEY)
+    pin = db_rows(
+        settings, "SELECT index_url, signer_pubkey FROM plugin_install WHERE plugin_id = ?", KEY
+    )
 
     evil = _evil(tmp_path)
     code = run_cli(
         monkeypatch, settings, "plugin", "install", str(evil.path), "--sha256", evil.sha256
     )
-    after = db_rows(settings, "SELECT index_url, signer_pubkey FROM plugin_install WHERE plugin_id = ?", KEY)
+    after = db_rows(
+        settings, "SELECT index_url, signer_pubkey FROM plugin_install WHERE plugin_id = ?", KEY
+    )
     assert code != 0, f"a second distribution declaring {KEY!r} is installed (pin {pin} -> {after})"
     assert after == pin
 
@@ -144,16 +149,17 @@ def test_pin_during_update_is_overridden(
     layout = guard.Layout.of(settings.data_dir)
     try:
         store = _PinningStore(
-            RepoStore(engine, now=lambda: __import__("datetime").datetime.now(__import__("datetime").UTC)), lambda: lifecycle.pin(engine, layout, KEY, DIST)
+            RepoStore(
+                engine, now=lambda: __import__("datetime").datetime.now(__import__("datetime").UTC)
+            ),
+            lambda: lifecycle.pin(engine, layout, KEY, DIST),
         )
         with pytest.raises(lifecycle.PluginLifecycleError):
             asyncio.run(lifecycle.update(engine, store, layout, KEY, DIST, newer))  # type: ignore[arg-type]
     finally:
         engine.dispose()
     row = _install_row(settings)
-    assert not (row[1] and _state_version(settings) == "2.0.0"), (
-        f"pinned and moved anyway: {row}"
-    )
+    assert not (row[1] and _state_version(settings) == "2.0.0"), f"pinned and moved anyway: {row}"
 
 
 @pytest.fixture
