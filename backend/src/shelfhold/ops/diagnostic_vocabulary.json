@@ -4309,6 +4309,7 @@
    "oidc.unlinked_role_change",
    "passkey.registered",
    "plugin.migrated_to",
+   "plugin.revoked",
    "purge.kept_acknowledged",
    "purge.leftovers_forgotten",
    "reading.read_mark_undone_by_admin",

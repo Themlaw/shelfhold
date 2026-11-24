@@ -282,6 +282,7 @@ index_added = "Dépôt {url} épinglé (clé {key_id}) : la première actualisat
 index_none = "Aucun dépôt d'index épinglé."
 index_row = "{url}\t{key_id}\tv{version}\texpire {expires}"
 index_refreshed = "Index de {url} appliqué : version {version}{rotated, plural, =0 {} other { (clé tournée)}}."
+restart_required = "Révoqués et désactivés : {keys}. Un processus qui les exécute déjà continue jusqu’à son redémarrage : redémarre le serveur et le compagnon."
 index_unchanged = "Index de {url} inchangé : version {version} déjà appliquée."
 index_removed = "Dépôt {url} retiré ; un nouvel ajout repart de zéro."
 index_not_found_detail = "Aucun dépôt d'index n'est épinglé à cette adresse."

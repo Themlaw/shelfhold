@@ -43,6 +43,7 @@ from shelfhold.plugin_host.registry import (
 )
 from tests.integration.test_l27_source_aliases import GONE, PLUGIN, SOURCE, alias, erase, live
 from tests.l50_env import seeded
+from tests.plugin_guard_env import install_plugin_wheel
 from tests.plugin_index_env import index_document, plugin_entry
 
 ADMIN = Principal("1000", "uid:1000", "admin", Credential.LOCAL_CLI)
@@ -247,7 +248,7 @@ def test_poc_manylinux_wheel_flagged_on_the_linux_interpreter_it_matches() -> No
 # -- counter-review: the seal of a cut migration, the family that is no index's word ------------
 
 
-def _named(env: Any, replacement: str) -> None:
+def _named(env: Any, replacement: str, *, installed: bool = True) -> None:
     """The install row an index wrote for `plugin-a`: its entry named `replacement`."""
     with env.inst.engine.begin() as connection:
         connection.execute(
@@ -257,6 +258,17 @@ def _named(env: Any, replacement: str) -> None:
                 signer_pubkey="k", min_host="1.0.0", replaced_by=replacement,
             )
         )  # fmt: skip
+        if installed:
+            # the replacement is installed, from the same signer: the closure review's §3.5
+            connection.execute(
+                sa.insert(acquisition.plugin_install).values(
+                    plugin_id=replacement, version="1.0.0", api="2", origin="local",
+                    sha256="sha256:" + "b" * 64, index_url="https://index.example.org/index.json",
+                    signer_pubkey="k", min_host="1.0.0",
+                )
+            )  # fmt: skip
+    if installed:
+        install_plugin_wheel(env.inst.settings.data_dir, f"dist-{replacement}", replacement)
 
 
 @pytest.mark.req("EF-BIB-054", "EF-SRC-030")

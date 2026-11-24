@@ -283,6 +283,7 @@
   index_none = "No index repository pinned."
   index_row = "{url} {key_id} v{version} expires {expires}"
   index_refreshed = "Index of {url} applied: version {version}{rotated, plural, =0 {} other { (key rotated)}}."
+  restart_required = "Revoked and deactivated: {keys}. A process that already runs them keeps serving until it restarts: restart the server and the companion."
   index_unchanged = "Index of {url} unchanged: version {version} already applied."
   index_removed = "Repository {url} removed; a new add starts from zero."
   index_not_found_detail = "No index repository is pinned at this address."

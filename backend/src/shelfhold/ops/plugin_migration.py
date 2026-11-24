@@ -44,6 +44,8 @@ from shelfhold.library.public import (
 )
 from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError
 from shelfhold.plugin_host.index.service import RepoStore
+from shelfhold.plugin_host.install import Layout
+from shelfhold.plugin_host.public import installed_keys
 from shelfhold.plugin_host.rpc.runner_wire import KEY
 
 if TYPE_CHECKING:
@@ -140,15 +142,31 @@ class PluginMigrationOps:
 
     def _check_replacement(self, connection: Connection, key: str, replacement: str) -> None:
         """The replacement is the key the old plugin's signed index named in `replaced_by` —
-        the word the install kept beside its pin — and never a revoked key. A plugin no index
-        ever vouched for has no word: whatever key the admin names is refused."""
-        named = connection.execute(
-            sa.select(acquisition.plugin_install.c.replaced_by).where(
-                acquisition.plugin_install.c.plugin_id == key
+        the word the install kept beside its pin — never a key its index revoked, and a plugin
+        that is installed, from the same signer as the old one: a name in a document is not code
+        the admin runs, and the sources never move to a key another signer — or nobody — could
+        publish (closure review, §3.5). A plugin no index ever vouched for has no word: whatever
+        key the admin names is refused."""
+        install = acquisition.plugin_install
+        pins = {
+            row.plugin_id: row
+            for row in connection.execute(
+                sa.select(
+                    install.c.plugin_id, install.c.replaced_by,
+                    install.c.index_url, install.c.signer_pubkey,
+                ).where(install.c.plugin_id.in_((key, replacement)))
             )
-        ).first()
-        revoked = RepoStore(self._comp.engine, now=self._comp.clock.now).revoked_plugin_keys()
-        if replacement in revoked:
+        }  # fmt: skip
+        named, target = pins.get(key), pins.get(replacement)
+        store = RepoStore(self._comp.engine, now=self._comp.clock.now)
+        # a revocation binds the (repository, signer) that published it: the one that named the
+        # replacement, and the one the replacement is installed from
+        scopes = {
+            (row.index_url, row.signer_pubkey)
+            for row in (named, target)
+            if row is not None and row.index_url is not None and row.signer_pubkey is not None
+        }
+        if any(replacement in store.revoked_plugin_keys(scope) for scope in scopes):
             raise CodedRefusal(
                 "revoked", f"revoked: the key of {replacement!r} was revoked by an index"
             )  # fmt: skip
@@ -156,6 +174,16 @@ class PluginMigrationOps:
             raise CodedRefusal(
                 "not_named",
                 f"not_named: no index named {replacement!r} as the replacement of {key!r}",
+            )
+        layout = Layout.of(self._comp.settings.data_dir)
+        if target is None or replacement not in installed_keys(layout):
+            raise CodedRefusal(
+                "migrate_refused", f"migrate_refused: {replacement!r} is not installed"
+            )
+        if named.signer_pubkey is None or target.signer_pubkey != named.signer_pubkey:
+            raise CodedRefusal(
+                "migrate_refused",
+                f"migrate_refused: {replacement!r} does not come from the signer of {key!r}",
             )
 
     @staticmethod
