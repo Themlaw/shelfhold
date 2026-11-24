@@ -38,7 +38,10 @@ __all__ = [
 
 FORBIDDEN_PATHS: Final = ("/data", "/store", "/library", "/data/shelfhold.sock")
 DOCKER_SOCKETS: Final = ("/var/run/docker.sock", "/run/docker.sock")  # the engine is the host's
-PLUGINS_ENTRIES: Final = ("site-packages", "state.json")  # all that `/plugins` is meant to hold
+# all that `/plugins` is meant to hold: the installed wheels, the core's state, and the folders the
+# core keeps for an install from an index (the wheel in flight, the installed one, the one before;
+# mode 0700, the companion cannot enter them)
+PLUGINS_ENTRIES: Final = ("site-packages", "state.json", "index", "wheels", "previous")
 _TRANSIENT: Final = ".staging-"  # what the core is installing, while it is
 # Documentation address (RFC 5737), never routed: a connection that goes anywhere is a network.
 OUTBOUND_PROBE: Final = ("192.0.2.1", 9)

@@ -326,7 +326,7 @@ def test_m6_journey_sdk_wheel_alone(journey_m6: Journey, tmp_path: Path) -> None
     frozen = subprocess.run(  # noqa: S603
         [python, "-m", "pip", "freeze"], capture_output=True, text=True, check=True, timeout=120
     ).stdout
-    assert f"shelfhold-sdk=={version}" in frozen.splitlines(), frozen
+    assert f"shelfhold_sdk=={version}" in frozen.splitlines(), frozen
     assert not [line for line in frozen.splitlines() if line.lower().startswith("shelfhold==")]
 
     probe = tmp_path / "probe.py"
