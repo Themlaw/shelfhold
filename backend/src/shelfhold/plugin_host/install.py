@@ -266,6 +266,19 @@ class WheelInfo:
     version: str
     top_levels: tuple[str, ...]
     dist_info: str
+    tags: str  # the filename's tag section its own WHEEL metadata declares (PEP 425)
+
+
+def _tag_section(declared: list[str]) -> str:
+    """The tag section of a filename for the tags a wheel declares (PEP 425): the python tags
+    compress into one when the abi and the platform are shared, else the first declared tag
+    stands in the name — the publisher's own first word, never a made-up section."""
+    split = [tag.rsplit("-", 2) for tag in declared]
+    if any(len(parts) != 3 for parts in split):
+        raise PluginInstallError("bad_wheel", "a declared wheel tag is not py-abi-platform")
+    if len({(abi, platform) for _, abi, platform in split}) == 1:
+        return "-".join((".".join(py for py, _, _ in split), split[0][1], split[0][2]))
+    return declared[0]
 
 
 def _top_level(path: str) -> str:
@@ -343,12 +356,23 @@ def _inspect_names(names: list[str], read: Callable[[str], bytes]) -> WheelInfo:
     name = normalise_name(declared.group(1))
     if normalise_name(match.group("name")) != name:
         raise PluginInstallError("bad_wheel", "dist-info name differs from METADATA Name")
+    try:
+        wheel_meta = read(f"{dist_info}/WHEEL").decode("utf-8", "replace")
+    except KeyError as exc:
+        raise PluginInstallError("bad_wheel", "no WHEEL metadata") from exc
+    tags = [
+        line.removeprefix("Tag:").strip()
+        for line in wheel_meta.splitlines()
+        if line.startswith("Tag:")
+    ]
+    if not tags:
+        raise PluginInstallError("bad_wheel", "the WHEEL metadata declares no Tag")
     tops = sorted(
         {_top_level(n) for n in names if not PurePosixPath(n).parts[0].endswith(".dist-info")}
     )
     if not tops:
         raise PluginInstallError("bad_wheel", "no module")
-    return WheelInfo(name, match.group("version"), tuple(tops), dist_info)
+    return WheelInfo(name, match.group("version"), tuple(tops), dist_info, _tag_section(tags))
 
 
 def wheel_plugin_keys(wheel: Path) -> frozenset[str]:

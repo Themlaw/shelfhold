@@ -600,9 +600,12 @@ class RepoStore:
         finally:
             discard_staged_wheel(wheel)  # the installed copy is the guard's own
         self._pin(key, installed, record)
-        # the bindings orphaned by an uninstall of the same key at the same signer come back:
-        # the origin is the same, nothing is inherited from another signer
-        reattached = reattach_if_same_origin(self._engine, key, record.url, record.pubkey)
+        # the bindings orphaned by an uninstall of the same key come back only when the origin
+        # did not change: the previous install's (index, signer), read before this install
+        # rewrote the row — never the row itself, which now tells this install's own origin
+        reattached = reattach_if_same_origin(
+            self._engine, key, previous, record.url, record.pubkey
+        )
         if reattached:
             log.info("plugin_lifecycle.reattached", key=key, bindings=reattached)
         return IndexInstall(installed, held)

@@ -210,6 +210,47 @@ def _kept_wheel_of(layout: Layout, key: str, wheel_sha256: str) -> Path:
     return kept
 
 
+def _staged_name(dist: str, version: str, wheel: Path) -> str:
+    """The name a kept wheel is staged under: its own distribution, its own version, and the
+    tags its own metadata declares — the installer reads all three from the filename, and a
+    kept copy is stored under the key's name, which no installer accepts."""
+    return f"{dist.replace('-', '_')}-{version}-{guard.inspect_wheel(wheel).tags}.whl"
+
+
+def _stage_kept(layout: Layout, wheel: Path, name: str) -> Path:
+    """Stage a kept wheel under a name the installer accepts; the staged copy leaves with the
+    install."""
+    from shelfhold.plugin_host.index.staging import discard_staged_wheel, stage_wheel
+
+    handle, staged = stage_wheel(layout.root / "index", name)
+    try:
+        with os.fdopen(handle, "wb") as sink:
+            sink.write(wheel.read_bytes())
+    except OSError as exc:
+        discard_staged_wheel(staged)
+        raise guard.PluginInstallError("bad_wheel", str(exc)) from exc
+    return staged
+
+
+def _reinstall_kept(layout: Layout, key: str, dist: str, version: str, sha256: str) -> None:
+    """After a failed act, the version that was installed goes back from its kept wheel —
+    nothing lost; if even that fails, the refusal says what happened and the kept wheels are
+    still there. The sha is the guard's own record of the wheel (the row's is the files
+    digest)."""
+    from shelfhold.plugin_host.index.staging import discard_staged_wheel
+
+    kept = kept_wheel_path(layout, key)
+    if not kept.exists():
+        raise guard.PluginInstallError(
+            "bad_wheel", "the kept wheel of the installed version is missing"
+        )
+    staged = _stage_kept(layout, kept, _staged_name(dist, version, kept))
+    try:
+        install_wheel(layout, staged, sha256)
+    finally:
+        discard_staged_wheel(staged)
+
+
 async def update(
     engine: Engine,
     store: _Store,
@@ -220,10 +261,11 @@ async def update(
     audit: Callable[[Any], None] | None = None,
 ) -> Installed:
     """Install the version the pinned index vouches for now, keeping the previous one for the
-    rollback. Refused: a pinned plugin, a plugin no index vouches for, a revoked key or wheel,
-    the same version (nothing to do), a lower one (that is a rollback, a reserved act), or a kept
-    wheel that cannot prove what it is. The new wheel is verified before the old files move:
-    a refusal leaves the installed plugin exactly as it was."""
+    rollback. Refused: a pinned plugin, a plugin no index vouches for, an index pinned again
+    to another key (the install stays pinned to its own signer, L08), a revoked key or wheel,
+    the same version (nothing to do), a lower one (that is a rollback, a reserved act), or a
+    kept wheel that cannot prove what it is. The new wheel is verified before the old files
+    move: a refusal leaves the installed plugin exactly as it was."""
     plugin = _installed(layout, key, dist)
     row = read_install(engine, key)
     if row is None:
@@ -240,6 +282,14 @@ async def update(
     if record is None:
         raise PluginLifecycleError(
             "index_not_pinned", "the repository this plugin was installed from is no longer pinned"
+        )
+    if record.pubkey != row.signer_pubkey:
+        # the same address pinned again to another key is another signer's index (L08): the
+        # install stays pinned to the signer whose word installed it, L08's own refusal
+        raise PluginLifecycleError(
+            "signer_pinned",
+            "the repository at this address is pinned to another key now: this install stays "
+            "pinned to its own signer — remove the plugin and install it as a distinct one",
         )
     outcome = await store.refresh(record, fetcher)
     entry = next((e for e in outcome.document.plugins if e.key == key), None)
@@ -279,9 +329,9 @@ async def update(
             installed = install_wheel(layout, wheel, entry.sha256)
         except guard.PluginInstallError:
             with contextlib.suppress(guard.PluginInstallError):
-                # the old version back, nothing lost; if even that fails, the refusal says what
-                # happened and the kept wheel is still there to reinstall from
-                install_wheel(layout, kept, row.sha256)
+                # the old version back, nothing lost; if even that fails, the refusal says
+                # what happened and the kept wheel is still there to reinstall from
+                _reinstall_kept(layout, key, dist, row.version, plugin.wheel_sha256)
             raise
         # the update succeeded: the old version's wheel becomes the kept previous
         aside = previous_wheel_path(layout, key)
@@ -304,16 +354,20 @@ async def update(
 
 def rollback(
     engine: Engine,
+    store: _Store,
     layout: Layout,
     key: str,
     dist: str,
     audit: Callable[[Any], None] | None = None,
 ) -> Installed:
     """Return to the previous kept version — the one the last update put aside, and the only
-    one. A reserved action (the caller checked); refused when the plugin is pinned or when no
-    previous version was kept. After it there is no previous anymore: the version that was
-    installed is not kept, going back and forth is not what the reserved act is for."""
-    _installed(layout, key, dist)
+    one. A reserved action (the caller checked); refused when the plugin is pinned, when no
+    previous version was kept, or when the index revoked that version's wheel or the plugin's
+    key: a revocation is the index's word against the very code the rollback would put back.
+    After it there is no previous anymore: the version that was installed is not kept, going
+    back and forth is not what the reserved act is for. A rollback that fails puts the
+    installed version back first: the refusal leaves the plugin exactly as it was."""
+    plugin = _installed(layout, key, dist)
     row = read_install(engine, key)
     if row is None:
         raise PluginLifecycleError("unknown", f"{key!r} is not an installed plugin")
@@ -321,9 +375,15 @@ def rollback(
         raise PluginLifecycleError(
             "pinned", "the installed version is pinned: unpin it to roll the plugin back"
         )
+    if key in store.revoked_plugin_keys():
+        raise PluginLifecycleError("plugin_revoked", f"the key of {key!r} was revoked")
     if row.previous_version is None or row.previous_sha256 is None:
         raise PluginLifecycleError(
             "no_previous", "no previous kept version to return to (none was kept aside)"
+        )
+    if row.previous_sha256 in store.revoked_wheel_sha256():
+        raise PluginLifecycleError(
+            "wheel_revoked", "the index revoked the wheel of the previous kept version"
         )
     previous = previous_wheel_path(layout, key)
     if not previous.exists() or file_sha256(previous) != row.previous_sha256.removeprefix(
@@ -333,19 +393,22 @@ def rollback(
             "previous_unavailable",
             "the kept wheel of the previous version is missing or no longer the recorded one",
         )
-    from shelfhold.plugin_host.index.staging import discard_staged_wheel, stage_wheel
+    from shelfhold.plugin_host.index.staging import discard_staged_wheel
 
     # the installer reads the tags of the *filename*: the kept wheel is staged under the name
-    # its own distribution and version answer for, and the staged copy leaves with the install
-    handle, staged = stage_wheel(
-        layout.root / "index",
-        f"{dist.replace('-', '_')}-{row.previous_version}-py3-none-any.whl",
-    )
+    # its own metadata answers for — the tags its publisher chose, never a made-up section —
+    # and the staged copy leaves with the install
+    staged = _stage_kept(layout, previous, _staged_name(dist, row.previous_version, previous))
     try:
-        with os.fdopen(handle, "wb") as sink:
-            sink.write(previous.read_bytes())
         remove_plugin(layout, dist)
-        installed = install_wheel(layout, staged, row.previous_sha256)
+        try:
+            installed = install_wheel(layout, staged, row.previous_sha256)
+        except guard.PluginInstallError:
+            with contextlib.suppress(guard.PluginInstallError):
+                # the version that was installed, back — nothing lost; if even that fails,
+                # the refusal says what happened and both kept wheels are still there
+                _reinstall_kept(layout, key, dist, row.version, plugin.wheel_sha256)
+            raise
     finally:
         discard_staged_wheel(staged)
     previous.replace(kept_wheel_path(layout, key))  # the rolled-back version is the kept one now
@@ -386,14 +449,18 @@ def retire_install(
 
 
 def reattach_if_same_origin(
-    engine: Engine, key: str, index_url: str | None, signer: str | None
+    engine: Engine,
+    key: str,
+    previous: tuple[str | None, str | None] | None,
+    index_url: str | None,
+    signer: str | None,
 ) -> int:
-    """After a reinstall: the orphaned bindings of the key come back when the origin is the same
-    — the same index and the same signer, or the admin's own hand for a wheel given by hand.
-    Another signer's code does not inherit the bindings (GAP-8-13: nothing is inherited without
-    the admin's confirmed word)."""
-    row = read_install(engine, key)
-    if row is None or (row.index_url, row.signer_pubkey) != (index_url, signer):
+    """After a reinstall: the orphaned bindings of the key come back when the origin is the
+    same — `previous` is the (index, signer) the *previous* install was pinned to, read before
+    the new install rewrote the row, never the row itself (which now tells the new install's
+    own origin). Another signer's code, or another index's, does not inherit the bindings
+    (GAP-8-13: nothing is inherited without the admin's confirmed word)."""
+    if previous is None or previous != (index_url, signer):
         return 0
     with write_transaction(engine) as connection:
         return reattach_orphaned(connection, key)

@@ -274,6 +274,27 @@ def _install_from_index(args: argparse.Namespace, resolved: ResolvedSettings, la
     return 0
 
 
+def _previous_origins(
+    resolved: ResolvedSettings, dist: str
+) -> dict[str, tuple[str | None, str | None]]:
+    """The (index, signer) each installed key of this distribution is pinned to, read before a
+    new install rewrites the row: the origin that decides whether the bindings come back —
+    never the row after the install, which then tells the new install's own origin."""
+    engine = _engine(resolved)
+    if engine is None:
+        return {}
+    try:
+        origins: dict[str, tuple[str | None, str | None]] = {}
+        for key, version in installed_versions(resolved.values).items():
+            if version.dist == dist:
+                row = lifecycle.read_install(engine, key)
+                if row is not None:
+                    origins[key] = (row.index_url, row.signer_pubkey)
+        return origins
+    finally:
+        engine.dispose()
+
+
 def _unpin_index_install(resolved: ResolvedSettings, dist: str) -> None:
     """A wheel the admin gave by hand is pinned by the admin's own act (M6 L08): the pin of an
     earlier install from an index does not survive it — the row says whose word installed the
@@ -290,9 +311,12 @@ def _unpin_index_install(resolved: ResolvedSettings, dist: str) -> None:
         engine.dispose()
 
 
-def _reattach_hand_install(resolved: ResolvedSettings, dist: str) -> int:
+def _reattach_hand_install(
+    resolved: ResolvedSettings, dist: str, previous: dict[str, tuple[str | None, str | None]]
+) -> int:
     """A wheel the admin gave by hand has no index and no signer (M6 L09a): a reinstall of the
-    same key under the same hand reattaches the bindings a removal left orphaned."""
+    same key reattaches the bindings a removal left orphaned only when the previous install
+    was the admin's own too — the previous origin, read before this install unpinned the row."""
     engine = _engine(resolved)
     if engine is None:
         return 0
@@ -300,7 +324,9 @@ def _reattach_hand_install(resolved: ResolvedSettings, dist: str) -> int:
         count = 0
         for key, version in installed_versions(resolved.values).items():
             if version.dist == dist:
-                count += lifecycle.reattach_if_same_origin(engine, key, None, None)
+                count += lifecycle.reattach_if_same_origin(
+                    engine, key, previous.get(key), None, None
+                )
         return count
     finally:
         engine.dispose()
@@ -322,8 +348,9 @@ def run_install(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     ):
         guard.remove_plugin(layout, plugin.name)  # no audit row, no installation
         return 1
+    _previous = _previous_origins(resolved, plugin.name)
     _unpin_index_install(resolved, plugin.name)
-    reattached = _reattach_hand_install(resolved, plugin.name)
+    reattached = _reattach_hand_install(resolved, plugin.name, _previous)
     _sync_attestations(resolved)  # a new version: the word given for the old one lapses
     print(t("plugin.installed", name=plugin.name, version=plugin.version))
     print(t("plugin.disabled_by_default"))
@@ -582,7 +609,8 @@ def run_unpin(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
 def run_rollback(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     """Return to the previous kept version (M6 L09a, D15) — a reserved action, and the CLI is the
     host's own hand: the one version the last update put aside, and after it there is no
-    previous anymore. A pinned plugin does not move."""
+    previous anymore. A pinned plugin does not move, and a version the index revoked does not
+    come back."""
     layout = guard.Layout.of(resolved.values.data_dir)
     key = guard.normalise_name(args.key)
     version = _installed_version(resolved, key)
@@ -593,12 +621,20 @@ def run_rollback(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     if engine is None:
         return 1
     try:
+        store = RepoStore(engine, now=SystemClock().now)
         installed = lifecycle.rollback(
-            engine, layout, key, version.dist, audit=_lifecycle_audit("plugin.rollback", key)
+            engine,
+            store,
+            layout,
+            key,
+            version.dist,
+            audit=_lifecycle_audit("plugin.rollback", key),
         )
-    except lifecycle.PluginLifecycleError as exc:
-        _audited(resolved, "plugin.rollback_refused", f"{key}:{exc.code}")
-        return _fail(t("plugin.rollback_refused", code=exc.code, detail=exc.detail))
+    except (lifecycle.PluginLifecycleError, guard.PluginInstallError) as exc:
+        code = getattr(exc, "code", "rollback_failed")
+        detail = getattr(exc, "detail", str(exc))
+        _audited(resolved, "plugin.rollback_refused", f"{key}:{code}")
+        return _fail(t("plugin.rollback_refused", code=code, detail=detail))
     finally:
         engine.dispose()
     _sync_attestations(resolved)  # another version: the word given for the other one lapses
