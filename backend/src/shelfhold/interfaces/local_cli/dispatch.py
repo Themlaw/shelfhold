@@ -173,6 +173,7 @@ def _device_tokens_create(auth: LocalAuth, by: Principal, params: Params) -> obj
         "subject_user_id": created.subject_user_id,
         "expires_at": _iso(created.expires_at),
         "device_id": created.device_id,
+        "kobo_sync_segment": created.kobo_sync_segment,  # a kobo's sync address, once too
     }
 
 
@@ -186,6 +187,7 @@ def _device_tokens_rotate(auth: LocalAuth, by: Principal, params: Params) -> obj
         "subject_user_id": rotated.subject_user_id,
         "expires_at": _iso(rotated.expires_at),
         "device_id": rotated.device_id,
+        "kobo_sync_segment": rotated.kobo_sync_segment,  # a kobo's sync address, once too
     }
 
 

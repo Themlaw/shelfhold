@@ -154,12 +154,14 @@ def _when(value: object) -> datetime | None:
 def _created_token(raw: object) -> CreatedDeviceToken:
     if not isinstance(raw, dict):
         raise ValueError("malformed_reply")
+    segment = raw.get("kobo_sync_segment")
     return CreatedDeviceToken(
         public_id=raw["public_id"],
         secret=raw["secret"],
         subject_user_id=raw["subject_user_id"],
         expires_at=_when(raw["expires_at"]),
         device_id=raw.get("device_id", ""),
+        kobo_sync_segment=segment if isinstance(segment, str) else None,
     )
 
 

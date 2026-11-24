@@ -41,6 +41,7 @@ EXPORTED: dict[str, str] = {
     "notify_destination": "notify_destinations",
     "read_marker": "read_markers",
     "tracker_hint": "tracker_hints",
+    "tracker_link": "tracker_links",  # M6 L13: the plugin's name and when, never the token
     "request_list_import": "request_list_imports",
     "source_account": "source_accounts",
     "tachibk_import": "tachibk_imports",
@@ -59,6 +60,8 @@ EXCLUDED: dict[str, str] = {
     "unit": "`deleted_by` and the like: who acted on a Unit, not data of the person",
     "read_state_push_note": "a note of the push to Kavita, rebuilt by the next pass; no content",
     "oidc_identity": "who of the provider may sign in as her (M5 L03): a credential, linked again",
+    "tracker_allowance": "the admin's word that a tracker may be linked by this child (M6 L13): "
+    "a parental decision, the audit holds it",
 }
 
 SECRET_NAMES = (

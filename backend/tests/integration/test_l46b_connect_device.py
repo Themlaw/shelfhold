@@ -17,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from shelfhold.config import Settings
+from shelfhold.identity.domain.device_secret import kobo_path_credential, kobo_path_token
 from tests.auth_env import CSRF_HEADER, PASSWORD, AuthEnv, auth_env, db_dump, db_rows
 from tests.integration.test_l46_device_tokens import md5
 from tests.visibility_env import add_profile
@@ -85,6 +86,20 @@ def test_a_member_pairs_a_reader_for_themself_and_sees_the_secret_once(world: Wo
     assert listed.status_code == 200
     assert body["secret"] not in listed.text  # a second answer never carries it
     assert [i["public_id"] for i in listed.json()["items"]] == [body["public_id"]]
+
+
+@pytest.mark.req("EF-INT-012")
+def test_a_kobo_answer_carries_the_segment_of_its_sync_address_once(world: World) -> None:
+    """A kobo is given its sync address as one path segment (M6 L17a): the answer of the
+    creation carries it with the secret, once, and no other kind of device has one."""
+    made = world.create(world.mum, kind="kobo")
+    assert made.status_code == 201, made.text
+    body = made.json()
+    assert body["kobo_sync_segment"] == kobo_path_token(body["public_id"], body["secret"])
+    assert kobo_path_credential(body["kobo_sync_segment"]) == (body["public_id"], body["secret"])
+    listed = world.mum.get(TOKENS)
+    assert body["kobo_sync_segment"] not in listed.text  # a second answer never carries it
+    assert world.create(world.mum).json()["kobo_sync_segment"] is None
 
 
 def test_the_secret_is_stored_nowhere(world: World) -> None:

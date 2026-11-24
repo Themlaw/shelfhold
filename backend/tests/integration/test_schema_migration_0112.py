@@ -75,20 +75,20 @@ def _seed(database: str) -> None:
         )
 
 
-def test_the_revision_is_0112_the_head_on_0111() -> None:
+def test_the_revision_is_0112_the_head_on_0115() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0112"]  # the head is pinned here, by the newest
-    assert script.get_revision("0112").down_revision == "0111"
+    assert script.get_revision("0112").down_revision == "0115"
 
 
 def test_the_lifecycle_columns_come_and_go_with_the_migration(settings: Settings) -> None:
     database = str(settings.database_path)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    command.upgrade(alembic_config(database), "0111")
+    command.upgrade(alembic_config(database), "0115")
     assert not [c for c in _columns(database) if c in COLUMNS]
     assert "0112" in migrate(settings).applied
     assert [c for c in _columns(database) if c in COLUMNS] == list(COLUMNS)
-    command.downgrade(alembic_config(database), "0111")
+    command.downgrade(alembic_config(database), "0115")
     assert not [c for c in _columns(database) if c in COLUMNS]
 
 
@@ -131,6 +131,6 @@ def test_an_orphaned_binding_survives_the_downgrade(settings: Settings) -> None:
             "UPDATE source_binding SET active = 0, disabled_reason = 'orphaned'"
         )
     assert _binding(database) == (0, "orphaned")
-    command.downgrade(alembic_config(database), "0111")
+    command.downgrade(alembic_config(database), "0115")
     # the mark becomes the closest reason the older schema knows; the row is still there
     assert _binding(database) == (0, "not_loaded")

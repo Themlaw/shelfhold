@@ -38,7 +38,8 @@ import shelfhold_sdk.testing.destination_kit
 import shelfhold_sdk.testing.fakes
 import shelfhold_sdk.testing.fixtures
 import shelfhold_sdk.testing.fixtures.reserved_targets
-import shelfhold_sdk.testing.kit  # noqa: F401  (aliased into sys.modules below)
+import shelfhold_sdk.testing.kit
+import shelfhold_sdk.tracker  # noqa: F401  (aliased into sys.modules below)
 
 # `shelfhold_sdk.testing.pytest_plugin` is not imported above on purpose: it is the only SDK
 # module that needs `pytest`, which the production image does not carry, and this re-export
@@ -67,4 +68,5 @@ __all__ = [
     "refs",
     "source",
     "testing",
+    "tracker",
 ]

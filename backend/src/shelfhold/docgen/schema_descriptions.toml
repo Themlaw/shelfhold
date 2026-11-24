@@ -1597,6 +1597,35 @@ content_hash = "Hash of the converted bytes (`sha256:<hex>`); it names the file,
 size = "Size of the converted file in bytes."
 created_at = "When it was made (UTC)."
 
+[tables.kobo_sync_point]
+description = "The sync point of a Kobo device: what its last completed sync gave it (the entitlements and the tags) and when, so the next sync answers only what changed since the device was last seen; while a sync runs, the snapshot its first page froze."
+[tables.kobo_sync_point.columns]
+id = "ULID; the row is replaced at each completed sync, so it names the point, not the device."
+device_id = "The device the point belongs to; one row per device, and the row goes with it."
+synced_at = "The instant of the first page of the sync that wrote the point (UTC): what the next delta compares against, never the clock of the last page."
+books = "The entitlements the device was given, as JSON: entitlement id -> the Edition behind it, its title and the fingerprint of what may change (title, language, shelf)."
+tags = "The tags the device was given, as JSON: tag id -> the shelf's name and the entitlements it held."
+in_progress = "The sync in flight, as JSON, frozen by its first page (the walk, the deletions, the tags, the reading states, the instant of page 1); empty when no sync is running."
+created_at = "When the row was written (UTC); the point is replaced at each completion, so it dates the last one."
+[tables.tracker_link]
+description = "A profile's account on a reading tracker: the reference the plugin returned, the profile's accord to the push, and the remote token sealed to the row (M6 L13)."
+[tables.tracker_link.columns]
+id = "Link identifier (ULID); the sealed envelope is bound to it, so linking again keeps the row."
+user_id = "The profile whose remote account is linked; one link per profile and per tracker, gone with the profile."
+plugin_key = "Key of the tracker plugin the account is linked through."
+remote_ref = "The `TrackerRef` the plugin returned, kept as JSON and handed back to it as it was."
+origin = "The `api` origin the token was sealed for; a plugin that declares another domain under the same key receives nothing."
+linked_at = "When the account was linked, or last linked again (UTC)."
+push_enabled = "Whether the profile gave their explicit accord to the push; off until they do."
+token_fingerprint = "Short keyed digest of the token, the only thing the API shows of it."
+
+[tables.tracker_allowance]
+description = "The admin's word that one tracker may be linked by one child profile: a row means allowed, no row means refused (M6 L13)."
+[tables.tracker_allowance.columns]
+user_id = "The child profile the word is about; gone with the profile."
+plugin_key = "Key of the tracker plugin the child may link."
+allowed_by = "Admin who said the word (`user.id`); NULL once that account is gone."
+allowed_at = "When the word was last said (UTC)."
 [tables.plugin_repo]
 description = "A repository of signed plugin indexes the admin pinned (M6 L07, EF-SRC-017, D14): by its URL and the public key of its signer, never without the key, and none is preconfigured."
 [tables.plugin_repo.columns]

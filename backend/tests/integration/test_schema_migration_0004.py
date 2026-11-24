@@ -43,10 +43,15 @@ M5_TABLES = {
     "device",  # migration 0100 (M5 L02, EF-USR-008)
     "oidc_identity",  # migration 0101 (M5 L03, EF-USR-004)
 }
+M6_TABLES = {
+    "tracker_link",  # migration 0113 (M6 L13, EF-INT-010): the sealed token of a profile's link
+    "tracker_allowance",  # migration 0113 (M6 L13): the admin's word for a child profile
+}
 READING_TABLES = {
     "reading_position", "progress_sync_cursor", "progress_sync_note", "read_state_push_note",
     "reading_conflict", "reader_settings",
-}  # 0064, 0078, 0080, 0102, 0103  # fmt: skip
+    "kobo_sync_point",  # migration 0115 (M6 L17a, EF-INT-012)
+}  # 0064, 0078, 0080, 0102, 0103, 0115  # fmt: skip
 M4_TABLES = {
     "destination_account",
     "device_token",
@@ -133,6 +138,7 @@ def test_metadata_covers_exactly_the_migrated_tables(tmp_path: Path) -> None:
         | M3_TABLES
         | M4_TABLES
         | M5_TABLES
+        | M6_TABLES
     )
     assert tables(database) == {t.name for t in metadata.sorted_tables} == expected
     # `replica` moved to its own module (M3 L00) without changing the migrated DDL

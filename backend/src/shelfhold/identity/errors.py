@@ -52,6 +52,13 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("destination_account_child_refused", 422, "user"),
     # The Apprise destination of one adult profile (M4 L39): a URL the allowlist refuses
     ErrorCode("notify_destination_refused", 422, "user"),
+    # A profile's tracker link (M6 L13, EF-INT-010): another's answers like one that is not
+    # there; a child without the admin's allowance; a push without the profile's accord; the
+    # remote service's refusal. The rule that refused is in the `reason` extension, never a token
+    ErrorCode("tracker_not_found", 404, "user"),
+    ErrorCode("tracker_child_refused", 403, "user"),
+    ErrorCode("tracker_push_refused", 403, "user"),
+    ErrorCode("tracker_refused", 422, "user"),
     # Notification preferences (M3 L14): a mode, quiet hours or a time zone that is not one
     ErrorCode("notification_prefs_refused", 422, "user"),
 )

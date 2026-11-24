@@ -3209,3 +3209,23 @@ cause = "La liste est vide, trop longue, ou nomme un événement que les webhook
 title = "Un webhook a abandonné un envoi."
 action = "Ouvrez la liste des webhooks, vérifiez l'adresse qui ne répond pas, puis faites tourner le secret ou supprimez l'abonnement."
 cause = "Un envoi a épuisé ses tentatives, son événement a disparu, ou le profil qui l'avait créé n'est plus administrateur : le destinataire n'a pas répondu, ou a refusé la livraison."
+
+[errors."tracker_not_found"]
+title = "Ce tracker n'existe pas pour vous."
+action = "Rafraîchissez la liste de vos trackers."
+cause = "Le plugin du tracker n'est pas là, aucun lien n'existe, ou il n'est pas à vous : le tracker d'un autre profil répond comme un tracker absent."
+
+[errors."tracker_child_refused"]
+title = "Ce tracker n'est pas permis à un profil enfant."
+action = "Demandez à l'administrateur : il peut autoriser un tracker à un profil enfant, depuis sa propre session."
+cause = "Un profil enfant ne lie un tracker que là où l'administrateur a autorisé ce tracker pour ce profil."
+
+[errors."tracker_push_refused"]
+title = "Ce tracker n'envoie rien pour l'instant."
+action = "Activez d'abord l'envoi dans les réglages du tracker : rien ne part avant votre accord."
+cause = "Le profil n'a pas donné l'accord qui permet à Shelfhold d'envoyer sa progression au service distant."
+
+[errors."tracker_refused"]
+title = "Ce compte de tracker ne peut pas être lié."
+action = "Lisez la raison donnée : le jeton doit ouvrir le compte, sur le service que le plugin a déclaré."
+cause = "Le jeton est refusé, le plugin ne déclare aucun moyen de le porter, ou le service distant n'a pas répondu."

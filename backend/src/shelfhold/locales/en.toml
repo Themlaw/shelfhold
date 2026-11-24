@@ -3211,3 +3211,23 @@
     title = "A webhook gave up a delivery."
     action = "Open the list of webhooks, check the address that does not answer, then rotate the secret or remove the subscription."
     cause = "A delivery ran out of attempts, its event was gone, or the profile that had made the subscription is no longer an administrator: the receiver did not answer, or refused the delivery."
+
+  [errors.tracker_not_found]
+    title = "This tracker does not exist for you."
+    action = "Refresh the list of your trackers."
+    cause = "The tracker plugin is not there, no link exists, or it is not yours: another profile's answers like one that is not there."
+
+  [errors.tracker_child_refused]
+    title = "This tracker is not allowed to a child profile."
+    action = "Ask the administrator: they may allow one tracker to one child profile, from their own session."
+    cause = "A child profile links a tracker only where the administrator allowed that tracker to that profile."
+
+  [errors.tracker_push_refused]
+    title = "This tracker sends nothing yet."
+    action = "Turn the push on from the tracker's settings first: nothing leaves before you say yes."
+    cause = "The profile has not given the accord that lets Shelfhold send their progress to the remote service."
+
+  [errors.tracker_refused]
+    title = "This tracker account cannot be linked."
+    action = "Read the reason given: the token must open the account, on the service the plugin declared."
+    cause = "The token is refused, the plugin declares no way to carry it, or the remote service did not answer."

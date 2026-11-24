@@ -34,6 +34,7 @@ from shelfhold.catalog.public import (
 from shelfhold.config import Settings
 from shelfhold.events.activity import ActivityEvent, Viewer
 from shelfhold.events.projection import project_event
+from shelfhold.identity.domain.device_secret import kobo_path_token
 from shelfhold.identity.public import local_auth, reader_scope, scope_of
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import platform
@@ -109,6 +110,16 @@ OWN = (
     "POST /api/v1/requests",
     "GET /api/v1/requests/{request_id}",
     "POST /api/v1/requests/{request_id}/cancel",
+    # M6 L13 (EF-INT-010): the trackers of the caller's own profile, never catalogue data; a
+    # child reaches her own — refused until the admin allowed one, which is the CLOSED route's
+    # business (`test_l13_trackers.py`)
+    "GET /api/v1/profiles/{user_id}/trackers",
+    "GET /api/v1/profiles/{user_id}/trackers/{plugin_key}",
+    "PUT /api/v1/profiles/{user_id}/trackers/{plugin_key}",
+    "DELETE /api/v1/profiles/{user_id}/trackers/{plugin_key}",
+    "PUT /api/v1/profiles/{user_id}/trackers/{plugin_key}/push",
+    "POST /api/v1/profiles/{user_id}/trackers/{plugin_key}/progress",
+    "POST /api/v1/profiles/{user_id}/trackers/{plugin_key}/pull",
 )
 # DEVICE (M4 L46): behind a device token and nothing else, the credential of an e-reader. A session,
 # a child's or an adult's, and an API key are refused (401); the token of a child reads as that
@@ -173,8 +184,24 @@ LITE = (
     "GET /lite/kepub/{item_id}",
     "GET /lite/{rest:path}",
 )
-DEVICE = (*KOSYNC, *OPDS)
-DEVICE_ALL = (*DEVICE, *KOSYNC_WRITE)
+# KOBO (M6 L17a): the sync emulation, behind the device token of the Kobo, in the path. The
+# credential is the path segment and nothing else (a session, a key and a header are refused);
+# the token of a child reads as that child and the sync answers only what the filter lets
+# through. The attacks are in `tests/integration/test_l17a_kobo_sync.py`.
+KOBO = (
+    "GET /kobo/{token}/v1/initialization",
+    "GET /kobo/{token}/v1/library/sync",
+    "GET /kobo/{token}/{rest:path}",  # the catch-all stub of every other route
+)
+KOBO_WRITE = (
+    "POST /kobo/{token}/v1/auth/device",  # the dummy activation: accepted, nothing stored
+    "POST /kobo/{token}/{rest:path}",
+    "PUT /kobo/{token}/{rest:path}",
+    "PATCH /kobo/{token}/{rest:path}",
+    "DELETE /kobo/{token}/{rest:path}",
+)
+DEVICE = (*KOSYNC, *OPDS, *KOBO)
+DEVICE_ALL = (*DEVICE, *KOSYNC_WRITE, *KOBO_WRITE)
 OPEN = {
     **{route: "lite" for route in LITE},  # M5 L17a
     "GET /api/v1/activity": "activity",
@@ -496,6 +523,9 @@ CLOSED = (
     "GET /api/v1/admin/sessions",  # M3 L07: every profile's sessions are the admin's
     "DELETE /api/v1/admin/sessions/{session_id}",
     "GET /api/v1/admin/recovery-kit",
+    # M6 L13 (EF-INT-010): the admin's word that one tracker may be linked by one child profile;
+    # refused to a child and to a key of hers (`test_l13_trackers.py`)
+    "PUT /api/v1/profiles/{user_id}/trackers/{plugin_key}/allowance",
 )
 
 # The one route whose body is read before its guard answers: it is given a valid one, so that the
@@ -810,27 +840,40 @@ def test_device_routes_refuse_a_session_and_a_key_and_serve_a_child_token_no_dat
     env = world.env
     key = env.app.state.auth_gate.auth.create_api_key(name="k", scope="admin").value  # type: ignore[attr-defined]
     for route in DEVICE:
-        method, path = _fill(route)
+        method, template = route.split(" ", 1)
         assert method == "GET"
+        token = env.app.state.auth_gate.auth.create_device_token(  # type: ignore[attr-defined]
+            subject_username="kid", kind="kobo" if route in KOBO else None
+        )
+        if route in KOBO:
+            # the credential is the path segment: the token of the Kobo, not a header
+            path = (
+                template.replace("{token}", kobo_path_token(token.public_id, token.secret))
+                .replace("{rest:path}", "v1/anything")
+            )  # fmt: skip
+            presented: dict[str, str] = {}
+        else:
+            path = _fill(route)[1]
+            md5 = hashlib.md5(token.secret.encode(), usedforsecurity=False).hexdigest()
+            presented = (  # the two doors of one token: kosync takes the md5, OPDS the secret
+                {"x-auth-user": token.public_id, "x-auth-key": md5}
+                if route in KOSYNC
+                else {
+                    "Authorization": "Basic "
+                    + base64.b64encode(f"{token.public_id}:{token.secret}".encode()).decode()
+                }
+            )
         by_session = world.kid.get(path)  # the child's own session
         by_admin = env.client.get(path)  # and the admin's
         by_key = env.other_client("10.0.0.53").get(path, headers={"Authorization": f"Bearer {key}"})
         assert (by_session.status_code, by_admin.status_code, by_key.status_code) == (401, 401, 401)
         world.clean(by_session.text + by_admin.text + by_key.text)
-        token = env.app.state.auth_gate.auth.create_device_token(subject_username="kid")  # type: ignore[attr-defined]
-        md5 = hashlib.md5(token.secret.encode(), usedforsecurity=False).hexdigest()
-        presented = (  # the two doors of one token: kosync takes the md5, OPDS the secret (Basic)
-            {"x-auth-user": token.public_id, "x-auth-key": md5}
-            if route in KOSYNC
-            else {
-                "Authorization": "Basic "
-                + base64.b64encode(f"{token.public_id}:{token.secret}".encode()).decode()
-            }
-        )
         by_token = env.other_client("10.0.0.54").get(path, headers=presented)
         if route in KOSYNC:
             expected = {"authorized": "OK"} if route.endswith("/auth") else {}
             assert by_token.status_code == 200 and by_token.json() == expected
+        elif route in KOBO:  # the initialization, the sync and the stub all answer the child
+            assert by_token.status_code == 200, (route, by_token.status_code)
         else:  # a feed answers 200, or the 404 of a filled-in identifier nobody has
             assert by_token.status_code in (200, 404), (route, by_token.status_code)
         world.clean(by_token.text)

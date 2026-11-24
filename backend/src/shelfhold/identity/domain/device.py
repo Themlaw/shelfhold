@@ -14,6 +14,7 @@ from typing import Final
 
 KINDS: Final = ("koreader", "kobo", "opds", "browser", "other")
 DEFAULT_KIND: Final = "other"
+KOBO_KIND: Final = "kobo"  # the kind whose door is the sync address (M6 L17a)
 LABEL_LIMIT: Final = 80
 
 

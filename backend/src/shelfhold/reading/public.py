@@ -1,5 +1,10 @@
 """What the interfaces and other contexts may use from the reading context."""
 
+from shelfhold.reading.application.kobo_sync import (
+    KoboSync,
+    SyncPage,
+    entitlement_of,
+)
 from shelfhold.reading.application.kosync import InvalidProgressError as InvalidProgressError
 from shelfhold.reading.application.kosync import (
     Kosync,
@@ -22,13 +27,16 @@ from shelfhold.reading.application.transfer import TransferReport, prefer_editio
 __all__ = [
     "InvalidLocatorError",
     "InvalidProgressError",
+    "KoboSync",
     "Kosync",
     "MemberKeyRevokedError",
     "ReadMark",
+    "SyncPage",
     "TransferReport",
     "UnitProgress",
     "UnknownCarrierError",
     "UnknownCounter",
+    "entitlement_of",
     "live_member_account",
     "normalise_locator",
     "prefer_edition",

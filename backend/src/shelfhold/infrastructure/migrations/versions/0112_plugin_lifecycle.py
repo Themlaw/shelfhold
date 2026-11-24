@@ -17,7 +17,7 @@ DDL `create_all` writes (0005, 0111). Reversible: the downgrade maps an `orphane
 `not_loaded` (the plugin is gone: the source is not loaded) and drops the lifecycle columns —
 the pin of a version nobody keeps is then simply forgotten.
 
-Number: 0112 follows 0111 (the head of L08).
+Number: 0112 follows 0115 (the head of main: L08, L13, L17a).
 """
 
 from typing import Any
@@ -26,7 +26,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0112"
-down_revision = "0111"
+down_revision = "0115"
 branch_labels = None
 depends_on = None
 

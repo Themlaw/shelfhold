@@ -328,6 +328,8 @@ FRESHNESS_LINE = {
             "plugin.disable_isolated",  # M6 L06: silencing a plugin is an admin gesture too
             "plugin.adopt_state",  # M6 L08: a previous signer's held data moves on this word
             "plugin.rollback",  # M6 L09a: code the index no longer vouches for comes back
+            "tracker.link",  # M6 L13: a remote account's token is a secret, sealed
+            "tracker.push_opt_in",  # M6 L13: the profile's reading goes out to the tracker
         ),
         "p3",
     ),
@@ -343,6 +345,7 @@ FRESHNESS_LINE = {
             "profile.kavita_mapping",
             "target.recheck_child_exposure",
             "plugin.attest_partitioning",  # D15: which shelves a third-party target may serve
+            "tracker.allow_child",  # M6 L13: a tracker allowed to one child profile
         ),
         "parental",
     ),
@@ -361,6 +364,7 @@ FRESHNESS_LINE = {
             "session.revoke_other",  # M3 L07: undone by signing in again; hardened profile only
             "recovery_kit.read",  # M3 L07: a page with no secret in it
             "destination_account.revoke",  # M4 L12: erases a key, undone by pasting it again
+            "tracker.unlink",  # M6 L13: erases a sealed token, undone by linking it again
         ),
         "none",
     ),

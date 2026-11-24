@@ -44,6 +44,7 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.errors import SecretsError
 from shelfhold.infrastructure.secrets.vault import SecretVault
+from shelfhold.integrations.trackers import purge_plugin
 from shelfhold.interfaces.cli._headless import read_secret
 from shelfhold.plugin_host import install as guard
 from shelfhold.plugin_host import lifecycle
@@ -405,6 +406,52 @@ def run_adopt(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     return 0
 
 
+def run_adopt(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    """The admin's confirmed transfer (a reserved action, EF-SRC-017 passe 8): the state, the
+    settings and the secrets a previous install (another signer) left held move to the
+    installed plugin. Nothing is overwritten: a plugin that already has data of its own is
+    refused, and so is a key with nothing held. Several previous installs may wait under
+    different signers: the transfer then names which one, never a silent pick."""
+    layout = guard.Layout.of(resolved.values.data_dir)
+    key = guard.normalise_name(args.key)
+    if key not in installed_keys(layout):
+        _audited(resolved, "plugin.adopt_refused", f"{key}:unknown")
+        return _fail(t("errors.plugin.unknown.title"))
+    engine = _engine(resolved)
+    if engine is None:
+        return 1
+    try:
+        found = held_plugin_data(engine, key)
+        if not found:
+            _audited(resolved, "plugin.adopt_refused", f"{key}:nothing_held")
+            return _fail(t("plugin.nothing_held", name=key))
+        if args.held is None and len(found) > 1:
+            _audited(resolved, "plugin.adopt_refused", f"{key}:ambiguous")
+            joined = t("status.list_separator").join(found)
+            return _fail(t("plugin.adopt_ambiguous", name=key, held=joined))
+        held = found[-1] if args.held is None else args.held
+        if held not in found:
+            _audited(resolved, "plugin.adopt_refused", f"{key}:unknown_held")
+            return _fail(t("plugin.held_unknown", name=key, held=held))
+        try:
+            # the audit row and the move are one transaction: a refused transfer (occupied,
+            # keyring) leaves no row that says the data moved (M6 L08 review)
+            adopt_plugin_data(
+                engine,
+                _vault_or_none(resolved),
+                key,
+                held,
+                audit=lambda connection: write_audit(connection, "plugin.adopt", held, _actor()),
+            )
+        except PluginDataError as exc:
+            _audited(resolved, "plugin.adopt_refused", f"{key}:{exc.code}")
+            return _fail(t("plugin.adopt_refused", code=exc.code, detail=exc.detail))
+    finally:
+        engine.dispose()
+    print(t("plugin.adopted", name=key, held=held))
+    return 0
+
+
 def run_enable(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     """Enable a plugin in its mode (D13): isolated by default — a reserved action, no variable,
     no typed sentence; in process only with ``--in-process``, the variable of M1b and the phrase
@@ -493,6 +540,9 @@ def run_remove(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
                 # the bindings of the plugin's sources are marked orphaned, nothing they
                 # hold is lost; a reinstall of the same key at the same origin reattaches
                 orphans += lifecycle.retire_install(engine, layout, key)
+            # nor a tracker link: the sealed tokens must not outlive the code they were
+            # handed to, and the allowances said in the plugin's name go with them (M6 L13)
+            purge_plugin(engine, keys)
         finally:
             engine.dispose()
     print(t("plugin.removed", name=args.name))

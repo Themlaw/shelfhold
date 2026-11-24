@@ -53,6 +53,7 @@ from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.settings_store import load_db_settings
 from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.integrations.notify import ProfileDestinations
+from shelfhold.integrations.trackers import TrackerHost
 from shelfhold.integrations.webhooks import WebhookAdmin
 from shelfhold.interfaces.http_api.activity import build_activity_router
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
@@ -80,6 +81,7 @@ from shelfhold.interfaces.http_api.identity import (
 from shelfhold.interfaces.http_api.identity_headers import ForwardAuth
 from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
+from shelfhold.interfaces.http_api.kobo import build_kobo_router
 from shelfhold.interfaces.http_api.kosync import build_kosync_router
 from shelfhold.interfaces.http_api.library import build_library_router
 from shelfhold.interfaces.http_api.lite import build_lite_router
@@ -116,6 +118,7 @@ from shelfhold.interfaces.http_api.sync_status import build_sync_status_router
 from shelfhold.interfaces.http_api.tachibk_import import build_tachibk_import_router
 from shelfhold.interfaces.http_api.teams import build_teams_router
 from shelfhold.interfaces.http_api.thumbnails import build_thumbnails_router
+from shelfhold.interfaces.http_api.trackers import build_trackers_router
 from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.http_api.webhooks import build_webhooks_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
@@ -146,7 +149,7 @@ from shelfhold.reading.application.progress import ReadMarks
 from shelfhold.reading.application.publication import PublicationService, epub_spine_of
 from shelfhold.reading.application.settings import ReaderSettings
 from shelfhold.reading.bundle import SeriesBundles
-from shelfhold.reading.public import Kosync
+from shelfhold.reading.public import KoboSync, Kosync
 from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
 from shelfhold.runtime_jobs import RELATIONS_JOB_KIND, PlanService, hub_listeners
 
@@ -437,6 +440,10 @@ def create_app(
             spine_of=epub_spine_of(content_access), hold_work=progress_lease(),
         )  # fmt: skip
 
+    @cache
+    def kobo_sync() -> KoboSync:  # M6 L17a: the sync of each device, on its own sync point
+        return KoboSync(engine, clock.now)
+
     def relations_after_audience_change() -> None:
         pools = runtime.pools
         if pools is not None:  # M4 L19: the links a new audience forbids are taken back now
@@ -458,6 +465,15 @@ def create_app(
         build_destination_accounts_router(ops_services),  # M4 L12: a member's own Kavita key
         build_notify_destination_router(  # M4 L39: where an adult's titles go, sealed
             lambda: ProfileDestinations(engine, composition.vault, clock)
+        ),
+        build_trackers_router(  # M6 L13: a profile's own tracker, sealed and hinted
+            lambda: TrackerHost(
+                engine,
+                composition.vault,
+                clock,
+                registry_of=composition.plugins,
+                fetcher_for=lambda origin: composition.network.one_shot(origin),
+            )
         ),
         build_sync_status_router(ops_services),  # M4 L33b: the sync state, member by member
         build_edition_shelf_router(lambda: ShelfService(engine, clock=clock)),
@@ -538,6 +554,7 @@ def create_app(
         build_kosync_router(  # M4 L47: where the e-reader is, behind the same device token
             kosync, clock.now
         ),
+        build_kobo_router(kobo_sync),  # M6 L17a: the Kobo sync, behind the token in the path
         build_search_router(
             lambda: engine, ops_services
         ),  # EF-BIB-010, EF-SRC-005: admin only (L09)

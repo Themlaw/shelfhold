@@ -60,8 +60,17 @@ class RequestContextMiddleware:
 
 def _logged_path(path: str) -> str:
     """The path of the access line. The ticket of `/content` is a bearer word in the path
-    (ADR-0055): it, and the name of the entry after it, never reach a log."""
-    return "/content/***" if path.startswith("/content/") else path
+    (ADR-0055): it, and the name of the entry after it, never reach a log. The segment of a Kobo
+    sync address (`/kobo/<token>/...`, M6 L17a) is the whole credential of the device: it is
+    masked here, before the line exists — no processor has to take it back out."""
+    if path.startswith("/content/"):
+        return "/content/***"
+    marked = path.find("/kobo/")
+    if marked != -1:  # the sync address, wherever the mount point sits
+        rest = path[marked + len("/kobo/") :]
+        _segment, slash, tail = rest.partition("/")
+        return path[: marked + len("/kobo/")] + "***" + (slash + tail if tail else "")
+    return path
 
 
 class SecurityHeadersMiddleware:

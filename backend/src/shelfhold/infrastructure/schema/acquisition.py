@@ -442,6 +442,7 @@ upstream_snapshot = sa.Table(
 # the lifecycle: `pinned` freezes the installed version (no update, no rollback), and the previous
 # kept version (`previous_version`, `previous_sha256`) is the one — and the only one — the
 # reserved rollback returns to; the pair comes and goes together (`previous_paired`).
+# same key is a new install, never an update.
 plugin_install = sa.Table(
     "plugin_install",
     metadata,

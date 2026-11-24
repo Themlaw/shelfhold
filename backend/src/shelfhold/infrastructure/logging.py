@@ -62,9 +62,11 @@ _LINE_VALUE = re.compile(
 )
 _URL_USERINFO = re.compile(r"(?P<head>//[^/\s:@]*:)[^/\s@]+(?P<tail>@)")
 _OPDS_KEY = re.compile(r"(?P<head>/api/opds/)[^/\s?#]+")
-# `/token/<value>`, `/apikey/<value>`...: the segment after a word that names a credential. A path
-# segment that is shaped like one (a JWT, a long hexadecimal digest) is masked wherever it sits.
-_PATH_KEYWORD = r"(?:api[-_]?key|apikey|key|token|access[-_]?token|secret|auth|bearer|session)"
+# `/token/<value>`, `/apikey/<value>`...: the segment after a word that names a credential —
+# `kobo` among them: the sync address of the device holds its whole credential in the path
+# (M6 L17a). A path segment that is shaped like one (a JWT, a long hexadecimal digest) is masked
+# wherever it sits.
+_PATH_KEYWORD = r"(?:api[-_]?key|apikey|key|token|access[-_]?token|secret|auth|bearer|session|kobo)"
 _PATH_KEY = re.compile(rf"(?P<head>/{_PATH_KEYWORD}/)[^/\s?#]+", re.IGNORECASE)
 _TOKEN_SEGMENT = re.compile(
     r"eyJ[\w-]+\.[\w-]+\.[\w-]*|[0-9a-fA-F]{32,}|[A-Za-z0-9_-]{20,}={0,2}(?=[A-Za-z0-9_-]*\d)"

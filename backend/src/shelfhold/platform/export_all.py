@@ -100,6 +100,8 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "device": _CREDENTIAL,  # M5 L02: the registry of the e-readers whose tokens stay behind
     "oidc_identity": _CREDENTIAL,  # M5 L03: who of the provider may sign in as whom, linked again
     "notify_destination": _CREDENTIAL,
+    "tracker_link": _CREDENTIAL,  # M6 L13: a remote account's token, sealed to the row
+    "tracker_allowance": _CREDENTIAL,  # M6 L13: the admin's word for a child, said again
     "source_secret": _CREDENTIAL, "source_config": _CREDENTIAL, "plugin_attestation": _CREDENTIAL,
     "provider_secret": _CREDENTIAL, "webhook_subscription": _CREDENTIAL,
     "idempotency_key": _CREDENTIAL,
@@ -152,6 +154,9 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "collection_remote": _REBUILT,  # the next sync of collections makes them again (M4 L18a)
     "traffic_counter": _NOISE,  # what the Fetcher carried per day: a counter, counted again (L29)
     "page_issue": _REBUILT,  # found again by the next look at the content (M4 L53)
+    # the cursor of a kobo's last sync (M6 L17a): the registry of the devices stays behind, and
+    # a device whose point is not there takes a full sync, which is its own recovery
+    "kobo_sync_point": _NOISE,
 }  # fmt: skip
 
 # Columns of an exported table that never leave: the password hash is the only secret in one.
