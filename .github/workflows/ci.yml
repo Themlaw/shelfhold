@@ -45,7 +45,7 @@ jobs:
     env:
       # The only place where the number of shards is defined (see CONTRIBUTING.md).
       BACKEND_SHARDS: "4"
-      BACKEND_INTEGRATION_SHARDS: "10"
+      BACKEND_INTEGRATION_SHARDS: "16"
       E2E_SHARDS: "2"
     steps:
       - id: shards
@@ -690,13 +690,17 @@ jobs:
       - name: Playwright browser
         if: matrix.image == ''
         working-directory: e2e
-        timeout-minutes: 8
+        timeout-minutes: 10
         env:
           BROWSER: ${{ matrix.browser }}
         # The libraries are installed to the end, never cut by `timeout`: a killed `npx` leaves its
         # `apt-get` holding the dpkg lock and every later attempt fails on the lock. The step is
-        # bounded by `timeout-minutes` instead (which stops the whole process group).
-        run: npx playwright install --with-deps "$BROWSER"
+        # bounded by `timeout-minutes` instead (which stops the whole process group). A stalled
+        # Ubuntu mirror is cut by apt itself (short timeouts, retries), not left to the step.
+        run: |
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+            | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
+          npx playwright install --with-deps "$BROWSER"
       - name: Playwright (reader, one engine)
         working-directory: e2e
         env:
