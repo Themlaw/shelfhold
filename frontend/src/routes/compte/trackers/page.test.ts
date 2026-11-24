@@ -34,6 +34,7 @@ afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 describe('Écran des trackers', () => {
+  // req: EF-INT-010
   it('links a tracker for the profile', async () => {
     server.use(
       http.get(`${BASE}/api/v1/me`, () => HttpResponse.json({ id: 'u1', role: 'member', username: 'm', nav: [] })),
@@ -50,6 +51,7 @@ describe('Écran des trackers', () => {
     expect(await screen.findByText(KEY)).toBeTruthy();
   });
 
+  // req: EF-INT-010
   it('unlinks a tracker', async () => {
     server.use(
       http.get(`${BASE}/api/v1/me`, () => HttpResponse.json({ id: 'u1', role: 'member', username: 'm', nav: [] })),
@@ -63,6 +65,7 @@ describe('Écran des trackers', () => {
     expect(await screen.findByText('Aucun tracker lié.')).toBeTruthy();
   });
 
+  // req: EF-INT-010
   it('toggles the push opt-in with a re-authentication prompt when required', async () => {
     server.use(
       http.get(`${BASE}/api/v1/me`, () => HttpResponse.json({ id: 'u1', role: 'member', username: 'm', nav: [] })),
@@ -77,6 +80,7 @@ describe('Écran des trackers', () => {
     expect(await screen.findByRole('region', { name: 'Confirmez votre identité' })).toBeTruthy();
   });
 
+  // req: EF-INT-010
   it('a child without authorization does not see the screen content', async () => {
     server.use(
       http.get(`${BASE}/api/v1/me`, () => HttpResponse.json({ id: 'k1', role: 'child', username: 'kid', nav: [] })),
@@ -88,6 +92,7 @@ describe('Écran des trackers', () => {
     expect(screen.queryByRole('button', { name: 'Lier' })).toBeNull();
   });
 
+  // req: EF-INT-010
   it('an authorized child sees the screen', async () => {
     server.use(
       http.get(`${BASE}/api/v1/me`, () => HttpResponse.json({ id: 'k1', role: 'child', username: 'kid', nav: [] })),

@@ -33,6 +33,7 @@ afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 describe('Écran des modules', () => {
+  // req: EF-SRC-017
   it('lists the indexes with their url, fingerprint, version and expiry', async () => {
     server.use(
       http.get(`${BASE}/api/v1/plugin-repos`, () =>
@@ -46,6 +47,7 @@ describe('Écran des modules', () => {
     expect(await screen.findByText(/key-1/)).toBeTruthy();
   });
 
+  // req: EF-SRC-017
   it('adds an index from its url and signer key', async () => {
     server.use(
       http.get(`${BASE}/api/v1/plugin-repos`, () => HttpResponse.json({ items: [] })),
@@ -64,6 +66,7 @@ describe('Écran des modules', () => {
     expect(await screen.findByText(REPO_URL)).toBeTruthy();
   });
 
+  // req: EF-SRC-017
   it('shows a 403 as a refusal', async () => {
     server.use(
       http.get(`${BASE}/api/v1/plugin-repos`, () => forbidden()),
@@ -73,6 +76,7 @@ describe('Écran des modules', () => {
     expect((await screen.findAllByRole('alert')).length).toBeGreaterThan(0);
   });
 
+  // req: EF-SRC-017
   it('opens the re-authentication prompt on a reserved action and never simulates it client side', async () => {
     server.use(
       http.get(`${BASE}/api/v1/plugin-repos`, () => HttpResponse.json({ items: [] })),
@@ -88,6 +92,7 @@ describe('Écran des modules', () => {
     expect(await screen.findByRole('region', { name: 'Confirmez votre identité' })).toBeTruthy();
   });
 
+  // req: EF-SRC-017
   it('attests a value for a module', async () => {
     let posted: Record<string, unknown> | null = null;
     server.use(
@@ -111,6 +116,7 @@ describe('Écran des modules', () => {
     expect(await screen.findByText(/content_trust: publisher/)).toBeTruthy();
   });
 
+  // req: EF-UX-011
   it('shows the trust card with three lines', async () => {
     server.use(
       http.get(`${BASE}/api/v1/plugin-repos`, () => HttpResponse.json({ items: [] })),
@@ -126,6 +132,7 @@ describe('Écran des modules', () => {
     expect(within(list).getAllByRole('listitem')).toHaveLength(3);
   });
 
+  // req: EF-SRC-020
   it('updates, pins and rolls back a module', async () => {
     let pinned = false;
     let unpinned = false;
