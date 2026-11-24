@@ -631,6 +631,38 @@ def remove_plugin(layout: Layout, name: str) -> Installed:
     return plugin
 
 
+# -- the kept wheels of the lifecycle (M6 L09a, EF-SRC-020, D15) ------------------------------
+
+
+def kept_wheel_path(layout: Layout, key: str) -> Path:
+    """The wheel of the installed version, kept for the day the plugin is updated: the previous
+    version is the one — and the only one — the reserved rollback returns to."""
+    return layout.root / "wheels" / f"{key}.whl"
+
+
+def previous_wheel_path(layout: Layout, key: str) -> Path:
+    """The wheel of the previous kept version, moved aside by an update, gone once the rollback
+    has put it back."""
+    return layout.root / "previous" / f"{key}.whl"
+
+
+def keep_wheel(layout: Layout, key: str, wheel: Path) -> Path:
+    """Keep a copy of a verified wheel under the plugins volume (never on ``sys.path``, never in
+    ``site-packages``: the guard's stray check does not see it). The caller has verified the
+    wheel; the copy is byte for byte the one the index vouched for."""
+    kept = kept_wheel_path(layout, key)
+    kept.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    kept.write_bytes(wheel.read_bytes())
+    return kept
+
+
+def drop_kept_wheels(layout: Layout, key: str) -> None:
+    """An uninstall leaves none of the plugin's code behind: the kept wheels go with the files."""
+    for path in (kept_wheel_path(layout, key), previous_wheel_path(layout, key)):
+        if path.exists():
+            path.unlink()
+
+
 # -- activation --------------------------------------------------------------------------------
 
 

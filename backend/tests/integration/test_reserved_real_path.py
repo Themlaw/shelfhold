@@ -112,12 +112,15 @@ def audit_rows(env: AuthEnv, action: str) -> list[tuple[object, ...]]:
 # M6 L06: the doors of the third-party plugins write their own line too, after the guard agreed
 # and with the plugin as its target (`plugin.enable` / `plugin.disable`, as the CLI); the generic
 # call below meets an unknown plugin (404): nothing was done, no line
+# M6 L09a: the rollback route writes its own line once the previous kept version is back; the
+# generic call below meets an unknown plugin (404): nothing was done, no line
 SELF_AUDITED = {
     "request.unmask",
     "reconcile.forget_root",
     "request.approve",
     "plugin.enable_isolated",
     "plugin.disable_isolated",
+    "plugin.rollback",
 }
 SERVICE_AUDITED = {"queue.control"}
 # M3 L07: the session revocations leave one line per session closed, by the service, and none when

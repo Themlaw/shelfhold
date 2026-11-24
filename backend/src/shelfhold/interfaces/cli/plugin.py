@@ -32,6 +32,7 @@ import asyncio
 import json
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,7 @@ from shelfhold.infrastructure.secrets.errors import SecretsError
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.interfaces.cli._headless import read_secret
 from shelfhold.plugin_host import install as guard
+from shelfhold.plugin_host import lifecycle
 from shelfhold.plugin_host.attestation import (
     AttestationError,
     AttestationNotNeeded,
@@ -97,6 +99,18 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
             sub.add_argument(
                 "--isolated", action="store_true", help=t("cli.plugin_enable_isolated_help")
             )
+        sub.set_defaults(handler=handler)
+
+    # M6 L09a (EF-SRC-020, D15): the lifecycle of an installed plugin — by its key, like the
+    # index and the attestations, not by its distribution name
+    for name, handler in (
+        ("update", run_update),
+        ("pin", run_pin),
+        ("unpin", run_unpin),
+        ("rollback", run_rollback),
+    ):
+        sub = actions.add_parser(name, help=t(f"cli.plugin_{name}_help"), allow_abbrev=False)
+        sub.add_argument("key", help=t("cli.plugin_key_help"))
         sub.set_defaults(handler=handler)
 
     listing = actions.add_parser("list", help=t("cli.plugin_list_help"), allow_abbrev=False)
@@ -202,6 +216,12 @@ def _held_audit(held: str, connection: Any) -> None:
     write_audit(connection, "plugin.state_held", held, _actor())
 
 
+def _lifecycle_audit(action: str, target: str) -> Callable[[Any], None]:
+    """The audit line of a lifecycle act, handed to the act itself: it is written in the same
+    transaction as the change it vouches for (M6 L09a)."""
+    return lambda connection: write_audit(connection, action, target, _actor())
+
+
 def _install_from_index(args: argparse.Namespace, resolved: ResolvedSettings, layout: Any) -> int:
     """Install a plugin a pinned index vouches for (M6 L08, EF-SRC-017 passe 8): the key is
     pinned to (index, signer), another signer is a distinct install, and the previous install's
@@ -270,6 +290,22 @@ def _unpin_index_install(resolved: ResolvedSettings, dist: str) -> None:
         engine.dispose()
 
 
+def _reattach_hand_install(resolved: ResolvedSettings, dist: str) -> int:
+    """A wheel the admin gave by hand has no index and no signer (M6 L09a): a reinstall of the
+    same key under the same hand reattaches the bindings a removal left orphaned."""
+    engine = _engine(resolved)
+    if engine is None:
+        return 0
+    try:
+        count = 0
+        for key, version in installed_versions(resolved.values).items():
+            if version.dist == dist:
+                count += lifecycle.reattach_if_same_origin(engine, key, None, None)
+        return count
+    finally:
+        engine.dispose()
+
+
 def run_install(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     layout = guard.Layout.of(resolved.values.data_dir)
     if args.index is not None:
@@ -287,9 +323,12 @@ def run_install(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
         guard.remove_plugin(layout, plugin.name)  # no audit row, no installation
         return 1
     _unpin_index_install(resolved, plugin.name)
+    reattached = _reattach_hand_install(resolved, plugin.name)
     _sync_attestations(resolved)  # a new version: the word given for the old one lapses
     print(t("plugin.installed", name=plugin.name, version=plugin.version))
     print(t("plugin.disabled_by_default"))
+    if reattached:  # the bindings a removal left orphaned follow the key, not the files
+        print(t("plugin.reattached", count=reattached))
     return 0
 
 
@@ -418,14 +457,152 @@ def run_remove(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     except guard.PluginInstallError as exc:
         return _fail(t("plugin.enable_refused", code=exc.code, detail=exc.detail))
     engine = _engine(resolved)
+    orphans = 0
     if engine is not None:
         try:  # a reinstall later is new code: nothing attested survives the removal
             store = AttestationStore(engine)
             for key in keys:
                 store.revoke(key)
+                # the bindings of the plugin's sources are marked orphaned, nothing they
+                # hold is lost; a reinstall of the same key at the same origin reattaches
+                orphans += lifecycle.retire_install(engine, layout, key)
         finally:
             engine.dispose()
     print(t("plugin.removed", name=args.name))
+    if orphans:
+        print(t("plugin.orphaned", count=orphans))
+    return 0
+
+
+def _installed_version(resolved: ResolvedSettings, key: str) -> Any | None:
+    """The installed version of a plugin's key — the lifecycle speaks the key, like the index
+    and the attestations, never the distribution name."""
+    return installed_versions(resolved.values).get(key)
+
+
+def run_update(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    """The admin's manual update (M6 L09a, D15): the version the pinned index vouches for now,
+    fetched and verified like an install, the previous wheel kept aside for the rollback. A
+    pinned plugin never moves, and a refusal — same version, lower one, revoked key or wheel —
+    leaves the installed plugin exactly as it was."""
+    layout = guard.Layout.of(resolved.values.data_dir)
+    key = guard.normalise_name(args.key)
+    version = _installed_version(resolved, key)
+    if version is None:
+        _audited(resolved, "plugin.update_refused", f"{key}:unknown")
+        return _fail(t("errors.plugin.unknown.title"))
+    engine = _engine(resolved)
+    if engine is None:
+        return 1
+    try:
+        store = RepoStore(engine, now=SystemClock().now)
+        from shelfhold.composition import default_network
+
+        async def _run() -> Any:
+            fetcher = index_fetcher(default_network())
+            try:
+                return await lifecycle.update(
+                    engine,
+                    store,
+                    layout,
+                    key,
+                    version.dist,
+                    fetcher,
+                    audit=_lifecycle_audit("plugin.update", key),
+                )
+            finally:
+                await fetcher.aclose()
+
+        try:
+            installed = asyncio.run(_run())
+        except (
+            lifecycle.PluginLifecycleError,
+            PluginIndexError,
+            guard.PluginInstallError,
+        ) as exc:
+            code = getattr(exc, "code", "update_failed")
+            detail = getattr(exc, "detail", str(exc))
+            _audited(resolved, "plugin.update_refused", f"{key}:{code}")
+            return _fail(t("plugin.update_refused", code=code, detail=detail))
+    finally:
+        engine.dispose()
+    _sync_attestations(resolved)  # a new version: the word given for the old one lapses
+    print(t("plugin.updated", name=key, version=installed.version))
+    return 0
+
+
+def run_pin(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    """Freeze the installed version (M6 L09a): no update, no rollback, until the admin unpins."""
+    layout = guard.Layout.of(resolved.values.data_dir)
+    key = guard.normalise_name(args.key)
+    version = _installed_version(resolved, key)
+    if version is None:
+        _audited(resolved, "plugin.pin_refused", f"{key}:unknown")
+        return _fail(t("errors.plugin.unknown.title"))
+    engine = _engine(resolved)
+    if engine is None:
+        return 1
+    try:
+        row = lifecycle.pin(
+            engine, layout, key, version.dist, audit=_lifecycle_audit("plugin.pin", key)
+        )
+    except lifecycle.PluginLifecycleError as exc:
+        _audited(resolved, "plugin.pin_refused", f"{key}:{exc.code}")
+        return _fail(t("plugin.pin_refused", code=exc.code, detail=exc.detail))
+    finally:
+        engine.dispose()
+    print(t("plugin.pinned", name=key, version=row.version))
+    return 0
+
+
+def run_unpin(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    """Take the pin back (M6 L09a): the updates and the rollbacks become possible again."""
+    layout = guard.Layout.of(resolved.values.data_dir)
+    key = guard.normalise_name(args.key)
+    version = _installed_version(resolved, key)
+    if version is None:
+        _audited(resolved, "plugin.unpin_refused", f"{key}:unknown")
+        return _fail(t("errors.plugin.unknown.title"))
+    engine = _engine(resolved)
+    if engine is None:
+        return 1
+    try:
+        lifecycle.unpin(
+            engine, layout, key, version.dist, audit=_lifecycle_audit("plugin.unpin", key)
+        )
+    except lifecycle.PluginLifecycleError as exc:
+        _audited(resolved, "plugin.unpin_refused", f"{key}:{exc.code}")
+        return _fail(t("plugin.unpin_refused", code=exc.code, detail=exc.detail))
+    finally:
+        engine.dispose()
+    print(t("plugin.unpinned", name=key))
+    return 0
+
+
+def run_rollback(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    """Return to the previous kept version (M6 L09a, D15) — a reserved action, and the CLI is the
+    host's own hand: the one version the last update put aside, and after it there is no
+    previous anymore. A pinned plugin does not move."""
+    layout = guard.Layout.of(resolved.values.data_dir)
+    key = guard.normalise_name(args.key)
+    version = _installed_version(resolved, key)
+    if version is None:
+        _audited(resolved, "plugin.rollback_refused", f"{key}:unknown")
+        return _fail(t("errors.plugin.unknown.title"))
+    engine = _engine(resolved)
+    if engine is None:
+        return 1
+    try:
+        installed = lifecycle.rollback(
+            engine, layout, key, version.dist, audit=_lifecycle_audit("plugin.rollback", key)
+        )
+    except lifecycle.PluginLifecycleError as exc:
+        _audited(resolved, "plugin.rollback_refused", f"{key}:{exc.code}")
+        return _fail(t("plugin.rollback_refused", code=exc.code, detail=exc.detail))
+    finally:
+        engine.dispose()
+    _sync_attestations(resolved)  # another version: the word given for the other one lapses
+    print(t("plugin.rolled_back", name=key, version=installed.version))
     return 0
 
 

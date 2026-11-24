@@ -455,6 +455,9 @@ WRITERS_ALLOWED = (
     "shelfhold/infrastructure/secrets/atomic.py",  # keyring and export file, owner-only
     "shelfhold/infrastructure/cover_store.py",  # /data/covers: covers the decode worker re-encoded
     "shelfhold/plugin_host/install.py",  # /data/plugins: staging, site-packages, state file
+    # the kept wheels of the lifecycle (M6 L09a, D15): the previous version the reserved
+    # rollback returns to, under /data/plugins, never on sys.path
+    "shelfhold/plugin_host/lifecycle.py",
     # the staged wheel of a signed index fetch (M6 L07, D14): a scratch file in the destination
     # the caller gave (the plugins volume), removed when the index's word does not hold
     "shelfhold/plugin_host/index/staging.py",

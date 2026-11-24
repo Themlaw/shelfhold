@@ -205,6 +205,10 @@ _DECLARED = (
     # a previous install to another signer's code is the admin's word, not the index's: the
     # signature vouches for the bytes, never for the secrets they will read
     _action("plugin.adopt_state", Effect.ACCEPTS_ADMIN_RISK),
+    # M6 L09a (EF-SRC-020, D15): returning to the previous kept version puts code the index no
+    # longer vouches for back in the library — the admin's word, a fresh session or the host
+    # CLI, never a key
+    _action("plugin.rollback", Effect.ACCEPTS_ADMIN_RISK),
 )
 
 RESERVED_ACTIONS: Mapping[str, ReservedAction] = MappingProxyType(
