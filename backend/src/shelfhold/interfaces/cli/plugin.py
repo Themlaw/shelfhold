@@ -103,13 +103,13 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
 
     # M6 L09a (EF-SRC-020, D15): the lifecycle of an installed plugin — by its key, like the
     # index and the attestations, not by its distribution name
-    for name, handler in (
-        ("update", run_update),
-        ("pin", run_pin),
-        ("unpin", run_unpin),
-        ("rollback", run_rollback),
+    for name, handler, help_text in (
+        ("update", run_update, t("cli.plugin_update_help")),
+        ("pin", run_pin, t("cli.plugin_pin_help")),
+        ("unpin", run_unpin, t("cli.plugin_unpin_help")),
+        ("rollback", run_rollback, t("cli.plugin_rollback_help")),
     ):
-        sub = actions.add_parser(name, help=t(f"cli.plugin_{name}_help"), allow_abbrev=False)
+        sub = actions.add_parser(name, help=help_text, allow_abbrev=False)
         sub.add_argument("key", help=t("cli.plugin_key_help"))
         sub.set_defaults(handler=handler)
 
