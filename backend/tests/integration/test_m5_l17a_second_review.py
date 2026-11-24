@@ -14,6 +14,7 @@ d'une requête mal formée n'est pas la page d'une œuvre cachée, contrairement
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 
 import pytest
@@ -101,7 +102,10 @@ def test_second_review_out_of_range_entries_are_pages(world: World) -> None:
         assert "text/html" in got.headers["content-type"], (path, params)
         assert got.headers["cache-control"] == "no-store", (path, params)
         assert "cookie" in got.headers.get("vary", "").lower(), (path, params)
-        assert next(iter(params.values())) not in got.text, (path, params)
+        # the entry is never reflected; the values of the form fields (the sign-out token is
+        # random, it can hold "-1") are not reflections
+        page = re.sub(r'value="[^"]*"', 'value=""', got.text)
+        assert next(iter(params.values())) not in page, (path, params)
     kid = signed_in(world, world.kid, "10.0.4.3")
     end = kid.get("/lite/works", params={"offset": "100000"})  # en bornes, au-delà du bout
     assert end.status_code == 200
