@@ -64,7 +64,7 @@ def test_allowlist_m6_entries_are_commented() -> None:
 @pytest.mark.req("ENF-SEC-007")
 def test_ci_traceability_includes_m5_and_blocks() -> None:
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert "for ms in M0 M1a M1b M2 M3 M4 M5; do" in text
+    assert "for ms in M0 M1a M1b M2 M3 M4 M5 M6; do" in text
     assert 'if [ "$ms" = M5 ]; then' not in text  # blocking since L25
 
 
@@ -77,9 +77,9 @@ def test_velocite_m4_row_filled() -> None:
 
 
 @pytest.mark.req("ENF-SEC-007")
-def test_ci_traceability_reports_m6_without_blocking() -> None:
-    """M6 L00: the matrix of M6 is built and shown in the summary, in a step of its own that
-    never fails the job; the loop of the delivered milestones stays M0 to M5 (L28 joins M6)."""
+def test_ci_traceability_blocks_m6() -> None:
+    """M6 closure: the matrix of M6 is built in the loop of the delivered milestones, which
+    blocks; no step of its own reports it without failing."""
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert 'python3 tools/traceability.py --milestone M6 --output "$RUNNER_TEMP/M6.md"' in text
-    assert "for ms in M0 M1a M1b M2 M3 M4 M5; do" in text
+    assert "for ms in M0 M1a M1b M2 M3 M4 M5 M6; do" in text
+    assert "Report the traceability matrix of M6" not in text
