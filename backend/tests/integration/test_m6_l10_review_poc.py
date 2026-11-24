@@ -72,6 +72,7 @@ def test_poc_core_never_starts_the_module_of_a_distribution_that_is_not_enabled(
 
 
 @pytest.mark.req("EF-SRC-019", "EF-SRC-016")
+@pytest.mark.timing
 def test_poc_a_slow_companion_does_not_hold_the_core_start(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:

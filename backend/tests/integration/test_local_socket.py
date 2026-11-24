@@ -141,6 +141,7 @@ def test_oversized_line_is_refused_and_connection_closed(sock_dir: Path) -> None
         assert call(path, "echo", {"ok": True}) == {"ok": True}  # the server is fine
 
 
+@pytest.mark.timing
 def test_silent_client_is_dropped_after_the_read_timeout(sock_dir: Path) -> None:
     path = sock_dir / "shelfhold.sock"
     with serving(path, read_timeout_s=0.3):
@@ -265,6 +266,7 @@ def test_a_connection_counts_until_it_is_closed_not_until_it_is_answered(sock_di
         assert call(path, "echo", {"later": 1}) == {"later": 1}
 
 
+@pytest.mark.timing
 def test_drain_after_an_error_has_a_total_deadline(sock_dir: Path) -> None:
     path = sock_dir / "shelfhold.sock"
     with serving(path, drain_deadline_s=0.5, max_line_bytes=1024):

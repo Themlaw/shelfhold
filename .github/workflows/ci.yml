@@ -389,13 +389,36 @@ jobs:
         env:
           COVERAGE_FILE: .coverage.integration-${{ matrix.shard }}
           SHARD: ${{ matrix.shard }}/${{ needs.changes.outputs.backend_integration_shard_total }}
-        run: uv run --locked pytest tests/integration -n auto --shard "$SHARD" --cov --cov-report= --cov-fail-under=0
+        run: uv run --locked pytest tests/integration -n auto --shard "$SHARD" -m 'not contract and not nightly and not timing' --cov --cov-report= --cov-fail-under=0
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-integration-${{ matrix.shard }}
           path: backend/.coverage.integration-${{ matrix.shard }}
           include-hidden-files: true
           retention-days: 1
+
+  backend-integration-timing:
+    # The integration tests that compare a measured duration with a bound: alone, outside xdist,
+    # so that the load of the other workers does not decide them (their bounds are unchanged).
+    name: backend-integration-timing
+    needs: changes
+    if: needs.changes.outputs.integration == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.x"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install dependencies
+        run: uv sync --project backend --locked
+      - name: pytest (timing, alone, no xdist)
+        working-directory: backend
+        run: uv run --locked pytest tests/integration -p no:xdist -m timing --no-cov
 
   backend-suites:
     # Property (Hypothesis), golden (syrupy) and fault-injection suites: one job each, so that none
@@ -1112,7 +1135,7 @@ jobs:
 
   ci-success:
     if: always()
-    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, e2e-reader, frontend-e2e, reader-bench, client-drift, sdk-dist, image-pr, image-main, image-publish, scan]
+    needs: [changes, lint, denylist, dco, conventional-title, traceability, backend-unit, backend-integration, backend-integration-timing, backend-suites, backend-bench, coverage, fixtures, frontend, openapi, e2e-front, e2e-reader, frontend-e2e, reader-bench, client-drift, sdk-dist, image-pr, image-main, image-publish, scan]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions: {}
@@ -1134,6 +1157,7 @@ jobs:
           BACKEND_SUITES: ${{ needs.backend-suites.result }}
           BACKEND_UNIT: ${{ needs.backend-unit.result }}
           BACKEND_INTEGRATION: ${{ needs.backend-integration.result }}
+          BACKEND_INTEGRATION_TIMING: ${{ needs.backend-integration-timing.result }}
           BACKEND_BENCH: ${{ needs.backend-bench.result }}
           COVERAGE: ${{ needs.coverage.result }}
           FIXTURES: ${{ needs.fixtures.result }}
@@ -1174,6 +1198,7 @@ jobs:
           }
           check_filtered "$BACKEND_UNIT" "$UNIT_CHANGED"
           check_filtered "$BACKEND_INTEGRATION" "$INTEGRATION_CHANGED"
+          check_filtered "$BACKEND_INTEGRATION_TIMING" "$INTEGRATION_CHANGED"
           check_filtered "$BACKEND_SUITES" "$SUITES_CHANGED"
           check_filtered "$BACKEND_BENCH" "$BENCH_CHANGED"
           check_filtered "$FIXTURES" "$FIXTURES_CHANGED"
