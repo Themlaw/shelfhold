@@ -97,7 +97,7 @@ def _failing_install_wheel(monkeypatch: pytest.MonkeyPatch, fail_for: str) -> di
 # -- the update and the rollback over HTTP ------------------------------------------------------
 
 
-@pytest.mark.req("EF-SRC-020", "D15", "ENF-OBS-003")
+@pytest.mark.req("EF-SRC-020", "ENF-OBS-003")
 def test_update_and_rollback_over_http(
     api: AuthEnv, monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:
@@ -128,7 +128,7 @@ def test_update_and_rollback_over_http(
     )
 
 
-@pytest.mark.req("EF-SRC-020", "D15", "ENF-OBS-003")
+@pytest.mark.req("EF-SRC-020", "ENF-OBS-003")
 def test_update_refused_over_http_leaves_the_plugin_and_its_trace(
     api: AuthEnv, monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:
@@ -145,7 +145,7 @@ def test_update_refused_over_http_leaves_the_plugin_and_its_trace(
     assert _state_version(settings) == "1.0.0"
 
 
-@pytest.mark.req("EF-SRC-020", "D15")
+@pytest.mark.req("EF-SRC-020")
 def test_update_over_http_answers_the_guards_refusal(
     api: AuthEnv, monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:
@@ -266,7 +266,7 @@ def test_reinstall_does_not_bring_the_attestation_back(
 # -- a rollback that fails puts the installed version back ---------------------------------------
 
 
-@pytest.mark.req("EF-SRC-020", "D15")
+@pytest.mark.req("EF-SRC-020")
 def test_failed_rollback_puts_the_installed_version_back(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:
@@ -316,7 +316,7 @@ def _retagged(tmp_path: Path, wheel: Any, tag: str) -> Wheel:
     return Wheel(path, hashlib.sha256(path.read_bytes()).hexdigest())
 
 
-@pytest.mark.req("EF-SRC-020", "D15")
+@pytest.mark.req("EF-SRC-020")
 def test_rollback_stages_the_kept_wheel_under_its_own_tags(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:

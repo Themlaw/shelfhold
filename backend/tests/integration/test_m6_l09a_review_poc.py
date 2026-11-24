@@ -56,7 +56,7 @@ def _use(monkeypatch: pytest.MonkeyPatch, fetcher: FakeFetcher) -> None:
     monkeypatch.setattr("shelfhold.interfaces.cli.plugin.index_fetcher", lambda _network: fetcher)
 
 
-@pytest.mark.req("EF-SRC-020", "D15")
+@pytest.mark.req("EF-SRC-020")
 def test_reinstall_from_another_signer_does_not_reattach_orphans(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:
@@ -79,7 +79,7 @@ def test_reinstall_from_another_signer_does_not_reattach_orphans(
     assert _binding(settings, ids["binding"]) == (0, "orphaned")
 
 
-@pytest.mark.req("EF-SRC-020", "D15")
+@pytest.mark.req("EF-SRC-020")
 def test_hand_wheel_does_not_reattach_orphans_of_an_index_install(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:
@@ -104,7 +104,7 @@ def test_hand_wheel_does_not_reattach_orphans_of_an_index_install(
     assert _binding(settings, ids["binding"]) == (0, "orphaned")
 
 
-@pytest.mark.req("EF-SRC-020", "D15")
+@pytest.mark.req("EF-SRC-020")
 def test_update_refuses_a_signer_the_install_is_not_pinned_to(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:
@@ -126,7 +126,7 @@ def test_update_refuses_a_signer_the_install_is_not_pinned_to(
     assert _state_version(settings) == "1.0.0"
 
 
-@pytest.mark.req("EF-SRC-020", "D15")
+@pytest.mark.req("EF-SRC-020")
 @pytest.mark.parametrize("revoked", ["wheel", "key"])
 def test_rollback_refuses_a_revoked_previous_version(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path, revoked: str
@@ -195,7 +195,7 @@ def _updated_to_2_0_0(
     return newer
 
 
-@pytest.mark.req("EF-SRC-020", "D15", "ENF-OBS-003")
+@pytest.mark.req("EF-SRC-020", "ENF-OBS-003")
 def test_update_without_its_audit_line_leaves_the_files_as_they_were(
     api: AuthEnv, monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:
@@ -215,7 +215,7 @@ def test_update_without_its_audit_line_leaves_the_files_as_they_were(
     assert _state_version(settings) == "1.0.0"  # the row and the files tell the same version
 
 
-@pytest.mark.req("EF-SRC-020", "D15", "ENF-OBS-003")
+@pytest.mark.req("EF-SRC-020", "ENF-OBS-003")
 def test_rollback_without_its_audit_line_leaves_the_files_as_they_were(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:

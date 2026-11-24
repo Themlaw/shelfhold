@@ -333,22 +333,31 @@ async def update(
                 # what happened and the kept wheel is still there to reinstall from
                 _reinstall_kept(layout, key, dist, row.version, plugin.wheel_sha256)
             raise
+        # Write the audit line first: no act without its line. If this fails, the files are
+        # already the new version, so we must reinstall the old one from the kept wheel.
+        _write(
+            engine,
+            key,
+            audit,
+            version=installed.version,
+            sha256=_prefixed(installed.digest),  # the files digest, like the attestation sync
+            previous_version=row.version,
+            previous_sha256=_prefixed(plugin.wheel_sha256),  # proven byte for byte above
+        )
         # the update succeeded: the old version's wheel becomes the kept previous
         aside = previous_wheel_path(layout, key)
         aside.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         kept.replace(aside)
         keep_wheel(layout, key, wheel)
+    except Exception:
+        # If the audit write failed, the transaction was rolled back but the files were
+        # already replaced. Remove the new files and reinstall the original version.
+        with contextlib.suppress(Exception):
+            remove_plugin(layout, dist)
+            _reinstall_kept(layout, key, dist, row.version, plugin.wheel_sha256)
+        raise
     finally:
         discard_staged_wheel(wheel)  # the installed copy is the guard's own
-    _write(
-        engine,
-        key,
-        audit,
-        version=installed.version,
-        sha256=_prefixed(installed.digest),  # the files digest, like the attestation sync
-        previous_version=row.version,
-        previous_sha256=_prefixed(plugin.wheel_sha256),  # proven byte for byte above
-    )
     return installed
 
 
@@ -409,18 +418,28 @@ def rollback(
                 # the refusal says what happened and both kept wheels are still there
                 _reinstall_kept(layout, key, dist, row.version, plugin.wheel_sha256)
             raise
+        # Write the audit line first: no act without its line. If this fails, the files are
+        # already the previous version, so we must reinstall the current one from its kept wheel.
+        _write(
+            engine,
+            key,
+            audit,
+            version=installed.version,
+            sha256=_prefixed(installed.digest),  # the files digest, like the attestation sync
+            previous_version=None,
+            previous_sha256=None,
+        )
+        # the rolled-back version is the kept one now
+        previous.replace(kept_wheel_path(layout, key))
+    except Exception:
+        # If the audit write failed, the transaction was rolled back but the files were
+        # already replaced. Remove the new files and reinstall the current version.
+        with contextlib.suppress(Exception):
+            remove_plugin(layout, dist)
+            _reinstall_kept(layout, key, dist, row.version, plugin.wheel_sha256)
+        raise
     finally:
         discard_staged_wheel(staged)
-    previous.replace(kept_wheel_path(layout, key))  # the rolled-back version is the kept one now
-    _write(
-        engine,
-        key,
-        audit,
-        version=installed.version,
-        sha256=_prefixed(installed.digest),  # the files digest, like the attestation sync
-        previous_version=None,
-        previous_sha256=None,
-    )
     return installed
 
 
