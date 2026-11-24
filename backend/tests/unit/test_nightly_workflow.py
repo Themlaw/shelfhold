@@ -37,7 +37,9 @@ def test_nightly_is_scheduled_and_never_triggered_by_a_pull_request() -> None:
 @pytest.mark.req("ENF-LEG-013")
 def test_nightly_is_not_a_required_check() -> None:
     ci = (WORKFLOWS / "ci.yml").read_text("utf-8")
-    assert "nightly" not in ci
+    # the unit shard excludes the `nightly` marker (alongside `contract`); that is not a
+    # reference to the nightly workflow, which must stay absent from ci.yml
+    assert "nightly" not in ci.replace("not nightly", "")
     success = yaml.safe_load(ci)["jobs"]["ci-success"]["needs"]
     assert not [n for n in success if "nightly" in n]
 

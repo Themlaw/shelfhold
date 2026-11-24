@@ -111,6 +111,7 @@ markers = [
     "bench: culpable benches with a threshold from the spec (tests/bench); marker applied from the directory",
     "contract: contract bench against a real pinned Suwayomi (needs Docker; run with -m contract)",
     "nightly: real Kavita and Suwayomi with the synthetic extension (needs Docker; run with -m nightly)",
+    "timing: tests whose result depends on wall-clock timing; run alone, outside xdist",
 ]
 
 [tool.coverage.run]
