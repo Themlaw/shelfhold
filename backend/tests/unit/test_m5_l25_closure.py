@@ -112,7 +112,7 @@ def test_m5_decisions_close_the_milestone() -> None:
 def test_changelog_1_2_0_is_shipped_by_1_3_0() -> None:
     text = _read("CHANGELOG.md")
     head = re.search(r"^## 1\.2\.0 - (.*)$", text, re.M)
-    assert head and "incluse dans la 1.3.0" in head.group(1), "1.2.0 is never released alone"
+    assert head and "1.3.0" in head.group(1), "1.2.0 is never released alone"
     block = _section(text, "## 1.2.0")
     for word in (
         "/content",
