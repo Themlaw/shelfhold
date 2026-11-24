@@ -323,11 +323,12 @@ def test_m6_journey_sdk_wheel_alone(journey_m6: Journey, tmp_path: Path) -> None
         capture_output=True, text=True, check=False, timeout=600,
     )  # fmt: skip
     assert installed.returncode == 0, installed.stderr
-    frozen = subprocess.run(  # noqa: S603
-        [python, "-m", "pip", "freeze"], capture_output=True, text=True, check=True, timeout=120
-    ).stdout
-    assert f"shelfhold_sdk=={version}" in frozen.splitlines(), frozen
-    assert not [line for line in frozen.splitlines() if line.lower().startswith("shelfhold==")]
+    names = subprocess.run(  # noqa: S603
+        [python, "-I", "-c", "import importlib.metadata as m; print(sorted((d.metadata['Name'], d.version) for d in m.distributions()))"],
+        capture_output=True, text=True, check=True, timeout=120,
+    ).stdout  # fmt: skip
+    assert f"('shelfhold_sdk', '{version}')" in names.replace("-", "_"), names
+    assert "'shelfhold'" not in names and "pydantic" in names, names  # the host is not there
 
     probe = tmp_path / "probe.py"
     probe.write_text(PROBE, encoding="utf-8")
