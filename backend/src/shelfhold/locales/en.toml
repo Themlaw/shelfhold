@@ -1922,6 +1922,11 @@
     action = "Check the pin and the previous kept version, then try again."
     cause = "The rollback was refused: pinned version, no previous kept version, or its wheel is missing."
 
+  [errors."plugin.pin_refused"]
+    title = "Pinning the plugin is refused."
+    action = "Check that the plugin is still installed, then try again."
+    cause = "The pin was refused: the installed plugin could not be read as such."
+
   [errors."source.not_loaded"]
     title = "A source is not loaded."
     action = "Check the source extension in the service and then run it again."

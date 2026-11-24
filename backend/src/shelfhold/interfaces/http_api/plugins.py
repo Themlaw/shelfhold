@@ -56,6 +56,7 @@ from shelfhold.plugin_host.settings import (
     SettingsView,
     SettingValueError,
     SourceSettings,
+    write_audit,
 )
 
 __all__ = ["build_plugins_router"]
@@ -501,8 +502,15 @@ def build_plugins_router(
 
     # -- the lifecycle of an installed plugin (M6 L09a, EF-SRC-020, D15) -------------------------
     # The pin and the update are the admin's ordinary acts; the rollback is a reserved action.
-    # Each route writes its own line once the act has succeeded, and a refusal leaves its own
-    # (`plugin.*_refused`, `key:code`) — never a row that says something was allowed.
+    # Each route hands its audit line to the act itself, written in the same transaction as the
+    # change it vouches for: no line without the act, no act without its line. A refusal leaves
+    # its own trace (`plugin.*_refused`, `key:code`) — never a row that says something moved.
+
+    def _lifecycle_audit(principal: Principal, action: str, target: str) -> Callable[[Any], None]:
+        """The audit line of a lifecycle act, handed to the act itself: it is written in the
+        same transaction as the change it vouches for (M6 L09a), like the CLI's own callback."""
+        actor = _actor(principal)
+        return lambda connection: write_audit(connection, action, target, actor)
 
     def _installed_dist(name: str) -> tuple[str, str]:
         """The key and the distribution of an installed plugin: the lifecycle speaks the key,
@@ -516,12 +524,17 @@ def build_plugins_router(
         key, dist = _installed_dist(name)
         layout = guard.Layout.of(data_dir())
         act = lifecycle.pin if pinned else lifecycle.unpin
+        action = "plugin.pin" if pinned else "plugin.unpin"
+        refused = "plugin.pin_refused" if pinned else "plugin.unpin_refused"
         try:
-            act(engine(), layout, key, dist)
-        except lifecycle.PluginLifecycleError:
-            raise ProblemError("plugin.unknown") from None
-        _audit(principal, "plugin.pin" if pinned else "plugin.unpin", key)
-        return _one(layout, name)
+            act(engine(), layout, key, dist, audit=_lifecycle_audit(principal, action, key))
+        except lifecycle.PluginLifecycleError as exc:
+            if exc.code == "unknown":
+                raise ProblemError("plugin.unknown") from None
+            _audit(principal, refused, f"{key}:{exc.code}")
+            raise ProblemError("plugin.pin_refused", detail=exc.detail) from None
+        # the guard's view speaks the distribution name, the route was addressed by the key
+        return _one(layout, dist)
 
     @router.post("/plugins/{name}/pin")
     def pin_plugin(name: str, principal: Principal = Depends(admin_only)) -> PluginOut:  # noqa: B008
@@ -540,30 +553,49 @@ def build_plugins_router(
         layout = guard.Layout.of(data_dir())
         fetcher = index_fetcher_for()
         try:
-            await lifecycle.update(engine(), repos(), layout, key, dist, fetcher)
-        except (lifecycle.PluginLifecycleError, PluginIndexError) as exc:
+            await lifecycle.update(
+                engine(),
+                repos(),
+                layout,
+                key,
+                dist,
+                fetcher,
+                audit=_lifecycle_audit(principal, "plugin.update", key),
+            )
+        except (
+            lifecycle.PluginLifecycleError,
+            PluginIndexError,
+            guard.PluginInstallError,
+        ) as exc:
             code = getattr(exc, "code", "update_failed")
             _audit(principal, "plugin.update_refused", f"{key}:{code}")
             raise ProblemError("plugin.update_refused", detail=exc.detail) from None
         finally:
             await fetcher.aclose()
-        _audit(principal, "plugin.update", key)
         # a new version: the word given for the old one lapses
         attestations().sync_installed(installed_for())
-        return _one(layout, name)
+        # the guard's view speaks the distribution name, the route was addressed by the key
+        return _one(layout, dist)
 
     @router.post("/plugins/{name}/rollback")
     def rollback_plugin(name: str, principal: Principal = Depends(_ROLLBACK)) -> PluginOut:  # noqa: B008
         key, dist = _installed_dist(name)
         layout = guard.Layout.of(data_dir())
         try:
-            lifecycle.rollback(engine(), layout, key, dist)
+            lifecycle.rollback(
+                engine(),
+                repos(),
+                layout,
+                key,
+                dist,
+                audit=_lifecycle_audit(principal, "plugin.rollback", key),
+            )
         except lifecycle.PluginLifecycleError as exc:
             _audit(principal, "plugin.rollback_refused", f"{key}:{exc.code}")
             raise ProblemError("plugin.rollback_refused", detail=exc.detail) from None
-        _audit(principal, "plugin.rollback", key)
         # another version: the word given for the other one lapses
         attestations().sync_installed(installed_for())
-        return _one(layout, name)
+        # the guard's view speaks the distribution name, the route was addressed by the key
+        return _one(layout, dist)
 
     return router

@@ -57,6 +57,7 @@ CODES: tuple[ErrorCode, ...] = (
     # version, no previous kept version, a revoked key or wheel, a lower version (a rollback)
     ErrorCode("plugin.update_refused", 422, "admin"),
     ErrorCode("plugin.rollback_refused", 422, "admin"),
+    ErrorCode("plugin.pin_refused", 422, "admin"),  # the pin itself was refused
     # EF-SRC-003: a plugin's Fetcher asked for a host outside its DomainRules
     ErrorCode("source.domain_not_allowed", 403, "admin"),
     # EF-SRC-002: a plugin did network, disk or process I/O itself (the audit-hook detector)

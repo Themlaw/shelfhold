@@ -1891,6 +1891,11 @@ title = "Le retour arrière du plugin est refusé."
 action = "Vérifiez l'épingle et la version précédente gardée, puis réessayez."
 cause = "Le retour arrière a été refusé : version épinglée, aucune version précédente gardée, ou sa roue introuvable."
 
+[errors."plugin.pin_refused"]
+title = "L'épinglage du plugin est refusé."
+action = "Vérifiez que le plugin est bien installé, puis réessayez."
+cause = "L'épinglage a été refusé : le plugin installé n'a pas pu être lu comme tel."
+
 [errors."source.not_loaded"]
 title = "Une source n'est pas chargée."
 action = "Vérifiez l'extension de la source dans le service, puis relancez-la."
