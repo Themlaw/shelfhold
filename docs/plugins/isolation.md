@@ -19,10 +19,10 @@ de démarrer (code 3, rien d'ouvert) si :
 - il a une interface réseau autre que `lo` ;
 - une connexion sortante aboutit ;
 - sa racine n'est pas en lecture seule ;
-- le noyau n'offre pas Landlock (5.13 ou plus) ;
+- le noyau n'offre pas Landlock ABI 3 ou plus (noyau 6.2 ou plus) ;
 - `/var/run/docker.sock` ou `/run/docker.sock` est visible ;
 - le filtre seccomp ne peut pas être posé (x86_64 ou aarch64 seulement) ;
-- `/plugins` contient autre chose que `site-packages` et `state.json`.
+- `/plugins` contient autre chose que `site-packages`, `state.json`, `index`, `wheels` et `previous`.
 
 ## Ce que le kit contrôle
 
@@ -55,6 +55,21 @@ Aucun secret ne traverse : ni message, ni variable d'environnement, ni argument.
 - changer de mode, de propriétaire ou d'attribut (`chmod`, `chown`, `setxattr`… : `EPERM`) ;
 - quitter son groupe de processus (`setsid`, `setpgid` ne font rien) ;
 - lire l'environnement ou la mémoire du compagnon (non « dumpable »).
+
+## Noyaux sans portée des signaux (Landlock ABI 3 à 5)
+
+Avec un noyau 6.12 ou plus (Landlock ABI 6), Landlock borne les signaux. Avant, le compagnon
+s'appuie sur un filtre seccomp, qui laisse un plugin signaler **lui-même et son groupe de
+processus** seulement. Conséquences pour un auteur :
+
+- pour arrêter un sous-processus, signalez le **groupe** : `os.killpg(os.getpgid(0), sig)` (le
+  plugin est le chef de son groupe, ses enfants en font partie) ;
+- `subprocess.run(timeout=…)` lève `PermissionError` à l'échéance au lieu de `TimeoutExpired`, et
+  laisse le fils vivant ; `Popen.terminate()` et `Popen.kill()` lèvent `PermissionError` ;
+- un processus forké ne peut pas appeler `signal.raise_signal` sur lui-même par son pid ;
+- `fcntl(F_SETOWN, …)`, `fcntl(F_SETOWN_EX, …)`, `ioctl(FIOSETOWN, …)` et `ioctl(SIOCSPGRP, …)` ne font rien (ils rendent 0) : le descripteur n'a pas de propriétaire, donc aucun `SIGIO` n'est envoyé.
+
+Le compagnon tue de toute façon tout le groupe à la fin de la connexion.
 
 Les plugins d'un même compagnon ne sont pas cloisonnés les uns des autres : n'activez que des
 plugins dont vous acceptez qu'ils se voient.

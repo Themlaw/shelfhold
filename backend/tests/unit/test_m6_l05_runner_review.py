@@ -61,7 +61,11 @@ def install(root: Path, name: str, source: str) -> None:
 
 def server_in(root: Path) -> RunnerServer:
     return RunnerServer(
-        RunnerConfig(socket_path=root / "runner.sock", plugins_root=root / "plugins"),
+        RunnerConfig(
+            socket_path=root / "runner.sock",
+            plugins_root=root / "plugins",
+            max_tasks=1 << 20,  # the uid of a test host does other work: the plugins fork here
+        ),
         own_uid=RUNNER_UID,
         peer_uid=lambda _sock: CORE_UID,
         observe=lambda: CLEAN,

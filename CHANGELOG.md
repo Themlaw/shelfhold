@@ -2,6 +2,14 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
+## 1.3.0 - à paraître
+
+Clôture de M6 : plugins tiers isolés dans un conteneur compagnon.
+
+### Modifié
+
+- **Rupture : le compagnon `plugin-runner` exige un noyau 6.2 ou plus (Landlock ABI 3).** Un hôte plus ancien (Debian 12, noyau 6.1, ABI 2) ne démarre plus les plugins isolés : le compagnon sort avec le code 3 et le dit dans son journal. Mettez à jour le noyau, ou gardez le mode `in_process` (confirmation tapée) en connaissance de cause.
+
 ## 1.2.0 - à compléter (date de la release)
 
 Clôture de M5 : un lecteur intégré (images et EPUB) pour le contenu non exporté et pour « Lire un extrait », des liseuses mieux servies (jetons d'appareil enregistrés, kosync pour EPUB, OPDS-PSE, OPDS 2.0, KEPUB, page `/lite` sans JavaScript), la connexion OpenID Connect, l'application installable avec copies hors ligne. Reprend les changements de la candidate `1.2.0-rc.1`. **La date est celle de la release**, qui attend les essais sur appareil réel du porteur.

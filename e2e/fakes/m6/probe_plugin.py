@@ -222,7 +222,8 @@ class Plugin:
             "uid": os.getuid(),
             "visible": list(view.visible),
             "env_names": sorted(os.environ),
-            "interfaces": sorted(os.listdir("/sys/class/net")),
+            # (not a read of `/sys/class/net`: a plugin reads no file but the ones it needs)
+            "interfaces": sorted(name for _, name in socket.if_nameindex()),
             "outbound": _outbound(),
             "isolation": {c.name: c.ok for c in report.checks},
         }

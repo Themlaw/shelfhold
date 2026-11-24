@@ -134,6 +134,7 @@ from shelfhold.ops.requests import build_service, resolve_request_ref, subscribe
 from shelfhold.ops.wiring import open_ops
 from shelfhold.plugin_host import lifecycle
 from shelfhold.plugin_host.adapters.rpc.runner_socket import (
+    RUNNER_UID,
     connect_runner,
 )
 from shelfhold.plugin_host.attestation import AttestationStore
@@ -438,7 +439,9 @@ def create_app(
             for key, entry in entries:
 
                 async def _connect(key: str = key, entry: str = entry) -> Any:
-                    channel = await connect_runner(socket_path, key=key, entry=entry, limits=limits)
+                    channel = await connect_runner(
+                        socket_path, key=key, entry=entry, limits=limits, runner_uid=RUNNER_UID
+                    )
                     try:
                         session = await RpcSession.open(
                             channel, key=key, limits=limits, on_event=_sink

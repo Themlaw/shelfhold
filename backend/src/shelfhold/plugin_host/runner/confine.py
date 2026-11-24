@@ -4,10 +4,14 @@ The plugins run under the companion's own uid, in its container. Docker cuts the
 core; this module cuts them off from the companion and from each other's leftovers:
 
 - **Landlock** (`Ruleset`): a plugin's process may write nowhere but a scratch folder of its own
-  (no file, folder, link or socket is created, removed or renamed anywhere else: not on the socket
-  folder, not on the plugins volume), and, where the kernel has ABI 4, may bind or connect over TCP
-  nowhere. It needs no privilege. A kernel without Landlock is a sandbox the companion refuses to
-  start in (`landlock_abi`).
+  (no file, folder, link or socket is created, removed, renamed or truncated anywhere else: not on
+  the socket folder, not on the plugins volume), reads only the roots it needs (`read_roots`: the
+  interpreter and its libraries, the installed wheels, its own scratch folder; never another
+  plugin's), and, where the kernel has ABI 4, may bind or connect over TCP nowhere. With ABI 6 it
+  also may signal only the processes of its own domain, and connect to no abstract unix socket
+  outside it. It needs no privilege. A kernel without Landlock, or with one older than ABI 3
+  (`truncate` and `utime` are not handled before it, so a plugin could empty a file it may not
+  write), is a sandbox the companion refuses to start in (`landlock_abi`, `MIN_ABI`).
 - **The process itself** (`harden_process`): not dumpable (a plugin of the same uid cannot read its
   environment or attach to it) and the subreaper of every process that loses its parent, so that a
   plugin which double-forks and calls `setsid()` is still the companion's to kill (`kill_tree`,
@@ -18,7 +22,9 @@ core; this module cuts them off from the companion and from each other's leftove
   `chmod`, `chown` and `setxattr` families fail with `EPERM` (Landlock does not handle them: a
   plugin that owns the socket's folder could make it unreachable for the core). The filter is
   built by hand, for the two architectures the companion knows (x86-64, arm64); on another one it
-  does not start.
+  does not start. Where Landlock has no signal scope (ABI < 6, kernels before 6.12) the same
+  filter refuses `kill`, `tkill`, `tgkill`, `rt_sigqueueinfo`, `rt_tgsigqueueinfo` and
+  `pidfd_send_signal` toward any process but the plugin itself and its own group (`signals`).
 
 Standard library only (`ctypes` for the Landlock and seccomp system calls, `/proc` for the process
 tree).
@@ -33,11 +39,13 @@ import signal
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Iterable
 from pathlib import Path
 
 __all__ = [
+    "MIN_ABI",
     "Filter",
     "Ruleset",
     "children_of",
@@ -47,10 +55,12 @@ __all__ = [
     "kill_trees",
     "landlock_abi",
     "orphans",
+    "read_roots",
     "reap",
     "restore_process",
     "seccomp_ready",
     "sweep",
+    "unconfined_actions",
 ]
 
 _SYS_CREATE, _SYS_ADD, _SYS_RESTRICT = 444, 445, 446  # the same number on x86-64 and arm64
@@ -62,10 +72,18 @@ _PR_SET_NO_NEW_PRIVS = 38
 _PR_SET_SECCOMP, _SECCOMP_MODE_FILTER = 22, 2
 
 # access rights of the filesystem, by the ABI that introduced them
-_WRITE_FILE, _REMOVE_DIR, _REMOVE_FILE = 1 << 1, 1 << 4, 1 << 5
+_WRITE_FILE, _READ_FILE, _READ_DIR = 1 << 1, 1 << 2, 1 << 3
+_REMOVE_DIR, _REMOVE_FILE = 1 << 4, 1 << 5
 _MAKES = sum(1 << n for n in range(6, 13))  # char, dir, regular, socket, fifo, block, symlink
 _REFER, _TRUNCATE = 1 << 13, 1 << 14
 _NET_BIND_TCP, _NET_CONNECT_TCP = 1 << 0, 1 << 1
+_SCOPE_ABSTRACT_UNIX_SOCKET, _SCOPE_SIGNAL = 1 << 0, 1 << 1  # ABI 6
+# The oldest ABI the companion starts on. Before 3 `truncate` (and with it `utime`, which no ABI
+# handles) is not a right Landlock can refuse: a plugin could empty a file beside its scratch
+# folder, that of another plugin included. The other way (refusing `truncate` in seccomp) would
+# break `ftruncate` on the plugin's own files (SQLite, a download resumed): a kernel from 6.2 on is
+# the smaller price.
+MIN_ABI = 3
 
 _libc: ctypes.CDLL | None = None
 
@@ -99,20 +117,76 @@ def _handled_fs(abi: int) -> int:
     return rights
 
 
+# what a plugin may read besides its scratch folder: the system, as the image has it
+_SYSTEM_READS = ("/usr", "/lib", "/lib32", "/lib64", "/libx32", "/etc/ssl", "/etc/ld.so.cache")
+_TIME_ZONE = ("/etc/localtime", "/usr/share/zoneinfo")  # (the second is under /usr: kept for a
+# image whose /usr is not where the zone files are)
+_DEVICES = ("/dev/null", "/dev/urandom")
+
+
+def read_roots(*extra: Path) -> list[Path]:
+    """The folders and files a plugin's process may read (never another plugin's scratch folder):
+    the system (`/usr`, `/lib*`, `/etc/ssl`, the time zone, `/dev/null`, `/dev/urandom`), the
+    interpreter and the virtual environment it runs from, and `extra` (the installed wheels). A
+    folder of `sys.path` is a root too (an editable install is not under the prefix), unless it
+    holds the temporary folder: the scratch folders are there."""
+    temporary = Path(tempfile.gettempdir()).resolve()
+    roots = [
+        *map(Path, _SYSTEM_READS),
+        *map(Path, _TIME_ZONE),
+        *map(Path, _DEVICES),
+        *(Path(p) for p in (sys.prefix, sys.exec_prefix, sys.base_prefix, sys.base_exec_prefix)),
+        *extra,
+    ]
+    for entry in sys.path:
+        if not entry:
+            continue
+        found = Path(entry).resolve()
+        if found != temporary and found not in temporary.parents:
+            roots.append(found)
+    seen: dict[Path, None] = {}
+    for root in roots:
+        if root.exists():
+            seen[root] = None
+    return list(seen)
+
+
+def _attribute(abi: int, handled: int, net: int, scoped: int) -> bytes:
+    """`struct landlock_ruleset_attr` as the kernel of this ABI reads it: the net rights came with
+    ABI 4, the scopes with ABI 6 (a longer structure than the kernel knows is refused)."""
+    if abi >= 6:
+        return struct.pack("QQQ", handled, net, scoped)
+    if abi >= 4:
+        return struct.pack("QQ", handled, net)
+    return struct.pack("Q", handled)
+
+
 class Ruleset:
     """A Landlock ruleset built by the companion, applied by the child before it runs the plugin.
 
     Everything that writes is handled, and only `writable` (folders) are granted it, beneath them;
-    `/dev/null` may be written to. Reading and executing are not handled: a plugin reads what it
-    is given. With ABI 4 the TCP rights are handled and granted nowhere."""
+    `/dev/null` may be written to. When `readable` is given (the roots of `read_roots`), reading is
+    handled too: the plugin reads those roots and its `writable` folders, and nothing else (the
+    scratch folder of another plugin, the companion's own files). Executing is not handled. With
+    ABI 4 the TCP rights are handled and granted nowhere; with ABI 6 signals and abstract unix
+    sockets are scoped to the plugin's own domain."""
 
-    def __init__(self, writable: Iterable[Path]) -> None:
+    def __init__(self, writable: Iterable[Path], readable: Iterable[Path] | None = None) -> None:
         self.abi = landlock_abi()
         if self.abi < 1:
             raise OSError("the kernel offers no Landlock")
+        if self.abi < MIN_ABI:
+            raise OSError(
+                f"Landlock ABI {self.abi} cannot refuse `truncate`: ABI {MIN_ABI} (Linux 6.2) "
+                "or later is needed"
+            )
         handled = _handled_fs(self.abi)
+        reads = readable is not None
+        if reads:
+            handled |= _READ_FILE | _READ_DIR
         net = (_NET_BIND_TCP | _NET_CONNECT_TCP) if self.abi >= 4 else 0
-        attr = struct.pack("QQ", handled, net) if self.abi >= 4 else struct.pack("Q", handled)
+        scoped = (_SCOPE_ABSTRACT_UNIX_SOCKET | _SCOPE_SIGNAL) if self.abi >= 6 else 0
+        attr = _attribute(self.abi, handled, net, scoped)
         self._fd = _syscall(_SYS_CREATE, ctypes.c_char_p(attr), len(attr), 0)
         if self._fd < 0:
             raise OSError(ctypes.get_errno(), "landlock_create_ruleset")
@@ -121,7 +195,9 @@ class Ruleset:
                 self._allow(folder, handled)
             null = Path(os.devnull)
             if null.exists():
-                self._allow(null, _WRITE_FILE | (_TRUNCATE if self.abi >= 3 else 0))
+                self._allow(null, _WRITE_FILE | _TRUNCATE | (_READ_FILE if reads else 0))
+            for root in readable or ():
+                self._allow(root, _READ_FILE | (_READ_DIR if root.is_dir() else 0))
         except BaseException:
             self.close()
             raise
@@ -203,7 +279,35 @@ _STAYS: dict[str, dict[str, int]] = {
     "x86_64": {"setpgid": 109, "setsid": 112},
     "aarch64": {"setpgid": 154, "setsid": 157},
 }
+# What signals a process to another. Where Landlock scopes signals (ABI 6) none of this is needed;
+# elsewhere the filter lets a plugin signal itself and its own group (`kill` of its pid, of 0, of
+# minus its pid; `tgkill` of its pid) and nothing else: not the companion, not another plugin, not
+# `-1` (everyone), not a child it started by its pid (its group, `killpg`, reaches them), and no
+# `pidfd_send_signal` at all (a descriptor says nothing of whom it signals) nor `tkill` (a bare
+# thread id: `tgkill` is what the C library uses).
+_SIGNALS: dict[str, dict[str, int]] = {
+    "x86_64": {"kill": 62, "tkill": 200, "tgkill": 234, "rt_sigqueueinfo": 129,
+               "rt_tgsigqueueinfo": 297, "pidfd_send_signal": 424},
+    "aarch64": {"kill": 129, "tkill": 130, "tgkill": 131, "rt_sigqueueinfo": 138,
+                "rt_tgsigqueueinfo": 240, "pidfd_send_signal": 424},
+}  # fmt: skip
+# The kernel signals on a plugin's behalf too: a descriptor whose owner is set (`F_SETOWN`,
+# `F_SETOWN_EX`, `FIOSETOWN`, `SIOCSPGRP`) gets `SIGIO` (or `F_SETSIG`'s signal) sent to that owner,
+# checked on the uid only. These commands do nothing and return 0, as `setsid` does (an `EPERM`
+# would crash a library that only meant to own its own descriptor); the owner stays unset.
+_OWNERS: dict[str, dict[str, int]] = {
+    "x86_64": {"fcntl": 72, "ioctl": 16},
+    "aarch64": {"fcntl": 25, "ioctl": 29},
+}
+_OWNER_COMMANDS = {
+    "fcntl": (8, 15),
+    "ioctl": (0x8901, 0x8902),
+}  # F_SETOWN(_EX); FIOSETOWN, SIOCSPGRP
+_ARG1 = 24  # seccomp_data.args[1], its low word
+_SIGNAL_NEVER = ("tkill", "pidfd_send_signal")
+_SIGNAL_OR_GROUP = ("kill",)  # the others take a process id (a group id only for `kill`)
 _BPF_LD_W_ABS, _BPF_JEQ_K, _BPF_JGE_K, _BPF_RET_K = 0x20, 0x15, 0x35, 0x06
+_ARG0 = 16  # seccomp_data.args[0], its low word (both architectures are little-endian)
 
 
 def _instruction(code: int, jt: int, jf: int, k: int) -> bytes:
@@ -216,29 +320,63 @@ def machine() -> str | None:
     return name if name in _AUDIT_ARCH else None
 
 
-def build_program(arch: str) -> bytes:
+def build_program(arch: str, own_pid: int | None = None) -> bytes:
     """The BPF program: another architecture kills the process (a 32-bit call would dodge the
     numbers below), the changes of mode and owner fail with `EPERM`, `setsid` and `setpgid`
-    return 0 without doing anything, everything else is allowed."""
-    checks: list[tuple[int, int, bool]] = [  # (instruction, number, returns 0 and does nothing)
-        *((_BPF_JEQ_K, n, False) for n in sorted(_DENIED[arch].values())),
-        *((_BPF_JEQ_K, n, True) for n in sorted(_STAYS[arch].values())),
+    return 0 without doing anything, everything else is allowed. With `own_pid` (the plugin's
+    process, which is its own group's leader) the signals to anything but it and its group fail
+    with `EPERM` too (`_SIGNALS`)."""
+    refused = [*sorted(_DENIED[arch].values())]
+    stays = sorted(_STAYS[arch].values())
+    signals = _SIGNALS[arch]
+    # (code, jump if true, jump if false, k); a jump is the name of a label or a count
+    code: list[tuple[int, str | int, str | int, int]] = [
+        (_BPF_LD_W_ABS, 0, 0, 4),  # seccomp_data.arch
+        (_BPF_JEQ_K, 1, 0, _AUDIT_ARCH[arch]),
+        (_BPF_RET_K, 0, 0, _RET_KILL_PROCESS),
+        (_BPF_LD_W_ABS, 0, 0, 0),  # seccomp_data.nr
     ]
+    labels: dict[str, int] = {}
     if arch == "x86_64":
-        checks.insert(0, (_BPF_JGE_K, _X32, False))  # the x32 numbers are all refused
-    program = [
-        _instruction(_BPF_LD_W_ABS, 0, 0, 4),  # seccomp_data.arch
-        _instruction(_BPF_JEQ_K, 1, 0, _AUDIT_ARCH[arch]),
-        _instruction(_BPF_RET_K, 0, 0, _RET_KILL_PROCESS),
-        _instruction(_BPF_LD_W_ABS, 0, 0, 0),  # seccomp_data.nr
-    ]
-    for index, (code, value, stays) in enumerate(checks):
-        # the instructions after the checks: allow, then EPERM, then "returns 0"
-        program.append(_instruction(code, len(checks) - index + int(stays), 0, value))
-    program.append(_instruction(_BPF_RET_K, 0, 0, _RET_ALLOW))
-    program.append(_instruction(_BPF_RET_K, 0, 0, _RET_ERRNO | errno.EPERM))
-    program.append(_instruction(_BPF_RET_K, 0, 0, _RET_ERRNO))
-    return b"".join(program)
+        code.append((_BPF_JGE_K, "eperm", 0, _X32))  # the x32 numbers are all refused
+    code += [(_BPF_JEQ_K, "eperm", 0, n) for n in refused]
+    code += [(_BPF_JEQ_K, "zero", 0, n) for n in stays]
+    if own_pid is not None:
+        for name in _SIGNAL_NEVER:
+            code.append((_BPF_JEQ_K, "eperm", 0, signals[name]))
+        for name in ("kill", "tgkill", "rt_sigqueueinfo", "rt_tgsigqueueinfo"):
+            # the call's first argument is a process id; the accumulator is left as `nr` for the
+            # checks that follow when it is not this call
+            label = f"after_{name}"
+            code.append((_BPF_JEQ_K, 0, label, signals[name]))
+            code.append((_BPF_LD_W_ABS, 0, 0, _ARG0))
+            code.append((_BPF_JEQ_K, "allow", 0, own_pid))
+            if name in _SIGNAL_OR_GROUP:
+                code.append((_BPF_JEQ_K, "allow", 0, 0))
+                code.append((_BPF_JEQ_K, "allow", 0, (-own_pid) & 0xFFFFFFFF))
+            code.append((_BPF_RET_K, 0, 0, _RET_ERRNO | errno.EPERM))
+            labels[label] = len(code)
+        for name, commands in _OWNER_COMMANDS.items():
+            label = f"after_{name}"
+            code.append((_BPF_JEQ_K, 0, label, _OWNERS[arch][name]))
+            code.append((_BPF_LD_W_ABS, 0, 0, _ARG1))
+            code += [(_BPF_JEQ_K, "zero", 0, command) for command in commands]
+            code.append((_BPF_RET_K, 0, 0, _RET_ALLOW))  # any other command of the call
+            labels[label] = len(code)
+    code.append((_BPF_RET_K, 0, 0, _RET_ALLOW))
+    labels["allow"] = len(code) - 1
+    code.append((_BPF_RET_K, 0, 0, _RET_ERRNO | errno.EPERM))
+    labels["eperm"] = len(code) - 1
+    code.append((_BPF_RET_K, 0, 0, _RET_ERRNO))
+    labels["zero"] = len(code) - 1
+
+    def offset(jump: str | int, here: int) -> int:
+        return labels[jump] - here - 1 if isinstance(jump, str) else jump
+
+    return b"".join(
+        _instruction(op, offset(jt, index), offset(jf, index), k)
+        for index, (op, jt, jf, k) in enumerate(code)
+    )
 
 
 class _SockFprog(ctypes.Structure):
@@ -246,17 +384,30 @@ class _SockFprog(ctypes.Structure):
 
 
 class Filter:
-    """The seccomp filter, built in the companion and installed by the child before `exec`."""
+    """The seccomp filter, built in the companion and installed by the child before `exec`.
 
-    def __init__(self) -> None:
+    `signals` (by default: where Landlock cannot scope them, ABI < 6) adds the refusal of the
+    signals to any process but the plugin and its group; the filter then needs the plugin's own
+    pid, which the child knows, so it is built in the child, at `install`."""
+
+    def __init__(self, *, signals: bool | None = None) -> None:
         arch = machine()
         if arch is None:
             raise OSError(f"no seccomp filter for the architecture {platform.machine()!r}")
-        program = build_program(arch)
-        self._buffer = ctypes.create_string_buffer(program, len(program))  # kept alive
+        self._arch = arch
+        self._signals = landlock_abi() < 6 if signals is None else signals
+        self._buffer = ctypes.create_string_buffer(0)  # kept alive
+        self._fprog = _SockFprog(0, None)
+        self._build(None)  # a program that cannot be built is known here, not in the child
+
+    def _build(self, own_pid: int | None) -> None:
+        program = build_program(self._arch, own_pid)
+        self._buffer = ctypes.create_string_buffer(program, len(program))
         self._fprog = _SockFprog(len(program) // 8, ctypes.cast(self._buffer, ctypes.c_void_p))
 
     def install(self) -> None:
+        if self._signals:
+            self._build(os.getpid())
         _prctl(_PR_SET_NO_NEW_PRIVS, 1)
         if _c().prctl(_PR_SET_SECCOMP, _SECCOMP_MODE_FILTER, ctypes.byref(self._fprog), 0, 0) != 0:
             raise OSError(ctypes.get_errno(), "seccomp filter")
@@ -283,6 +434,83 @@ def seccomp_ready() -> bool:
         except (OSError, subprocess.SubprocessError):
             _SECCOMP_WORKS = False
     return _SECCOMP_WORKS
+
+
+_PROBE = """
+import os, signal, sys
+import fcntl
+secret, scratch, fallback = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
+out = []
+def tried(name, action):
+    try:
+        action()
+        out.append(name)
+    except OSError:
+        pass
+tried("signal the companion", lambda: os.kill(os.getppid(), 0))
+def own():  # the filter makes this a no-op: the owner is still unset (0)
+    r, _w = os.pipe()
+    fcntl.fcntl(r, fcntl.F_SETOWN, os.getppid())
+    if fcntl.fcntl(r, fcntl.F_GETOWN) != os.getppid():
+        raise OSError
+if fallback:  # where Landlock scopes the signals, an owner is harmless: it is not delivered
+    tried("make the companion the owner of a descriptor", own)
+tried("read another's file", lambda: open(secret, "rb").read(1))
+tried("list another's folder", lambda: os.listdir(os.path.dirname(secret)))
+tried("empty another's file", lambda: os.truncate(secret, 0))
+print(",".join(out))
+"""
+_UNCONFINED: tuple[str, ...] | None = None
+
+
+def unconfined_actions() -> tuple[str, ...]:
+    """What a plugin's process, bound the way the companion binds it, can still do that it must
+    not (empty when the confinement holds): signal this process, read or list a folder that is not
+    its own, empty a file it may not write. Tried once, in a child that does nothing else."""
+    global _UNCONFINED
+    if _UNCONFINED is None:
+        try:
+            with (
+                tempfile.TemporaryDirectory(prefix="plugin-probe-") as other,
+                tempfile.TemporaryDirectory(prefix="plugin-probe-") as scratch,
+            ):
+                handle, name = tempfile.mkstemp(dir=other)  # empty: opening it is what is tried
+                os.close(handle)
+                secret = Path(name)
+                rules = Ruleset([Path(scratch)], read_roots())
+                filt = Filter()
+
+                def bind() -> None:  # pragma: no cover - runs in the child, before exec
+                    rules.restrict()
+                    filt.install()
+
+                try:
+                    done = subprocess.run(  # noqa: S603
+                        [
+                            sys.executable,
+                            "-I",
+                            "-c",
+                            _PROBE,
+                            str(secret),
+                            scratch,
+                            "1" if filt._signals else "0",
+                        ],
+                        preexec_fn=bind,
+                        start_new_session=True,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=30,
+                    )
+                finally:
+                    rules.close()
+                if done.returncode != 0:
+                    _UNCONFINED = ("start a bound process",)
+                else:
+                    _UNCONFINED = tuple(n for n in done.stdout.strip().split(",") if n)
+        except (OSError, subprocess.SubprocessError):
+            _UNCONFINED = ("start a bound process",)
+    return _UNCONFINED
 
 
 # -- the process tree --------------------------------------------------------------------------

@@ -19,7 +19,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from shelfhold.plugin_host.runner.confine import landlock_abi, machine, seccomp_ready
+from shelfhold.plugin_host.runner.confine import (
+    MIN_ABI,
+    landlock_abi,
+    machine,
+    seccomp_ready,
+    unconfined_actions,
+)
 
 __all__ = [
     "DOCKER_SOCKETS",
@@ -66,6 +72,9 @@ class Observation:
     landlock_abi: int | None = None  # None: not looked at (a test's description of a sandbox)
     stray_entries: tuple[str, ...] = ()  # of the plugins volume: what is not meant to be there
     seccomp_ready: bool | None = None  # None: not looked at; False: the filter cannot be installed
+    # what a bound plugin process was seen to do that it must not (`confine.unconfined_actions`:
+    # signal the companion, read another plugin's folder, empty a file); None: not looked at
+    unconfined: tuple[str, ...] | None = None
 
 
 class SelfCheckFailed(Exception):
@@ -140,6 +149,7 @@ def observe(
         landlock_abi=landlock_abi(),
         stray_entries=stray_entries(plugins_root),
         seccomp_ready=seccomp_ready(),
+        unconfined=unconfined_actions() if landlock_abi() >= MIN_ABI else None,
     )
 
 
@@ -164,11 +174,23 @@ def problems_of(seen: Observation, *, core_uid: int | None = None) -> list[str]:
             "the kernel offers no Landlock (it is needed to keep a plugin from writing "
             "beside its own scratch folder): use a kernel 5.13 or later with Landlock enabled"
         )
+    elif seen.landlock_abi is not None and seen.landlock_abi < MIN_ABI:
+        problems.append(
+            f"the kernel's Landlock is ABI {seen.landlock_abi}, which cannot refuse `truncate`: "
+            f"a plugin could empty a file it may not write; ABI {MIN_ABI} (Linux 6.2 or later) "
+            "is needed"
+        )
     if seen.seccomp_ready is False:
         problems.append(
-            "the seccomp filter that keeps a plugin from leaving its process group and from "
-            f"changing modes cannot be installed here (architecture {machine() or 'unknown'}; "
+            "the seccomp filter that keeps a plugin from leaving its process group, from "
+            f"changing modes and (before Landlock ABI 6) from signalling others "
+            f"cannot be installed here (architecture {machine() or 'unknown'}; "
             "x86_64 and aarch64 are known)"
+        )
+    if seen.unconfined:
+        problems.append(
+            "a plugin's process, bound as the companion binds it, can still: "
+            + ", ".join(seen.unconfined)
         )
     if seen.stray_entries:
         strays = ", ".join(seen.stray_entries)
