@@ -31,7 +31,7 @@ from shelfhold.identity.public import Principal
 from shelfhold.interfaces.http_api.device_auth import require_device_kobo
 from shelfhold.interfaces.http_api.path_safety import mount_prefix
 from shelfhold.interfaces.http_api.problems import ProblemError
-from shelfhold.reading.public import KoboSync
+from shelfhold.reading.public import KoboSync, TokenGoneError
 
 __all__ = ["build_kobo_router"]
 
@@ -69,12 +69,15 @@ def build_kobo_router(service: Callable[[], KoboSync]) -> APIRouter:
     ) -> JSONResponse:
         """One page of the sync of this device: the entitlements, the tags and the reading
         states it is given, the token of the next page, and whether one follows."""
-        page = service().sync(
-            principal=principal,
-            token_id=principal.key_id,
-            base=_base(request, token),
-            continuation=request.headers.get("x-kobo-synctoken"),
-        )
+        try:
+            page = service().sync(
+                principal=principal,
+                token_id=principal.key_id,
+                base=_base(request, token),
+                continuation=request.headers.get("x-kobo-synctoken"),
+            )
+        except TokenGoneError:  # revoked since the door: the door's own answer
+            raise ProblemError("invalid_credentials") from None
         headers = {"Cache-Control": _NO_STORE, "x-kobo-synctoken": page.continuation}
         if page.continue_sync:
             headers["x-kobo-sync"] = "continue"

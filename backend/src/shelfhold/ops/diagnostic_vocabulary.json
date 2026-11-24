@@ -533,6 +533,7 @@
   "TimeoutException",
   "TimeoutExpired",
   "TocError",
+  "TokenGoneError",
   "TokenRefused",
   "TokenUnreadable",
   "TombstoneKeyringExit",
