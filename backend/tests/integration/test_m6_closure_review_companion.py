@@ -91,7 +91,6 @@ class Probe(Plugin):
                     raise PermissionError(ctypes.get_errno(), "tgkill")
 
             attempt("sibling-tgkill", through_tgkill)
-            attempt("everyone", lambda: os.kill(-1, signal.SIGUSR1))
 
             def through_a_pidfd():
                 fd = os.pidfd_open(ask["pid"])
@@ -138,7 +137,7 @@ def test_a_plugin_signals_neither_the_companion_nor_another_plugin(short_dir: Pa
             result = dict(item.split(":", 1) for item in await ask(a, do="signal", pid=int(b_pid)))
             await asyncio.sleep(0.2)
             assert got == [], "a plugin signalled the companion"
-            for name in ("companion", "sibling", "sibling-probe", "sibling-tgkill", "everyone"):
+            for name in ("companion", "sibling", "sibling-probe", "sibling-tgkill"):
                 assert result[name] == "PermissionError", (name, result)
             assert result["pidfd"] == "PermissionError", result
             assert (await ask(b, do="info"))[1] == b_pid  # the other plugin is still there
@@ -166,7 +165,7 @@ def attempt(name, action):
 signal.signal(signal.SIGUSR2, lambda *_: None)
 attempt("companion", lambda: os.kill(os.getppid(), signal.SIGUSR1))
 attempt("sibling", lambda: os.kill(sibling, signal.SIGKILL))
-attempt("everyone", lambda: os.kill(-1, signal.SIGUSR1))
+attempt("everyone", lambda: os.kill(-1, 0))  # a probe: never a signal that kills
 attempt("itself", lambda: os.kill(os.getpid(), signal.SIGUSR2))
 attempt("own group", lambda: os.killpg(os.getpgrp(), signal.SIGUSR2))
 attempt("raise", lambda: signal.raise_signal(signal.SIGUSR2))
@@ -181,7 +180,7 @@ def test_without_landlock_scopes_seccomp_refuses_the_signals_to_others() -> None
     got: list[int] = []
     previous = signal.signal(signal.SIGUSR1, lambda number, _frame: got.append(number))
     sibling = subprocess.Popen([sys.executable, "-I", "-c", "import time; time.sleep(30)"])
-    filt = confine.Filter(signals=True)  # type: ignore[call-arg]
+    filt = confine.Filter(signals=True)
     try:
         done = subprocess.run(  # noqa: S603
             [sys.executable, "-I", "-c", FALLBACK, str(sibling.pid)],
@@ -249,10 +248,10 @@ def test_a_plugin_has_a_ceiling_on_its_processes_and_on_the_files_it_writes(
         await server.start()
         try:
             a = await session(server, "rpc-demo", "probe:make")
-            seen = {}
+            seen: dict[str, tuple[int, int]] = {}
             for item in await ask(a, do="limits"):
-                name, soft, hard = item.split(":")
-                seen[name] = (int(soft), int(hard))
+                name, soft_text, hard_text = item.split(":")
+                seen[name] = (int(soft_text), int(hard_text))
             for name, (soft, hard) in seen.items():
                 assert 0 < soft == hard <= 1 << 30, (name, soft, hard)  # not RLIM_INFINITY
             assert set(seen) == {"RLIMIT_NPROC", "RLIMIT_FSIZE"}
@@ -276,10 +275,22 @@ def test_the_core_checks_the_uid_of_the_companion_it_connected_to(short_dir: Pat
             with pytest.raises(RunnerUnavailable, match="uid"):
                 await connect_runner(
                     server.config.socket_path, key="rpc-demo", entry="x:make",
-                    limits=RpcLimits(), core_uid=1000, runner_uid=me + 1,  # type: ignore[call-arg]
+                    limits=RpcLimits(), core_uid=1000, runner_uid=me + 1,
                 )  # fmt: skip
             assert server.pids() == {}
         finally:
             await server.close()
 
     run(scenario)
+
+
+@needs_landlock
+@needs_seccomp
+def test_the_self_check_tries_the_confinement_on_a_process_bound_like_a_plugin() -> None:
+    """The companion looks, at its start, at what a bound process still does: here nothing."""
+    assert confine.unconfined_actions() == ()
+    refused = problems_of(
+        replace(CLEAN, unconfined=("signal the companion", "read another's file"))
+    )
+    assert len(refused) == 1 and "signal the companion" in refused[0]
+    assert problems_of(replace(CLEAN, unconfined=())) == []

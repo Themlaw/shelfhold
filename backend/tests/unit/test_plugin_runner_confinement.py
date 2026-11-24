@@ -231,7 +231,7 @@ def test_what_a_plugin_abandons_dies_with_its_connection_and_only_then(short_dir
     pids: list[int] = []
 
     async def scenario() -> None:
-        server = server_in(short_dir)
+        server = server_in(short_dir, max_tasks=1 << 20)  # this uid does other work on a test host
         await server.start()
         try:
             leaver = await session(server, "rpc-demo", "esc:leaves")

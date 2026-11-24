@@ -33,7 +33,16 @@ Sans lui, aucun plugin isolé ne démarre ; l'ancien mode (en processus, derriè
   de le lancer, sans privilège : le plugin **n'écrit nulle part** (ni création, ni suppression, ni
   renommage, ni lien, ni socket) sauf dans **son dossier de travail** (`$TMPDIR`, un dossier du
   `tmpfs` `/tmp` du compagnon, supprimé à la fin) et `/dev/null`. Il ne peut donc ni remplacer le
-  socket du compagnon, ni écrire dans `/plugin-rpc` ni dans `/plugins`. Avec un noyau qui offre
+  socket du compagnon, ni écrire dans `/plugin-rpc` ni dans `/plugins`. Il **ne lit** que ce dont il
+  a besoin (le système : `/usr`, `/lib*`, `/etc/ssl`, le fuseau horaire ; l'interpréteur et son
+  environnement virtuel ; les roues installées ; son dossier de travail ; `/dev/null` et
+  `/dev/urandom`) : le dossier de travail d'un autre plugin lui est fermé. Il **n'envoie de signal**
+  ni au compagnon ni à un autre plugin : avec l'ABI 6 de Landlock (6.12 ou plus), c'est Landlock qui
+  le tient (`SIGNAL`, `ABSTRACT_UNIX_SOCKET`) ; avant, le filtre seccomp refuse `kill`, `tkill`,
+  `tgkill`, `rt_sigqueueinfo`, `rt_tgsigqueueinfo` et `pidfd_send_signal` vers tout processus autre
+  que lui-même et son groupe (un enfant se signale donc par son groupe, `killpg`). Chaque processus
+  de plugin a aussi un plafond de processus (`RLIMIT_NPROC`, 512) et de taille de fichier
+  (`RLIMIT_FSIZE`, 256 Mio). Avec un noyau qui offre
   l'ABI 4 de Landlock (6.7 ou plus), il ne peut pas non plus ouvrir de connexion TCP : une seconde
   barrière réseau derrière `network_mode: none`.
 - Un **filtre seccomp**, posé avec Landlock avant le lancement du plugin (construit à la main, sans
@@ -78,8 +87,11 @@ démarrer** (code de sortie 3, rien d'ouvert) si :
 3. il a une interface réseau autre que `lo` ;
 4. une connexion sortante aboutit ;
 5. sa racine n'est pas en lecture seule ;
-6. le noyau n'offre pas **Landlock** (5.13 ou plus, `landlock` dans `cat /sys/kernel/security/lsm`) :
-   sans lui, un plugin pourrait remplacer le socket du compagnon, donc il ne démarre pas ;
+6. le noyau n'offre pas **Landlock** (`landlock` dans `cat /sys/kernel/security/lsm`), ou n'en offre
+   que l'ABI 1 ou 2 (avant Linux 6.2) : sans lui, un plugin pourrait remplacer le socket du
+   compagnon, et avant l'ABI 3 il pourrait vider (`truncate`) un fichier qu'il n'a pas le droit
+   d'écrire, donc il ne démarre pas ; le compagnon essaie en outre un processus lié comme un plugin
+   (il ne doit ni signaler le compagnon, ni lire le dossier d'un autre, ni vider un fichier) ;
 7. `/var/run/docker.sock` ou `/run/docker.sock` est visible ;
 8. le filtre seccomp ne peut pas être posé (architecture inconnue, ou noyau/profil qui l'interdit) ;
 9. `/plugins` contient autre chose que `site-packages` et l'état (`state.json`) : c'est le signe
@@ -133,8 +145,8 @@ Si vous utilisez des volumes nommés plutôt que des dossiers, montez le volume 
 - **Le compagnon redémarre en boucle** : lisez son journal. Un `it can see /data` veut dire qu'un
   volume de données est monté chez lui ; `a network interface other than lo` ou `an outbound
   connection is possible`, que `network_mode: none` manque ; `not read-only`, que `read_only: true`
-  manque ; `the kernel offers no Landlock`, que l'hôte n'a pas Landlock (noyau 5.13 ou plus avec
-  `landlock` dans les LSM actifs) ; `the plugins volume holds more than the installed plugins`, que
+  manque ; `the kernel offers no Landlock`, que l'hôte n'a pas Landlock (noyau 6.2 ou plus avec
+  `landlock` dans les LSM actifs ; `Landlock is ABI 1` ou `2`, qu'il est trop ancien) ; `the plugins volume holds more than the installed plugins`, que
   `/plugins` est un montage trop large. `the seccomp filter ... cannot be installed here`, que l'architecture n'est ni
   x86_64 ni aarch64 ou que le profil seccomp de Docker interdit `seccomp(2)` ou `prctl` sur ce
   conteneur. Docker doit aussi laisser passer les appels système de Landlock : c'est le cas du profil seccomp par défaut des versions récentes de Docker ; un profil
