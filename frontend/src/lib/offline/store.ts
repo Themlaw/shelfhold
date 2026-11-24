@@ -39,6 +39,9 @@ export interface OfflineStore {
   copies(profileId: string): Promise<CopyMeta[]>;
   find(profileId: string, carrierType: string, carrierId: string): Promise<CopyMeta | undefined>;
   evictWorks(profileId: string, workIds: readonly string[]): Promise<string[]>;
+  /** Evicts the copies of these Editions (a copy knows its Edition: `publication.edition_id`), whatever
+   * becomes of their Work. Returns the Works of the copies it evicted. */
+  evictEditions(profileId: string, editionIds: readonly string[]): Promise<string[]>;
   evictCarrier(profileId: string, carrierType: string, carrierId: string): Promise<void>;
   wipe(profileId: string): Promise<void>;
   wipeAll(): Promise<void>;
@@ -179,6 +182,17 @@ export function createOfflineStore(env: OfflineEnv): OfflineStore {
     return gone;
   }
 
+  async function evictEditionsNow(profileId: string, editionIds: readonly string[]): Promise<string[]> {
+    const wanted = new Set(editionIds);
+    const gone: string[] = [];
+    for (const copy of await copiesOf(profileId)) {
+      if (!wanted.has(copy.publication.edition_id)) continue;
+      await evictCarrierNow(profileId, copy.carrierType, copy.carrierId);
+      if (!gone.includes(copy.workId)) gone.push(copy.workId);
+    }
+    return gone;
+  }
+
   async function wipeAllNow(): Promise<void> {
     await active.delete('profile'); // first: if the rest fails, nothing is served any more
     const ids = new Set(await known());
@@ -213,6 +227,7 @@ export function createOfflineStore(env: OfflineEnv): OfflineStore {
     },
     evictCarrier: (profileId, type, id) => exclusive(() => evictCarrierNow(profileId, type, id)),
     evictWorks: (profileId, workIds) => exclusive(() => evictWorksNow(profileId, workIds)),
+    evictEditions: (profileId, editionIds) => exclusive(() => evictEditionsNow(profileId, editionIds)),
     wipe: (profileId) => exclusive(() => wipeNow(profileId)),
     wipeAll: () => exclusive(wipeAllNow),
     queuePosition: (profileId, body) => exclusive(() => queueNow(profileId, body)),

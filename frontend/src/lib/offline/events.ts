@@ -54,6 +54,7 @@ export function notifying(store: OfflineStore, events: { changed(): void }): Off
     keep: (profileId, meta, entries) => said(() => store.keep(profileId, meta, entries)),
     evictCarrier: (profileId, type, id) => said(() => store.evictCarrier(profileId, type, id)),
     evictWorks: (profileId, workIds) => said(() => store.evictWorks(profileId, workIds)),
+    evictEditions: (profileId, editionIds) => said(() => store.evictEditions(profileId, editionIds)),
     wipe: (profileId) => said(() => store.wipe(profileId)),
     wipeAll: () => said(() => store.wipeAll())
   };

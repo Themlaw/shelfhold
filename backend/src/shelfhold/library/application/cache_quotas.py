@@ -175,6 +175,23 @@ def erase_cache_path(data_dir: Path, rel: str) -> bool:
 # -- the sweep -----------------------------------------------------------------------------------
 
 
+def _evict[T](
+    kept: list[T],
+    total: int,
+    quota: int,
+    pressure: Callable[[], bool] | None,
+    take: Callable[[T], int | None],
+) -> None:
+    """The quota's hand, one for the three file caches: from the oldest of `kept` (already
+    sorted), `take` each entry until `total` holds under `quota` and the low-disk guard says the
+    volume is back above its mark. `take` erases there and then — the guard sees the space back —
+    and answers the bytes that went, or None when the entry stays (the guard is asked again)."""
+    while kept and (total > quota or (pressure is not None and pressure())):
+        freed = take(kept.pop(0))
+        if freed is not None:
+            total -= freed
+
+
 def _erase_thumbnail(data_dir: Path, row: Any) -> int | None:
     """Erase the files one thumbnail row names (its colour variant, and the grey one): how many
     went, or None when the row must stay (a refused path, a file that would not go — both
@@ -233,14 +250,17 @@ def _thumbnails(
         if gone is not None:
             files += gone
             taken.append(row)
-    while kept and (total > policy.thumbnails_quota_bytes or (pressure is not None and pressure())):
-        row = kept.pop(0)
+
+    def take(row: Any) -> int | None:
+        nonlocal files
         gone = _erase_thumbnail(data_dir, row)  # erased here: the guard sees the space back
         if gone is None:
-            continue  # the file stayed: the row stays too, and the guard is asked again
+            return None  # the file stayed: the row stays too
         files += gone
-        total -= int(row.bytes)
         taken.append(row)
+        return int(row.bytes)
+
+    _evict(kept, total, policy.thumbnails_quota_bytes, pressure, take)
     if taken:
         with write_transaction(engine) as connection:
             connection.execute(
@@ -338,17 +358,23 @@ def _renditions(
                 continue  # refused or failed: the file stays, so do its rows
             files_gone += gone
             taken.extend(entry["rows"])
-    while kept and (total > policy.renditions_quota_bytes or (pressure is not None and pressure())):
-        _, key, entry = kept.pop(0)
+
+    def take(item: tuple[float, str, dict[str, Any]]) -> int | None:
+        nonlocal files_gone
+        _, key, entry = item
         with RenditionService.erasable(entry["rows"][0].content_hash) as free:
             if not free:
-                continue  # pinned since the decision: the file and its rows wait for the next pass
+                return (
+                    None  # pinned since the decision: the file and its rows wait for the next pass
+                )
             gone = _erase_file(data_dir, f"{RENDITIONS_DIR}/{key}", cache="renditions")
             if gone is None:
-                continue  # refused or failed: the file stayed, so did the disk it occupies
+                return None  # refused or failed: the file stayed, so did the disk it occupies
             files_gone += gone  # erased here: the guard sees the space it asked for
-            total -= entry["size"]
             taken.extend(entry["rows"])
+            return int(entry["size"])
+
+    _evict(kept, total, policy.renditions_quota_bytes, pressure, take)
     taken.extend(ledger)
     if taken:
         with write_transaction(engine) as connection:
@@ -435,11 +461,15 @@ def _http(
     files = 0
     for row in doomed:  # the expiry goes first, whatever the guard says
         files += _take_http_body(data_dir, row)
-    while kept and (total > policy.http_quota_bytes or (pressure is not None and pressure())):
-        _, row = kept.pop(0)
+
+    def take(item: tuple[datetime, Any]) -> int:
+        nonlocal files
+        row = item[1]
         files += _take_http_body(data_dir, row)  # erased here: the guard sees the space back
-        total -= sizes.get(str(row.body_ref), 0)
         doomed.append(row)
+        return sizes.get(str(row.body_ref), 0)
+
+    _evict(kept, total, policy.http_quota_bytes, pressure, take)
     if doomed:
         with write_transaction(engine) as connection:
             gone = int(

@@ -69,6 +69,7 @@ USER_FIELDS: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
         "auth.passkey_registered": frozenset({"user_id"}),
         # the child whose view of a Work changed (written by `changes._insert`)
         "ops.profile_visibility": frozenset({"profile_id"}),
+        "ops.edition_visibility": frozenset({"profile_id"}),
     }
 )
 _USER_KEY: Final = re.compile(r"(?:user|actor|requester|owner|subject|profile)_id\Z|by\Z")

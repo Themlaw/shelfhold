@@ -168,6 +168,9 @@ class PluginOut(BaseModel):
     """One installed third-party plugin: its mode (D13) and why it is not loaded."""
 
     name: str
+    # the plugin key the lifecycle and attestation routes are addressed by (the distribution
+    # name above is not it); None for a distribution that carries no loadable plugin
+    key: str | None = None
     version: str
     mode: str
     status: str  # `enabled` in its own mode, else `disabled`
@@ -421,6 +424,9 @@ def build_plugins_router(
     # own, with the plugin as its target, once the guard has agreed — a refusal (unknown plugin,
     # in-process mode over the wire) leaves no row that says something was allowed.
 
+    def _key_of(dist: str) -> str | None:
+        return next((k for k, found in installed_for().items() if found.dist == dist), None)
+
     def _plugins() -> PluginsOut:
         layout = guard.Layout.of(data_dir())
         state = guard.read_state(layout)
@@ -431,6 +437,7 @@ def build_plugins_router(
             items.append(
                 PluginOut(
                     name=verdict.name,
+                    key=_key_of(verdict.name),
                     version=plugin.version,
                     mode=verdict.mode,
                     status="enabled" if verdict.granted else "disabled",
@@ -460,6 +467,7 @@ def build_plugins_router(
             raise ProblemError("plugin.unknown")
         return PluginOut(
             name=verdict.name,
+            key=_key_of(verdict.name),
             version=plugin.version,
             mode=verdict.mode,
             status="enabled" if verdict.granted else "disabled",

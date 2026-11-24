@@ -5,20 +5,42 @@ import { needsReauth, needsSession, isForbidden, problemOf } from '#lib/triage.t
 
 export type GuardState = 'ok' | 'signed_out' | 'forbidden' | 'failed';
 
-export class Guard {
-  state = $state<GuardState>('ok');
+/** The in-place re-authentication: ask once, replay the reserved action after, or drop it. */
+export class Reauth {
   reauthMethods = $state<string[] | null>(null);
   #retry: (() => Promise<void>) | null = null;
+
+  /** True when the server asked for a fresh password: the prompt shows and `replay` runs after it. */
+  askAgain(error: unknown, replay: () => Promise<void>): boolean {
+    if (!needsReauth(error)) return false;
+    this.#retry = replay;
+    this.reauthMethods = problemOf(error).reauth_methods ?? ['password'];
+    return true;
+  }
+
+  async afterReauth(): Promise<void> {
+    const again = this.#retry;
+    this.#retry = null;
+    this.reauthMethods = null;
+    if (again) await again();
+  }
+
+  cancelReauth(): void {
+    this.#retry = null;
+    this.reauthMethods = null;
+  }
+}
+
+export class Guard extends Reauth {
+  state = $state<GuardState>('ok');
 
   /** Run an action; a stale password asks for it and the action runs again after. */
   async run(action: () => Promise<void>): Promise<void> {
     try {
       await action();
     } catch (error) {
-      if (needsReauth(error)) {
-        this.#retry = action;
-        this.reauthMethods = problemOf(error).reauth_methods ?? ['password'];
-      } else if (needsSession(error)) {
+      if (this.askAgain(error, () => this.run(action))) return;
+      if (needsSession(error)) {
         this.state = 'signed_out';
       } else if (isForbidden(error)) {
         this.state = 'forbidden';
@@ -26,17 +48,5 @@ export class Guard {
         this.state = 'failed';
       }
     }
-  }
-
-  async afterReauth(): Promise<void> {
-    const again = this.#retry;
-    this.#retry = null;
-    this.reauthMethods = null;
-    if (again) await this.run(again);
-  }
-
-  cancelReauth(): void {
-    this.#retry = null;
-    this.reauthMethods = null;
   }
 }

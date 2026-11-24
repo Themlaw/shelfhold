@@ -57,7 +57,7 @@ export function offlineApi(): KeepApi {
   return {
     async works(since) {
       const { data, response } = answered(await listWorks({ query: { limit: 1, ...(since ? { since } : {}) } }));
-      return { status: response.status, since: data?.since, removed: data?.removed };
+      return { status: response.status, since: data?.since, removed: data?.removed, removedEditions: data?.removed_editions };
     },
     async publication(carrierType, carrierId) {
       const { data, response } = answered(await readerPublication({ path: { carrier_type: carrierType, carrier_id: carrierId } }));

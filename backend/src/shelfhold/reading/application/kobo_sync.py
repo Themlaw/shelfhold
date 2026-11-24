@@ -63,7 +63,13 @@ from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import new_ulid
 from shelfhold.infrastructure.schema import catalog, export, identity, reading
 
-__all__ = ["KoboSync", "SyncPage", "entitlement_of"]
+__all__ = ["KoboSync", "SyncPage", "TokenGoneError", "entitlement_of"]
+
+
+class TokenGoneError(LookupError):
+    """The device token was revoked between the door that vouched for it and the sync: the door's
+    own answer is due, and nothing is served or written."""
+
 
 PAGE: Final = 25  # entitlements by sync page: the device asks again until it is told to stop
 _CHUNK: Final = 400  # identifiers by `IN`: a library holds more books than one statement names
@@ -325,12 +331,8 @@ class KoboSync:
         with self._engine.connect() as connection:
             device_id = self._device_of(connection, token_id)
             scope = reader_scope(connection, principal.user_id)
-            if device_id is None:
-                # nobody's token (the door vouches for a device): pages without a state
-                after = cursor.after if cursor is not None and cursor.version is None else None
-                return self._stateless_page(
-                    connection, principal=principal, scope=scope, base=base, after=after
-                )
+            if device_id is None:  # the credential went between the door and here
+                raise TokenGoneError
             point = self._point_of(connection, device_id)
             if cursor is not None and cursor.after is not None:
                 # a page of the sync in flight: the walk its first page froze
@@ -589,21 +591,24 @@ class KoboSync:
                     }
             tags.update(flight.tags["new"])
             tags.update(flight.tags["changed"])
-            writer.execute(
-                sa.delete(reading.kobo_sync_point).where(
-                    reading.kobo_sync_point.c.device_id == device_id
+            point = {
+                "synced_at": flight.t0,
+                "books": books,
+                "tags": tags,
+                "in_progress": {},
+            }
+            if row is None:
+                writer.execute(
+                    sa.insert(reading.kobo_sync_point).values(
+                        id=new_ulid(), device_id=device_id, **point
+                    )
                 )
-            )
-            writer.execute(
-                sa.insert(reading.kobo_sync_point).values(
-                    id=new_ulid(),
-                    device_id=device_id,
-                    synced_at=flight.t0,
-                    books=books,
-                    tags=tags,
-                    in_progress={},
+            else:  # the lock is held since the read: the row is still there, one per device
+                writer.execute(
+                    sa.update(reading.kobo_sync_point)
+                    .where(reading.kobo_sync_point.c.device_id == device_id)
+                    .values(**point)
                 )
-            )
         return flight.version
 
     def _save_flight(self, device_id: str, flight: _Flight) -> None:
@@ -641,43 +646,6 @@ class KoboSync:
                     .where(reading.kobo_sync_point.c.device_id == device_id)
                     .values(in_progress=document)
                 )
-
-    def _stateless_page(
-        self,
-        connection: Connection,
-        *,
-        principal: Principal,
-        scope: ReaderScope,
-        base: str,
-        after: str | None,
-    ) -> SyncPage:
-        """A page for a token that is nobody's (the door vouches for a device; this is the
-        defensive case): no flight and no point — the pages follow the cursor and nothing is
-        written anywhere."""
-        books = self._books_of(connection, scope, after=after, limit=PAGE + 1)
-        more = len(books) > PAGE
-        served = books[:PAGE]
-        result: dict[str, Any] = {
-            "NewEntitlements": [self._entitlement(book, base) for book in served],
-            "ChangedEntitlements": [],
-            "DeletedEntitlements": [],
-            "NewTagging": (
-                self._tagging(self._tags_of(connection, scope, self._books_of(connection, scope)))
-                if after is None
-                else []
-            ),
-            "ChangedTagging": [],
-            "DeletedTagging": [],
-            "ChangedProductMetadata": [],
-            "ChangedReadingState": self._reading_states(
-                connection, principal.user_id, [book.edition_id for book in served], since=None
-            ),
-        }
-        if more:
-            nxt = _encode(Cursor(books[PAGE - 1].edition_id, None))
-            return SyncPage({"SyncStateResult": result, "ContinuationToken": nxt}, nxt, True)
-        done = _encode(Cursor(None, int(self._now().timestamp())))
-        return SyncPage({"SyncStateResult": result, "ContinuationToken": done}, done, False)
 
     # -- the pieces -------------------------------------------------------------------------------
 
