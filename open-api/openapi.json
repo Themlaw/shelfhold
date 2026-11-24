@@ -36489,6 +36489,10 @@
       "code": "plugin.not_isolated",
       "status": 409
     },
+    "/api/v1/problems/plugin.pin-refused": {
+      "code": "plugin.pin_refused",
+      "status": 422
+    },
     "/api/v1/problems/plugin.rollback-refused": {
       "code": "plugin.rollback_refused",
       "status": 422
