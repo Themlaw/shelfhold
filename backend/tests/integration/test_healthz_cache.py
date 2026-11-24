@@ -124,6 +124,7 @@ def test_healthz_runs_the_heavy_status_once_for_many_probes(api: AuthEnv, ops: _
     assert ops.calls == 1  # the startup read, and nothing more
 
 
+@pytest.mark.timing
 def test_concurrent_probes_are_one_flight(ops: _Ops) -> None:
     clock = _Clock()
     health = _health(ops, clock)
@@ -147,6 +148,7 @@ def test_concurrent_probes_are_one_flight(ops: _Ops) -> None:
     assert len(seen) == 30
 
 
+@pytest.mark.timing
 def test_probe_during_a_slow_refresh_is_not_held(ops: _Ops) -> None:
     clock = _Clock()
     health = _health(ops, clock)

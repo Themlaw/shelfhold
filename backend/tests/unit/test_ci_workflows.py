@@ -90,6 +90,7 @@ def _runs(files: list[str], event: str = "pull_request") -> set[str]:
 BACKEND_ALL = {
     "backend-unit",
     "backend-integration",
+    "backend-integration-timing",
     "backend-suites",
     "backend-bench",
     "coverage",
@@ -121,7 +122,10 @@ def test_pull_request_scope_production_code_runs_everything_as_before() -> None:
 @pytest.mark.req("ENF-SEC-007")
 def test_pull_request_scope_tests_of_one_suite_run_that_suite_only() -> None:
     assert _runs(["backend/tests/unit/test_x.py"]) == {"backend-unit", "fixtures"}
-    assert _runs(["backend/tests/integration/test_x.py"]) == {"backend-integration"}
+    assert _runs(["backend/tests/integration/test_x.py"]) == {
+        "backend-integration",
+        "backend-integration-timing",
+    }
     assert _runs(["backend/tests/bench/test_x.py"]) == {"backend-bench"}
     for suite in ("golden", "faults", "property"):
         files = [f"backend/tests/{suite}/test_x.py"]

@@ -79,6 +79,7 @@ def test_review_lazy_thumbnail_is_made_once_under_concurrent_requests(
 
 
 @pytest.mark.req("EF-BIB-020", "ENF-SEC-003")
+@pytest.mark.timing
 def test_review_uncached_screen_does_not_stall_the_api(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -115,6 +116,7 @@ def one_connection(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.req("EF-BIB-020", "ENF-OPS-003")
+@pytest.mark.timing
 def test_review_healthz_never_holds_a_connection_while_asking_for_another(
     one_connection: None, world: World
 ) -> None:

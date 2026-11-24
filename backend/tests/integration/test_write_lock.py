@@ -25,6 +25,7 @@ def _pair(tmp_path: Path) -> tuple[sa.Engine, sa.Engine]:
     return first, create_db_engine(path)
 
 
+@pytest.mark.timing
 def test_a_deferred_read_then_write_is_refused_at_once_when_a_writer_commits_between(
     tmp_path: Path,
 ) -> None:

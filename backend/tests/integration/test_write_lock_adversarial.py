@@ -41,6 +41,7 @@ def _hold_write_lock(database: str) -> sqlite3.Connection:
     return other
 
 
+@pytest.mark.timing
 def test_reading_the_root_marks_does_not_wait_for_a_writer(env: RestoreEnv) -> None:
     """`RootWatcher.refresh` only reads when nothing changed (the common case, every status read
     and every authenticated `/healthz` refresh). Under WAL a read never waits for a writer."""

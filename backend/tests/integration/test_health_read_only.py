@@ -59,6 +59,7 @@ def test_the_health_read_judges_no_root_and_still_lists_the_recorded_marks(env: 
     assert roots.judged == 1
 
 
+@pytest.mark.timing
 def test_the_health_read_is_not_held_by_a_write_in_progress_and_does_not_hold_one(
     env: ExportEnv,
 ) -> None:
