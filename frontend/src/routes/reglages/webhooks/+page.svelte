@@ -21,7 +21,8 @@
   import { formatDateTime } from '#lib/i18n/format.ts';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
-  import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
+  import { Reauth } from '#lib/guard.svelte.ts';
+  import { isForbidden, problemOf } from '#lib/triage.ts';
 
   type Shown = { hook: WebhookOut; deliveries: DeliveryOut[]; unreadable: boolean };
   type Secret = { value: string; kind: 'created' | 'rotated'; hookId: string };
@@ -37,8 +38,7 @@
   let notice = $state<{ text: string; kind: 'status' | 'alert' } | null>(null);
   let secret = $state<Secret | null>(null);
   let busy = $state(false);
-  let reauthMethods = $state<string[] | null>(null);
-  let retry: (() => Promise<void>) | null = null;
+  const reauth = new Reauth();
 
   let url = $state('');
   let types = $state('');
@@ -51,14 +51,6 @@
 
   function say(text: string, kind: 'status' | 'alert'): void {
     notice = { text, kind };
-  }
-
-  /** The server asked for a fresh session: ask in place, then replay the same call. */
-  function askAgain(error: unknown, replay: () => Promise<void>): boolean {
-    if (!needsReauth(error)) return false;
-    retry = replay;
-    reauthMethods = problemOf(error).reauth_methods ?? ['password'];
-    return true;
   }
 
   /** The deliveries of one subscription; a read that fails leaves the list standing. */
@@ -117,7 +109,7 @@
         throwOnError: false
       });
       if (error) {
-        if (askAgain(error, create)) return;
+        if (reauth.askAgain(error, create)) return;
         const code = problemOf(error).code;
         say(
           t(
@@ -152,7 +144,7 @@
         throwOnError: false
       });
       if (error) {
-        if (askAgain(error, () => rotate(hook))) return;
+        if (reauth.askAgain(error, () => rotate(hook))) return;
         const problem = problemOf(error);
         say(
           problem.code === 'webhook.secret_unreadable'
@@ -179,7 +171,7 @@
         throwOnError: false
       });
       if (error) {
-        if (askAgain(error, () => remove(hook))) return;
+        if (reauth.askAgain(error, () => remove(hook))) return;
         say(t('webhooks.delete_refused'), 'alert');
         return;
       }
@@ -291,19 +283,11 @@
     {/if}
   {/if}
 
-  {#if reauthMethods}
+  {#if reauth.reauthMethods}
     <ReauthPrompt
-      methods={reauthMethods}
-      ondone={async () => {
-        reauthMethods = null;
-        const replay = retry;
-        retry = null;
-        await replay?.();
-      }}
-      oncancel={() => {
-        reauthMethods = null;
-        retry = null;
-      }}
+      methods={reauth.reauthMethods}
+      ondone={() => reauth.afterReauth()}
+      oncancel={() => reauth.cancelReauth()}
     />
   {/if}
 </main>

@@ -9,7 +9,8 @@
   import { formatDateTime } from '#lib/i18n/format.ts';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
-  import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
+  import { Reauth } from '#lib/guard.svelte.ts';
+  import { isForbidden, problemOf } from '#lib/triage.ts';
 
   let userId = $state('');
   let role = $state('');
@@ -18,8 +19,7 @@
   let failed = $state(false);
   let notice = $state<{ text: string; kind: 'status' | 'alert' } | null>(null);
   let busy = $state(false);
-  let reauthMethods = $state<string[] | null>(null);
-  let retry: (() => Promise<void>) | null = null;
+  const reauth = new Reauth();
 
   let pluginKey = $state('');
   let token = $state('');
@@ -28,13 +28,6 @@
 
   function say(text: string, kind: 'status' | 'alert'): void {
     notice = { text, kind };
-  }
-
-  function askAgain(error: unknown, replay: () => Promise<void>): boolean {
-    if (!needsReauth(error)) return false;
-    retry = replay;
-    reauthMethods = problemOf(error).reauth_methods ?? ['password'];
-    return true;
   }
 
   async function load(): Promise<void> {
@@ -78,7 +71,7 @@
           throwOnError: false
         });
         if (error) {
-          if (askAgain(error, call)) return;
+          if (reauth.askAgain(error, call)) return;
           const code = problemOf(error).code;
           if (code === 'tracker_child_refused') say(t('trackers.child_refused'), 'alert');
           else say(t('trackers.refused'), 'alert');
@@ -107,7 +100,7 @@
       try {
         const { error } = await unlink({ path: { user_id: userId, plugin_key: key }, headers: headers(), throwOnError: false });
         if (error) {
-          if (askAgain(error, call)) return;
+          if (reauth.askAgain(error, call)) return;
           say(t('trackers.refused'), 'alert');
           return;
         }
@@ -131,7 +124,7 @@
           throwOnError: false
         });
         if (error) {
-          if (askAgain(error, call)) return;
+          if (reauth.askAgain(error, call)) return;
           say(t('trackers.push_refused'), 'alert');
           return;
         }
@@ -145,18 +138,6 @@
       }
     };
     await call();
-  }
-
-  function afterReauth(): void {
-    const again = retry;
-    retry = null;
-    reauthMethods = null;
-    if (again) void again();
-  }
-
-  function cancelReauth(): void {
-    retry = null;
-    reauthMethods = null;
   }
 </script>
 
@@ -207,8 +188,8 @@
     </section>
   {/if}
 
-  {#if reauthMethods}
-    <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
+  {#if reauth.reauthMethods}
+    <ReauthPrompt methods={reauth.reauthMethods} ondone={() => reauth.afterReauth()} oncancel={() => reauth.cancelReauth()} />
   {/if}
 
   {#if notice}
