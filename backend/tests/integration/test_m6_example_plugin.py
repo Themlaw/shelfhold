@@ -15,7 +15,15 @@ if str(EXAMPLE_SRC) not in sys.path:
 from plugin_exemple.source import ExampleSource  # noqa: E402
 from shelfhold_sdk.testing import FakeFetcher, observe_sandbox, run_source_conformance  # noqa: E402
 
-CASSETTE = Path(__file__).resolve().parents[3] / "docs" / "plugins" / "exemple" / "tests" / "cassettes" / "catalogue.json"
+CASSETTE = (
+    Path(__file__).resolve().parents[3]
+    / "docs"
+    / "plugins"
+    / "exemple"
+    / "tests"
+    / "cassettes"
+    / "catalogue.json"
+)
 
 
 @pytest.mark.req("ENF-QUAL-003", "EF-SRC-020")
