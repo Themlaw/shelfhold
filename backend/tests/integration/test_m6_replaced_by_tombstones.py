@@ -16,15 +16,15 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-from shelfhold.ops.plugin_migration import PluginMigrationOps
 
 from shelfhold.config import Settings
 from shelfhold.identity.public import RESERVED_ACTIONS, Credential, Principal
 from shelfhold.infrastructure.schema import acquisition, platform
 from shelfhold.interfaces.local_cli.ops import OPS_METHODS
 from shelfhold.library.public import SeriesBindingRef
+from shelfhold.ops.plugin_migration import PluginMigrationOps
 from shelfhold.ops.source_migration import SourceMigrationOps
-from tests.integration.test_l27_source_aliases import GONE, PLUGIN, SOURCE, erase, live
+from tests.integration.test_l27_source_aliases import GONE, PLUGIN, SOURCE, alias, erase, live
 from tests.l50_env import seeded
 
 pytestmark = pytest.mark.req("EF-BIB-054", "EF-SRC-030")
@@ -49,7 +49,9 @@ def test_identity_migration_consults_tombstones(
     with seeded(settings, tmp_path / "inst") as env:
         gone = live(env, GONE)  # the series that will be erased
         live(env, "keep-1")  # the series the migration may move
-        erase(env, monkeypatch, settings, gone)
+        live(env, "hit-1")  # its old form resolves, by an alias, to the erased reference
+        alias(env, "hit-1", GONE)
+        erase(env, monkeypatch, settings, gone)  # the purge takes the erased series' own row
 
         # the reserved action and its door: the host CLI through the operating channel
         assert "plugin.migrate_to" in RESERVED_ACTIONS
@@ -60,14 +62,17 @@ def test_identity_migration_consults_tombstones(
         )
         assert report == {"moved": 1, "blocked": 1}
 
-        # the erased series stayed under the old plugin — nothing was recreated for it — and
-        # the clean one moved to the replacement
-        assert _items(env) == [(PLUGIN, GONE), (REPLACEMENT, "keep-1")]
+        # the blocked line stayed under the old plugin — nothing was recreated for the erased
+        # series — and the clean one moved to the replacement
+        assert _items(env) == [(PLUGIN, "hit-1"), (REPLACEMENT, "keep-1")]
 
-        # the block came from the inverse alias: the new form alone names nothing erased
+        # the block came from the old form (the inverse alias): the new form alone names
+        # nothing erased
         service = SourceMigrationOps(env.inst.comp)._service()
-        assert not service.check(SeriesBindingRef(REPLACEMENT, SOURCE, GONE), root_id=None).blocked
-        assert service.check(SeriesBindingRef(PLUGIN, SOURCE, GONE), root_id=None).blocked
+        assert not service.check(
+            SeriesBindingRef(REPLACEMENT, SOURCE, "hit-1"), root_id=None
+        ).blocked
+        assert service.check(SeriesBindingRef(PLUGIN, SOURCE, "hit-1"), root_id=None).blocked
 
         # the hit was told, once, with the scope only
         hits = [e for e in env.rows(platform.event) if e.type == "tombstone.migration_hit"]

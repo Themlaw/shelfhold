@@ -606,6 +606,15 @@ class PluginRegistry:
             for r in self._records
         ]
 
+    def mark_incompatible(self, key: str, reason: str) -> None:
+        """A plugin this host cannot run (a host upgrade left it out of `min_host` or `api`, or
+        its state cannot be read): never loaded, whatever it was — the reason is the admin's
+        to read, the plugin's own word is not."""
+        self._records = [
+            replace(r, status=PluginStatus.INCOMPATIBLE, reason=reason) if r.key == key else r
+            for r in self._records
+        ]
+
     def apply_attestations(self, attested: Mapping[str, Mapping[str, str]]) -> None:
         """Give each withheld value back where the admin attested it (`AttestationStore.valid()`,
         which already checked the installed version); a value no longer attested is withdrawn."""

@@ -46,6 +46,8 @@ from shelfhold.infrastructure.secrets.errors import SecretsError
 from shelfhold.infrastructure.secrets.vault import SecretVault
 from shelfhold.integrations.trackers import purge_plugin
 from shelfhold.interfaces.cli._headless import read_secret
+from shelfhold.interfaces.cli._ops import ops_command
+from shelfhold.interfaces.local_cli import OpsChannel
 from shelfhold.plugin_host import install as guard
 from shelfhold.plugin_host import lifecycle
 from shelfhold.plugin_host.attestation import (
@@ -113,6 +115,15 @@ def register(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> N
         sub = actions.add_parser(name, help=help_text, allow_abbrev=False)
         sub.add_argument("key", help=t("cli.plugin_key_help"))
         sub.set_defaults(handler=handler)
+
+    # M6 L09b (EF-BIB-054 (4), EF-SRC-030): the sources of a plugin move to the replacement
+    # its index named — a reserved action through the operating channel, like the others
+    migrate = actions.add_parser(
+        "migrate-to", help=t("cli.plugin_migrate_to_help"), allow_abbrev=False
+    )
+    migrate.add_argument("key", help=t("cli.plugin_key_help"))
+    migrate.add_argument("replacement", help=t("cli.plugin_replacement_help"))
+    migrate.set_defaults(handler=run_migrate_to)
 
     listing = actions.add_parser("list", help=t("cli.plugin_list_help"), allow_abbrev=False)
     listing.add_argument("--load", action="store_true", help=t("cli.plugin_load_help"))
@@ -267,6 +278,11 @@ def _install_from_index(args: argparse.Namespace, resolved: ResolvedSettings, la
             return 1
         if done.held is not None:  # the previous install's data waits, it is not inherited
             print(t("plugin.state_held", name=args.wheel, held=done.held))
+        if done.deprecated:  # the index's own word, read to the admin, never acted on
+            if done.replaced_by:
+                print(t("plugin.deprecated_replaced", name=args.wheel, replaced=done.replaced_by))
+            else:
+                print(t("plugin.deprecated", name=args.wheel))
     finally:
         engine.dispose()
     _sync_attestations(resolved)  # a new version: the word given for the old one lapses
@@ -531,6 +547,13 @@ def run_update(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
 
         async def _run() -> Any:
             fetcher = index_fetcher(default_network())
+
+            def _notice(entry: Any) -> None:  # the index's word, read to the admin
+                if entry.replaced_by:
+                    print(t("plugin.deprecated_replaced", name=key, replaced=entry.replaced_by))
+                else:
+                    print(t("plugin.deprecated", name=key))
+
             try:
                 return await lifecycle.update(
                     engine,
@@ -540,6 +563,7 @@ def run_update(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
                     version.dist,
                     fetcher,
                     audit=_lifecycle_audit("plugin.update", key),
+                    notice=_notice,
                 )
             finally:
                 await fetcher.aclose()
@@ -957,4 +981,24 @@ def run_index_remove(args: argparse.Namespace, resolved: ResolvedSettings) -> in
     except PluginIndexError as exc:
         return _index_fail(exc)
     print(t("plugin.index_removed", url=args.url))
+    return 0
+
+
+@ops_command
+def run_migrate_to(args: argparse.Namespace, channel: OpsChannel) -> int:
+    """The sources of a plugin move to the replacement its index named (M6 L09b): a reserved
+    action through the operating channel, the tombstones asked about every line, and a line
+    they hold stays where it is — nothing is recreated for an erased series."""
+    key, replacement = guard.normalise_name(args.key), guard.normalise_name(args.replacement)
+    report = channel.call("ops.plugin_migrate_to", key=key, replacement=replacement)
+    print(
+        t(
+            "plugin.migrated_to",
+            moved=report["moved"],
+            key=key,
+            replacement=replacement,
+        )
+    )
+    if report["blocked"]:
+        print(t("plugin.migration_blocked", blocked=report["blocked"]))
     return 0

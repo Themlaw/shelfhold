@@ -42,7 +42,7 @@ VISIBILITIES: Final = ("private", "household", "ops")
 _ULID: Final = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}\Z")
 _CODE: Final = re.compile(r"[a-z][a-z0-9_]*(?:[.:-][a-z0-9_]+)*\Z")
 _ENUM_KEYS: Final = ("reason", "kind", "state", "code", "error_code", "scope", "volume")
-_FREE_CODE_KEYS: Final = frozenset({"job_kind"})  # a job kind is named in code, never typed in
+_FREE_CODE_KEYS: Final = frozenset({"job_kind", "plugin"})  # named in code, never typed in
 GENERIC_REASONS: Final = frozenset(
     {
         "unreachable", "timeout", "unauthorized", "forbidden", "not_found", "http_503",
@@ -71,6 +71,8 @@ USER_FIELDS: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
 _USER_KEY: Final = re.compile(r"(?:user|actor|requester|owner|subject|profile)_id\Z|by\Z")
 
 PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
+    # M6 L09b (EF-SRC-030): why a host upgrade left an installed plugin behind
+    "plugin.incompatible": {"reason": frozenset({"api", "min_host"})},
     "notify.failed": {"reason": frozenset({"retries_exhausted"})},
     # the most frequent reason of a night's failed copies to /store (`SafeguardFailedError.reason`)
     "unit.safeguard_failed": {

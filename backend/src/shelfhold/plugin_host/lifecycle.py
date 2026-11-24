@@ -31,8 +31,9 @@ from sqlalchemy import Engine
 
 from shelfhold.catalog.application.orphan_bindings import orphan_bindings, reattach_orphaned
 from shelfhold.infrastructure.db import write_transaction
-from shelfhold.infrastructure.schema import acquisition
+from shelfhold.infrastructure.schema import acquisition, platform
 from shelfhold.plugin_host import install as guard
+from shelfhold.plugin_host import state as plugin_state
 from shelfhold.plugin_host.install import (
     Installed,
     Layout,
@@ -50,9 +51,13 @@ if TYPE_CHECKING:  # the index package's __init__ imports its service, which imp
     # the entry is a type of a signature, never a value here (no cycle at import time)
     from shelfhold.plugin_host.index.document import IndexEntry
 
+from shelfhold import __version__ as HOST_VERSION
+
 __all__ = [
     "InstallRow",
     "PluginLifecycleError",
+    "announce_incompatible",
+    "incompatible_installed",
     "pin",
     "read_install",
     "reattach_if_same_origin",
@@ -60,6 +65,7 @@ __all__ = [
     "rollback",
     "unpin",
     "update",
+    "version_key",
 ]
 
 
@@ -188,7 +194,7 @@ def unpin(
     return read_install(engine, key) or row
 
 
-def _version_key(version: str) -> list[tuple[int, str]]:
+def version_key(version: str) -> list[tuple[int, str]]:
     """A dot-separated version compared numerically where both parts are numbers, textually
     otherwise — enough to tell an update from a rollback, without a dependency."""
     return [
@@ -319,13 +325,16 @@ async def update(
     dist: str,
     fetcher: Any,
     audit: Callable[[Any], None] | None = None,
+    notice: Callable[[Any], None] | None = None,
 ) -> Installed:
     """Install the version the pinned index vouches for now, keeping the previous one for the
     rollback. Refused: a pinned plugin, a plugin no index vouches for, an index pinned again
     to another key (the install stays pinned to its own signer, L08), a revoked key or wheel,
-    the same version (nothing to do), a lower one (that is a rollback, a reserved act), or a
-    kept wheel that cannot prove what it is. The new wheel is verified before the old files
-    move: a refusal leaves the installed plugin exactly as it was."""
+    the same version (nothing to do), a lower one (that is a rollback, a reserved act), a
+    version whose ``min_host`` is above the host, or a kept wheel that cannot prove what it
+    is. The new wheel is verified before the old files move: a refusal leaves the installed
+    plugin exactly as it was. ``notice``, when given, is told of a deprecated entry (with its
+    ``replaced_by``): the index's word is the admin's to read, never an act of the host."""
     plugin = _installed(layout, key, dist)
     row = read_install(engine, key)
     if row is None:
@@ -359,11 +368,17 @@ async def update(
         raise PluginLifecycleError("plugin_revoked", f"the key of {key!r} was revoked")
     if entry.sha256 in store.revoked_wheel_sha256():
         raise PluginLifecycleError("wheel_revoked", "the index revoked this wheel")
+    if version_key(entry.min_host) > version_key(HOST_VERSION):
+        raise PluginLifecycleError(
+            "min_host",
+            f"the index vouches for a plugin that needs host {entry.min_host} or newer "
+            f"(this host is {HOST_VERSION})",
+        )
     if entry.version == row.version:
         raise PluginLifecycleError(
             "already_newest", "the installed version is the one the index lists"
         )
-    if _version_key(entry.version) < _version_key(row.version):
+    if version_key(entry.version) < version_key(row.version):
         raise PluginLifecycleError(
             "rollback",
             "the index lists a lower version than the installed one: that is a rollback "
@@ -403,6 +418,8 @@ async def update(
                 sha256=_prefixed(installed.digest),  # the files digest, like the attestation sync
                 previous_version=row.version,
                 previous_sha256=_prefixed(plugin.wheel_sha256),  # proven byte for byte above
+                api=str(entry.api),
+                min_host=entry.min_host,
             )
         except Exception:
             _restore(layout, key, dist, row.version, plugin.wheel_sha256, grant)
@@ -414,6 +431,8 @@ async def update(
         _drop(staged_kept, staged_aside)
         with contextlib.suppress(OSError):  # after the committed line, never a false failure
             discard_staged_wheel(wheel)  # the installed copy is the guard's own
+    if entry.deprecated and notice is not None:
+        notice(entry)
     return installed
 
 
@@ -445,6 +464,15 @@ def rollback(
     if row.previous_version is None or row.previous_sha256 is None:
         raise PluginLifecycleError(
             "no_previous", "no previous kept version to return to (none was kept aside)"
+        )
+    newest_state = plugin_state.newest_written_version(engine, key)
+    if newest_state is not None and version_key(newest_state) > version_key(row.previous_version):
+        # the state was written by a version newer than the one the rollback would put back:
+        # restoring it is not the reserved act's to decide — the plugin keeps its newer state
+        raise PluginLifecycleError(
+            "state_newer",
+            f"the plugin state was written by {newest_state}, newer than the previous kept "
+            f"version {row.previous_version}: rolling back would read state it cannot parse",
         )
     if row.previous_sha256 in store.revoked_wheel_sha256():
         raise PluginLifecycleError(
@@ -538,3 +566,59 @@ def reattach_if_same_origin(
         return 0
     with write_transaction(engine) as connection:
         return reattach_orphaned(connection, key)
+
+
+def incompatible_installed(
+    engine: Engine, *, host_version: str, api_version: int
+) -> dict[str, str]:
+    """The installed plugins a host upgrade left behind, each with its closed reason: the
+    entry's `min_host` is above the host's own version, or its `api` is out of the N/N-1
+    window (the same one `negotiate_api` judges a manifest by). The fields are the ones the
+    index declared and the install recorded — a later host judges by the index's own word,
+    never by what it remembers of the document."""
+    judged: dict[str, str] = {}
+    with engine.connect() as connection:
+        rows = connection.execute(
+            sa.select(
+                acquisition.plugin_install.c.plugin_id,
+                acquisition.plugin_install.c.api,
+                acquisition.plugin_install.c.min_host,
+            )
+        ).all()
+    for row in rows:
+        if row.min_host and version_key(row.min_host) > version_key(host_version):
+            judged[row.plugin_id] = "min_host"
+            continue
+        if (
+            row.api
+            and row.api.isdigit()
+            and int(row.api)
+            not in (
+                api_version,
+                api_version - 1,
+            )
+        ):
+            judged[row.plugin_id] = "api"
+    return judged
+
+
+def announce_incompatible(engine: Engine, bus: Any, judged: dict[str, str]) -> list[str]:
+    """Tell `plugin.incompatible` once per (plugin, reason): the events already told are read
+    back first, so a host that starts twice says nothing twice. Returns the keys it told."""
+    with engine.connect() as connection:
+        told = {
+            (row.payload.get("plugin"), row.payload.get("reason"))
+            for row in connection.execute(
+                sa.select(platform.event.c.payload).where(
+                    platform.event.c.type == "plugin.incompatible"
+                )
+            )
+        }
+    announced: list[str] = []
+    for key, reason in sorted(judged.items()):
+        if (key, reason) in told:
+            continue
+        with write_transaction(engine) as connection:
+            bus.publish(connection, "plugin.incompatible", {"plugin": key, "reason": reason})
+        announced.append(key)
+    return announced

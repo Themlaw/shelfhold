@@ -458,6 +458,9 @@ plugin_install = sa.Table(
     bool_column("pinned", default=False),
     sa.Column("previous_version", sa.Text(), nullable=True),
     sa.Column("previous_sha256", sa.Text(), nullable=True),
+    # M6 L09b (EF-SRC-030): the minimum host version the installed version's index entry
+    # declared — what a host upgrade is judged against at the next start-up
+    sa.Column("min_host", sa.Text(), nullable=True),
     now_column("installed_at"),
     prefixed_hash_check("sha256"),
     prefixed_hash_check("previous_sha256"),
@@ -481,6 +484,9 @@ plugin_state = sa.Table(
     sa.Column("key", sa.String(), nullable=False),
     sa.Column("payload", sa.JSON(), nullable=False),
     sa.Column("payload_schema", sa.Integer(), nullable=False, server_default="1"),
+    # M6 L09b (EF-SRC-030): the version of the plugin that wrote the document — the rollback
+    # is refused toward a version that cannot read it
+    sa.Column("state_written_by_version", sa.Text(), nullable=True),
     sa.Column("updated_at", UtcDateTime(), nullable=True),
     sa.PrimaryKeyConstraint("plugin_id", "key"),
     positive_check("payload_schema", minimum=1),

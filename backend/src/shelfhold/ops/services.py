@@ -85,6 +85,7 @@ from shelfhold.ops.maintenance import MaintenanceOps
 from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.page_formats import PageNormalizeOps
+from shelfhold.ops.plugin_migration import PluginMigrationOps
 from shelfhold.ops.ports import (
     AdoptionExit,
     CredentialsExit,
@@ -229,6 +230,7 @@ class OpsServices:
         assembly: VolumeAssemblyOps | None = None,
         normalize: NormalizeOps | None = None,
         source_migration: SourceMigrationOps | None = None,
+        plugin_migration: PluginMigrationOps | None = None,
         series_migration: SeriesMigrationOps | None = None,
         meta: MetaOps | None = None,
         content: ContentOps | None = None,
@@ -280,6 +282,7 @@ class OpsServices:
         self._assembly = assembly
         self._normalize = normalize
         self._source_migration = source_migration
+        self._plugin_migration = plugin_migration
         self._series_migration = series_migration
         self._meta = meta
         self._content = content
@@ -1025,6 +1028,13 @@ class OpsServices:
         if self._source_migration is None:
             raise ExitUnavailableError("the identity migration of a source is not connected")
         return self._source_migration
+
+    @property
+    def plugin_migration(self) -> PluginMigrationOps:
+        """`plugin migrate-to` (EF-BIB-054 (4), EF-SRC-030)."""
+        if self._plugin_migration is None:
+            raise ExitUnavailableError("the identity migration of a plugin is not connected")
+        return self._plugin_migration
 
     @property
     def series_migration(self) -> SeriesMigrationOps:

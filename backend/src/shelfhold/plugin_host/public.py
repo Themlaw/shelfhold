@@ -48,6 +48,8 @@ __all__ = [
     "start_plugins",
 ]
 
+_LOADED_STATUSES = frozenset({PluginStatus.LOADED, PluginStatus.LOADED_SHIM})
+
 
 @dataclass(frozen=True)
 class PluginState:
@@ -124,12 +126,55 @@ def start_plugins(
             *third_party_candidates(layout.site, installed, blocked=blocked),
         ]
     )
+    _judge_against_the_host(settings, registry, records)
     log = structlog.get_logger()
     for record in records:
         log.info(
             "plugin.third_party", key=record.key, status=record.status.value, reason=record.reason
         )
     return registry, records
+
+
+def _judge_against_the_host(
+    settings: Settings, registry: PluginRegistry, records: list[PluginRecord]
+) -> None:
+    """What a host upgrade leaves behind, judged at start-up (EF-SRC-030): an installed plugin
+    out of `min_host` or `api` is marked incompatible, and the state a loaded third-party
+    plugin cannot read yet is migrated by its own `migrate_state` before its first call — a
+    plugin whose state cannot be migrated is marked, never called. Nothing is judged without
+    the host's database: no engine, no judgement."""
+    if not settings.database_path.exists():
+        return
+    from shelfhold_sdk.models import API_VERSION
+
+    from shelfhold.infrastructure.db import create_db_engine
+    from shelfhold.plugin_host import lifecycle, state
+
+    engine = create_db_engine(settings.database_path)
+    try:
+        judged = lifecycle.incompatible_installed(
+            engine, host_version=lifecycle.HOST_VERSION, api_version=API_VERSION
+        )
+        for key, reason in judged.items():
+            registry.mark_incompatible(key, f"{reason}: this host cannot run the plugin")
+        versions = installed_versions(settings)
+        for record in records:
+            if (
+                record.origin is not PluginOrigin.THIRD_PARTY
+                or record.status not in _LOADED_STATUSES
+                or record.manifest is None
+                or record.instance is None
+            ):
+                continue
+            version = versions.get(record.key)
+            if version is None:
+                continue
+            try:
+                state.migrate_documents(engine, record.key, record.instance, version.version)
+            except state.PluginStateError as exc:
+                registry.mark_incompatible(record.key, f"state {exc.code}: {exc.detail}")
+    finally:
+        engine.dispose()
 
 
 def installed_keys(layout: Layout) -> frozenset[str]:

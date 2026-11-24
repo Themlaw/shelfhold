@@ -392,6 +392,7 @@ def test_abi_incompatible_plugin_flagged_after_python_upgrade(
         run_cli(monkeypatch, settings, "plugin", "install", str(pure.path), "--sha256", pure.sha256)
         == 0
     )
+    capsys.readouterr()  # the installs said their own words; only the list's are judged below
 
     layout = guard.Layout.of(settings.data_dir)
     verdicts = {v.name: v for v in guard.verdicts(layout, {}, interpreter=after_upgrade)}
@@ -452,7 +453,7 @@ def test_index_fields_deprecated_replaced_by_min_host(
     )  # fmt: skip
     assert _install(monkeypatch, settings, served) == 0
     out = capsys.readouterr().out
-    assert "deprecated" in out
+    assert "déprécié" in out
     assert "acme2" in out
     engine = create_db_engine(settings.database_path)
     try:
@@ -480,5 +481,5 @@ def test_index_fields_deprecated_replaced_by_min_host(
     )
     assert run_cli(monkeypatch, settings, "plugin", "update", KEY) == 0
     out = capsys.readouterr().out
-    assert "deprecated" in out
+    assert "déprécié" in out
     assert _state_version(settings) == "2.0.0"
