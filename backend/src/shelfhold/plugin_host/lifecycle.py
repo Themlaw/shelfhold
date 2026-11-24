@@ -412,7 +412,8 @@ async def update(
         _settle(((staged_aside, aside), (staged_kept, kept)))
     finally:
         _drop(staged_kept, staged_aside)
-        discard_staged_wheel(wheel)  # the installed copy is the guard's own
+        with contextlib.suppress(OSError):  # after the committed line, never a false failure
+            discard_staged_wheel(wheel)  # the installed copy is the guard's own
     return installed
 
 
@@ -492,7 +493,8 @@ def rollback(
             previous.unlink()  # no previous anymore, as the committed row says
     finally:
         _drop(staged_kept)
-        discard_staged_wheel(staged)
+        with contextlib.suppress(OSError):  # after the committed line, never a false failure
+            discard_staged_wheel(staged)
     return installed
 
 

@@ -684,9 +684,11 @@ def keep_wheel(layout: Layout, key: str, wheel: Path, dest: Path | None = None) 
 
 def drop_kept_wheels(layout: Layout, key: str) -> None:
     """An uninstall leaves none of the plugin's code behind: the kept wheels go with the files."""
-    for path in (kept_wheel_path(layout, key), previous_wheel_path(layout, key)):
-        if path.exists():
-            path.unlink()
+    for kept in (kept_wheel_path(layout, key), previous_wheel_path(layout, key)):
+        # a staged copy (M6 L09a) a dead process left beside a kept wheel is the plugin's code too
+        for path in (kept, kept.with_name(f"{kept.name}.next")):
+            if path.exists():
+                path.unlink()
 
 
 # -- activation --------------------------------------------------------------------------------
