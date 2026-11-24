@@ -381,6 +381,12 @@ CLOSED = (
     "GET /api/v1/plugins",
     "POST /api/v1/plugins/{name}/enabled",
     "DELETE /api/v1/plugins/{name}/enabled",
+    # M6 L09a (EF-SRC-020): the lifecycle of an installed plugin is the admin's too; the
+    # rollback is a reserved action
+    "POST /api/v1/plugins/{name}/update",
+    "POST /api/v1/plugins/{name}/pin",
+    "DELETE /api/v1/plugins/{name}/pin",
+    "POST /api/v1/plugins/{name}/rollback",
     "POST /api/v1/probe",
     "GET /api/v1/profiles",
     "POST /api/v1/profiles",

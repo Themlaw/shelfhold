@@ -91,6 +91,10 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 # M6 L09a: the kept wheels of the lifecycle (the rollback's own), dropped with
                 # the code they belong to; the plugins volume, never a library path
                 "shelfhold/plugin_host/install.py::drop_kept_wheels",
+                # the staged copies of the kept wheels, dropped once renamed or refused, and the
+                # previous kept wheel a rollback has put back: the plugins volume only
+                "shelfhold/plugin_host/lifecycle.py::_drop",
+                "shelfhold/plugin_host/lifecycle.py::rollback",
                 "shelfhold/plugin_host/install.py::_undo",
                 # the socket file the plugin runner bound on its own volume (a stale one at start,
                 # its own at close): never a library path, the companion sees no other
