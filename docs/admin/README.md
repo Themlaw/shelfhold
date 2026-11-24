@@ -24,7 +24,10 @@ et ne change rien à l'installation (voir [vérifier les images](verifier-les-im
 | Comprendre « libre de droits aux États-Unis », régler le pays de l'instance | [domaine-public.md](domaine-public.md) |
 | Voir l'historique d'activité, bloquer un chapitre que la source repropose, suivre l'espace par étagère et le trafic par source | [historique-et-stockage.md](historique-et-stockage.md) |
 | Envoyer les événements de Shelfhold à un autre outil (webhooks signés, adresse privée autorisée, versions) | [webhooks.md](webhooks.md) |
-| Importer une liste de livres voulus (texte, CLI ou écran), étagère de lecture d'un enfant, un seul écran de validation | [listes-importees.md](listes-importees.md) |
+| Épingler un dépôt d'index signé et installer un plugin qu'il vaut | [index.md](index.md) |
+| Trackers de lecture : lier un profil à un service distant | [trackers.md](trackers.md) |
+| Kobo : synchronisation minimale de la bibliothèque | [kobo.md](kobo.md) |
+| Caches dérivés (vignettes, dérivés de lecture, cache HTTP, métadonnées) : quotas et rétention | [caches.md](caches.md) || Importer une liste de livres voulus (texte, CLI ou écran), étagère de lecture d'un enfant, un seul écran de validation | [listes-importees.md](listes-importees.md) |
 | Importer une sauvegarde Mihon (`.tachibk`) : aperçu, séries en attente, marqueurs de lecture, indices de suivi | [import-mihon.md](import-mihon.md) |
 | Où Shelfhold range les livres : destinations (Kavita, dossier natif, Komga, CWA), fan-out, compte Kavita de chaque membre, retrait | [destinations.md](destinations.md) |
 | La synchronisation de la progression avec Kavita : ce que le job fait, renommages, état par membre | [sync.md](sync.md) |

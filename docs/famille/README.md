@@ -18,7 +18,7 @@ Pour lire sur liseuse ou téléphone : [../admin/clients.md](../admin/clients.md
 et pourquoi vous ne perdez pas votre place : [progression.md](progression.md). Lire dans Shelfhold
 lui-même, un extrait ou un livre entier : [lecteur.md](lecteur.md). Lire sans réseau, et ce qui
 efface une copie : [copies-hors-ligne.md](copies-hors-ligne.md).
-
+Lire hors ligne : [hors-ligne.md](hors-ligne.md).
 ## Se repérer
 
 Les onglets dépendent de votre profil : **Accueil** et **Chercher** pour tout le monde, **Mes demandes** pour
