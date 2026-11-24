@@ -1,4 +1,4 @@
-# Kobo : synchronisation minimale (L17a)
+# Kobo : synchronisation minimale
 
 Shelfhold parle le protocole de synchronisation d'une liseuse Kobo, de façon minimale : la
 liseuse voit la bibliothèque de **son profil** et peut la synchroniser page par page. C'est la
@@ -29,7 +29,7 @@ partie livrée pour M6 ; la suite (état de lecture, proxy du store) est coupée
 - Les adresses que les réponses portent sont **relatives** au point de montage : l'adresse que la
   liseuse tient déjà, jamais une construite depuis `Host`.
 
-## Ce qui n'est pas livré (L17b, coupé pour M6)
+## Ce qui n'est pas livré dans cette version
 
 - L'**état de lecture** de la liseuse (position, progression) n'est pas synchronisé par cette
   route : la liseuse lit, Shelfhold ne reçoit rien de sa place.
