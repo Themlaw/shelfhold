@@ -1,11 +1,11 @@
-"""Contre-relecture ciblée M6, lot A (S2) : une seconde mise de côté sous la même identité.
+"""Contre-relecture ciblée M6, lot A (S2) : une deuxième mise de côté sous la même identité.
 
 Le signataire A a déjà des données en attente sous ``acme@<empreinte A>`` (une première roue à la
 main est passée). L'admin réinstalle depuis l'index de A, reconfigure, retire, puis redonne une
 roue à la main : la mise de côté vise de nouveau ``acme@<empreinte A>``, la clé primaire de
 ``source_config`` est déjà prise, la transaction échoue — mais `run_install` a déjà installé la
 roue (la mise de côté vient après `install_wheel`) et ne rattrape que `PluginDataError`. La roue
-non signée reste installée et lit les réglages et secrets du signataire A.
+non signée demeure installée et lit les réglages et secrets du signataire A.
 """
 
 from __future__ import annotations
