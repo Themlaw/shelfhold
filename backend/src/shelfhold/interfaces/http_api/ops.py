@@ -23,6 +23,7 @@ from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.stats import require_admin
 from shelfhold.ops import ENDPOINTS, OpsError, OpsServices, user_of
 from shelfhold.ops.exits import command_of
+from shelfhold.plugin_host.rpc.protocol import PluginFailed
 
 __all__ = ["build_ops_router"]
 
@@ -216,6 +217,8 @@ def refusals() -> Iterator[None]:
         raise ProblemError(error.code, extensions=getattr(error, "extensions", None)) from None
     except (HeadlessError, BindingError) as error:
         raise ProblemError(error.code) from None
+    except PluginFailed:
+        raise ProblemError("plugin.failed") from None
 
 
 def _path(*words: str) -> str:

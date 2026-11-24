@@ -41,6 +41,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("source.setting_invalid", 422, "admin"),
     # EF-SRC-013, EF-EXP-065: no loaded plugin, or no installed third-party plugin, by that key
     ErrorCode("plugin.unknown", 404, "admin"),
+    # an isolated plugin (companion process) died during a call: not a 500, a coded refusal
+    ErrorCode("plugin.failed", 502, "admin"),
     # EF-EXP-065 (5): only a declared trust value of a third-party plugin is attested
     ErrorCode("plugin.attestation_invalid", 422, "admin"),
     ErrorCode("plugin.attestation_not_needed", 409, "admin"),
