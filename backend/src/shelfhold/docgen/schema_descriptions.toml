@@ -241,6 +241,7 @@ pinned = "The admin froze this version: no update, no rollback, until the pin is
 previous_version = "Version kept aside by the last update, the one the reserved rollback returns to; NULL once it is back."
 previous_sha256 = "Hash of the kept previous version's wheel, `sha256:` prefixed; it must be the recorded one byte for byte."
 installed_at = "When the plugin was installed (UTC)."
+replaced_by = "Successor the signed index this install is pinned to (same address, same signer) names for it; the only key `plugin migrate-to` may move the sources to. NULL when the index names none."
 min_host = "Minimum host version the installed version's index entry declared; a host upgrade is judged against it at start-up (M6 L09b)."
 
 [tables.plugin_state]

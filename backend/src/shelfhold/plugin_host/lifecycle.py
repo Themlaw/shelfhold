@@ -580,6 +580,8 @@ def incompatible_installed(
     never by what it remembers of the document."""
     judged: dict[str, str] = {}
     with engine.connect() as connection:
+        if not sa.inspect(connection).has_table("plugin_install"):
+            return judged  # a database not migrated yet has no install to judge
         rows = connection.execute(
             sa.select(
                 acquisition.plugin_install.c.plugin_id,
