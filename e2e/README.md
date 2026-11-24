@@ -40,3 +40,13 @@ depuis le cache) dans un projet Playwright à part : `npm run test:bench`
 nightly ; la CI le publie en rapport seul (job `reader-bench`). Le seuil, la règle des 20 % et la
 porte de release : [`docs/governance/benchmarks.md`](../docs/governance/benchmarks.md).
 
+
+## Parcours de M6 (`tests/test_m6_journey.py`, surcouche `m6.yaml`)
+
+Six parcours, un shard chacun (`shards.py`, matrice de `.github/workflows/image.yml`) : le plugin
+d'exemple installé depuis un index signé (clé tirée par le test) et lancé dans le compagnon, l'index
+de version inférieure et la roue au mauvais sha256 refusés, un plugin qui plante sans emporter
+l'hôte, la roue du SDK installée seule dans un venv propre (kit vert), un profil enfant sans
+tracker, et la synchronisation Kobo minimale (sans état de lecture). Le dépôt de plugins et le
+catalogue synthétique sont deux noms des sources simulées (`fakes/m2/serve.py` délègue à
+`fakes/plugin_index`), sur l'adresse de la boucle locale de la pile : `egress-watch` reste vide.

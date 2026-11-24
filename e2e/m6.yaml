@@ -1,13 +1,30 @@
-# M6 overlay (L27)
+# M6 overlay (L27), used with compose.yaml, journey.yaml, m2.yaml, m4.yaml and m5.yaml:
+# `-f compose.yaml -f journey.yaml -f m2.yaml -f m4.yaml -f m5.yaml -f m6.yaml`. The M6 journeys
+# play the isolated plugins, the signed plugin repository, the tracker refusal and the Kobo sync
+# on the release image.
+#
+# The plugin repository and the synthetic catalogue of the example plugin are two names of the
+# simulated sources (`fakes/m2/serve.py` hands them to `fakes/plugin_index`, which serves what the
+# test publishes under its own /tmp): `plugins.e2e.test` and `catalogue.exemple.invalid`. They
+# resolve to the address that exists on the loopback of the stack's namespace only (`fakes/m2/hosts`)
+# and the test authority of the run is the one trust anchor (`m2.yaml`), so the guard of the Fetcher
+# is the one of production and `egress-watch` still sees nothing leave. The plugins' keys are
+# drawn by the tests; nothing here is a secret.
+#
+# The sources the three plugins of the journeys bring are switched on here: the grant of a
+# plugin (`shelfhold plugin enable`) is what lets it run, and the instance's own list is what lets
+# the administrator use it.
+#
+# The journeys:
+# - parcours 1: the example plugin, installed from a signed index, runs isolated in the companion;
+# - parcours 2: an index of a lower version, and a wheel that is not the signed one, are refused;
+# - parcours 3: a plugin that exits in the middle of a call leaves the core answering;
+# - parcours 4: the SDK wheel, installed alone in a clean environment, passes the kit;
+# - parcours 5: a child profile cannot link a tracker;
+# - parcours 6: a simulated Kobo initializes and syncs page by page (no reading state).
 name: shelfhold-e2e-m6
 
 services:
-  egress-watch:
-    ports:
-      - "127.0.0.1:18080:8080"
-
-  library-init:
-    command:
-      - sh
-      - -c
-      - "mkdir -p /library/manga && chown 1000:1000 /library /library/manga /library/native /import /tree"
+  shelfhold:
+    environment:
+      SHELFHOLD_ACTIVE_SOURCES: gutenberg,wikisource,standardebooks,opds,lncrawl,exemple,steady,crashy

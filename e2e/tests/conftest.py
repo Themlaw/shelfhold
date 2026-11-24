@@ -163,7 +163,8 @@ def _m2_env(tmp_path: Path) -> dict[str, str]:
     from pki import make
 
     folder = tmp_path / "pki"
-    make(folder, ["fr.wikisource.org", "ws-export.wmcloud.org", "standardebooks.org", "idp.e2e.test"])
+    make(folder, ["fr.wikisource.org", "ws-export.wmcloud.org", "standardebooks.org", "idp.e2e.test",
+                  "plugins.e2e.test", "catalogue.exemple.invalid"])
     return {
         "E2E_PKI_DIR": str(folder),
         **({"E2E_LOG_LEVEL": os.environ["E2E_LOG_LEVEL"]} if "E2E_LOG_LEVEL" in os.environ else {}),
