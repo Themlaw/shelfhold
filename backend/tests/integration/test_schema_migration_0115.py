@@ -73,6 +73,6 @@ def test_a_database_created_fresh_runs_the_migration_once(settings: Settings) ->
     migration is the one that creates it either way, and running it again changes nothing."""
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     result = migrate(settings)
-    assert result.applied[-1] == "0115"
+    assert "0115" in result.applied  # not the last one once a later lot chains after it
     assert "kobo_sync_point" in tables(settings.database_path)
     assert migrate(settings).applied == ()

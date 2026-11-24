@@ -427,58 +427,6 @@ def _entry_point_keys(names: list[str], read: Callable[[str], bytes]) -> frozens
     return frozenset(keys)
 
 
-def wheel_plugin_keys(wheel: Path) -> frozenset[str]:
-    """The plugin keys the wheel's entry points declare (the ``shelfhold.plugins`` group), read
-    from the archive alone: nothing is imported and nothing is installed. An install from an
-    index requires these to be exactly the key the index entry names — a wheel that answers
-    under another key than the one vouchsafed for it is not installed (M6 L08)."""
-    try:
-        # A wheel is a ZIP; the opener knows it by extension, so the stream is given as `.zip`.
-        with (
-            wheel.open("rb") as stream,
-            safe_open_archive(stream, name="wheel.zip") as archive,  # audited, never extracted
-        ):
-            names = [e.name for e in archive.entries if not e.is_dir]
-            return _entry_point_keys(names, lambda n: bytes(archive.read(n)))
-    except (UnsafeArchiveError, OSError, KeyError, ValueError, TypeError) as exc:
-        # a malformed entry_points.txt is a refused wheel, not a crash
-        raise PluginInstallError("bad_wheel", str(exc)) from exc
-
-
-def _read_in(read: Callable[[str], bytes], info: str, filename: str) -> bytes:
-    return read(f"{info}/{filename}")
-
-
-class _ArchivedDistribution(metadata.Distribution):
-    """A distribution read from a wheel that is not installed: its files come from the archive,
-    nothing is located on disk."""
-
-    def __init__(self, read: Callable[[str], bytes]) -> None:
-        self._read = read
-
-    def read_text(self, filename: str) -> str | None:
-        try:
-            return self._read(filename).decode("utf-8", "replace")
-        except KeyError:
-            return None
-
-    def locate_file(self, path: str | os.PathLike[str]) -> Path:
-        raise FileNotFoundError(path)  # never installed: no file of it is on disk
-
-
-def _entry_point_keys(names: list[str], read: Callable[[str], bytes]) -> frozenset[str]:
-    """The names of the entry points of the plugin group, one per line of the section, in every
-    dist-info of the archive (the guard refuses a wheel with more than one at install time)."""
-    keys: set[str] = set()
-    infos = sorted({PurePosixPath(n).parts[0] for n in names if n.endswith("/entry_points.txt")})
-    for info in infos:
-        # parsed by the very reader the loader uses (`dist.entry_points`), so no header or line a
-        # hand-written parser would read otherwise can hide a key from this check
-        dist = _ArchivedDistribution(functools.partial(_read_in, read, info))
-        keys.update(ep.name for ep in dist.entry_points if ep.group == ENTRY_POINT_GROUP)
-    return frozenset(keys)
-
-
 # -- conflicts ---------------------------------------------------------------------------------
 
 
