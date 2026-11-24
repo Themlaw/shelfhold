@@ -489,7 +489,7 @@ def test_m6_journey_kobo_sync(journey_m6: Journey) -> None:
     j.put_bytes(f"/import/{extra}.epub", book(extra))
     assert j.shelfhold("import", "scan").code == 0
     assert wait_for(lambda: j.sql("select count(*) from edition") == [(BOOKS + 1,)], 300)
-    delta = kobo(j, {"token": mum_path, "sync_token": report["final_token"]})
+    delta = kobo(j, {"token": mum_path, "sync_token": again["final_token"]})  # the last one it holds
     assert new_titles(delta) == [extra], delta  # only what changed
 
     # the scope is the token's profile: a child's Kobo is given none of the adult's books
