@@ -81,6 +81,7 @@ from shelfhold.interfaces.http_api.identity import (
 from shelfhold.interfaces.http_api.identity_headers import ForwardAuth
 from shelfhold.interfaces.http_api.intents import build_intents_router
 from shelfhold.interfaces.http_api.jobs import build_jobs_router
+from shelfhold.interfaces.http_api.kobo import build_kobo_router
 from shelfhold.interfaces.http_api.kosync import build_kosync_router
 from shelfhold.interfaces.http_api.library import build_library_router
 from shelfhold.interfaces.http_api.lite import build_lite_router
@@ -148,7 +149,7 @@ from shelfhold.reading.application.progress import ReadMarks
 from shelfhold.reading.application.publication import PublicationService, epub_spine_of
 from shelfhold.reading.application.settings import ReaderSettings
 from shelfhold.reading.bundle import SeriesBundles
-from shelfhold.reading.public import Kosync
+from shelfhold.reading.public import KoboSync, Kosync
 from shelfhold.runtime import RETAKE_INTERVAL_S, InstanceRuntime
 from shelfhold.runtime_jobs import RELATIONS_JOB_KIND, PlanService, hub_listeners
 
@@ -439,6 +440,10 @@ def create_app(
             spine_of=epub_spine_of(content_access), hold_work=progress_lease(),
         )  # fmt: skip
 
+    @cache
+    def kobo_sync() -> KoboSync:  # M6 L17a: the sync of each device, on its own sync point
+        return KoboSync(engine, clock.now)
+
     def relations_after_audience_change() -> None:
         pools = runtime.pools
         if pools is not None:  # M4 L19: the links a new audience forbids are taken back now
@@ -549,6 +554,7 @@ def create_app(
         build_kosync_router(  # M4 L47: where the e-reader is, behind the same device token
             kosync, clock.now
         ),
+        build_kobo_router(kobo_sync),  # M6 L17a: the Kobo sync, behind the token in the path
         build_search_router(
             lambda: engine, ops_services
         ),  # EF-BIB-010, EF-SRC-005: admin only (L09)

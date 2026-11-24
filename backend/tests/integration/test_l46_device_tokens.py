@@ -2,11 +2,11 @@
 EF-USR-022 (4), EF-USR-024, EF-LEC-009, ENF-SEC-008, ENF-SEC-010, ENF-SEC-013).
 
 A token belongs to a reader profile and gives its rights and its filters, nothing else. It opens
-the OPDS and the kosync routes only (no ordinary API route, no reserved action), it is generated
-and shown once, only the SHA-256 of its `md5` is stored, a wrong guess is counted per (address,
-identifier) and per address, and a revocation is immediate. The attacks are tried through the real
-application: child token, member token, revoked token, another profile's token (IDOR), an API
-key, brute force, and a token presented on an administration route.
+the OPDS, the kosync and the kobo routes only (no ordinary API route, no reserved action), it is
+generated and shown once, only the SHA-256 of its `md5` is stored, a wrong guess is counted per
+(address, identifier) and per address, and a revocation is immediate. The attacks are tried
+through the real application: child token, member token, revoked token, another profile's token
+(IDOR), an API key, brute force, and a token presented on an administration route.
 """
 
 import base64
@@ -23,7 +23,11 @@ import pytest
 from fastapi import Request
 
 from shelfhold.config import Settings
-from shelfhold.identity.domain.device_secret import normalise_secret
+from shelfhold.identity.domain.device_secret import (
+    kobo_path_credential,
+    kobo_path_token,
+    normalise_secret,
+)
 from shelfhold.identity.domain.roles import ProfileError
 from shelfhold.identity.public import (
     RESERVED_ACTIONS,
@@ -230,6 +234,24 @@ def test_secret_is_shown_once_and_never_stored(api: AuthEnv) -> None:
     listed = auth_of(api).device_tokens()
     assert len(listed) == 1 and created.secret not in repr(listed[0])
     assert digest not in repr(listed[0])  # a listing never carries what verifies a secret
+
+
+@pytest.mark.req("EF-INT-012")
+def test_a_kobo_pairing_answer_carries_the_segment_of_its_sync_address(api: AuthEnv) -> None:
+    """The sync address of a kobo is the credential itself, as one path segment (M6 L17a): the
+    pairing builds it once, with the secret, and no other kind of device has one. A rotation
+    shows the segment of the new secret, and the old segment opens nothing from then on."""
+    profile(api, "kid", "child", max_age_rating=7)
+    kobo = issue(api, "kid", kind="kobo")
+    assert kobo.kobo_sync_segment == kobo_path_token(kobo.public_id, kobo.secret)
+    assert kobo_path_credential(kobo.kobo_sync_segment) == (kobo.public_id, kobo.secret)
+    assert kobo.kobo_sync_segment not in repr(kobo) and kobo.kobo_sync_segment not in str(kobo)
+    assert kobo.kobo_sync_segment not in db_dump(api.settings)
+    assert issue(api, "kid").kobo_sync_segment is None  # a reader of another kind has no path
+    rotated = auth_of(api).rotate_device(kobo.device_id)
+    assert rotated is not None
+    assert rotated.kobo_sync_segment == kobo_path_token(rotated.public_id, rotated.secret)
+    assert rotated.kobo_sync_segment != kobo.kobo_sync_segment
 
 
 def test_kosync_auth_uses_device_token_secret(api: AuthEnv) -> None:
@@ -451,7 +473,9 @@ def test_device_token_presented_on_admin_and_ordinary_routes_is_refused(
 
 def test_a_route_outside_opds_and_kosync_never_takes_a_device_token(api: AuthEnv) -> None:
     """The closed list is enforced where the token is read, not only by where routes happen to
-    be mounted: a route that names the dependency outside `/opds` and `/kosync` refuses it."""
+    be mounted: a route that names the dependency outside `/opds`, `/kosync` and `/kobo` refuses
+    it. `/kobo` is the lot's own door (M6 L17a, docs/decisions/M6.md): the sync address of a
+    Kobo carries the credential as its path segment."""
     profile(api, "kid", "child", max_age_rating=7)
     created = issue(api, "kid")
     for check, headers in (
@@ -461,7 +485,7 @@ def test_a_route_outside_opds_and_kosync_never_takes_a_device_token(api: AuthEnv
         answer = device_get(api, headers, path=OUTSIDE_PATH, check=check)
         assert answer.status_code == 403 and answer.json()["code"] == "credential_not_allowed"
     assert api.client.get(KOSYNC_AUTH, headers=kosync(created.public_id, created.secret)).is_success
-    assert set(DEVICE_ROUTE_PREFIXES) == {"/opds", "/kosync"}
+    assert set(DEVICE_ROUTE_PREFIXES) == {"/opds", "/kosync", "/kobo"}
 
 
 def test_an_api_key_is_no_device_token_and_a_device_token_is_no_api_key(api: AuthEnv) -> None:

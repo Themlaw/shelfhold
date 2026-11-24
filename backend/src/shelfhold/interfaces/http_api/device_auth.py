@@ -1,5 +1,6 @@
-"""The credential of an e-reader: OPDS (HTTP Basic) and kosync (`x-auth-user`, `x-auth-key`)
-(M4 L46, ADR-0053 §4, EF-USR-008, EF-LEC-009).
+"""The credential of an e-reader: OPDS (HTTP Basic), kosync (`x-auth-user`, `x-auth-key`) and
+Kobo (the token in the path of its sync address) (M4 L46, M6 L17a, ADR-0053 §4, EF-USR-008,
+EF-LEC-009).
 
 A device token is **not** resolved by the authentication middleware: no ordinary route, no
 administration route and no reserved action ever sees one, whatever headers a client sends them
@@ -33,7 +34,7 @@ from starlette.types import Scope
 
 from shelfhold.identity.public import Principal, ThrottledError
 from shelfhold.infrastructure.http_headers import BASIC_CHALLENGE
-from shelfhold.interfaces.http_api.auth import gate_of
+from shelfhold.interfaces.http_api.auth import current_principal, gate_of
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.ratelimit import (
     client_ip_of,
@@ -41,7 +42,7 @@ from shelfhold.interfaces.http_api.ratelimit import (
     recognise_device_credential,
 )
 
-DEVICE_ROUTE_PREFIXES = ("/opds", "/kosync")  # closed: a device token reaches nothing else
+DEVICE_ROUTE_PREFIXES = ("/opds", "/kosync", "/kobo")  # closed: a device token reaches nothing else
 _MAX_HEADER = 512
 
 
@@ -74,9 +75,9 @@ def _kosync(request: Request) -> tuple[str, str] | None:
 
 
 def _in_reach(scope: Scope) -> bool:
-    """Whether the path, taken from the mount point, is under `/opds` or `/kosync`. A server may
-    keep the `root_path` in `path` or not: both are read the same, and a path that only looks like
-    one after a different cut (`/x/opds`) is outside."""
+    """Whether the path, taken from the mount point, is under `/opds`, `/kosync` or `/kobo`. A
+    server may keep the `root_path` in `path` or not: both are read the same, and a path that only
+    looks like one after a different cut (`/x/opds`) is outside."""
     path = str(scope.get("path", ""))
     root = str(scope.get("root_path", "")).rstrip("/")
     if root and (path == root or path.startswith(root + "/")):
@@ -125,6 +126,42 @@ def require_device_basic(request: Request) -> Principal:
 def require_device_kosync(request: Request) -> Principal:
     """kosync: `x-auth-user` is the public identifier and `x-auth-key` the md5 of the secret."""
     return _resolve(request, basic=False)
+
+
+def require_device_kobo(request: Request, token: str) -> Principal:
+    """Kobo: the credential is the path segment of the sync address, both halves of the device
+    token as one word (`identity.domain.device_secret`), and nothing else opens the door — a
+    session, a key or any `Authorization` header presented with it is refused before the segment
+    is looked at, for the door never answers to two names at once. Only a token whose device is
+    of the kind `kobo` is accepted (the service's check); the rest — the TLS requirement, the
+    counting, the throttle, the closed list — is the e-reader's own door."""
+    if not _in_reach(request.scope):
+        raise ProblemError("credential_not_allowed")
+    if client_scheme_of(request.scope) != "https" and not getattr(
+        request.app.state, "device_allow_plain_http", False
+    ):
+        raise ProblemError("device_tls_required")
+    names = gate_of(request).cookies_for(request.scope)
+    if (
+        current_principal(request) is not None
+        or request.headers.get("authorization") is not None
+        or request.cookies.get(names.session)
+    ):
+        raise _refuse()
+    try:
+        principal = gate_of(request).auth.authenticate_kobo_token(
+            token, ip=client_ip_of(request.scope)
+        )
+    except ThrottledError as throttled:
+        raise ProblemError(
+            "too_many_attempts",
+            extensions={"retry_after_s": throttled.retry_after_s},
+            headers={"Retry-After": str(throttled.retry_after_s)},
+        ) from None
+    if principal is None:
+        raise _refuse()
+    recognise_device_credential(request.scope)  # an accepted credential has a budget of its own
+    return principal
 
 
 def build_device_router() -> APIRouter:

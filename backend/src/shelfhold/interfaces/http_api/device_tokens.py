@@ -3,12 +3,14 @@ registry of what was paired (M4 L46b, M5 L02, EF-UX-004, EF-USR-008, EF-USR-022 
 D19). The routes behind the screens "Connect a device" and "Devices".
 
 Creating a token is the reserved action `device_token.issue`: a fresh session in every profile,
-never an API key, never a device token (a token is read by `/opds` and `/kosync` only). Revoking is
-`device_token.manage`. A member pairs and revokes their own tokens, an admin pairs for a member or
-a child (an admin is never the subject of a token) and revokes any, a child manages none. The
-secret is in the answer of the creation, once, with `Cache-Control: no-store`; it is not in a URL,
-not in a list, not in the audit, and the reserved guard keeps the answer out of the replay store
-of `Idempotency-Key`. A token of another profile answers like one that is not there.
+never an API key, never a device token (a token is read by `/opds`, `/kosync` and `/kobo` only).
+Revoking is `device_token.manage`. A member pairs and revokes their own tokens, an admin pairs
+for a member or a child (an admin is never the subject of a token) and revokes any, a child
+manages none. The secret is in the answer of the creation, once, with `Cache-Control: no-store`;
+it is not in a URL, not in a list, not in the audit, and the reserved guard keeps the answer out
+of the replay store of `Idempotency-Key`. A kobo's answer also carries `kobo_sync_segment`, the
+path segment of its sync address (M6 L17a): the same credential as one word, once, with the
+secret. A token of another profile answers like one that is not there.
 
 A pairing makes one device (a label, a kind, when it was last seen). The registry lists the live
 devices of a profile (a member's own, an admin's all, none for a child), rotates a device's secret
@@ -70,13 +72,16 @@ class DeviceTokenPairIn(BaseModel):
 
 
 class DeviceTokenPaired(BaseModel):
-    """What is shown once. `secret` is typed as it is: no separator, case kept."""
+    """What is shown once. `secret` is typed as it is: no separator, case kept. A kobo alone
+    also gets `kobo_sync_segment`: the path segment of its sync address (M6 L17a), the same
+    credential as one word, shown once with the secret and never anywhere else."""
 
     public_id: str
     secret: str
     subject_user_id: str
     expires_at: datetime | None
     device_id: str
+    kobo_sync_segment: StrictStr | None = None
 
 
 class DeviceRotateIn(BaseModel):
@@ -204,6 +209,7 @@ def build_device_tokens_router() -> APIRouter:
             subject_user_id=created.subject_user_id,
             expires_at=created.expires_at,
             device_id=created.device_id,
+            kobo_sync_segment=created.kobo_sync_segment,
         )
 
     @router.delete("/{public_id}", status_code=204)
@@ -275,6 +281,7 @@ def build_devices_router() -> APIRouter:
             subject_user_id=rotated.subject_user_id,
             expires_at=rotated.expires_at,
             device_id=rotated.device_id,
+            kobo_sync_segment=rotated.kobo_sync_segment,
         )
 
     @router.delete("/{device_id}", status_code=204)

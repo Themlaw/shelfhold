@@ -14,6 +14,8 @@ md5 and then to the same digest. With 130 random bits there is nothing to guess,
 factor or a keyed hash would add a key to rotate and no protection.
 """
 
+import base64
+import binascii
 import hashlib
 import re
 import secrets
@@ -68,3 +70,41 @@ def key_digest(key: object) -> str | None:
     if not isinstance(key, str) or not _MD5_HEX.fullmatch(key):
         return None
     return _digest_of(key.lower())
+
+
+# The token a Kobo carries in its sync address (M6 L17a, EF-INT-012): the whole credential as one
+# path segment, `base64url("<public_id>:<secret>")`, shown once at the pairing. Nothing else is in
+# the path, and nothing of it is ever logged: the segment after `/kobo/` is masked whole
+# (`infrastructure.logging`).
+_KOBO_SEGMENT = re.compile(r"[0-9a-hjkmnp-tv-z]+")  # the credential's alphabet, as it travels
+_MAX_SEGMENT = 128  # a path segment is short; a longer one is not a token, whatever it decodes to
+
+
+def kobo_path_token(public_id: str, secret: str) -> str:
+    """The path segment of the sync address: both halves of the credential, as one word."""
+    raw = f"{public_id}:{secret}".encode("ascii")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def kobo_path_credential(segment: object) -> tuple[str, str] | None:
+    """The credential a path segment carries, or None when it is not one: not decodable, not the
+    two halves of a device credential, or too long. Nothing is guessed, nothing is kept."""
+    if not isinstance(segment, str) or not segment or len(segment) > _MAX_SEGMENT:
+        return None
+    try:
+        decoded = base64.b64decode(
+            segment + "=" * (-len(segment) % 4), altchars=b"-_", validate=True
+        ).decode("ascii")
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return None
+    public_id, separator, secret = decoded.partition(":")
+    if not separator:
+        return None
+    if (
+        len(public_id) != PUBLIC_ID_LENGTH
+        or len(secret) != SECRET_LENGTH
+        or not _KOBO_SEGMENT.fullmatch(public_id)
+        or not _KOBO_SEGMENT.fullmatch(secret)
+    ):
+        return None
+    return public_id, secret

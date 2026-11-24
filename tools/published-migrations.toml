@@ -379,3 +379,8 @@ since = "1.3"
 file = "0113_tracker_link.py"
 sha256 = "d6116e95981aa9d62b217222e695833c57aeaf2927e53cfa397caa590caf0ddd"
 since = "1.3"
+
+[[migration]]
+file = "0115_kobo_sync_point.py"
+sha256 = "f80fca4170b858c1f61910627ad912930c34827124a875322dc3317b69615057"
+since = "1.3"
