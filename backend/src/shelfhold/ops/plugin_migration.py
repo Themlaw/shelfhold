@@ -259,10 +259,7 @@ class PluginMigrationOps:
                 )
                 for source, remote in erased
             }
-            edges = [
-                (row.old_source_key, row.old_remote_id, row.new_source_key, row.new_remote_id)
-                for row in self._alias_edges(key)
-            ]
+            edges = self._alias_edges(key)
             for row in items:
                 if row.id not in blocked:
                     continue
