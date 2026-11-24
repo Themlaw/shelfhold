@@ -1869,6 +1869,11 @@
     action = "Correct the named field; a secret is regulated separately, by set-secret, never as a value."
     cause = "The value of a setting does not follow the format expected by this source, or a secret was entered like a regular setting."
 
+  [errors."plugin.failed"]
+    title = "The isolated plugin stopped responding."
+    action = "Retry the search or re-enable the plugin, then try again."
+    cause = "The plugin's companion process stopped during the call: it crashed or was stopped."
+
   [errors."plugin.unknown"]
     title = "No loaded or installed plugin carries this key."
     action = "Check the key with “shelfhold plugin list”."

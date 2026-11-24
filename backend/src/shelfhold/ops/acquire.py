@@ -51,6 +51,7 @@ from shelfhold.ops.errors import CodedRefusal, ExitUnavailableError, InvalidChoi
 from shelfhold.ops.reclaim import estimate_units, require_space
 from shelfhold.ops.tombstone_screens import CatalogScreens
 from shelfhold.plugin_host.errors import NoSourceForUrl, RefHasSecret
+from shelfhold.plugin_host.rpc.protocol import PluginFailed
 from shelfhold.plugin_host.settings import SourceSettings
 from shelfhold.plugin_host.trust_card import trust_card
 
@@ -111,6 +112,8 @@ class AcquireOps:
             return self._comp.run(work)
         except (NoSourceForUrl, AcquireRefused, SourceError, RefHasSecret, FetchError) as error:
             raise self._refused(error) from None
+        except PluginFailed:
+            raise CodedRefusal("plugin.failed", "the plugin is gone") from None
 
     # -- the doors ----------------------------------------------------------------------------
 
@@ -119,6 +122,8 @@ class AcquireOps:
             specs = self.acquirer(connected_key=source_key.partition(":")[0]).filters(source_key)
         except AcquireRefused as error:
             raise self._refused(error) from None
+        except PluginFailed:
+            raise CodedRefusal("plugin.failed", "the plugin is gone") from None
         return [s.model_dump(mode="json") for s in specs]
 
     def search(
