@@ -26,8 +26,8 @@ __all__ = ["MAX_FILE_BYTES", "MAX_TASKS", "closed_environment", "spawn_stdio"]
 # container's `pids_limit` (640, in the three compose files) is a backstop above it: 512 leaves
 # room for sixteen plugins with their thread pools, and the 128 tasks between the two are the
 # companion's own (its threads, the plugin it is starting), so a fork bomb stops at this ceiling
-# before the container's. On a host where the uid does other work (a test machine) it is too low: the runner's
-# configuration (`RunnerConfig.max_tasks`) raises it.
+# before the container's. On a host where the uid does other work (a test machine) it is too low:
+# the runner's configuration (`RunnerConfig.max_tasks`) raises it.
 MAX_TASKS = 512
 # The largest file a plugin may write or grow (`SIGXFSZ`, then `EFBIG`): its scratch folder is a
 # bounded `tmpfs`, and no plugin has a reason to build a file near the size of that `tmpfs`.
