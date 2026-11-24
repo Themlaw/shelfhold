@@ -143,14 +143,15 @@ def _judge_against_the_host(
     plugin cannot read yet is migrated by its own `migrate_state` before its first call — a
     plugin whose state cannot be migrated is marked, never called. Nothing is judged without
     the host's database: no engine, no judgement."""
-    if not settings.database_path.exists():
+    database = getattr(settings, "database_path", None)  # a caller may know only the data dir
+    if database is None or not database.exists():
         return
     from shelfhold_sdk.models import API_VERSION
 
     from shelfhold.infrastructure.db import create_db_engine
     from shelfhold.plugin_host import lifecycle, state
 
-    engine = create_db_engine(settings.database_path)
+    engine = create_db_engine(database)
     try:
         judged = lifecycle.incompatible_installed(
             engine, host_version=lifecycle.HOST_VERSION, api_version=API_VERSION
