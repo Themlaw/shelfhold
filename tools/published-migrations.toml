@@ -399,3 +399,8 @@ since = "1.3"
 file = "0117_plugin_replaced_by.py"
 sha256 = "173aae1dcd6b0e4ced2163a05d7c51145bf054700f5d31c0a3fb799629625003"
 since = "1.3"
+
+[[migration]]
+file = "0118_plugin_revocation_scope.py"
+sha256 = "077d1727574e41abb632f9630fcc9759b9f400320552d9d4739699aebfe1d828"
+since = "1.3"

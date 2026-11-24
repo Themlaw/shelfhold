@@ -65,12 +65,17 @@ def test_zero_repo_preconfigured_and_the_checks_hold(settings: Settings) -> None
                     "VALUES (?, ?, ?, ?)",
                     (url, pubkey, key_id, last_version),
                 )
-        conn.execute("INSERT INTO plugin_revocation (kind, value) VALUES ('plugin_key', 'acme')")
+        conn.execute(
+            "INSERT INTO plugin_revocation (kind, value, index_url, signer_pubkey) "
+            "VALUES ('plugin_key', 'acme', 'https://a.example.org/', 'RW...')"
+        )
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(  # the kind is a closed list: a wheel is revoked by its sha256
-                "INSERT INTO plugin_revocation (kind, value) VALUES ('wheel', 'sha256:00')"
+                "INSERT INTO plugin_revocation (kind, value, index_url, signer_pubkey) "
+                "VALUES ('wheel', 'sha256:00', 'https://a.example.org/', 'RW...')"
             )
         with pytest.raises(sqlite3.IntegrityError):  # one row per revocation
             conn.execute(
-                "INSERT INTO plugin_revocation (kind, value) VALUES ('plugin_key', 'acme')"
+                "INSERT INTO plugin_revocation (kind, value, index_url, signer_pubkey) "
+                "VALUES ('plugin_key', 'acme', 'https://a.example.org/', 'RW...')"
             )

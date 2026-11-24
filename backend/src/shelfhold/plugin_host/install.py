@@ -34,7 +34,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from importlib import metadata
@@ -921,18 +921,24 @@ def verdicts(
     environ: dict[str, str] | os._Environ[str],
     *,
     interpreter: Interpreter | None = None,
+    revoked: Mapping[str, str] | None = None,
 ) -> list[Verdict]:
     """For each installed plugin, in its own mode: granted only when the activation of that
     mode holds (the reserved action for isolated, the variable and the typed confirmation for
     in process). Each condition is checked again at every start; none is remembered on its own.
     The wheel's tags are compared to the interpreter first (ENF-OPS-018): a plugin whose ABI
     no longer matches — the host moved to a newer Python — is never granted, whatever its
-    mode, and the reason says the guided reinstall."""
+    mode, and the reason says the guided reinstall. `revoked` maps a distribution to the closed
+    reason its own index revoked it for (`lifecycle.revoked_dists`): such a plugin is never
+    granted either, whatever it was enabled with — the revocation is read at every start."""
     judge = current_interpreter() if interpreter is None else interpreter
     state = read_state(layout)
     strays = unexpected_entries(layout, state)
     out = []
     for name, plugin in sorted(state.installed.items()):
+        if revoked is not None and name in revoked:
+            out.append(Verdict(name, False, f"revoked by its index ({revoked[name]})", plugin.mode))
+            continue
         problem = _sound_and_unchanged(layout, plugin, strays)
         tags = installed_wheel_tags(layout, plugin)
         if tags:

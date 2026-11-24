@@ -55,8 +55,18 @@ from shelfhold.plugin_host.attestation import (
     AttestationNotNeeded,
     AttestationStore,
 )
-from shelfhold.plugin_host.index import PluginIndexError, RepoStore, index_fetcher
-from shelfhold.plugin_host.public import installed_keys, installed_versions, start_plugins
+from shelfhold.plugin_host.index import (
+    PluginIndexError,
+    RepoStore,
+    hold_previous_install,
+    index_fetcher,
+)
+from shelfhold.plugin_host.public import (
+    installed_keys,
+    installed_versions,
+    refuse_taken_keys,
+    start_plugins,
+)
 from shelfhold.plugin_host.settings import (
     LNCRAWL_RIGHTS_WARNING,
     USE_READBACK,
@@ -222,6 +232,14 @@ def _vault_or_none(resolved: ResolvedSettings) -> SecretVault | None:
         return None
 
 
+def _store_of(engine: Any, resolved: ResolvedSettings) -> RepoStore:
+    """The repositories' store, told where the plugins are installed: a refresh disables what an
+    index revoked."""
+    return RepoStore(
+        engine, now=SystemClock().now, layout=guard.Layout.of(resolved.values.data_dir)
+    )
+
+
 def _held_audit(held: str, connection: Any) -> None:
     """The audit row of a hold, written in the hold's own transaction: the data is held the
     moment the row says so, whatever the install does next (M6 L08 review)."""
@@ -243,7 +261,7 @@ def _install_from_index(args: argparse.Namespace, resolved: ResolvedSettings, la
     engine = _engine(resolved)
     if engine is None:
         return 1
-    store = RepoStore(engine, now=SystemClock().now)
+    store = _store_of(engine, resolved)
     try:
         record = next((r for r in store.list() if r.url == args.index), None)
         if record is None:
@@ -291,83 +309,56 @@ def _install_from_index(args: argparse.Namespace, resolved: ResolvedSettings, la
     return 0
 
 
-def _previous_origins(
-    resolved: ResolvedSettings, dist: str
-) -> dict[str, tuple[str | None, str | None]]:
-    """The (index, signer) each installed key of this distribution is pinned to, read before a
-    new install rewrites the row: the origin that decides whether the bindings come back —
-    never the row after the install, which then tells the new install's own origin."""
-    engine = _engine(resolved)
-    if engine is None:
-        return {}
-    try:
-        origins: dict[str, tuple[str | None, str | None]] = {}
-        for key, version in installed_versions(resolved.values).items():
-            if version.dist == dist:
-                row = lifecycle.read_install(engine, key)
-                if row is not None:
-                    origins[key] = (row.index_url, row.signer_pubkey)
-        return origins
-    finally:
-        engine.dispose()
-
-
-def _unpin_index_install(resolved: ResolvedSettings, dist: str) -> None:
-    """A wheel the admin gave by hand is pinned by the admin's own act (M6 L08): the pin of an
-    earlier install from an index does not survive it — the row says whose word installed the
-    plugin, and no index vouched for this one."""
-    engine = _engine(resolved)
-    if engine is None:
-        return
-    try:
-        store = RepoStore(engine, now=SystemClock().now)
-        for key, version in installed_versions(resolved.values).items():
-            if version.dist == dist:
-                store.unpin(key)
-    finally:
-        engine.dispose()
-
-
-def _reattach_hand_install(
-    resolved: ResolvedSettings, dist: str, previous: dict[str, tuple[str | None, str | None]]
-) -> int:
-    """A wheel the admin gave by hand has no index and no signer (M6 L09a): a reinstall of the
-    same key reattaches the bindings a removal left orphaned only when the previous install
-    was the admin's own too — the previous origin, read before this install unpinned the row."""
-    engine = _engine(resolved)
-    if engine is None:
-        return 0
-    try:
-        count = 0
-        for key, version in installed_versions(resolved.values).items():
-            if version.dist == dist:
-                count += lifecycle.reattach_if_same_origin(
-                    engine, key, previous.get(key), None, None
-                )
-        return count
-    finally:
-        engine.dispose()
-
-
 def run_install(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
+    """Install a wheel the admin gives by hand, or — with ``--index`` — one a signed index vouches
+    for. A wheel by hand has no index and no signer: it is the admin's own word. What an earlier
+    install of the same key left — pinned to a signer's index — is held aside under that signer's
+    fingerprint, like an install from another signer (GAP-8-13): the code of this wheel was signed
+    by nobody, and inherits neither the secrets nor the settings nor the state of code someone
+    did sign. The bindings a removal left orphaned come back only when the previous install was
+    the admin's own too."""
     layout = guard.Layout.of(resolved.values.data_dir)
     if args.index is not None:
         return _install_from_index(args, resolved, layout)
     if not args.sha256:
         return _fail(t("plugin.sha256_required"))
-    try:
-        plugin = guard.install_wheel(layout, Path(args.wheel), args.sha256)
-    except guard.PluginInstallError as exc:
-        _audited(resolved, "plugin.install_refused", f"{Path(args.wheel).name}:{exc.code}")
-        return _fail(t("plugin.install_refused", code=exc.code, detail=exc.detail))
-    if not _audited(
-        resolved, "plugin.install", f"{plugin.name}@{plugin.version}:{plugin.wheel_sha256}"
-    ):
-        guard.remove_plugin(layout, plugin.name)  # no audit row, no installation
+    wheel = Path(args.wheel)
+    engine = _engine(resolved)
+    if engine is None:
         return 1
-    _previous = _previous_origins(resolved, plugin.name)
-    _unpin_index_install(resolved, plugin.name)
-    reattached = _reattach_hand_install(resolved, plugin.name, _previous)
+    try:
+        try:
+            refuse_taken_keys(layout, wheel)  # one key, one install (S6)
+            plugin = guard.install_wheel(layout, wheel, args.sha256)
+        except guard.PluginInstallError as exc:
+            _audited(resolved, "plugin.install_refused", f"{wheel.name}:{exc.code}")
+            return _fail(t("plugin.install_refused", code=exc.code, detail=exc.detail))
+        if not _audited(
+            resolved, "plugin.install", f"{plugin.name}@{plugin.version}:{plugin.wheel_sha256}"
+        ):
+            guard.remove_plugin(layout, plugin.name)  # no audit row, no installation
+            return 1
+        keys = [k for k, v in installed_versions(resolved.values).items() if v.dist == plugin.name]
+        store = _store_of(engine, resolved)
+        vault = _vault_or_none(resolved)
+        reattached = 0
+        for key in keys:
+            row = lifecycle.read_install(engine, key)  # the previous install's pin, read before
+            previous = None if row is None else (row.index_url, row.signer_pubkey)  # it is undone
+            try:
+                held = hold_previous_install(
+                    engine, vault, key, previous, (None, None), audit=_held_audit
+                )
+            except PluginDataError as exc:  # the data could not be held: no installation
+                guard.remove_plugin(layout, plugin.name)
+                _audited(resolved, "plugin.install_refused", f"{wheel.name}:{exc.code}")
+                return _fail(t("plugin.install_refused", code=exc.code, detail=exc.detail))
+            if held is not None:
+                print(t("plugin.state_held", name=key, held=held))
+            store.unpin(key)  # a wheel by hand is pinned by the admin's own act (M6 L08)
+            reattached += lifecycle.reattach_if_same_origin(engine, key, previous, None, None)
+    finally:
+        engine.dispose()
     _sync_attestations(resolved)  # a new version: the word given for the old one lapses
     print(t("plugin.installed", name=plugin.name, version=plugin.version))
     print(t("plugin.disabled_by_default"))
@@ -542,7 +533,7 @@ def run_update(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     if engine is None:
         return 1
     try:
-        store = RepoStore(engine, now=SystemClock().now)
+        store = _store_of(engine, resolved)
         from shelfhold.composition import default_network
 
         async def _run() -> Any:
@@ -649,7 +640,7 @@ def run_rollback(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
     if engine is None:
         return 1
     try:
-        store = RepoStore(engine, now=SystemClock().now)
+        store = _store_of(engine, resolved)
         installed = lifecycle.rollback(
             engine,
             store,
@@ -698,7 +689,11 @@ def run_list(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
                 )
             )
         return 0
-    for verdict in guard.verdicts(layout, os.environ):
+    engine = _engine(resolved)
+    revoked = {} if engine is None else lifecycle.revoked_dists(engine, layout)
+    if engine is not None:
+        engine.dispose()
+    for verdict in guard.verdicts(layout, os.environ, revoked=revoked):
         plugin = state.installed[verdict.name]
         status = (
             t("plugin.status_ready")
@@ -879,7 +874,7 @@ def _repo_store(resolved: ResolvedSettings) -> RepoStore | None:
     engine = _engine(resolved)
     if engine is None:
         return None
-    return RepoStore(engine, now=SystemClock().now)
+    return _store_of(engine, resolved)
 
 
 def _index_fail(error: PluginIndexError) -> int:
