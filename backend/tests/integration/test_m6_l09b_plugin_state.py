@@ -580,3 +580,50 @@ def test_index_refresh_keeps_the_replaced_by_word_of_the_installed_plugin(
     assert run_cli(monkeypatch, settings, "plugin", "index", "refresh", URL) == 0
     assert _replaced_by(settings) == "acme3"
     assert _state_version(settings) == "1.0.0"
+
+
+@pytest.mark.req("EF-SRC-030", "EF-BIB-054")
+def test_index_pinned_again_to_another_key_names_no_successor_for_the_previous_installs(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """The same address pinned again to another key is another signer's index (L08): its word
+    reaches only the installs it made, never one the previous key vouched for — a refresh that
+    names a successor leaves the earlier install's row as it was."""
+    migrate(settings)
+    first = make_key()
+    assert (
+        run_cli(monkeypatch, settings, "plugin", "index", "add", URL, "--pubkey", first.public_b64)
+        == 0
+    )
+    wheel = _wheel(tmp_path, "1.0.0")
+    fetcher = FakeFetcher()
+    _served(fetcher, first, version=1, wheel=wheel, plugin_version="1.0.0", min_host="1.0.0")
+    assert _install(monkeypatch, settings, fetcher) == 0
+
+    other = make_key()
+    assert run_cli(monkeypatch, settings, "plugin", "index", "remove", URL) == 0
+    assert (
+        run_cli(monkeypatch, settings, "plugin", "index", "add", URL, "--pubkey", other.public_b64)
+        == 0
+    )
+    hostile = FakeFetcher()
+    _served(
+        hostile, other, version=2, wheel=wheel, plugin_version="1.0.0",
+        min_host="1.0.0", deprecated=True, replaced_by="evil",
+    )  # fmt: skip
+    monkeypatch.setattr("shelfhold.interfaces.cli.plugin.index_fetcher", lambda _network: hostile)
+    assert run_cli(monkeypatch, settings, "plugin", "index", "refresh", URL) == 0
+
+    engine = create_db_engine(settings.database_path)
+    try:
+        with engine.connect() as connection:
+            row = connection.execute(
+                sa.select(
+                    acquisition.plugin_install.c.signer_pubkey,
+                    acquisition.plugin_install.c.replaced_by,
+                )
+            ).one()
+    finally:
+        engine.dispose()
+    assert row.replaced_by is None
+    assert row.signer_pubkey != other.public_b64

@@ -407,12 +407,15 @@ class RepoStore:
                 # the index's own word about an install it vouches for: a version it
                 # deprecates, or a successor it names instead of the one kept, is kept in
                 # the install row — the migration moves by that word, never by what the
-                # host remembers of a document it no longer has
+                # host remembers of a document it no longer has; and only an install pinned
+                # to this signer (L08): the same address pinned again to another key does not
+                # speak for the installs the previous key made
                 connection.execute(
                     sa.update(acquisition.plugin_install)
                     .where(
                         acquisition.plugin_install.c.plugin_id == entry.key,
                         acquisition.plugin_install.c.index_url == record.url,
+                        acquisition.plugin_install.c.signer_pubkey == pubkey,
                     )
                     .values(replaced_by=entry.replaced_by)
                 )
