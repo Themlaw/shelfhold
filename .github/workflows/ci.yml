@@ -687,6 +687,15 @@ jobs:
         working-directory: frontend
       - run: npm ci
         working-directory: e2e
+      # The Ubuntu mirror can serve the browser's libraries at ~100 kB/s (48 MB for Firefox): the
+      # .deb archives are kept between runs, keyed by the Playwright version and the engine.
+      - name: Restore the browser's system packages
+        if: matrix.image == ''
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/shelfhold-apt
+          key: apt-playwright-${{ matrix.browser }}-${{ hashFiles('e2e/package-lock.json') }}
       - name: Playwright browser
         if: matrix.image == ''
         working-directory: e2e
@@ -698,9 +707,23 @@ jobs:
         # bounded by `timeout-minutes` instead (which stops the whole process group). A stalled
         # Ubuntu mirror is cut by apt itself (short timeouts, retries), not left to the step.
         run: |
-          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nBinary::apt::APT::Keep-Downloaded-Packages "true";\n' \
             | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
+          sudo rm -f /etc/apt/apt.conf.d/docker-clean
+          mkdir -p ~/.cache/shelfhold-apt
+          sudo cp ~/.cache/shelfhold-apt/*.deb /var/cache/apt/archives/ 2>/dev/null || true
           npx playwright install --with-deps "$BROWSER"
+      # Saved even when the install ran out of time: the archives already fetched are kept, and the
+      # next run starts from them instead of the mirror.
+      - name: Keep the browser's system packages
+        if: always() && matrix.image == '' && steps.apt-cache.outputs.cache-hit != 'true'
+        run: cp /var/cache/apt/archives/*.deb ~/.cache/shelfhold-apt/ 2>/dev/null || true
+      - name: Save the browser's system packages
+        if: always() && matrix.image == '' && steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/shelfhold-apt
+          key: apt-playwright-${{ matrix.browser }}-${{ hashFiles('e2e/package-lock.json') }}
       - name: Playwright (reader, one engine)
         working-directory: e2e
         env:
