@@ -22,6 +22,7 @@ nothing the old plugin had lost.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import sqlalchemy as sa
@@ -246,7 +247,7 @@ class PluginMigrationOps:
         service: TombstoneService,
         key: str,
         replacement: str,
-        items: list[Any],
+        items: Sequence[Any],
         blocked: set[str],
     ) -> None:
         """One more tombstone of the same scope (`series_binding`), sealed like the others, on
