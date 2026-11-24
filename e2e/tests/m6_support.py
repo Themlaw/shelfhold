@@ -27,7 +27,7 @@ EXAMPLE = REPO / "docs" / "plugins" / "exemple"
 CASSETTE = EXAMPLE / "tests" / "cassettes" / "catalogue.json"
 CRASH_PLUGIN = (E2E / "fakes" / "m6" / "crash_plugin.py").read_text(encoding="utf-8")
 
-SOURCES = "sources"  # the service of the simulated repository (`fake-sources`)
+SOURCES = "sources"  # the simulated sources (`fake-sources`), where the repository is served
 INDEX_HOST = "plugins.e2e.test"
 INDEX_URL = f"https://{INDEX_HOST}/index.json"
 WHEEL_BASE = f"https://{INDEX_HOST}/wheels/"
@@ -181,7 +181,7 @@ def sign(document: bytes, signer: IndexKey, comment: str) -> bytes:
 
 def publish(j: Journey, host: str, path: str, data: bytes) -> None:
     """Put a file where the simulated repository serves it (`host`, `path` as asked)."""
-    j.put_bytes(f"{PUBLISHED}/{host}/{path.lstrip('/')}", data, service=SOURCES, old=False)
+    j.put_bytes(f"{PUBLISHED}/{host}/{path.lstrip('/')}", data, service="fake-" + SOURCES, old=False)
 
 
 def publish_index(

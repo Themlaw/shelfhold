@@ -552,8 +552,11 @@ def requirement_line(name: str, wheel: Path, sha256: str) -> str:
 
 
 def _run(argv: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    # the process has no home to keep a cache in (and the root of the image is read-only): the
+    # installer's own cache lives in the staging folder, which leaves with the install
+    env = {**os.environ, "UV_CACHE_DIR": str(cwd / ".uv-cache")}
     return subprocess.run(  # noqa: S603 - fixed argv, no shell, local file only
-        list(argv), capture_output=True, text=True, check=False, timeout=300, cwd=cwd
+        list(argv), capture_output=True, text=True, check=False, timeout=300, cwd=cwd, env=env
     )
 
 
