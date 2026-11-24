@@ -67,7 +67,7 @@ processus** seulement. Conséquences pour un auteur :
 - `subprocess.run(timeout=…)` lève `PermissionError` à l'échéance au lieu de `TimeoutExpired`, et
   laisse le fils vivant ; `Popen.terminate()` et `Popen.kill()` lèvent `PermissionError` ;
 - un processus forké ne peut pas appeler `signal.raise_signal` sur lui-même par son pid ;
-- `fcntl(F_SETOWN, …)` et `ioctl(FIOSETOWN, …)` échouent avec `EPERM`.
+- `fcntl(F_SETOWN, …)`, `fcntl(F_SETOWN_EX, …)`, `ioctl(FIOSETOWN, …)` et `ioctl(SIOCSPGRP, …)` ne font rien (ils rendent 0) : le descripteur n'a pas de propriétaire, donc aucun `SIGIO` n'est envoyé.
 
 Le compagnon tue de toute façon tout le groupe à la fin de la connexion.
 

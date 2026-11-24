@@ -293,8 +293,8 @@ _SIGNALS: dict[str, dict[str, int]] = {
 }  # fmt: skip
 # The kernel signals on a plugin's behalf too: a descriptor whose owner is set (`F_SETOWN`,
 # `F_SETOWN_EX`, `FIOSETOWN`, `SIOCSPGRP`) gets `SIGIO` (or `F_SETSIG`'s signal) sent to that owner,
-# checked on the uid only. These commands are refused with `EPERM` (the first argument after the
-# descriptor is the command).
+# checked on the uid only. These commands do nothing and return 0, as `setsid` does (an `EPERM`
+# would crash a library that only meant to own its own descriptor); the owner stays unset.
 _OWNERS: dict[str, dict[str, int]] = {
     "x86_64": {"fcntl": 72, "ioctl": 16},
     "aarch64": {"fcntl": 25, "ioctl": 29},
@@ -357,7 +357,7 @@ def build_program(arch: str, own_pid: int | None = None) -> bytes:
             label = f"after_{name}"
             code.append((_BPF_JEQ_K, 0, label, _OWNERS[arch][name]))
             code.append((_BPF_LD_W_ABS, 0, 0, _ARG1))
-            code += [(_BPF_JEQ_K, "eperm", 0, command) for command in commands]
+            code += [(_BPF_JEQ_K, "zero", 0, command) for command in commands]
             code.append((_BPF_RET_K, 0, 0, _RET_ALLOW))  # any other command of the call
             labels[label] = len(code)
     code.append((_BPF_RET_K, 0, 0, _RET_ALLOW))
@@ -445,9 +445,13 @@ def tried(name, action):
     except OSError:
         pass
 tried("signal the companion", lambda: os.kill(os.getppid(), 0))
-if fallback:  # where Landlock scopes the signals, setting an owner is harmless: it is not delivered
-    tried("make the companion the owner of a descriptor",
-          lambda: fcntl.fcntl(sys.stdin.fileno(), 8, os.getppid()))
+def own():  # the filter makes this a no-op: the owner is still unset (0)
+    r, _w = os.pipe()
+    fcntl.fcntl(r, fcntl.F_SETOWN, os.getppid())
+    if fcntl.fcntl(r, fcntl.F_GETOWN) != os.getppid():
+        raise OSError
+if fallback:  # where Landlock scopes the signals, an owner is harmless: it is not delivered
+    tried("make the companion the owner of a descriptor", own)
 tried("read another's file", lambda: open(secret, "rb").read(1))
 tried("list another's folder", lambda: os.listdir(os.path.dirname(secret)))
 tried("empty another's file", lambda: os.truncate(secret, 0))

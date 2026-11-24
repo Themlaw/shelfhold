@@ -1,4 +1,4 @@
-"""The seccomp fallback refuses the commands that make the kernel signal for a plugin
+"""The seccomp fallback neutralises (returns 0, does nothing) the commands that make the kernel signal for a plugin
 (`F_SETOWN`, `F_SETOWN_EX`, `FIOSETOWN`, `SIOCSPGRP`), and the plugin's environment and ceilings."""
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ pytestmark = pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
 
 AUDIT = {"x86_64": 0xC000003E, "aarch64": 0xC00000B7}
 CALLS = {"x86_64": {"fcntl": 72, "ioctl": 16}, "aarch64": {"fcntl": 25, "ioctl": 29}}
-ALLOW, EPERM = 0x7FFF0000, 0x00050000 | 1
+ALLOW, ZERO = 0x7FFF0000, 0x00050000  # ZERO: the call returns 0 and does nothing
 
 
 def verdict(program: bytes, arch: str, nr: int, arg1: int) -> int:
@@ -37,9 +37,9 @@ def verdict(program: bytes, arch: str, nr: int, arg1: int) -> int:
 def test_the_fallback_refuses_the_owner_commands_and_only_those(arch: str) -> None:
     program = confine.build_program(arch, 4321)
     for command in (8, 15):  # F_SETOWN, F_SETOWN_EX
-        assert verdict(program, arch, CALLS[arch]["fcntl"], command) == EPERM, command
+        assert verdict(program, arch, CALLS[arch]["fcntl"], command) == ZERO, command
     for command in (0x8901, 0x8902):  # FIOSETOWN, SIOCSPGRP
-        assert verdict(program, arch, CALLS[arch]["ioctl"], command) == EPERM, command
+        assert verdict(program, arch, CALLS[arch]["ioctl"], command) == ZERO, command
     for command in (1, 3, 4, 9, 14, 1025):  # F_GETFD, F_GETFL, F_SETFL, F_GETOWN, F_SETSIG...
         assert verdict(program, arch, CALLS[arch]["fcntl"], command) == ALLOW, command
     for command in (0x5401, 0x541B, 0x8903):  # TCGETS, FIONREAD, a neighbour
