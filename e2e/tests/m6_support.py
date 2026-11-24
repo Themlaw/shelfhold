@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from journey import Journey
+from m6_hosts import CATALOGUE_HOST, INDEX_HOST
 from nacl.signing import SigningKey
 
 E2E = Path(__file__).resolve().parents[1]
@@ -28,10 +29,8 @@ CASSETTE = EXAMPLE / "tests" / "cassettes" / "catalogue.json"
 CRASH_PLUGIN = (E2E / "fakes" / "m6" / "crash_plugin.py").read_text(encoding="utf-8")
 
 SOURCES = "sources"  # the simulated sources (`fake-sources`), where the repository is served
-INDEX_HOST = "plugins.e2e.test"
 INDEX_URL = f"https://{INDEX_HOST}/index.json"
 WHEEL_BASE = f"https://{INDEX_HOST}/wheels/"
-CATALOGUE_HOST = "catalogue.exemple.invalid"
 PUBLISHED = "/tmp/plugin-index"  # noqa: S108 - the tmpfs of the simulated server
 
 

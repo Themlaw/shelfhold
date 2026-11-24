@@ -18,6 +18,8 @@ import pytest
 if TYPE_CHECKING:
     from journey import Journey
 
+from m6_hosts import NAMES as M6_NAMES
+
 COMPOSE_FILE = Path(__file__).resolve().parents[1] / "compose.yaml"
 
 
@@ -164,7 +166,7 @@ def _m2_env(tmp_path: Path) -> dict[str, str]:
 
     folder = tmp_path / "pki"
     make(folder, ["fr.wikisource.org", "ws-export.wmcloud.org", "standardebooks.org", "idp.e2e.test",
-                  "plugins.e2e.test", "catalogue.exemple.invalid"])
+                  *M6_NAMES])
     return {
         "E2E_PKI_DIR": str(folder),
         **({"E2E_LOG_LEVEL": os.environ["E2E_LOG_LEVEL"]} if "E2E_LOG_LEVEL" in os.environ else {}),
