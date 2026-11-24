@@ -37419,6 +37419,10 @@
       "code": "plugin.enable_refused",
       "status": 422
     },
+    "/api/v1/problems/plugin.failed": {
+      "code": "plugin.failed",
+      "status": 502
+    },
     "/api/v1/problems/plugin.incompatible": {
       "code": "plugin.incompatible",
       "status": 409
