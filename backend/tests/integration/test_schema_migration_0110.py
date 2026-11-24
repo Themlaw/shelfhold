@@ -4,7 +4,7 @@ Two tables, nothing else touched, reversible. `plugin_repo` pins a signed index 
 the public key the admin gave (its `key_id` is the fingerprint shown everywhere); `last_version`
 is the anti-rollback floor and starts at zero — no repository is preconfigured. A revocation seen
 in an index stays seen (`plugin_revocation`), even if a later index omits it. The head of the
-migrations is pinned here, by the newest one.
+migrations is no longer pinned here: 0111 (M6 L08) follows it.
 """
 
 import sqlite3
@@ -31,7 +31,7 @@ def _tables(database: object) -> set[str]:
 
 def test_the_revision_is_0110_the_head_on_0114() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0110"]  # the head is pinned here, by the newest
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     assert script.get_revision("0110").down_revision == "0114"
 
 

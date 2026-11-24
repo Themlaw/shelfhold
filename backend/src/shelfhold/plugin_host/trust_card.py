@@ -7,7 +7,10 @@ The card always has the same three lines, in that order, and marks the one that 
   is installed (an attestation lapses with the version, see `attestation`);
 - **unknown**: everything else. A third-party module is unknown until someone vouched for it, and
   the key of one of the host's own plugins gives it nothing: only the origin decided by the host
-  (the distribution that ships it) makes a module official.
+  (the distribution that ships it) makes a module official. Since M6 L08 a signed index gives it
+  nothing either (EF-SRC-017 passe 8): a signature vouches for the bytes of a wheel, never for
+  the conduct of its publisher — the card stays « Inconnu » whatever the signature, until the
+  admin attests.
 """
 
 from __future__ import annotations

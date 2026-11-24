@@ -425,7 +425,11 @@ upstream_snapshot = sa.Table(
     sa.Index("ix_upstream_snapshot_series", "connected_service_id", "series_ref", "capability"),
 )
 
-# Third-party plugins are installed disabled (EF-SRC-019).
+# Third-party plugins are installed disabled (EF-SRC-019). Since M6 L08 (EF-SRC-017 passe 8,
+# GAP-8-13) the row also keeps the pin of an install from a signed index: the repository's URL
+# and the public key of its signer. A wheel the admin gave by hand has neither (the pin is the
+# admin's own act); a plugin installed from an index has both — and another signer publishing the
+# same key is a new install, never an update.
 plugin_install = sa.Table(
     "plugin_install",
     metadata,
@@ -436,9 +440,16 @@ plugin_install = sa.Table(
     sa.Column("sha256", sa.String(), nullable=False),
     bool_column("enabled", default=False),
     sa.Column("state_schema", sa.Integer(), nullable=True),
+    sa.Column("index_url", sa.Text(), nullable=True),
+    sa.Column("signer_pubkey", sa.Text(), nullable=True),
     now_column("installed_at"),
     prefixed_hash_check("sha256"),
     in_check("origin", PLUGIN_ORIGINS),
+    sa.CheckConstraint(
+        '("index_url" IS NULL AND "signer_pubkey" IS NULL)'
+        ' OR ("index_url" IS NOT NULL AND "signer_pubkey" IS NOT NULL)',
+        name="pin_paired",
+    ),
 )
 
 plugin_state = sa.Table(

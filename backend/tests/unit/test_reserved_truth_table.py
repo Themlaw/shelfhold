@@ -326,6 +326,7 @@ FRESHNESS_LINE = {
             "oidc.unlink_account",  # M5 L04: nor an admin do it unseen
             "plugin.enable_isolated",  # M6 L06 (D13): third-party code runs on the admin's word
             "plugin.disable_isolated",  # M6 L06: silencing a plugin is an admin gesture too
+            "plugin.adopt_state",  # M6 L08: a previous signer's held data moves on this word
         ),
         "p3",
     ),
