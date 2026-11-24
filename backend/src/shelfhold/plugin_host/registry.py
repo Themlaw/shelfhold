@@ -186,6 +186,11 @@ class InstalledPlugin:
 SECRET_ENV = re.compile(r"SECRET|PASSWORD|PASSPHRASE|TOKEN|KEY|CREDENTIAL|_FILE$", re.IGNORECASE)
 
 
+def _inside(ep: Any, plugin: InstalledPlugin) -> bool:
+    """The module an entry point aims at belongs to its own distribution's top-level modules."""
+    return str(ep.module).split(".")[0] in plugin.top_levels
+
+
 def third_party_candidates(
     site_dir: Path, installed: Iterable[InstalledPlugin], *, blocked: Mapping[str, str]
 ) -> list[PluginCandidate]:
@@ -205,7 +210,7 @@ def third_party_candidates(
         if candidate.origin is PluginOrigin.FIRST_PARTY:  # a recorded plugin is never the host
             continue
         reason = blocked.get(name)
-        if reason is None and ep.module.split(".")[0] not in known[name].top_levels:
+        if reason is None and not _inside(ep, known[name]):
             reason = f"entry point {ep.name!r} points outside the plugin's own modules"
         found.append(
             replace(
@@ -237,7 +242,7 @@ def third_party_entries(
             # the grant is the distribution's, never the entry point's name: a distribution that
             # is not enabled must not start because its entry point carries an enabled name
             dist_name = _normalise(getattr(getattr(ep, "dist", None), "name", None) or raw or "")
-            if dist_name not in granted:
+            if dist_name not in granted or not _inside(ep, known[name]):
                 continue
             out.append((ep.name, str(ep.value)))
     return out
