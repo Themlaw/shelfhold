@@ -31,7 +31,8 @@
   import TrustCard from '#lib/components/TrustCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
-  import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
+  import { Reauth } from '#lib/guard.svelte.ts';
+  import { isForbidden } from '#lib/triage.ts';
 
   let repos = $state<RepoOut[]>([]);
   let plugins = $state<PluginOut[]>([]);
@@ -39,8 +40,7 @@
   let adminOnly = $state(false);
   let notice = $state<{ text: string; kind: 'status' | 'alert' } | null>(null);
   let busy = $state(false);
-  let reauthMethods = $state<string[] | null>(null);
-  let retry: (() => Promise<void>) | null = null;
+  const reauth = new Reauth();
 
   let addUrl = $state('');
   let addPubkey = $state('');
@@ -53,13 +53,6 @@
 
   function say(text: string, kind: 'status' | 'alert'): void {
     notice = { text, kind };
-  }
-
-  function askAgain(error: unknown, replay: () => Promise<void>): boolean {
-    if (!needsReauth(error)) return false;
-    retry = replay;
-    reauthMethods = problemOf(error).reauth_methods ?? ['password'];
-    return true;
   }
 
   async function load(): Promise<void> {
@@ -99,7 +92,7 @@
           throwOnError: false
         });
         if (error) {
-          if (askAgain(error, call)) return;
+          if (reauth.askAgain(error, call)) return;
           say(t('modules.index_refused'), 'alert');
           return;
         }
@@ -120,7 +113,7 @@
       try {
         const { error } = await removePluginRepo({ path: { url }, headers: headers(), throwOnError: false });
         if (error) {
-          if (askAgain(error, call)) return;
+          if (reauth.askAgain(error, call)) return;
           say(t('modules.index_refused'), 'alert');
           return;
         }
@@ -163,7 +156,7 @@
           throwOnError: false
         });
         if (error) {
-          if (askAgain(error, call)) return;
+          if (reauth.askAgain(error, call)) return;
           say(t('modules.action_refused'), 'alert');
           return;
         }
@@ -217,7 +210,7 @@
       try {
         const { data, error } = await rollbackPlugin({ path: { name: lifecycleKey(plugin) }, headers: headers(), throwOnError: false });
         if (error) {
-          if (askAgain(error, call)) return;
+          if (reauth.askAgain(error, call)) return;
           say(t('modules.action_refused'), 'alert');
           return;
         }
@@ -246,7 +239,7 @@
           throwOnError: false
         });
         if (error) {
-          if (askAgain(error, call)) return;
+          if (reauth.askAgain(error, call)) return;
           say(t('modules.attestation_refused'), 'alert');
           return;
         }
@@ -265,7 +258,7 @@
       try {
         const { error } = await withdraw({ path: { key, name: field }, headers: headers(), throwOnError: false });
         if (error) {
-          if (askAgain(error, call)) return;
+          if (reauth.askAgain(error, call)) return;
           say(t('modules.attestation_refused'), 'alert');
           return;
         }
@@ -287,18 +280,6 @@
       { level: 'unknown', label: t('trust.level.unknown'), current: String(level) === 'unknown' }
     ];
     return { level, lines };
-  }
-
-  function afterReauth(): void {
-    const again = retry;
-    retry = null;
-    reauthMethods = null;
-    if (again) void again();
-  }
-
-  function cancelReauth(): void {
-    retry = null;
-    reauthMethods = null;
   }
 </script>
 
@@ -401,8 +382,8 @@
     </section>
   {/if}
 
-  {#if reauthMethods}
-    <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
+  {#if reauth.reauthMethods}
+    <ReauthPrompt methods={reauth.reauthMethods} ondone={() => reauth.afterReauth()} oncancel={() => reauth.cancelReauth()} />
   {/if}
 
   {#if notice}
