@@ -78,7 +78,6 @@ symbols = [
 [[allow]]
 category = "deferred-l24-deprecation-window"
 reason = "2026-11-17 (M4 L24): `Deprecation` builds the window during which an event is sent in two versions of its shape (EF-INT-005). Every event of the catalogue is still at its first version, so no entry declares one: the double emission is proved with a catalogue the test builds, and the bounds are checked when any catalogue is built. It comes with the first change of the shape of an event. 2026-11-19 (M5 L22b): redated M6 (D18), then to the first change of the shape of an event. No event changes shape in M5 (the catalogue of events and the webhooks are untouched since `v1.1.0`), so there is nothing to declare yet. 2026-11-24 (M6 L25): moved to a written trigger (D25)."
-
 until = "trigger"  # M6 L25 (D25): written trigger, not a lot
 trigger = "an event of the catalogue is published in a second shape (a Deprecation is declared for it)"
 symbols = [

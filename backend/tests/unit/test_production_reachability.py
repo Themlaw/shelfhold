@@ -105,6 +105,7 @@ def test_open_traceability_exceptions_are_redated_by_m6_l25() -> None:
 
 
 def test_trigger_entries_name_their_trigger() -> None:
+    """D25: an entry that waits for a fact, not a lot, writes that fact down."""
     entries = [*reach.load_allowlist(REPO), *reach.load_route_tests(REPO)]
     trigger_entries = [e for e in entries if e["until"] == "trigger"]
     assert trigger_entries, "no allowlist entry is moved to a written trigger"

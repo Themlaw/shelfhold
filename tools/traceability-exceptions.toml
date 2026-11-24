@@ -83,6 +83,7 @@ reason = "page /lite et thème e-ink : la CI prouve le rendu, jamais sur un appa
 requirement = "ENF-COMP-002"
 milestone = "relevé sur appareil"
 reason = "matrice de clients et vérification sur appareil réel par famille : jamais mesuré sur appareil réel. 2026-11-24 (M6 L25, D-P8 (b))"
+
 [[partial]]
 requirement = "EF-EXP-023"
 milestone = "Plus tard"
