@@ -102,3 +102,4 @@ symbols = [
   "shelfhold.plugin_host.rpc.protocol:PluginFailed",
   "shelfhold.plugin_host.rpc.protocol:SecretLeak",
 ]
+

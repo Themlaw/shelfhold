@@ -200,6 +200,11 @@ _DECLARED = (
     # `access_partitioning` it is also parental control (which shelves may be bound to it)
     _action("plugin.attest", Effect.ATTESTS_TRUST),
     _action("plugin.attest_partitioning", Effect.ATTESTS_TRUST, Effect.PARENTAL_CONTROL),
+    # M6 L07 (D14, EF-SRC-017): adding or removing an index repository pins or unpins the
+    # signer of third-party code, and a removal resets the anti-rollback floor: the admin's
+    # word, a fresh session or the host CLI, never a key
+    _action("plugin.index_add", Effect.ACCEPTS_ADMIN_RISK),
+    _action("plugin.index_remove", Effect.ACCEPTS_ADMIN_RISK),
     # M6 L06 (D13, EF-SRC-019): enabling an isolated plugin runs third-party code on the
     # admin's word; a fresh session or the host CLI, never a key, and the in-process mode
     # keeps its typed phrase besides (CLI-only: no phrase crosses the wire)
@@ -207,6 +212,10 @@ _DECLARED = (
     # M6 L06: silencing a plugin is an admin gesture too (a plugin disabled in secret is a
     # silent outage), with its own name: the audit says what was done, not something else
     _action("plugin.disable_isolated", Effect.ACCEPTS_ADMIN_RISK),
+    # M6 L08 (EF-SRC-017 passe 8, GAP-8-13): moving the state, the settings and the secrets of
+    # a previous install to another signer's code is the admin's word, not the index's: the
+    # signature vouches for the bytes, never for the secrets they will read
+    _action("plugin.adopt_state", Effect.ACCEPTS_ADMIN_RISK),
 )
 
 RESERVED_ACTIONS: Mapping[str, ReservedAction] = MappingProxyType(

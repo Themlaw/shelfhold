@@ -20,12 +20,12 @@ from tests.integration.test_schema_migration_0002 import alembic_config
 
 pytestmark = pytest.mark.req("ENF-OPS-002", "EF-INT-010")
 
-HEAD_BEFORE = "0114"
+HEAD_BEFORE = "0111"
 USER = "01J00000000000000000000AA1"
 OTHER = "01J00000000000000000000AA2"
 
 
-def test_the_revision_is_0113_the_head_on_0114() -> None:
+def test_the_revision_is_0113_the_head_on_0111() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     assert script.get_revision("0113").down_revision == HEAD_BEFORE
@@ -95,7 +95,7 @@ def test_the_tables_arrive_with_their_constraints(settings: Settings) -> None:
             )
 
 
-def test_downgrade_to_0114_drops_the_tables(settings: Settings) -> None:
+def test_downgrade_to_0111_drops_the_tables(settings: Settings) -> None:
     migrate(settings)
     command.downgrade(alembic_config(settings.database_path), HEAD_BEFORE)
     with closing(sqlite3.connect(settings.database_path)) as conn:

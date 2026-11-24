@@ -8,8 +8,8 @@ sealed for: the token follows the origin it was linked for, never the plugin key
 that one tracker may be linked by one child profile: a row means allowed, no row means refused.
 Nothing existing is touched; reversible.
 
-Number: 0113 is the number the plan reserved for L13. `down_revision` is 0114, the head of
-main when the lot began; the numbers below 0113 are held by the other lots of the milestone,
+Number: 0113 is the number the plan reserved for L13. `down_revision` is 0111, the head of
+main when the lot merged; the numbers below 0113 are held by the other lots of the milestone,
 whichever of them merges first re-links the chain.
 """
 # ruff: noqa: E501  (the DDL is the one SQLAlchemy writes, kept as it is)
@@ -17,7 +17,7 @@ whichever of them merges first re-links the chain.
 from alembic import op
 
 revision = "0113"
-down_revision = "0114"
+down_revision = "0111"
 branch_labels = None
 depends_on = None
 

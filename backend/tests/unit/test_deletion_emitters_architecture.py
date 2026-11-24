@@ -186,6 +186,9 @@ EXPECTED_CLOSED = {
         "shelfhold/plugin_host/runner/server.py::RunnerServer.start",
         # a plugin's scratch folder in the companion's /tmp, removed when its connection ends
         "shelfhold/plugin_host/runner/server.py::RunnerServer._drop_scratch",
+        # the staged wheel of a signed index fetch (M6 L07): removed when the index's word
+        # does not hold; never a library path
+        "shelfhold/plugin_host/index/staging.py::discard_staged_wheel",
         f"{FSOPS}/probe.py::_remove_probe_dir",
         f"{FSOPS}/facade.py::Fsops.same_path_discard",  # L16: the staged copy, never served
     },

@@ -318,6 +318,8 @@ FRESHNESS_LINE = {
             "notify.profile_destination",  # M4 L39: an Apprise URL with a token, sealed
             "device_token.issue",  # M4 L46b: the secret of an e-reader is shown once
             "device_token.rotate",  # M5 L02: a new secret of an e-reader is shown once
+            "plugin.index_add",  # M6 L07: the signer of third-party code is pinned (D14)
+            "plugin.index_remove",  # M6 L07: unpinned, and the anti-rollback floor resets
             "oidc.link_own",  # M5 L03: a way in that outlives the session that added it
             "oidc.link_account",  # M5 L03: the admin adds one for another account
             "oidc.unlink_own",  # M5 L04: a stolen session must not cut the owner off
@@ -326,6 +328,7 @@ FRESHNESS_LINE = {
             "plugin.disable_isolated",  # M6 L06: silencing a plugin is an admin gesture too
             "tracker.link",  # M6 L13: a remote account's token is a secret, sealed
             "tracker.push_opt_in",  # M6 L13: the profile's reading goes out to the tracker
+            "plugin.adopt_state",  # M6 L08: a previous signer's held data moves on this word
         ),
         "p3",
     ),

@@ -51,6 +51,8 @@ REVISION_STATES = ("open", "applied", "dismissed")
 REVISION_DOORS = ("kavita_api", "rewrite", "forced_rewrite")  # `applied_via`, kept by the code
 ATTESTATION_FIELDS = ("content_trust", "publisher", "access_partitioning", "egress")
 SOURCE_SECRET_KINDS = ("secret", "cookies")  # a secret field of `settings_schema`, the cookie jar
+# What an index can revoke (M6 L07, EF-SRC-017): a plugin by its key, a wheel by its sha256
+REVOCATION_KINDS = ("plugin_key", "wheel_sha256")
 
 
 def _fk(
@@ -423,7 +425,11 @@ upstream_snapshot = sa.Table(
     sa.Index("ix_upstream_snapshot_series", "connected_service_id", "series_ref", "capability"),
 )
 
-# Third-party plugins are installed disabled (EF-SRC-019).
+# Third-party plugins are installed disabled (EF-SRC-019). Since M6 L08 (EF-SRC-017 passe 8,
+# GAP-8-13) the row also keeps the pin of an install from a signed index: the repository's URL
+# and the public key of its signer. A wheel the admin gave by hand has neither (the pin is the
+# admin's own act); a plugin installed from an index has both — and another signer publishing the
+# same key is a new install, never an update.
 plugin_install = sa.Table(
     "plugin_install",
     metadata,
@@ -434,9 +440,16 @@ plugin_install = sa.Table(
     sa.Column("sha256", sa.String(), nullable=False),
     bool_column("enabled", default=False),
     sa.Column("state_schema", sa.Integer(), nullable=True),
+    sa.Column("index_url", sa.Text(), nullable=True),
+    sa.Column("signer_pubkey", sa.Text(), nullable=True),
     now_column("installed_at"),
     prefixed_hash_check("sha256"),
     in_check("origin", PLUGIN_ORIGINS),
+    sa.CheckConstraint(
+        '("index_url" IS NULL AND "signer_pubkey" IS NULL)'
+        ' OR ("index_url" IS NOT NULL AND "signer_pubkey" IS NOT NULL)',
+        name="pin_paired",
+    ),
 )
 
 plugin_state = sa.Table(
@@ -493,6 +506,39 @@ plugin_attestation = sa.Table(
     sa.PrimaryKeyConstraint("plugin_key", "field"),
     in_check("field", ATTESTATION_FIELDS),
     sa.CheckConstraint("\"plugin_key\" <> ''", name="plugin_key_not_empty"),
+)
+
+# A repository of signed plugin indexes the admin pinned (M6 L07, EF-SRC-017, D14): by its URL
+# and by the public key of its signer, never on the repository's own word. `key_id` is the
+# fingerprint shown everywhere; `last_version` is the anti-rollback floor (a repository added
+# back starts from zero); `content_sha256` is the document of that number, so two indexes for
+# one version are refused. No repository is preconfigured.
+plugin_repo = sa.Table(
+    "plugin_repo",
+    metadata,
+    sa.Column("url", sa.Text(), primary_key=True),
+    sa.Column("pubkey", sa.Text(), nullable=False),
+    sa.Column("key_id", sa.String(16), nullable=False),
+    sa.Column("last_version", sa.Integer(), nullable=False, server_default="0"),
+    sa.Column("expires", UtcDateTime(), nullable=True),
+    sa.Column("content_sha256", sa.String(), nullable=True),
+    now_column("added_at"),
+    sa.CheckConstraint("\"pubkey\" <> ''", name="pubkey_not_empty"),
+    sa.CheckConstraint("\"key_id\" <> ''", name="key_id_not_empty"),
+    positive_check("last_version", minimum=0),
+    prefixed_hash_check("content_sha256"),
+)
+
+# A revocation seen in a signed index stays seen, even if a later index omits it (D14): a plugin
+# by its key, a wheel by its sha256. One row per revocation.
+plugin_revocation = sa.Table(
+    "plugin_revocation",
+    metadata,
+    sa.Column("kind", sa.String(), primary_key=True),
+    sa.Column("value", sa.Text(), primary_key=True),
+    now_column("seen_at"),
+    in_check("kind", REVOCATION_KINDS),
+    sa.CheckConstraint("\"value\" <> ''", name="value_not_empty"),
 )
 
 # One sealed value per source and field (EF-SRC-013, ENF-SEC-005): a secret field of the source's

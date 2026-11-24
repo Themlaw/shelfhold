@@ -74,7 +74,9 @@ def test_plugin_install_only_binary_require_hashes_no_deps(
     other = plugin_wheel(tmp_path, "other-plug", "other", probe, "other_plug")
     bad = cli.run("plugin", "install", str(other.path), "--sha256", "0" * 64)
     assert bad.returncode == 1 and "hash_mismatch" in bad.stderr
-    assert cli.run("plugin", "install", str(other.path)).returncode == 2  # --sha256 is required
+    missing = cli.run("plugin", "install", str(other.path))  # --sha256 is required
+    # refused, not a usage error: an install from a pinned index (L08) gives no --sha256
+    assert missing.returncode == 1 and "sha256" in missing.stderr
     assert not (site / "other_plug").exists()
     assert ("plugin.install_refused", "other_plug-1.0-py3-none-any.whl:hash_mismatch") in (
         cli.audit_actions()
