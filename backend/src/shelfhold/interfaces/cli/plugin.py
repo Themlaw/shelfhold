@@ -995,7 +995,7 @@ def run_migrate_to(args: argparse.Namespace, channel: OpsChannel) -> int:
         t(
             "plugin.migrated_to",
             moved=report["moved"],
-            key=key,
+            name=key,
             replacement=replacement,
         )
     )

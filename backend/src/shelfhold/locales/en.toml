@@ -304,7 +304,7 @@
   rollback_refused = "Rollback refused ({code}): {detail}"
   deprecated = "The index repository marks {name} as deprecated."
   deprecated_replaced = "The index repository marks {name} as deprecated: it names {replaced} as the replacement (a replacement is never installed by that word alone)."
-  migrated_to = "{moved, plural, one {# source of {key} moved to {replacement}} other {# sources of {key} moved to {replacement}}}."
+  migrated_to = "{moved, plural, one {# source of {name} moved to {replacement}} other {# sources of {name} moved to {replacement}}}."
   migration_blocked = "{blocked, plural, one {# source was held back by a tombstone: nothing was recreated for it.} other {# sources were held back by a tombstone: nothing was recreated for them.}}"
   orphaned = "{count, plural, one {# source binding is marked orphaned} other {# source bindings are marked orphaned}}: what they hold is intact, a reinstall of the same key reattaches them."
   reattached = "{count, plural, one {# orphaned binding reattached} other {# orphaned bindings reattached}}."

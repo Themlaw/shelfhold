@@ -54,6 +54,7 @@ if TYPE_CHECKING:  # the index package's __init__ imports its service, which imp
 from shelfhold import __version__ as HOST_VERSION
 
 __all__ = [
+    "HOST_VERSION",
     "InstallRow",
     "PluginLifecycleError",
     "announce_incompatible",
