@@ -120,7 +120,7 @@ class PluginMigrationOps:
         # After the lock is let go (the tombstones write in their own transactions): the new
         # forms are sealed, and the hits told. A cut in between leaves the migration to be made
         # again: the forms still to seal are the same ones, so a rerun finishes the job.
-        self._seal(key, replacement, items, blocked)
+        self._seal(service, key, replacement, items, blocked)
         if blocked:  # after the lock is let go, like every migration that tells its hits
             service.announce_hits(["series_binding"])
         return {"moved": len(moved), "blocked": len(blocked)}
@@ -241,20 +241,30 @@ class PluginMigrationOps:
                 .values(plugin_id=replacement)
             )
 
-    def _seal(self, key: str, replacement: str, items: list[Any], blocked: set[str]) -> None:
+    def _seal(
+        self,
+        service: TombstoneService,
+        key: str,
+        replacement: str,
+        items: list[Any],
+        blocked: set[str],
+    ) -> None:
         """One more tombstone of the same scope (`series_binding`), sealed like the others, on
         each new form of an erased series of the old key and of a line a tombstone held back:
         the replacement acquires nothing the old plugin had lost. The origins are the tokens of
-        the tombstones each new form comes from: lifting one of them lifts this one."""
+        the tombstones each new form comes from: lifting one of them lifts this one. The reads
+        come from the migration's own replayed service (the long-lived one may not have seen a
+        purge another process laid); the record goes through the write context, like every
+        tombstone the host writes."""
         with self._comp.write_context() as w:
-            sources = w.tombstones.erased_series_sources(key)
+            sources = service.erased_series_sources(key)
             erased = {
                 (source, remote)
                 for source in sources
-                for remote in w.tombstones.erased_series_refs(key, source)
+                for remote in service.erased_series_refs(key, source)
             }
             forms: dict[tuple[str, str, str], list[str]] = {
-                (replacement, source, remote): w.tombstones.origin_tokens(
+                (replacement, source, remote): service.origin_tokens(
                     SeriesBindingRef(key, source, remote)
                 )
                 for source, remote in erased
@@ -268,7 +278,7 @@ class PluginMigrationOps:
                     token
                     for source, remote in sorted(erased)
                     if (safe_fold(source), safe_fold(remote)) in family
-                    for token in w.tombstones.origin_tokens(SeriesBindingRef(key, source, remote))
+                    for token in service.origin_tokens(SeriesBindingRef(key, source, remote))
                 ]
             if not forms:
                 return
@@ -279,9 +289,9 @@ class PluginMigrationOps:
                 for r in w.loaded.roots
                 if r.mode is PathMode.RW
             ]
-            for (plugin_id, source_key, remote_id), origins in forms.items():
-                values = SeriesBindingRef(plugin_id, source_key, remote_id)
-                if not w.tombstones.has_values(values):
+            for form, origins in forms.items():
+                values = SeriesBindingRef(*form)
+                if not service.has_values(values):
                     w.tombstones.record(values, roots, reason="new_form", origins=origins)
 
     def _alias_edges(self, key: str) -> list[tuple[str, str, str, str]]:
