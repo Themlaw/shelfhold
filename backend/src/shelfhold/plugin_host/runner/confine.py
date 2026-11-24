@@ -291,6 +291,16 @@ _SIGNALS: dict[str, dict[str, int]] = {
     "aarch64": {"kill": 129, "tkill": 130, "tgkill": 131, "rt_sigqueueinfo": 138,
                 "rt_tgsigqueueinfo": 240, "pidfd_send_signal": 424},
 }  # fmt: skip
+# The kernel signals on a plugin's behalf too: a descriptor whose owner is set (`F_SETOWN`,
+# `F_SETOWN_EX`, `FIOSETOWN`, `SIOCSPGRP`) gets `SIGIO` (or `F_SETSIG`'s signal) sent to that owner,
+# checked on the uid only. These commands are refused with `EPERM` (the first argument after the
+# descriptor is the command).
+_OWNERS: dict[str, dict[str, int]] = {
+    "x86_64": {"fcntl": 72, "ioctl": 16},
+    "aarch64": {"fcntl": 25, "ioctl": 29},
+}
+_OWNER_COMMANDS = {"fcntl": (8, 15), "ioctl": (0x8901, 0x8902)}  # F_SETOWN(_EX); FIOSETOWN, SIOCSPGRP
+_ARG1 = 24  # seccomp_data.args[1], its low word
 _SIGNAL_NEVER = ("tkill", "pidfd_send_signal")
 _SIGNAL_OR_GROUP = ("kill",)  # the others take a process id (a group id only for `kill`)
 _BPF_LD_W_ABS, _BPF_JEQ_K, _BPF_JGE_K, _BPF_RET_K = 0x20, 0x15, 0x35, 0x06
@@ -342,6 +352,13 @@ def build_program(arch: str, own_pid: int | None = None) -> bytes:
                 code.append((_BPF_JEQ_K, "allow", 0, 0))
                 code.append((_BPF_JEQ_K, "allow", 0, (-own_pid) & 0xFFFFFFFF))
             code.append((_BPF_RET_K, 0, 0, _RET_ERRNO | errno.EPERM))
+            labels[label] = len(code)
+        for name, commands in _OWNER_COMMANDS.items():
+            label = f"after_{name}"
+            code.append((_BPF_JEQ_K, 0, label, _OWNERS[arch][name]))
+            code.append((_BPF_LD_W_ABS, 0, 0, _ARG1))
+            code += [(_BPF_JEQ_K, "eperm", 0, command) for command in commands]
+            code.append((_BPF_RET_K, 0, 0, _RET_ALLOW))  # any other command of the call
             labels[label] = len(code)
     code.append((_BPF_RET_K, 0, 0, _RET_ALLOW))
     labels["allow"] = len(code) - 1
@@ -418,7 +435,8 @@ def seccomp_ready() -> bool:
 
 _PROBE = """
 import os, signal, sys
-secret, scratch = sys.argv[1], sys.argv[2]
+import fcntl
+secret, scratch, fallback = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
 out = []
 def tried(name, action):
     try:
@@ -427,6 +445,9 @@ def tried(name, action):
     except OSError:
         pass
 tried("signal the companion", lambda: os.kill(os.getppid(), 0))
+if fallback:  # where Landlock scopes the signals, setting an owner is harmless: it is not delivered
+    tried("make the companion the owner of a descriptor",
+          lambda: fcntl.fcntl(sys.stdin.fileno(), 8, os.getppid()))
 tried("read another's file", lambda: open(secret, "rb").read(1))
 tried("list another's folder", lambda: os.listdir(os.path.dirname(secret)))
 tried("empty another's file", lambda: os.truncate(secret, 0))
@@ -458,7 +479,7 @@ def unconfined_actions() -> tuple[str, ...]:
 
                 try:
                     done = subprocess.run(  # noqa: S603
-                        [sys.executable, "-I", "-c", _PROBE, str(secret), scratch],
+                        [sys.executable, "-I", "-c", _PROBE, str(secret), scratch, "1" if filt._signals else "0"],
                         preexec_fn=bind,
                         start_new_session=True,
                         capture_output=True,

@@ -271,7 +271,7 @@ class RunnerServer:
             return await spawn_stdio(
                 self._argv(request.entry),
                 limits=self._limits(request),
-                extra_env={"TMPDIR": str(scratch)},
+                extra_env={"TMPDIR": str(scratch), "HOME": str(scratch)},
                 confine=bind,
                 max_tasks=self._config.max_tasks,
             )

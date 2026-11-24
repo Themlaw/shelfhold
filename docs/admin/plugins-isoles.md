@@ -41,7 +41,7 @@ Sans lui, aucun plugin isolé ne démarre ; l'ancien mode (en processus, derriè
   le tient (`SIGNAL`, `ABSTRACT_UNIX_SOCKET`) ; avant, le filtre seccomp refuse `kill`, `tkill`,
   `tgkill`, `rt_sigqueueinfo`, `rt_tgsigqueueinfo` et `pidfd_send_signal` vers tout processus autre
   que lui-même et son groupe (un enfant se signale donc par son groupe, `killpg`). Chaque processus
-  de plugin a aussi un plafond de processus (`RLIMIT_NPROC`, 512) et de taille de fichier
+  de plugin a aussi un plafond de processus (`RLIMIT_NPROC`, 64, sous les 128 processus du conteneur : le compagnon garde de quoi lancer un plugin pendant qu'un autre « fork-bombe ») et de taille de fichier
   (`RLIMIT_FSIZE`, 256 Mio). Avec un noyau qui offre
   l'ABI 4 de Landlock (6.7 ou plus), il ne peut pas non plus ouvrir de connexion TCP : une seconde
   barrière réseau derrière `network_mode: none`.
@@ -94,7 +94,7 @@ démarrer** (code de sortie 3, rien d'ouvert) si :
    (il ne doit ni signaler le compagnon, ni lire le dossier d'un autre, ni vider un fichier) ;
 7. `/var/run/docker.sock` ou `/run/docker.sock` est visible ;
 8. le filtre seccomp ne peut pas être posé (architecture inconnue, ou noyau/profil qui l'interdit) ;
-9. `/plugins` contient autre chose que `site-packages` et l'état (`state.json`) : c'est le signe
+9. `/plugins` contient autre chose que `site-packages`, l'état (`state.json`) et les dossiers du cœur (`index`, `wheels`, `previous`) : c'est le signe
    d'un montage trop large, `./data:/plugins` par exemple.
 
 Le **contrôle de santé** du conteneur (`shelfhold plugin-runner --healthcheck`) vérifie aussi que le

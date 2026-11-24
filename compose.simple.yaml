@@ -45,7 +45,7 @@ services:
   # A data folder or a named volume made by an earlier version keeps the modes it had: the companion
   # (same image, another uid) must not read /data and /store, so run once, as the core:
   #   docker compose exec shelfhold chmod 700 /data /store
-  # The companion also needs a kernel with Landlock (5.13 or later; `cat /sys/kernel/security/lsm`
+  # The companion also needs a kernel with Landlock ABI 3 or later (kernel 6.2 or later; `cat /sys/kernel/security/lsm`
   # lists it) and refuses to start without it, whatever the rest.
   # >>> plugin-runner service
   # plugin-runner:

@@ -135,16 +135,20 @@ print(out)
 @needs_seccomp
 def test_fallback_seccomp_breaks_ordinary_child_handling() -> None:
     """Repli : un plugin ne peut plus arrêter un sous-processus qu'il a lancé (timeout de
-    subprocess.run, Popen.terminate), et un processus forké ne peut plus se signaler lui-même."""
+    subprocess.run, Popen.terminate), et un processus forké ne peut plus se signaler lui-même :
+    comportement accepté, documenté pour les auteurs."""
     filt = confine.Filter(signals=True)
     done = subprocess.run(  # noqa: S603
         [sys.executable, "-I", "-c", CHILDREN], preexec_fn=filt.install,
         start_new_session=True, capture_output=True, text=True, timeout=60, check=False,
     )  # fmt: skip
     seen = ast.literal_eval(done.stdout.strip() or "{}") or {"stderr": done.stderr}
-    assert seen.get("subprocess_timeout") == "TimeoutExpired", seen
-    assert seen.get("terminate") == "ok", seen
-    assert seen.get("forked_raise") == "ok", seen
+    # Décision R2 (docs/decisions/M6.md, docs/plugins/isolation.md) : BPF ne peut pas exprimer
+    # « mes descendants », donc dans le repli un plugin ne signale ses sous-processus que par
+    # killpg ; ces trois cas lèvent PermissionError, comportement accepté et documenté.
+    assert seen.get("subprocess_timeout") == "PermissionError", seen
+    assert seen.get("terminate") == "PermissionError", seen
+    assert seen.get("forked_raise") == "PermissionError", seen
 
 
 # -- régression de la liste de lecture : /etc/passwd fermé --------------------------------
