@@ -220,6 +220,9 @@ _DECLARED = (
     # longer vouches for back in the library — the admin's word, a fresh session or the host
     # CLI, never a key
     _action("plugin.rollback", Effect.ACCEPTS_ADMIN_RISK),
+    # M6 L09b (EF-BIB-054 (4), EF-SRC-030): a plugin's sources move to the replacement its
+    # index named — an identity migration through the tombstones, the admin's word, never a key
+    _action("plugin.migrate_to", Effect.MIGRATES_IDENTITY),
 )
 
 RESERVED_ACTIONS: Mapping[str, ReservedAction] = MappingProxyType(

@@ -42,7 +42,10 @@ VISIBILITIES: Final = ("private", "household", "ops")
 _ULID: Final = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}\Z")
 _CODE: Final = re.compile(r"[a-z][a-z0-9_]*(?:[.:-][a-z0-9_]+)*\Z")
 _ENUM_KEYS: Final = ("reason", "kind", "state", "code", "error_code", "scope", "volume")
-_FREE_CODE_KEYS: Final = frozenset({"job_kind"})  # a job kind is named in code, never typed in
+_FREE_CODE_KEYS: Final = frozenset({"job_kind"})  # named in code, never typed in
+# A free-code key only one event family takes: `plugin` names a plugin key, and no event
+# outside `plugin.*` may carry one (ENF-SEC-015: the guard is not widened to the whole bus)
+_FAMILY_CODE_KEYS: Final[Mapping[str, str]] = MappingProxyType({"plugin": "plugin."})
 GENERIC_REASONS: Final = frozenset(
     {
         "unreachable", "timeout", "unauthorized", "forbidden", "not_found", "http_503",
@@ -71,6 +74,8 @@ USER_FIELDS: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
 _USER_KEY: Final = re.compile(r"(?:user|actor|requester|owner|subject|profile)_id\Z|by\Z")
 
 PAYLOAD_ENUMS: Final[dict[str, dict[str, frozenset[str]]]] = {
+    # M6 L09b (EF-SRC-030): why a host upgrade left an installed plugin behind
+    "plugin.incompatible": {"reason": frozenset({"api", "min_host"})},
     "notify.failed": {"reason": frozenset({"retries_exhausted"})},
     # the most frequent reason of a night's failed copies to /store (`SafeguardFailedError.reason`)
     "unit.safeguard_failed": {
@@ -267,7 +272,9 @@ def check_payload(payload: Mapping[str, object], event_type: str | None = None) 
             allowed = PAYLOAD_ENUMS.get(event_type or "", {}).get(key, _DEFAULT_ENUMS[key])
             if value not in allowed:
                 raise EventPayloadError(f"{key} is not one of the values of this event type")
-        elif key in _FREE_CODE_KEYS:
+        elif key in _FREE_CODE_KEYS or (
+            key in _FAMILY_CODE_KEYS and (event_type or "").startswith(_FAMILY_CODE_KEYS[key])
+        ):
             if len(value) > _MAX_CODE or not _CODE.fullmatch(value):
                 raise EventPayloadError(f"{key} must be a lowercase code")
         else:

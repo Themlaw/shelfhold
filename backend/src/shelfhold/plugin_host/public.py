@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import structlog
 
@@ -47,6 +47,8 @@ __all__ = [
     "publisher_attested",
     "start_plugins",
 ]
+
+_LOADED_STATUSES = frozenset({PluginStatus.LOADED, PluginStatus.LOADED_SHIM})
 
 
 @dataclass(frozen=True)
@@ -117,19 +119,88 @@ def start_plugins(
     registry = PluginRegistry(
         active_keys=plugin_state.active_sources, granted_distributions=granted
     )
-    records = registry.load_all(
-        [
-            *first_party_candidates(),
-            *first_party_native_candidates(),  # shipped with the host, off until enabled
-            *third_party_candidates(layout.site, installed, blocked=blocked),
+    candidates = [
+        *first_party_candidates(),
+        *first_party_native_candidates(),  # shipped with the host, off until enabled
+        *third_party_candidates(layout.site, installed, blocked=blocked),
+    ]
+    # M6 L09b (EF-SRC-030): a plugin a host upgrade left behind is neither imported nor migrated
+    # — the judgement is read before anything loads, and the candidate is blocked with its reason
+    for key, reason in _judged_against_the_host(settings).items():
+        candidates = [
+            replace(c, blocked=f"{reason}: this host cannot run the plugin") if c.key == key else c
+            for c in candidates
         ]
-    )
+    records = registry.load_all(candidates)
+    _judge_against_the_host(settings, registry, records)
     log = structlog.get_logger()
-    for record in records:
+    for record in registry.records:  # re-read: the judgement may have marked records
         log.info(
             "plugin.third_party", key=record.key, status=record.status.value, reason=record.reason
         )
     return registry, records
+
+
+def _judged_against_the_host(settings: Settings) -> dict[str, str]:
+    """The installed plugins a host upgrade left behind, each with its closed reason. Nothing is
+    judged without the host's database: no engine, no judgement."""
+    database = getattr(settings, "database_path", None)  # a caller may know only the data dir
+    if database is None or not database.exists():
+        return {}
+    from shelfhold_sdk.models import API_VERSION
+
+    from shelfhold.infrastructure.db import create_db_engine
+    from shelfhold.plugin_host import lifecycle
+
+    engine = create_db_engine(database)
+    try:
+        return lifecycle.incompatible_installed(
+            engine, host_version=lifecycle.HOST_VERSION, api_version=API_VERSION
+        )
+    finally:
+        engine.dispose()
+
+
+def _judge_against_the_host(
+    settings: Settings, registry: PluginRegistry, records: list[PluginRecord]
+) -> None:
+    """What a host upgrade leaves behind, judged at start-up (EF-SRC-030): an installed plugin
+    out of `min_host` or `api` is marked incompatible, and the state a loaded third-party
+    plugin cannot read yet is migrated by its own `migrate_state` before its first call — a
+    plugin whose state cannot be migrated is marked, never called, and the start-up itself goes
+    on. Nothing is judged without the host's database: no engine, no judgement."""
+    database = getattr(settings, "database_path", None)  # a caller may know only the data dir
+    if database is None or not database.exists():
+        return
+    from shelfhold.infrastructure.db import create_db_engine
+    from shelfhold.plugin_host import state
+
+    engine = create_db_engine(database)
+    try:
+        for key, reason in _judged_against_the_host(settings).items():
+            registry.mark_incompatible(key, f"{reason}: this host cannot run the plugin")
+        versions = installed_versions(settings)
+        for record in records:
+            # the registry is re-read for each key: marking a plugin incompatible above may
+            # have replaced the record this list still holds, and a plugin so marked is never
+            # migrated — its code is not called at all
+            current = registry.get(record.key) or record
+            if (
+                current.origin is not PluginOrigin.THIRD_PARTY
+                or current.status not in _LOADED_STATUSES
+                or current.manifest is None
+                or current.instance is None
+            ):
+                continue
+            version = versions.get(current.key)
+            if version is None:
+                continue
+            try:
+                state.migrate_documents(engine, current.key, current.instance, version.version)
+            except state.PluginStateError as exc:
+                registry.mark_incompatible(current.key, f"state {exc.code}: {exc.detail}")
+    finally:
+        engine.dispose()
 
 
 def installed_keys(layout: Layout) -> frozenset[str]:

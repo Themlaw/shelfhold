@@ -63,6 +63,7 @@ from shelfhold.ops.maintenance import MaintenanceOps
 from shelfhold.ops.meta import MetaOps
 from shelfhold.ops.normalize import NormalizeOps
 from shelfhold.ops.page_formats import PageNormalizeOps
+from shelfhold.ops.plugin_migration import PluginMigrationOps
 from shelfhold.ops.rating import RatingOps
 from shelfhold.ops.requests import build_service
 from shelfhold.ops.resplit import ResplitOps
@@ -167,6 +168,7 @@ def open_ops(
         assembly=VolumeAssemblyOps(composition),
         normalize=NormalizeOps(composition),
         source_migration=SourceMigrationOps(composition), meta=MetaOps(composition),
+        plugin_migration=PluginMigrationOps(composition),
         series_migration=SeriesMigrationOps(composition),
         content=ContentOps(composition),
         rating=RatingOps(engine, clock, fresh_auth_s=settings.fresh_auth_s),

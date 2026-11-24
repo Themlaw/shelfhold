@@ -1203,6 +1203,13 @@ class TombstoneService:
             raise NotReplayedError("replay the tombstones before any migration")
         return self._index.series_plugins(source_key)
 
+    def erased_series_sources(self, plugin_id: str) -> list[str]:
+        """The sources this plugin has an erased series on (read in memory, never written): a
+        migration of the plugin's own key asks each of them, even with no live series left."""
+        if self._index is None:
+            raise NotReplayedError("replay the tombstones before any migration")
+        return self._index.series_sources(plugin_id)
+
     def screen_refs(
         self,
         rows: Iterable[tuple[str, Sequence[SeriesBindingRef | VariantRef]]],
