@@ -80,14 +80,21 @@ describe('Écran des trackers', () => {
   it('a child without authorization does not see the screen content', async () => {
     server.use(
       http.get(`${BASE}/api/v1/me`, () => HttpResponse.json({ id: 'k1', role: 'child', username: 'kid', nav: [] })),
-      http.get(`${BASE}/api/v1/profiles/k1/trackers`, () => HttpResponse.json({ items: [] })),
-      http.put(`${BASE}/api/v1/profiles/k1/trackers/${KEY}`, () => childRefused())
+      http.get(`${BASE}/api/v1/profiles/k1/trackers`, () => childRefused())
     );
     render(Page);
-    await screen.findByRole('heading', { name: 'Trackers', level: 1 });
-    await userEvent.type(screen.getByLabelText('Module'), KEY);
-    await userEvent.type(screen.getByLabelText('Jeton'), TOKEN);
-    await userEvent.click(screen.getByRole('button', { name: 'Lier' }));
-    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(await screen.findByText("Ce tracker n'est pas permis à un profil enfant.")).toBeTruthy();
+    expect(screen.queryByRole('form')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Lier' })).toBeNull();
+  });
+
+  it('an authorized child sees the screen', async () => {
+    server.use(
+      http.get(`${BASE}/api/v1/me`, () => HttpResponse.json({ id: 'k1', role: 'child', username: 'kid', nav: [] })),
+      http.get(`${BASE}/api/v1/profiles/k1/trackers`, () => HttpResponse.json({ items: [] }))
+    );
+    render(Page);
+    expect(await screen.findByRole('heading', { name: 'Trackers', level: 1 })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Lier' })).toBeTruthy();
   });
 });

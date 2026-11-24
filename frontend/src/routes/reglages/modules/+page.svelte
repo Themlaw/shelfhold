@@ -385,9 +385,9 @@
         <input id="attest-key" bind:value={attestKey} />
         <label for="attest-field">{t('modules.attest_field')}</label>
         <select id="attest-field" bind:value={attestField}>
-          <option value="content_trust">content_trust</option>
-          <option value="access_partitioning">access_partitioning</option>
-          <option value="egress">egress</option>
+          <option value="content_trust">{t('modules.field.content_trust')}</option>
+          <option value="access_partitioning">{t('modules.field.access_partitioning')}</option>
+          <option value="egress">{t('modules.field.egress')}</option>
         </select>
         <label for="attest-value">{t('modules.attest_value')}</label>
         <input id="attest-value" bind:value={attestValue} />

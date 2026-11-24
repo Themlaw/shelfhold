@@ -1234,5 +1234,8 @@
   "trackers.link": "Link a tracker",
   "trackers.plugin_key": "Module",
   "trackers.token": "Token",
-  "trackers.link_action": "Link"
+  "trackers.link_action": "Link",
+  "modules.field.content_trust": "Content trust",
+  "modules.field.access_partitioning": "Access partitioning",
+  "modules.field.egress": "Egress"
 }

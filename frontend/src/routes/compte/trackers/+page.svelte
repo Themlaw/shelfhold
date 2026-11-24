@@ -12,8 +12,9 @@
   import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
 
   let userId = $state('');
+  let role = $state('');
   let links = $state<LinkItem[]>([]);
-  let adminOnly = $state(false);
+  let notAllowed = $state(false);
   let failed = $state(false);
   let notice = $state<{ text: string; kind: 'status' | 'alert' } | null>(null);
   let busy = $state(false);
@@ -42,6 +43,7 @@
     try {
       const { data: meData } = await me({ throwOnError: true });
       userId = meData.id;
+      role = meData.role;
     } catch {
       failed = true;
       say(t('trackers.error'), 'alert');
@@ -49,8 +51,15 @@
     }
     const { data, error } = await listLinks({ path: { user_id: userId }, throwOnError: false });
     if (error) {
-      adminOnly = isForbidden(error);
-      say(adminOnly ? t('screens.admin_only') : t('trackers.error'), 'alert');
+      if (isForbidden(error)) {
+        if (role === 'child') {
+          notAllowed = true;
+        } else {
+          say(t('screens.admin_only'), 'alert');
+        }
+      } else {
+        say(t('trackers.error'), 'alert');
+      }
       return;
     }
     links = data?.items ?? [];
@@ -158,7 +167,9 @@
 <main class="form-screen">
   <h1>{t('trackers.title')}</h1>
 
-  {#if failed}
+  {#if notAllowed}
+    <p role="alert">{t('trackers.child_refused')}</p>
+  {:else if failed}
     <p role="alert">{t('trackers.error')}</p>
   {:else}
     {#if links.length === 0}

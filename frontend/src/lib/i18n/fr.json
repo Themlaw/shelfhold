@@ -1234,5 +1234,8 @@
   "trackers.link": "Lier un tracker",
   "trackers.plugin_key": "Module",
   "trackers.token": "Jeton",
-  "trackers.link_action": "Lier"
+  "trackers.link_action": "Lier",
+  "modules.field.content_trust": "Confiance du contenu",
+  "modules.field.access_partitioning": "Partitionnement d'accès",
+  "modules.field.egress": "Sortie"
 }

@@ -89,22 +89,25 @@ describe('Écran des modules', () => {
   });
 
   it('attests a value for a module', async () => {
+    let posted: Record<string, unknown> | null = null;
     server.use(
       http.get(`${BASE}/api/v1/plugin-repos`, () => HttpResponse.json({ items: [] })),
       http.get(`${BASE}/api/v1/plugins`, () =>
         HttpResponse.json({ items: [{ name: PLUGIN, version: '1.0.0', mode: 'isolated', status: 'enabled' }] })
       ),
       http.get(`${BASE}/api/v1/plugins/${PLUGIN}/attestations`, () =>
-        HttpResponse.json({ items: [{ plugin_key: PLUGIN, field: 'content_trust', value: 'publisher', plugin_version: '1.0.0', attested_at: '2026-11-01T00:00:00Z' }] })
+        HttpResponse.json({ items: posted ? [{ plugin_key: PLUGIN, field: 'content_trust', value: 'publisher', plugin_version: '1.0.0', attested_at: '2026-11-01T00:00:00Z' }] : [] })
       ),
-      http.post(`${BASE}/api/v1/plugins/${PLUGIN}/attestations`, () =>
-        HttpResponse.json({ plugin_key: PLUGIN, field: 'content_trust', value: 'publisher', plugin_version: '1.0.0', attested_at: '2026-11-01T00:00:00Z' })
-      )
+      http.post(`${BASE}/api/v1/plugins/${PLUGIN}/attestations`, async ({ request }) => {
+        posted = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ plugin_key: PLUGIN, field: 'content_trust', value: 'publisher', plugin_version: '1.0.0', attested_at: '2026-11-01T00:00:00Z' });
+      })
     );
     render(Page);
     await screen.findByRole('heading', { name: 'Modules', level: 1 });
     await userEvent.type(screen.getByLabelText('Module'), PLUGIN);
     await userEvent.click(screen.getByRole('button', { name: 'Attester' }));
+    expect(posted).toMatchObject({ field: 'content_trust', value: 'publisher' });
     expect(await screen.findByText(/content_trust: publisher/)).toBeTruthy();
   });
 
@@ -124,6 +127,8 @@ describe('Écran des modules', () => {
   });
 
   it('updates, pins and rolls back a module', async () => {
+    let pinned = false;
+    let unpinned = false;
     server.use(
       http.get(`${BASE}/api/v1/plugin-repos`, () => HttpResponse.json({ items: [] })),
       http.get(`${BASE}/api/v1/plugins`, () =>
@@ -133,15 +138,23 @@ describe('Écran des modules', () => {
       http.post(`${BASE}/api/v1/plugins/${PLUGIN}/update`, () =>
         HttpResponse.json({ name: PLUGIN, version: '1.1.0', mode: 'isolated', status: 'enabled' })
       ),
-      http.post(`${BASE}/api/v1/plugins/${PLUGIN}/pin`, () =>
-        HttpResponse.json({ name: PLUGIN, version: '1.1.0', mode: 'isolated', status: 'enabled' })
-      ),
+      http.post(`${BASE}/api/v1/plugins/${PLUGIN}/pin`, () => {
+        pinned = true;
+        return HttpResponse.json({ name: PLUGIN, version: '1.1.0', mode: 'isolated', status: 'enabled' });
+      }),
+      http.delete(`${BASE}/api/v1/plugins/${PLUGIN}/pin`, () => {
+        unpinned = true;
+        return HttpResponse.json({ name: PLUGIN, version: '1.1.0', mode: 'isolated', status: 'enabled' });
+      }),
       http.post(`${BASE}/api/v1/plugins/${PLUGIN}/rollback`, () => stale())
     );
     render(Page);
     await userEvent.click(await screen.findByRole('button', { name: 'Mettre à jour' }));
     expect(await screen.findByText('1.1.0')).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: 'Épingler' }));
+    expect(pinned).toBe(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Désépingler' }));
+    expect(unpinned).toBe(true);
     await userEvent.click(screen.getByRole('button', { name: 'Retour arrière' }));
     expect(await screen.findByRole('region', { name: 'Confirmez votre identité' })).toBeTruthy();
   });
