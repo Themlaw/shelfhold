@@ -413,7 +413,11 @@ def create_app(
 
             async def _connect(key: str = key, entry: str = entry) -> Any:
                 channel = await connect_runner(socket_path, key=key, entry=entry, limits=limits)
-                return await RpcSession.open(channel, key=key, limits=limits, on_event=_sink)
+                try:
+                    return await RpcSession.open(channel, key=key, limits=limits, on_event=_sink)
+                except BaseException:
+                    await channel.close()
+                    raise
 
             try:
                 await registry.load_isolated(key, PluginOrigin.THIRD_PARTY, _connect)

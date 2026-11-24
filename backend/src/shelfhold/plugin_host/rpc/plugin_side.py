@@ -156,6 +156,10 @@ def _dumps(value: Any) -> str:
     return json.dumps(value)
 
 
+# When run as `python -m`, register this module under its dotted name so a plugin that
+# imports it reaches the same `_WIRE` instance (the one `serve()` assigns).
+sys.modules.setdefault("shelfhold.plugin_host.rpc.plugin_side", sys.modules[__name__])
+
 _WIRE: _Wire | None = None
 
 

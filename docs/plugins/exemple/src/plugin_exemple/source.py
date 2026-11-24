@@ -127,9 +127,16 @@ class ExampleSource:
         sub: str | None = None,
     ) -> Page[SeriesRef]:
         books = await self._catalog(f)
+        if not books:
+            try:
+                from shelfhold.plugin_host.rpc import plugin_side as _plugin_side
+
+                await _plugin_side.publish_event("catalogue_stale", {})
+            except Exception:  # noqa: S110
+                pass
         needle = (q or "").casefold()
         items = [self._series(b) for b in books if needle in str(b["title"]).casefold()]
-        if not items:
+        if not items and books:
             items = [self._series(b) for b in books]
         return Page[SeriesRef](items=items, next=None)
 
@@ -153,7 +160,8 @@ class ExampleSource:
         book = await self._book(f, target.series)
         units = self._units(book)
         window = [
-            u for u in units
+            u
+            for u in units
             if target.first.source_order <= u.source_order <= target.last.source_order
         ]
         if not window:
@@ -214,5 +222,5 @@ class ExampleSource:
     async def blocking_update_filters(self, f: Fetcher) -> list[str]:
         return []
 
-    def reinstall(self) -> "ExampleSource":
+    def reinstall(self) -> ExampleSource:
         return ExampleSource()
