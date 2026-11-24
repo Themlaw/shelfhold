@@ -2,6 +2,64 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
+## 1.3.0 - à paraître
+
+Clôture de M6 : plugins tiers isolés et index signé, SDK 2.0 publié sur PyPI, trackers, synchronisation Kobo minimale, dossier Kobo et KEPUB, caches et quotas, écrans (modules, trackers, webhooks, « Même œuvre ? »), copies hors ligne pour tout profil, annulation d'une marque de lecture, Komga (relais de scan, audit quotidien, preuve fraîche), une seule requête « lu ailleurs ». Aucune candidate publiée.
+
+### Ajouté
+
+- **Plugins tiers isolés et compagnon (M6 L04, L05, L06, EF-SRC-016, ENF-SEC-009)** : fil `rpc_protocol` 1 (JSON-RPC à préfixe de longueur) entre le cœur et un plugin isolé ; compagnon `plugin-runner` sous un uid distinct, sans `/data`, sans socket CLI, sans réseau, en lecture seule, un sous-processus par plugin, auto-contrôle au démarrage ; compose et compose e2e. Garde sous les noms de la spécification dans les deux modes : isolé par défaut, activer un plugin isolé est une action réservée, le mode intégré reste derrière un drapeau ; attestation appliquée aux plugins isolés.
+- **Index de plugins signé (M6 L07, L08, EF-SRC-017, D14)** : signature minisign avec commentaire signé, version monotone, expiration, sha256, révocation, rotation ; installation depuis l'index, clé épinglée à son signataire (un nouveau signataire = une nouvelle installation), état et secrets déplacés seulement après confirmation.
+- **Cycle de vie d'un plugin (M6 L09a, L09b)** : mise à jour, épinglage, retour arrière, désinstallation ; liaisons orphelines signalées sans perte de contenu ; migrations d'état et montée de version de l'hôte (`migrate_state`), refus du retour arrière sur un état plus récent, drapeau d'incompatibilité ABI, `replaced_by` à travers les tombstones.
+- **Exemple et chemin d'auteur (M6 L10, L11)** : exemple de plugin tiers installé depuis un index signé et exécuté isolé ; le kit passe dans les deux modes ; le cœur démarre les plugins isolés autorisés. Chemin d'auteur complet : publication, enregistrement et hébergement d'index, qui signe, `deprecated`/`replaced_by`/`min_host`, `migrate_state`, licence.
+- **SDK 2.0 (M6 L02, L03)** : `shelfhold-sdk` 2.0 comme distribution propre (MIT), publié sur PyPI par publication de confiance (OIDC, environnements protégés, attestations PEP 740), essai à blanc sur chaque PR.
+- **Contrat `Tracker` et hôte (M6 L13, EF-INT-010, D18, D-P6)** : `link`, `push_progress`, `pull` ; hôte lié par profil, opt-in pour la poussée, tirée comme indice ; jeton distant scellé ; aucune marque « lu » écrite par la tirée.
+- **Émulation de synchronisation Kobo, surface minimale (M6 L17a, EF-INT-012, D20)** : jeton d'appareil dans le chemin, initialisation, synchronisation de la bibliothèque page par page ; trois routes réelles et un attrape-tout ; l'état de lecture GET/PUT, le KEPUB et les couvertures en cache et le proxy du store sont reportés.
+- **Dossier Kobo (M6 L16)** : destination qui écrit un arbre de `.kepub.epub` depuis le dérivé neutralisé.
+- **Rétention et quotas des caches dérivés (M6 L12, EF-BIB-018, D17)** : balayage quotidien de `/data`, éviction protégée par une allowlist fermée, état dans `shelfhold status` et la page Santé, neuf réglages `SHELFHOLD_CACHE_*`.
+- **Écran des modules (M6 L15)** : index, installation, activation, attestation, carte de confiance, mise à jour, épinglage et retour arrière ; écran des trackers d'un profil.
+- **Écran des webhooks (M6 L23b)** : liste, création, rotation, suppression, dernières livraisons.
+- **Rotation du secret d'un webhook (M6 L23a, EF-INT-005, D23)** : fenêtre de deux signatures pendant 24 h, événement `webhook.dead`.
+- **Écran « Même œuvre ? » (M6 L24, EF-BIB-029)** : proposition, plan de fusion par l'API existante, tombstones consultés.
+- **Copies hors ligne pour tout profil (M6 L20, D-P7 (b))** : bouton dans le lecteur, verrou entre onglets, base orpheline effacée, `/hors-ligne` à jour en direct.
+- **Annulation d'une marque de lecture (M6 L18, EF-LEC-014, D21)** : route et écran, le membre pour lui-même, l'administrateur pour un enfant ; journalisée, propagée à la destination.
+- **Étagère de l'enfant remplie à l'arrivée (M6 L21, EF-USR-020)** : un livre demandé atterrit sur l'étagère de lecture de l'enfant à son arrivée.
+- **Komga (M6 L22, EF-EXP-020, EF-EXP-047, ENF-SEC-016)** : relais de scan de la passe, audit quotidien des comptes, preuve fraîche pour un lien familial ; conflits de disposition au rattachement.
+- **Une seule requête « lu ailleurs » (M6 L19, EF-LEC-008, EF-INT-007)** : définition unique dans `content_access`, `target` par type de destination, PSE selon D-P7a ; `open_urls` par profil.
+- **Textes et documentation (M6 L26)** : textes M6 (fr, en) pour tout le code nouveau ; index, trackers, Kobo, caches, hors ligne.
+- **Dettes de M6 (M6 L25)** : allowlist vidée ou déplacée vers des déclencheurs écrits, méthodes CWA inutilisées retirées, EF-INT-012 soldée, traçabilité à 100 %.
+
+### Modifié
+
+- **Performance de l'export** : le miroir d'une série est écrit une fois par plan, les alias une fois par passe ; la version d'étape d'un apply parcourt les lignes de l'étagère ; le banc du dossier natif mesure sa propre passe.
+- **Komga** : une liaison Komga qui posséderait l'arbre est refusée (`binding.komga_layout_conflict`) ; le rendu n'est jamais réécrit.
+- **PSE** : n'applique plus la règle « lu ailleurs » et ne la demande plus (D-P7a) ; un volume d'une page redevient un flux.
+- **`open_urls`** : par profil, l'adresse est portée par l'entrée (`ContinueItemOut.open_url`), plus de `kavita_url`.
+- **Allowlist de joignabilité** : aucune entrée `until = "M6"` ne reste ; les entrées restantes portent un déclencheur écrit.
+
+### Sécurité
+
+- Plugins isolés : sous-processus distinct, pas de `/data`, pas de réseau, lecture seule, attestation appliquée ; activer un plugin isolé est une action réservée.
+- Index signé : signature minisign, version monotone, révocation, rotation ; un nouveau signataire est une nouvelle installation.
+- Trackers : jeton scellé, jamais journalisé, jamais dans une réponse ; le plugin ne reçoit qu'une façade `get`/`post`.
+- Kobo : jeton dans le chemin, jamais journalisé, TLS requis pour `/kobo` ; un jeton d'une autre porte n'ouvre rien.
+- Caches : l'effaceur ne touche qu'un fichier régulier ou un lien, jamais un dossier ; chemin borné par une allowlist fermée.
+- Komga : preuve fraîche (36 h) pour un lien familial ; audit quotidien et à la demande.
+
+### Reporté en M7
+
+Aucun nouvel élément reporté ; les points ouverts restent dans « Limites connues » (essais sur appareil réel, second registre et miroir, revue de chevauchement sans réseau, relecture juridique de l'exception de plugin).
+
+### Limites connues
+
+- **Synchronisation Kobo** : surface minimale ; l'état de lecture GET/PUT, le KEPUB et les couvertures en cache et le proxy du store sont reportés ; l'usage passe par KOReader.
+- **Essais sur appareil réel** : KOReader, `/lite` depuis une Kobo et la lecture d'un EPUB sur téléphone ne sont prouvés en CI que par des vecteurs de requêtes ; D-P8 (b) garde trois exigences en `[[partial]]` (EF-LEC-009, EF-LEC-010, ENF-COMP-002).
+- **Second registre et miroir (ENF-GOV-004)** : le code est livré, la poussée réelle attend le compte et le secret ; la release part sur GHCR seul.
+- **Plugins en mode intégré** : la façade garde `_inner` ; la vraie frontière n'existe qu'en mode isolé.
+- **Copies hors ligne** : pas de verrou entre onglets sur le navigateur (une base orpheline d'un profil est possible, jamais ouverte par un autre profil) ; une copie déjà téléchargée n'est pas révocable à distance (R66).
+
+Migration : oui (0110 à 0117 depuis la 1.2.0), réversible : non (`shelfhold migrate` sauvegarde la base avant de migrer).
+
 ## 1.2.0 - à compléter (date de la release)
 
 Clôture de M5 : un lecteur intégré (images et EPUB) pour le contenu non exporté et pour « Lire un extrait », des liseuses mieux servies (jetons d'appareil enregistrés, kosync pour EPUB, OPDS-PSE, OPDS 2.0, KEPUB, page `/lite` sans JavaScript), la connexion OpenID Connect, l'application installable avec copies hors ligne. Reprend les changements de la candidate `1.2.0-rc.1`. **La date est celle de la release**, qui attend les essais sur appareil réel du porteur.
