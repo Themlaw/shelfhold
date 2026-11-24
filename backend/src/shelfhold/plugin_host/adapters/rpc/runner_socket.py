@@ -11,7 +11,6 @@ CLI's socket is used here.
 import asyncio
 import contextlib
 import os
-import socket
 import stat
 import struct
 from pathlib import Path
@@ -22,6 +21,9 @@ from shelfhold.plugin_host.rpc.protocol import Channel, PluginFailed, RpcError, 
 __all__ = ["DEFAULT_SOCKET", "RUNNER_UID", "RunnerRefused", "RunnerUnavailable", "connect_runner"]
 
 DEFAULT_SOCKET = "/plugin-rpc/runner.sock"
+# `socket.SOL_SOCKET` and `socket.SO_PEERCRED` on Linux (the only system the companion runs on):
+# written out so that this module imports no socket module (only the socket packages do)
+_SOL_SOCKET, _SO_PEERCRED = 1, 17
 RUNNER_UID = 1001  # the companion's uid in the image (ADR-0056): the one the core speaks to
 
 
@@ -37,7 +39,7 @@ def _listener_uid(writer: asyncio.StreamWriter) -> int | None:
     """The uid of the process that listens at the other end, from the kernel (`SO_PEERCRED`)."""
     sock = writer.get_extra_info("socket")
     try:
-        credentials = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
+        credentials = sock.getsockopt(_SOL_SOCKET, _SO_PEERCRED, struct.calcsize("3i"))
         return int(struct.unpack("3i", credentials)[1])
     except (AttributeError, OSError, struct.error):
         return None

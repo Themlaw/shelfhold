@@ -52,8 +52,16 @@ def _limits(limits: RpcLimits, tasks: int, confine: Callable[[], None] | None) -
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
     resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds + 1))
+    # a hard limit already set below the ceiling (a container's) is kept: it cannot be raised
+    hard_tasks = resource.getrlimit(resource.RLIMIT_NPROC)[1]
+    if hard_tasks != resource.RLIM_INFINITY:
+        tasks = min(tasks, hard_tasks)
     resource.setrlimit(resource.RLIMIT_NPROC, (tasks, tasks))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_FILE_BYTES, MAX_FILE_BYTES))
+    hard_file = resource.getrlimit(resource.RLIMIT_FSIZE)[1]
+    file_bytes = (
+        MAX_FILE_BYTES if hard_file == resource.RLIM_INFINITY else min(MAX_FILE_BYTES, hard_file)
+    )
+    resource.setrlimit(resource.RLIMIT_FSIZE, (file_bytes, file_bytes))
     os.umask(0o077)
     if confine is not None:
         confine()  # last: once it is bound, this process may not undo what it has set
