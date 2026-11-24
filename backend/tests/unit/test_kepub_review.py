@@ -156,6 +156,7 @@ def test_kepub_keeps_the_comments_and_instructions_of_a_page() -> None:
 
 
 @pytest.mark.req("EF-BIB-015")
+@pytest.mark.timing
 def test_kepub_stays_linear_on_a_paragraph_of_many_segments() -> None:
     """Each segment of one text node becomes one span, inserted with its own `insert` in
     front of the other children of its holder: every insert shifts them all, so a
