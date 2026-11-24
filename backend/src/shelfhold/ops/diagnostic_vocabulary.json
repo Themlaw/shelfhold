@@ -918,6 +918,7 @@
   "plugin.base_url_override_refused",
   "plugin.domain_not_allowed",
   "plugin.forbidden_io",
+  "plugin.isolated_start_failed",
   "plugin.rpc.failed",
   "plugin.rpc.host_error",
   "plugin.third_party",
