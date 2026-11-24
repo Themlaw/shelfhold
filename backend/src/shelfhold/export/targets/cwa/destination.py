@@ -83,12 +83,6 @@ class CwaDestination:
     def default_template(self, kind: str) -> str:
         return "{title}"  # the name is made by `drop_name`: the folder is flat
 
-    def render_sidecars(self, item: Any, cfg: Any) -> list[Any]:
-        return []
-
-    def inventory_calls(self, remote_library_id: str) -> list[ApiCall]:
-        return []
-
     def scan_calls(self, remote_paths: list[str]) -> list[ApiCall]:
         return []  # the ingester watches its folder by itself: nobody is asked to scan
 

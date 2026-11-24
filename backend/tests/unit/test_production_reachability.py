@@ -47,13 +47,13 @@ def test_no_allowlist_entry_until_past_milestone() -> None:
     waiting = [
         f"{e['category']} (until {e['until']})"
         for e in entries
-        if e["until"] in ("M2", "M3", "M4", "M5")
+        if e["until"] in ("M2", "M3", "M4", "M5", "M6")
     ]
     assert not waiting, f"entries still waiting for a milestone that is over: {waiting}"
     late = [
         e["category"]
         for e in entries
-        if e["until"] not in ("permanent", "M6") and not e["until"].startswith("M1b")
+        if e["until"] not in ("permanent", "trigger") and not e["until"].startswith("M1b")
     ]
     assert not late, f"entries for a milestone nobody planned: {late}"
     undated = [
@@ -74,35 +74,45 @@ def test_no_allowlist_entry_until_past_milestone() -> None:
         if e["category"].startswith("m4-l43") and "2026-11-17" not in e["reason"]
     ]
     assert not redated, f"a deferral of M4 L43 is written down with its date: {redated}"
-    # M5 L22b (2026-11-19): each entry that waited for M5 is redated M6 in writing, with the reason.
-    after_m5 = [
+    # M6 L25: each entry that waited for M6 is moved to a written trigger.
+    after_m6 = [
         e["category"]
         for e in entries
         if e["category"]
         in {
-            "unwired-m4-komga",
             "unwired-m4-cwa",
+            "unwired-m6-kobo-folder",
             "m4-l43-normalizer-migration",
             "deferred-l24-deprecation-window",
         }
-        and not (e["until"] == "M6" and "2026-11-19 (M5 L22b)" in e["reason"])
+        and not (e["until"] == "trigger" and "2026-11-24 (M6 L25)" in e["reason"])
     ]
-    assert not after_m5, f"an entry that waited for M5 is redated M6 by M5 L22b: {after_m5}"
+    assert not after_m6, f"an entry that waited for M6 is moved to a trigger by M6 L25: {after_m6}"
 
 
-def test_open_traceability_exceptions_are_redated_by_m5_l22b() -> None:
-    """M5 L22b: the `[[partial]]` that named M5 and the deferred ENF-GOV-004 are written down again
-    (docs/decisions/M5.md, section of L22b), with their date, and name no milestone that is over.
-    M6 L24 delivered the « Même œuvre ? » screen, so EF-BIB-029 is no longer partial."""
+def test_open_traceability_exceptions_are_redated_by_m6_l25() -> None:
+    """M6 L25: partials naming an over milestone are gone; ENF-GOV-004 reconduit."""
     trace = load_tool("traceability")
     partial = {p["requirement"]: p for p in trace.load_partial(REPO)}
     assert "EF-BIB-029" not in partial, (
         "EF-BIB-029 is still partial: its screen is delivered (M6 L24), the entry must go"
     )
-    assert all(p["milestone"] not in ("M4", "M5") for p in partial.values())
+    assert "EF-INT-012" in partial
+    assert all(p["milestone"] not in ("M4", "M5", "M6") for p in partial.values())
     deferred = {d["requirement"]: d for d in trace.load_deferred(REPO)}
-    assert "2026-11-19 (M5 L22b)" in deferred["ENF-GOV-004"]["reason"]
+    assert "2026-11-24 (M6 L25)" in deferred["ENF-GOV-004"]["reason"]
     assert "à confirmer par le porteur" in deferred["ENF-GOV-004"]["reason"]
+
+
+def test_trigger_entries_name_their_trigger() -> None:
+    """D25: an entry that waits for a fact, not a lot, writes that fact down."""
+    entries = [*reach.load_allowlist(REPO), *reach.load_route_tests(REPO)]
+    trigger_entries = [e for e in entries if e["until"] == "trigger"]
+    assert trigger_entries, "no allowlist entry is moved to a written trigger"
+    for e in trigger_entries:
+        assert str(e.get("trigger", "")).strip(), (
+            f"{e['category']}: a trigger entry must name its trigger"
+        )
 
 
 def test_req_tests_declare_no_routes() -> None:

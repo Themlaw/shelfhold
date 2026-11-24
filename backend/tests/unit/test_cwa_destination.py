@@ -65,8 +65,7 @@ def test_cwa_declares_what_it_is_and_what_it_never_does() -> None:
     assert caps.sidecars == set() and caps.forbidden_sidecars == frozenset()
     assert caps.manage_libraries is False and caps.content_body is False
     destination = CwaDestination()
-    assert destination.scan_calls(["/ingest"]) == [] and destination.inventory_calls("x") == []
-    assert destination.render_sidecars({}, {}) == []
+    assert destination.scan_calls(["/ingest"]) == []
 
 
 @pytest.mark.req("EF-EXP-047", "EF-EXP-065")
