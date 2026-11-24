@@ -1,0 +1,16 @@
+{
+  "interactions": [
+    {
+      "method": "GET",
+      "url": "https://catalogue.exemple.invalid/catalogue.json",
+      "status": 200,
+      "body": "{\"books\": [{\"id\": \"ex-001\", \"title\": \"Un livre libre\", \"author\": \"Autrice Exemple\", \"chapters\": 3, \"file\": \"https://catalogue.exemple.invalid/ex-001.epub\"}]}"
+    },
+    {
+      "method": "GET",
+      "url": "https://catalogue.exemple.invalid/health",
+      "status": 200,
+      "body": "{\"version\": \"1.0.0\"}"
+    }
+  ]
+}

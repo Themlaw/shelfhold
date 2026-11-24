@@ -218,6 +218,24 @@ def third_party_candidates(
     return found
 
 
+def third_party_entries(
+    site_dir: Path, installed: Iterable[InstalledPlugin], granted_keys: set[str]
+) -> list[tuple[str, str]]:
+    """Entry points (`key`, `module:attr`) of the recorded distributions whose key is granted, read
+    from `site_dir` alone; nothing is imported. Keeps `importlib` out of the composition root."""
+    known = {p.name: p for p in installed}
+    out: list[tuple[str, str]] = []
+    for dist in metadata.distributions(path=[str(site_dir)]):
+        raw = dist.metadata["Name"] if dist.metadata else None
+        name = _normalise(raw) if isinstance(raw, str) else ""
+        if name not in known:
+            continue
+        for ep in dist.entry_points:
+            if ep.group == ENTRY_POINT_GROUP and ep.name in granted_keys:
+                out.append((ep.name, str(ep.value)))
+    return out
+
+
 class _SourceOnlyLoader(importlib.machinery.SourceFileLoader):
     """Always compiles from the source file: a bytecode cache is neither read nor written."""
 

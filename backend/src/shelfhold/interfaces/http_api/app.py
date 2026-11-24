@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, nullcontext
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, FastAPI
 from fastapi.responses import PlainTextResponse, Response
@@ -72,7 +73,7 @@ def _operation_id(route: APIRoute) -> str:
 def create_http_app(
     *,
     health: HealthPort,
-    on_startup: Callable[[], None],
+    on_startup: Callable[[], Any],
     on_shutdown: Callable[[], None] | None = None,
     background: Callable[[], AbstractAsyncContextManager[None]] | None = None,
     version: str,
@@ -95,7 +96,9 @@ def create_http_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        on_startup()
+        result = on_startup()
+        if hasattr(result, "__await__"):
+            await result
         try:
             # Services that live as long as the application (the local CLI socket), started
             # once the instance owns the volumes and stopped before it lets them go.

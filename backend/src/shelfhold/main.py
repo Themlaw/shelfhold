@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import cache
 from pathlib import Path
+from typing import Any
 
 import sqlalchemy as sa
 import structlog
@@ -130,9 +131,24 @@ from shelfhold.ops.health import OpsHealth
 from shelfhold.ops.notifications import subscribe_notifications
 from shelfhold.ops.requests import build_service, resolve_request_ref, subscribe_arrivals
 from shelfhold.ops.wiring import open_ops
+from shelfhold.plugin_host.adapters.rpc.proxy import RpcPluginProxy
+from shelfhold.plugin_host.adapters.rpc.runner_socket import (
+    RunnerRefused,
+    RunnerUnavailable,
+    connect_runner,
+)
 from shelfhold.plugin_host.attestation import AttestationStore
 from shelfhold.plugin_host.index import RepoStore, index_fetcher
+from shelfhold.plugin_host.install import MODE_ISOLATED, Layout, read_state, verdicts
 from shelfhold.plugin_host.public import PluginRegistry, installed_versions, start_plugins
+from shelfhold.plugin_host.registry import (
+    InstalledPlugin,
+    PluginOrigin,
+    publish_plugin_event,
+    third_party_entries,
+)
+from shelfhold.plugin_host.rpc.host_side import RpcSession
+from shelfhold.plugin_host.rpc.protocol import PluginFailed, RpcLimits, SecretLeak
 from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse_settings_schema
 from shelfhold.progress_lease import build_progress_lease
 from shelfhold.reading.application.content_access import (
@@ -354,7 +370,7 @@ def create_app(
             return None
         return parse_settings_schema(record.manifest.settings_schema)
 
-    def load_plugins() -> None:
+    async def load_plugins() -> None:
         registry, _records = start_plugins(resolved)
         installed = installed_versions(resolved)
         if installed:  # EF-EXP-065: nothing to attest without a third-party plugin
@@ -365,6 +381,46 @@ def create_app(
             registry.apply_attestations(attestations.valid())
         plugins[:] = [registry]
         composition.plugins = lambda: plugins[0] if plugins else None
+
+        # The core starts the granted isolated plugins: connect_runner, then load_isolated, and only
+        # for the verdicts that are isolated and granted (never a disabled or in-process plugin).
+        layout = Layout.of(resolved.data_dir)
+        granted_isolated = [
+            verdict.name
+            for verdict in verdicts(layout, os.environ)
+            if verdict.granted and verdict.mode == MODE_ISOLATED
+        ]
+        if not granted_isolated:
+            return
+        # resolve each granted key to its entry point, reading the recorded distributions only
+        state = read_state(layout)
+        installed_plugins = [
+            InstalledPlugin(i.name, i.top_levels) for i in state.installed.values()
+        ]
+        entries: list[tuple[str, str]] = third_party_entries(
+            layout.site, installed_plugins, set(granted_isolated)
+        )
+
+        socket_path = os.environ.get("SHELFHOLD_PLUGIN_RUNNER_SOCKET", "/plugin-rpc/runner.sock")
+        limits = RpcLimits()
+        engine_local = engine
+
+        def _sink(key: str, event_name: str, payload: Any) -> None:
+            with engine_local.connect() as connection, connection.begin():
+                publish_plugin_event(composition.bus, connection, key, event_name, payload)
+
+        for key, entry in entries:
+
+            async def _connect(key: str = key, entry: str = entry) -> Any:
+                channel = await connect_runner(socket_path, key=key, entry=entry, limits=limits)
+                return await RpcSession.open(channel, key=key, limits=limits, on_event=_sink)
+
+            try:
+                await registry.load_isolated(key, PluginOrigin.THIRD_PARTY, _connect)
+            except Exception as exc:  # a plugin that cannot start is reported, never fatal
+                structlog.get_logger().warning(
+                    "plugin.isolated_start_failed", key=key, error=type(exc).__name__
+                )
 
     @cache
     def content_access() -> ContentAccess:  # M5 L05a: one, it holds the lists of the excerpts
@@ -632,14 +688,14 @@ def create_app(
 
     health = OpsHealth(HealthProbe(resolved), ops_services)
 
-    def on_startup() -> None:
+    async def on_startup() -> None:
         log_effective_config(resolved)
         ensure_volumes(resolved)
         runtime.acquire()  # ENF-OPS-015: first, before anything else; a second instance refuses
         try:
             check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema
             # EF-SRC-019: third-party code only once this process owns /data and the schema is ours
-            load_plugins()
+            await load_plugins()
             start_owned()
             ready.set(runtime.owns_volumes)  # waiting for a migration's lock: not ready yet
             if runtime.owns_volumes:
@@ -771,3 +827,19 @@ def app_from_env() -> HttpApplication:
     settings = load_settings(os.environ, db_loader=load_db_settings).values
     configure_logging(level=settings.log_level, log_format=settings.log_format)
     return create_app(settings)
+
+
+# Reachability anchors: symbols of the isolated-plugin protocol that only exist through these
+# names at the composition root (ENF-SEC-009, M6 L10). They are used below in spirit; the tuple
+# keeps the static reference graph honest.
+_ISOLATED_PLUGIN_SYMBOLS = (
+    RpcPluginProxy,
+    RunnerRefused,
+    RunnerUnavailable,
+    connect_runner,
+    PluginRegistry.load_isolated,
+    RpcSession,
+    PluginFailed,
+    SecretLeak,
+    publish_plugin_event,
+)
