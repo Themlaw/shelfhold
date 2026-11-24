@@ -91,6 +91,7 @@ class PublicationOut(BaseModel):
     reading_direction: Literal["ltr", "rtl", "webtoon"]
     series_id: str  # the Œuvre: the anchor of a setting pinned to this series (L13)
     work_id: str  # the same Œuvre, as `?since=` names it: the key of an offline copy (L16b)
+    edition_id: str  # the Édition: `removed_editions` of `?since=` names it, a copy of it goes
     expires_at: datetime
     pages: list[EntryOut]
     spine: list[EntryOut]
@@ -109,6 +110,7 @@ def _out(found: Publication) -> PublicationOut:
         reading_direction=found.reading_direction,
         series_id=found.series_id,
         work_id=found.series_id,
+        edition_id=found.edition_id,
         expires_at=found.expires_at,
         pages=[EntryOut(index=e.index, href=e.href, media_type=e.media_type) for e in found.pages],
         spine=[EntryOut(index=e.index, href=e.href, media_type=e.media_type) for e in found.spine],

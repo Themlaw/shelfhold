@@ -411,7 +411,9 @@ def create_app(
         layout = Layout.of(resolved.data_dir)
         granted_isolated = [
             verdict.name
-            for verdict in verdicts(layout, os.environ)
+            for verdict in verdicts(
+                layout, os.environ, revoked=lifecycle.revoked_dists(engine, layout)
+            )
             if verdict.granted and verdict.mode == MODE_ISOLATED
         ]
         if not granted_isolated:
@@ -676,7 +678,8 @@ def create_app(
             schema_for,
             lambda: resolved.data_dir,  # M6 L06: the guard reads the installed plugins
             lambda: engine,
-            lambda: RepoStore(engine, now=clock.now),  # M6 L07: the pinned plugin indexes
+            # M6 L07: the pinned plugin indexes; a refresh disables what an index revoked
+            lambda: RepoStore(engine, now=clock.now, layout=Layout.of(resolved.data_dir)),
             lambda: index_fetcher(composition.network),
             lambda: installed_versions(resolved),  # M6 L09a: the lifecycle, by the plugin key
         ),

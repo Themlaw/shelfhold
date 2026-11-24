@@ -3,6 +3,7 @@
 from shelfhold.reading.application.kobo_sync import (
     KoboSync,
     SyncPage,
+    TokenGoneError,
     entitlement_of,
 )
 from shelfhold.reading.application.kosync import InvalidProgressError as InvalidProgressError
@@ -32,6 +33,7 @@ __all__ = [
     "MemberKeyRevokedError",
     "ReadMark",
     "SyncPage",
+    "TokenGoneError",
     "TransferReport",
     "UnitProgress",
     "UnknownCarrierError",

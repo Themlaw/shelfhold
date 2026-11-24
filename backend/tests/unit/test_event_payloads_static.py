@@ -88,6 +88,15 @@ def test_the_events_written_straight_to_the_table_pass_the_check_of_the_bus() ->
                 "created_seq": 3,
             },
         ),
+        (
+            changes.EDITION_EVENT,
+            {
+                "edition_id": work,
+                "profile_id": child,
+                "visible_before": True,
+                "visible_after": False,
+            },
+        ),
         (changes.SHELF_REMOVED_EVENT, {"shelf_id": shelf}),
     ):
         check_payload(payload, event)

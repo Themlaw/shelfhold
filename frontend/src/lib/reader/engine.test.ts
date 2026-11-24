@@ -8,6 +8,7 @@ const server: PublicationOut = {
   carrier_id: '01HZZZZZZZZZZZZZZZZZZZZZZC',
   carrier_type: 'content',
   work_id: '01HZZZZZZZZZZZZZZZZZZZZZZW',
+  edition_id: '01HZZZZZZZZZZZZZZZZZZZZZZE',
   expires_at: '2026-11-18T12:10:00Z',
   kind: 'pages',
   language: 'ja',

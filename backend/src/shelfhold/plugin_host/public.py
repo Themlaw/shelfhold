@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 import structlog
 
@@ -41,10 +42,12 @@ __all__ = [
     "PluginState",
     "PluginStatus",
     "first_party_candidates",
+    "installed_by_key",
     "installed_keys",
     "installed_versions",
     "load_plugin_state",
     "publisher_attested",
+    "refuse_taken_keys",
     "start_plugins",
 ]
 
@@ -103,7 +106,8 @@ def start_plugins(
     """
     layout = Layout.of(settings.data_dir)
     state = read_state(layout)
-    judged = verdicts(layout, os.environ if environ is None else dict(environ))
+    revoked = _revoked_dists(settings, layout)  # an index's revocation, judged at every start
+    judged = verdicts(layout, os.environ if environ is None else dict(environ), revoked=revoked)
     granted: list[str] = []
     blocked: dict[str, str] = {}
     for verdict in judged:
@@ -128,8 +132,7 @@ def start_plugins(
     # — the judgement is read before anything loads, and the candidate is blocked with its reason
     for key, reason in _judged_against_the_host(settings).items():
         candidates = [
-            replace(c, blocked=f"{reason}: this host cannot run the plugin") if c.key == key else c
-            for c in candidates
+            replace(c, blocked=_why_incompatible(reason)) if c.key == key else c for c in candidates
         ]
     records = registry.load_all(candidates)
     _judge_against_the_host(settings, registry, records)
@@ -141,9 +144,18 @@ def start_plugins(
     return registry, records
 
 
+def _why_incompatible(reason: str) -> str:
+    """What the admin reads of a plugin the host will not run: a host upgrade left it behind
+    (`min_host`, `api`), or its own index revoked it (`plugin_revoked`, `wheel_revoked`)."""
+    if reason in ("plugin_revoked", "wheel_revoked"):
+        return f"{reason}: its index revoked it, this host will not run the plugin"
+    return f"{reason}: this host cannot run the plugin"
+
+
 def _judged_against_the_host(settings: Settings) -> dict[str, str]:
-    """The installed plugins a host upgrade left behind, each with its closed reason. Nothing is
-    judged without the host's database: no engine, no judgement."""
+    """The installed plugins this host will not run, each with its closed reason: a host upgrade
+    left them behind, or their own index revoked them. Nothing is judged without the host's
+    database: no engine, no judgement."""
     database = getattr(settings, "database_path", None)  # a caller may know only the data dir
     if database is None or not database.exists():
         return {}
@@ -154,9 +166,30 @@ def _judged_against_the_host(settings: Settings) -> dict[str, str]:
 
     engine = create_db_engine(database)
     try:
-        return lifecycle.incompatible_installed(
+        judged = lifecycle.incompatible_installed(
             engine, host_version=lifecycle.HOST_VERSION, api_version=API_VERSION
         )
+        for key, (_dist, code) in lifecycle.revoked_installs(
+            engine, Layout.of(settings.data_dir)
+        ).items():
+            judged.setdefault(key, code)
+        return judged
+    finally:
+        engine.dispose()
+
+
+def _revoked_dists(settings: Settings, layout: Layout) -> dict[str, str]:
+    """The installed distributions their own index revoked (`lifecycle.revoked_dists`); nothing
+    without the host's database."""
+    database = getattr(settings, "database_path", None)
+    if database is None or not database.exists():
+        return {}
+    from shelfhold.infrastructure.db import create_db_engine
+    from shelfhold.plugin_host import lifecycle
+
+    engine = create_db_engine(database)
+    try:
+        return lifecycle.revoked_dists(engine, layout)
     finally:
         engine.dispose()
 
@@ -178,7 +211,7 @@ def _judge_against_the_host(
     engine = create_db_engine(database)
     try:
         for key, reason in _judged_against_the_host(settings).items():
-            registry.mark_incompatible(key, f"{reason}: this host cannot run the plugin")
+            registry.mark_incompatible(key, _why_incompatible(reason))
         versions = installed_versions(settings)
         for record in records:
             # the registry is re-read for each key: marking a plugin incompatible above may
@@ -203,32 +236,50 @@ def _judge_against_the_host(
         engine.dispose()
 
 
-def installed_keys(layout: Layout) -> frozenset[str]:
-    """The plugin keys the installed third-party plugins declare, by their entry points. Nothing
-    is imported: the distributions the guard recorded are read from the third-party directory
-    alone. A key is how an index (and an attestation) names a plugin; a distribution name is how
-    the guard does — this is the bridge between the two. The discovery stays behind the start-up
+def installed_by_key(layout: Layout) -> dict[str, guard.Installed]:
+    """The installed third-party plugins by the plugin key their entry points declare. Nothing is
+    imported: the distributions the guard recorded are read from the third-party directory alone.
+    A key is how an index (and an attestation) names a plugin; a distribution name is how the
+    guard does — this is the bridge between the two. The discovery stays behind the start-up
     facade: no other module reaches the registry's loader (ENF-SEC-009)."""
     state = read_state(layout)
     if not state.installed:
-        return frozenset()
+        return {}
     installed = [InstalledPlugin(i.name, i.top_levels) for i in state.installed.values()]
-    return frozenset(c.key for c in third_party_candidates(layout.site, installed, blocked={}))
+    found: dict[str, guard.Installed] = {}
+    for candidate in third_party_candidates(layout.site, installed, blocked={}):
+        plugin = state.installed.get(candidate.dist or "")
+        if plugin is not None:
+            found[candidate.key] = plugin
+    return found
+
+
+def installed_keys(layout: Layout) -> frozenset[str]:
+    """The plugin keys the installed third-party plugins declare, by their entry points."""
+    return frozenset(installed_by_key(layout))
+
+
+def refuse_taken_keys(layout: Layout, wheel: Path, sha256: str) -> None:
+    """One key, one install: a wheel whose entry points declare a key an installed distribution
+    already declares is refused (`conflict`). The wheel is opened only once its sha256 is
+    verified (`hash_mismatch` otherwise). Two distributions under one key both fail at
+    start-up (`duplicate_key`), and removing one would retire the other's bindings, attestations
+    and trackers; the second would also read the first's secrets. The wheel of a distribution
+    already installed is left to the guard's own refusal."""
+    guard.verify_wheel_sha256(wheel, sha256)
+    taken = {key: plugin.name for key, plugin in installed_by_key(layout).items()}
+    name = guard.inspect_wheel(wheel).name
+    for key in sorted(guard.wheel_plugin_keys(wheel) & taken.keys()):
+        if taken[key] != name:
+            raise guard.PluginInstallError(
+                "conflict", f"the plugin key {key!r} is already declared by {taken[key]!r}"
+            )
 
 
 def installed_versions(settings: Settings) -> dict[str, InstalledVersion]:
     """The third-party plugins the guard installed, by plugin key, with the installed version and
     files digest (EF-EXP-065: what an attestation is bound to). Nothing is imported."""
-    layout = Layout.of(settings.data_dir)
-    state = read_state(layout)
-    if not state.installed:
-        return {}
-    installed = [InstalledPlugin(i.name, i.top_levels) for i in state.installed.values()]
-    found: dict[str, InstalledVersion] = {}
-    for candidate in third_party_candidates(layout.site, installed, blocked={}):
-        plugin = state.installed.get(candidate.dist or "")
-        if plugin is not None:
-            found[candidate.key] = InstalledVersion(
-                candidate.key, plugin.name, plugin.version, plugin.digest
-            )
-    return found
+    return {
+        key: InstalledVersion(key, plugin.name, plugin.version, plugin.digest)
+        for key, plugin in installed_by_key(Layout.of(settings.data_dir)).items()
+    }

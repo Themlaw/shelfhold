@@ -282,6 +282,7 @@ index_added = "Dépôt {url} épinglé (clé {key_id}) : la première actualisat
 index_none = "Aucun dépôt d'index épinglé."
 index_row = "{url}\t{key_id}\tv{version}\texpire {expires}"
 index_refreshed = "Index de {url} appliqué : version {version}{rotated, plural, =0 {} other { (clé tournée)}}."
+restart_required = "Révoqués et désactivés : {keys}. Un processus qui les exécute déjà continue jusqu’à son redémarrage : redémarre le serveur et le compagnon."
 index_unchanged = "Index de {url} inchangé : version {version} déjà appliquée."
 index_removed = "Dépôt {url} retiré ; un nouvel ajout repart de zéro."
 index_not_found_detail = "Aucun dépôt d'index n'est épinglé à cette adresse."
@@ -1837,6 +1838,11 @@ cause = "Aucune des sources activées ne publie ce type d'adresse, ou la source 
 title = "Ce réglage de la source est refusé."
 action = "Corrigez le champ nommé ; un secret se règle à part, par set-secret, jamais comme une valeur."
 cause = "La valeur d'un réglage ne respecte pas le format attendu par cette source, ou un secret a été saisi comme un réglage ordinaire."
+
+[errors."plugin.failed"]
+title = "Le plugin isolé a cessé de répondre."
+action = "Relancez la recherche ou réactivez le plugin, puis réessayez."
+cause = "Le processus compagnon du plugin s'est arrêté pendant l'appel : il a planté ou a été arrêté."
 
 [errors."plugin.unknown"]
 title = "Aucun plugin chargé ou installé ne porte cette clé."

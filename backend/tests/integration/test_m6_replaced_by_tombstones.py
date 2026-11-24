@@ -26,6 +26,7 @@ from shelfhold.ops.plugin_migration import PluginMigrationOps
 from shelfhold.ops.source_migration import SourceMigrationOps
 from tests.integration.test_l27_source_aliases import GONE, PLUGIN, SOURCE, alias, erase, live
 from tests.l50_env import seeded
+from tests.plugin_guard_env import install_plugin_wheel
 
 pytestmark = pytest.mark.req("EF-BIB-054", "EF-SRC-030")
 
@@ -33,7 +34,7 @@ ADMIN = Principal("1000", "uid:1000", "admin", Credential.LOCAL_CLI)
 REPLACEMENT = "plugin-b"
 
 
-def _named(env: object, replacement: str) -> None:
+def _named(env: object, replacement: str, *, installed: bool = True) -> None:
     """The install row an index wrote for the old plugin: its entry named the replacement —
     the word `migrate_to` moves by, never a key the admin alone picked."""
     with env.inst.engine.begin() as connection:
@@ -44,6 +45,17 @@ def _named(env: object, replacement: str) -> None:
                 signer_pubkey="k", min_host="1.0.0", replaced_by=replacement,
             )
         )  # fmt: skip
+        if installed:
+            # the replacement is installed, from the same signer: the closure review's §3.5
+            connection.execute(
+                sa.insert(acquisition.plugin_install).values(
+                    plugin_id=replacement, version="1.0.0", api="2", origin="local",
+                    sha256="sha256:" + "b" * 64, index_url="https://index.example.org/index.json",
+                    signer_pubkey="k", min_host="1.0.0",
+                )
+            )  # fmt: skip
+    if installed:
+        install_plugin_wheel(env.inst.settings.data_dir, f"dist-{replacement}", replacement)
 
 
 def _items(env: object) -> list[tuple[str, str]]:
@@ -106,4 +118,35 @@ def test_replaced_by_migration_refuses_the_same_key_and_the_unknown(
         with pytest.raises(Exception) as raised:
             ops.migrate_to(key="nobody", replacement=REPLACEMENT, principal=ADMIN)
         assert "unknown" in str(raised.value)
+        assert _items(env) == [(PLUGIN, "keep-1")]  # nothing moved
+
+
+def test_migration_refuses_a_replacement_that_is_not_installed_or_not_the_same_signer(
+    settings: Settings, tmp_path: Path
+) -> None:
+    """A name in an index document is not code the admin runs, and a key another signer
+    publishes is not the successor of this signer's plugin (closure review, §3.5)."""
+    with seeded(settings, tmp_path / "inst") as env:
+        live(env, "keep-1")
+        _named(env, REPLACEMENT, installed=False)  # named by the index, never installed
+        ops = PluginMigrationOps(env.inst.comp)
+        with pytest.raises(Exception) as raised:
+            ops.migrate_to(key=PLUGIN, replacement=REPLACEMENT, principal=ADMIN)
+        assert "migrate_refused" in str(raised.value)
+        assert "not installed" in str(raised.value)
+
+        # installed, but from another signer
+        with env.inst.engine.begin() as connection:
+            connection.execute(
+                sa.insert(acquisition.plugin_install).values(
+                    plugin_id=REPLACEMENT, version="1.0.0", api="2", origin="local",
+                    sha256="sha256:" + "b" * 64, index_url="https://index.example.org/index.json",
+                    signer_pubkey="someone-else", min_host="1.0.0",
+                )
+            )  # fmt: skip
+        install_plugin_wheel(env.inst.settings.data_dir, "dist-plugin-b", REPLACEMENT)
+        with pytest.raises(Exception) as raised:
+            ops.migrate_to(key=PLUGIN, replacement=REPLACEMENT, principal=ADMIN)
+        assert "migrate_refused" in str(raised.value)
+        assert "signer" in str(raised.value)
         assert _items(env) == [(PLUGIN, "keep-1")]  # nothing moved

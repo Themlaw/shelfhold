@@ -24,7 +24,7 @@ const ALICE = '01JMEMBER0000000000000000M';
 const KID = '01JCHILD00000000000000000C';
 
 const online: PublicationOut = {
-  carrier_type: 'content', carrier_id: 'C1', work_id: 'W1', series_id: 'W1', scope: 'full', kind: 'pages', title: 'Une série', number: '3', language: 'fr',
+  carrier_type: 'content', carrier_id: 'C1', work_id: 'W1', series_id: 'W1', edition_id: 'E1', scope: 'full', kind: 'pages', title: 'Une série', number: '3', language: 'fr',
   reading_direction: 'ltr', expires_at: '2036-11-18T12:10:00Z',
   pages: [1, 2, 3].map((n) => ({ index: n, href: `/content/TICKET/p${n}.jpg`, media_type: 'image/jpeg' })),
   spine: [], package: null

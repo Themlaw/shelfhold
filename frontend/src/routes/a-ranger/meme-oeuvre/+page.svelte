@@ -24,7 +24,8 @@
   import { t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
-  import { isForbidden, needsReauth, needsSession, problemOf } from '#lib/triage.ts';
+  import { Reauth } from '#lib/guard.svelte.ts';
+  import { isForbidden, needsSession } from '#lib/triage.ts';
 
   const REASONS: Record<string, MessageKey> = {
     suwayomi_migration: 'sameWork.reason.suwayomi_migration',
@@ -44,8 +45,7 @@
   let editionDrop = $state('');
   let editionPlan = $state<EditionMergeOut | null>(null);
   let problem = $state<ProblemView | null>(null);
-  let reauthMethods = $state<string[] | null>(null);
-  let retry: (() => Promise<void>) | null = null;
+  const reauth = new Reauth();
   let busy = $state(false);
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
@@ -86,30 +86,11 @@
         problem = null;
         return true;
       }
-      if (needsReauth(error)) {
-        retry = async () => {
-          await guarded(step);
-        };
-        reauthMethods = problemOf(error).reauth_methods ?? ['password'];
-      } else {
-        problem = problemView(error);
-      }
+      if (!reauth.askAgain(error, async () => { await guarded(step); })) problem = problemView(error);
       return false;
     } finally {
       busy = false;
     }
-  }
-
-  async function afterReauth(): Promise<void> {
-    const again = retry;
-    retry = null;
-    reauthMethods = null;
-    if (again) await again();
-  }
-
-  function cancelReauth(): void {
-    retry = null;
-    reauthMethods = null;
   }
 
   async function scan(): Promise<void> {
@@ -328,8 +309,8 @@
   {/if}
 
   {#if problem}<ProblemCard {problem} level={2} />{/if}
-  {#if reauthMethods}
-    <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
+  {#if reauth.reauthMethods}
+    <ReauthPrompt methods={reauth.reauthMethods} ondone={() => reauth.afterReauth()} oncancel={() => reauth.cancelReauth()} />
   {/if}
 </main>
 

@@ -28,7 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 from urllib.parse import urlsplit
 
 import sqlalchemy as sa
@@ -67,13 +67,13 @@ from shelfhold.plugin_host.install import (
 )
 from shelfhold.plugin_host.lifecycle import (
     HOST_VERSION,
+    disable_revoked,
     reattach_if_same_origin,
 )
 from shelfhold.plugin_host.lifecycle import (
     version_key as _version_key,
 )
-from shelfhold.plugin_host.public import installed_keys
-from shelfhold.plugin_host.rpc.runner_wire import KEY as PLUGIN_KEY
+from shelfhold.plugin_host.public import installed_keys, refuse_taken_keys
 from shelfhold.plugin_host.settings import Vault, held_identity, hold_plugin_data
 
 __all__ = [
@@ -82,6 +82,7 @@ __all__ = [
     "IndexInstall",
     "RepoRecord",
     "RepoStore",
+    "hold_previous_install",
     "index_fetcher",
 ]
 
@@ -152,6 +153,9 @@ class RefreshOutcome:
     document: IndexDocument
     applied: bool  # False: the same version, the same content, nothing to do
     rotated: bool = False
+    # the plugin keys this refresh just deactivated (revoked): their code may still run in the
+    # processes already started, until the next restart (ADR-0056, M6 closure re-check R2)
+    disabled: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -165,6 +169,43 @@ class IndexInstall:
     held: str | None = None
     deprecated: bool = False
     replaced_by: str | None = None
+
+
+class VettedEntry(NamedTuple):
+    """An index entry that passed `RepoStore.vetted_entry`, and the wheel file name it names."""
+
+    entry: IndexEntry
+    wheel_name: str
+
+
+def hold_previous_install(
+    engine: sa.Engine,
+    vault: Vault | None,
+    key: str,
+    previous: tuple[str | None, str | None] | None,
+    origin: tuple[str | None, str | None],
+    *,
+    audit: Callable[[str, Connection], None] | None = None,
+) -> str | None:
+    """A new origin inherits nothing (GAP-8-13): when the previous install of this key was pinned
+    to another (index, signer) than the one installing now — a signed index, or the admin's own
+    hand (`None, None`) — its state, settings and secrets are held under the fingerprint of its
+    signer (`wheel` for a hand wheel), and move only on the admin's confirmed word. The held
+    identity, or None when there was nothing to hold. `audit` runs in the hold's transaction."""
+    if previous is None or previous == origin:
+        return None
+    signer = previous[1]
+    fingerprint = (
+        "wheel" if signer is None else parse_public_key(signer, code="key_mismatch").key_id
+    )
+    held_id = held_identity(key, fingerprint)
+    return hold_plugin_data(
+        engine,
+        vault,
+        key,
+        held_id,
+        audit=(lambda connection, final: audit(final, connection)) if audit is not None else None,
+    )
 
 
 def _record(row: Any) -> RepoRecord:
@@ -182,9 +223,14 @@ def _record(row: Any) -> RepoRecord:
 class RepoStore:
     """The repositories the admin pinned, and what their indexes said, in the host's database."""
 
-    def __init__(self, engine: sa.Engine, *, now: Callable[[], datetime]) -> None:
+    def __init__(
+        self, engine: sa.Engine, *, now: Callable[[], datetime], layout: Layout | None = None
+    ) -> None:
         self._engine = engine
         self._now = now
+        # the installed plugins a refresh judges against the revocations it just kept (S1): a
+        # store with no layout keeps the index and touches no installation
+        self._layout = layout
 
     # -- the pin ---------------------------------------------------------------------------------
 
@@ -293,7 +339,34 @@ class RepoStore:
             pubkey, key_id = document.next_pubkey.b64, document.next_pubkey.key_id
             rotated = True
         applied = self._apply(record, document, pubkey, key_id, content, principal=principal)
-        return RefreshOutcome(document, applied=applied, rotated=rotated)
+        disabled = self._disable_revoked(principal) if applied else ()
+        return RefreshOutcome(document, applied=applied, rotated=rotated, disabled=disabled)
+
+    def _disable_revoked(self, principal: Principal | None) -> tuple[str, ...]:
+        """An installation the index just revoked (its key, or the sha256 of its wheel, under the
+        repository and signer it is pinned to) loses its activation, and a line says so (D14,
+        ADR-0056): a revocation that only blocks the next install leaves the compromised code
+        running at every start-up. The keys it disabled: the host process and the companion that
+        already run them are not reached from here, the caller says a restart is required."""
+        if self._layout is None:
+            return ()
+        disabled = disable_revoked(self._engine, self._layout)
+        for key, code in disabled:
+            with write_transaction(self._engine) as connection:
+                if principal is not None:
+                    self._audit(connection, principal, "plugin.revoked", f"{key}:{code}")
+                else:
+                    connection.execute(
+                        audit_insert(
+                            AuditEntry(
+                                actor_id=f"cli:uid{os.getuid()}",
+                                action="plugin.revoked",
+                                at=self._now(),
+                                target=f"{key}:{code}",
+                            )
+                        )
+                    )
+        return tuple(key for key, _ in disabled)
 
     async def _get(self, fetcher: IndexFetcher, url: str) -> bytes:
         try:
@@ -391,18 +464,28 @@ class RepoStore:
                     )
                     .values(signer_pubkey=pubkey)
                 )
-            for plugin_key in sorted(document.revoked_plugin_keys):
+                # the revocations follow the signer through the rotation, like the installs
                 connection.execute(
-                    sqlite_insert(acquisition.plugin_revocation)
-                    .values(kind="plugin_key", value=plugin_key)
-                    .on_conflict_do_nothing()
+                    sa.update(acquisition.plugin_revocation)
+                    .prefix_with("OR IGNORE")
+                    .where(
+                        acquisition.plugin_revocation.c.index_url == record.url,
+                        acquisition.plugin_revocation.c.signer_pubkey == record.pubkey,
+                    )
+                    .values(signer_pubkey=pubkey)
                 )
-            for wheel in sorted(document.revoked_wheel_sha256):
-                connection.execute(
-                    sqlite_insert(acquisition.plugin_revocation)
-                    .values(kind="wheel_sha256", value=wheel)
-                    .on_conflict_do_nothing()
-                )
+            # a revocation binds the pair (repository, signer) that published it: another index
+            # never revokes what this one installed (M6 closure review, §3.1)
+            for kind, values in (
+                ("plugin_key", document.revoked_plugin_keys),
+                ("wheel_sha256", document.revoked_wheel_sha256),
+            ):
+                for value in sorted(values):
+                    connection.execute(
+                        sqlite_insert(acquisition.plugin_revocation)
+                        .values(kind=kind, value=value, index_url=record.url, signer_pubkey=pubkey)
+                        .on_conflict_do_nothing()
+                    )
             for entry in document.plugins:
                 # the index's own word about an install it vouches for: a version it
                 # deprecates, or a successor it names instead of the one kept, is kept in
@@ -431,20 +514,50 @@ class RepoStore:
 
     # -- what the index said ---------------------------------------------------------------------
 
-    def revoked_plugin_keys(self) -> frozenset[str]:
-        return self._revocations("plugin_key")
+    def revoked_plugin_keys(self, scope: tuple[str, str] | None = None) -> frozenset[str]:
+        return self._revocations("plugin_key", scope)
 
-    def revoked_wheel_sha256(self) -> frozenset[str]:
-        return self._revocations("wheel_sha256")
+    def revoked_wheel_sha256(self, scope: tuple[str, str] | None = None) -> frozenset[str]:
+        return self._revocations("wheel_sha256", scope)
 
-    def _revocations(self, kind: str) -> frozenset[str]:
-        with self._engine.connect() as connection:
-            rows = connection.execute(
-                sa.select(acquisition.plugin_revocation.c.value).where(
-                    acquisition.plugin_revocation.c.kind == kind
-                )
+    def _revocations(self, kind: str, scope: tuple[str, str] | None) -> frozenset[str]:
+        """What was revoked: under the (repository, signer) `scope` an install is pinned to, which
+        is the only word that binds it; with no scope, every revocation seen (a read for
+        diagnostics, never a judgement)."""
+        revocation = acquisition.plugin_revocation
+        query = sa.select(revocation.c.value).where(revocation.c.kind == kind)
+        if scope is not None:
+            query = query.where(
+                revocation.c.index_url == scope[0], revocation.c.signer_pubkey == scope[1]
             )
-            return frozenset(row[0] for row in rows)
+        with self._engine.connect() as connection:
+            return frozenset(row[0] for row in connection.execute(query))
+
+    def vetted_entry(self, document: IndexDocument, key: str, record: RepoRecord) -> VettedEntry:
+        """The one place an index entry is judged before anything is fetched, for an install and
+        for an update: the entry exists, neither the key nor the wheel is revoked by the
+        repository and signer `record` pins, the host is new enough, and the wheel address names
+        a wheel file."""
+        entry = next((e for e in document.plugins if e.key == key), None)
+        if entry is None:
+            raise PluginIndexError("unknown_plugin", f"the index does not list {key!r}")
+        scope = (record.url, record.pubkey)
+        if key in self.revoked_plugin_keys(scope):
+            raise PluginIndexError("plugin_revoked", f"the key of {key!r} was revoked")
+        if entry.sha256 in self.revoked_wheel_sha256(scope):
+            raise PluginIndexError("wheel_revoked", "the index revoked this wheel")
+        if _version_key(entry.min_host) > _version_key(HOST_VERSION):
+            raise PluginIndexError(
+                "min_host",
+                f"the index vouches for a plugin that needs host {entry.min_host} or newer "
+                f"(this host is {HOST_VERSION})",
+            )
+        wheel_name = PurePosixPath(urlsplit(entry.wheel_url).path).name
+        if not wheel_name.endswith(".whl") or wheel_name == ".whl" or not wheel_name[:-4]:
+            raise PluginIndexError(
+                "wheel_name_invalid", "the wheel address does not name a wheel file"
+            )
+        return VettedEntry(entry, wheel_name)
 
     # -- the wheel -------------------------------------------------------------------------------
 
@@ -573,19 +686,7 @@ class RepoStore:
         # The refresh may have rotated the pin: the signer this install is pinned to is the one
         # the repository pins now, never the key the caller read before the network answered.
         record = next((r for r in self.list() if r.url == record.url), record)
-        entry = next((e for e in outcome.document.plugins if e.key == key), None)
-        if entry is None:
-            raise PluginIndexError("unknown_plugin", f"the index does not list {key!r}")
-        if key in self.revoked_plugin_keys():
-            raise PluginIndexError("plugin_revoked", f"the key of {key!r} was revoked")
-        if entry.sha256 in self.revoked_wheel_sha256():
-            raise PluginIndexError("wheel_revoked", "the index revoked this wheel")
-        if _version_key(entry.min_host) > _version_key(HOST_VERSION):
-            raise PluginIndexError(
-                "min_host",
-                f"the index vouches for a plugin that needs host {entry.min_host} or newer "
-                f"(this host is {HOST_VERSION})",
-            )
+        entry, wheel_name = self.vetted_entry(outcome.document, key, record)
         previous = self._previous_pin(key)
         held: str | None = None
         if previous is not None and previous != (record.url, record.pubkey):
@@ -596,40 +697,17 @@ class RepoStore:
                     "installed plugin first and install it as a distinct one",
                 )
             # the previous install is gone; its data is held, never inherited (GAP-8-13)
-            fingerprint = (
-                "wheel"
-                if previous[1] is None
-                else parse_public_key(previous[1], code="key_mismatch").key_id
-            )
-            held_id = held_identity(key, fingerprint)
-            if hold_plugin_data(
-                self._engine,
-                vault,
-                key,
-                held_id,
-                audit=(lambda connection: held_audit(held_id, connection))
-                if held_audit is not None
-                else None,
-            ):
-                held = held_id
-        wheel_name = PurePosixPath(urlsplit(entry.wheel_url).path).name
-        if not wheel_name.endswith(".whl") or wheel_name == ".whl" or not wheel_name[:-4]:
-            raise PluginIndexError(
-                "wheel_name_invalid", "the wheel address does not name a wheel file"
+            held = hold_previous_install(
+                self._engine, vault, key, previous, (record.url, record.pubkey), audit=held_audit
             )
         wheel = await self.fetch_wheel(entry, fetcher, layout.root / "index", name=wheel_name)
         try:
-            # Validate the key format matches the expected pattern (runner_wire.KEY)
-            if not PLUGIN_KEY.fullmatch(key):
-                raise PluginIndexError(
-                    "key_invalid",
-                    f"the key {key!r} does not match the expected plugin key pattern",
-                )
             if wheel_plugin_keys(wheel) != frozenset({key}):
                 raise PluginIndexError(
                     "wheel_key_mismatch",
                     "the wheel does not declare exactly the key its index entry names",
                 )
+            refuse_taken_keys(layout, wheel, entry.sha256)  # one key, one install (S6)
             installed = install_wheel(layout, wheel, entry.sha256)
             # M6 L09a (EF-SRC-020, D15): the wheel of the installed version is kept (the
             # rollback's own) while the staged copy is still there — the staged file leaves

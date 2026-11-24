@@ -210,7 +210,20 @@ class DataFolder:
         access of a cache file, its LRU key (EF-BIB-018). A plain name only, never a link."""
         if not name or "/" in name or name in (".", ".."):
             raise ValueError(f"not a plain name: {name!r}")
-        os.utime(name, (at, at) if at is not None else None, dir_fd=self._fd)
+        try:  # the file is opened without following a link, and the date goes to that very file
+            fd = os.open(
+                name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=self._fd
+            )
+        except FileNotFoundError:
+            raise
+        except OSError as error:  # ELOOP: a link
+            raise ValueError(f"{name!r} is a link or unreadable") from error
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise ValueError(f"{name!r} is not a regular file")
+            os.utime(fd, (at, at) if at is not None else None)
+        finally:
+            os.close(fd)
 
     def read(self, name: str, limit: int) -> bytes:
         """The regular file `name` of the folder, never through a link, at most `limit` bytes.

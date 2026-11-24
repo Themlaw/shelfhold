@@ -13,7 +13,7 @@ vi.mock('#lib/offline/runtime.ts', () => ({ offlineStore: () => held.store, offl
 
 const ALICE = '01JALICE00000000000000000A';
 const publication = (scope: 'full' | 'excerpt' = 'full'): PublicationOut => ({
-  carrier_type: 'content', carrier_id: 'C1', work_id: 'W1', series_id: 'W1', scope, kind: 'pages', title: 'Une série', number: null, language: null,
+  carrier_type: 'content', carrier_id: 'C1', work_id: 'W1', series_id: 'W1', edition_id: 'E1', scope, kind: 'pages', title: 'Une série', number: null, language: null,
   reading_direction: 'ltr', expires_at: '2026-11-19T10:10:00Z', pages: [{ index: 1, href: '/content/T/p1.jpg', media_type: 'image/jpeg' }], spine: [], package: null
 });
 

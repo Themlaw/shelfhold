@@ -18,6 +18,8 @@ from shelfhold.plugin_host.index.service import (
     RefreshOutcome,
     RepoRecord,
     RepoStore,
+    VettedEntry,
+    hold_previous_install,
     index_fetcher,
 )
 
@@ -29,6 +31,8 @@ __all__ = [
     "RefreshOutcome",
     "RepoRecord",
     "RepoStore",
+    "VettedEntry",
+    "hold_previous_install",
     "index_fetcher",
     "parse_document",
     "parse_public_key",

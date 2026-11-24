@@ -16,7 +16,7 @@ function publication(carrierId = CARRIER, workId = WORK): PublicationOut {
   return {
     carrier_type: 'content',
     carrier_id: carrierId,
-    work_id: workId, series_id: workId,
+    work_id: workId, series_id: workId, edition_id: 'E1',
     scope: 'full',
     kind: 'pages',
     title: 'Tale of Pages',

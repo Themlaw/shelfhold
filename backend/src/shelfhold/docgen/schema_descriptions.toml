@@ -1641,4 +1641,7 @@ content_sha256 = "Hash of the last applied index document (`sha256:<hex>`): the 
 added_at = "When the repository was pinned (UTC)."
 
 [tables.plugin_revocation]
-description = "A revocation seen in a signed index stays seen, even if a later index omits it (M6 L07, D14): a plugin by its key, a wheel by its sha256. One row per revocation."
+description = "A revocation seen in a signed index stays seen, even if a later index omits it (M6 L07, D14): a plugin by its key, a wheel by its sha256. One row per revocation and per (repository, signer): a revocation binds only the installs of the pair that published it."
+[tables.plugin_revocation.columns]
+index_url = "The repository whose index published the revocation: it binds only the installs pinned to this repository and signer."
+signer_pubkey = "The public key of the signer that published the revocation (it follows a verified rotation)."
