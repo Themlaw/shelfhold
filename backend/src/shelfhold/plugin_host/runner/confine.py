@@ -299,7 +299,10 @@ _OWNERS: dict[str, dict[str, int]] = {
     "x86_64": {"fcntl": 72, "ioctl": 16},
     "aarch64": {"fcntl": 25, "ioctl": 29},
 }
-_OWNER_COMMANDS = {"fcntl": (8, 15), "ioctl": (0x8901, 0x8902)}  # F_SETOWN(_EX); FIOSETOWN, SIOCSPGRP
+_OWNER_COMMANDS = {
+    "fcntl": (8, 15),
+    "ioctl": (0x8901, 0x8902),
+}  # F_SETOWN(_EX); FIOSETOWN, SIOCSPGRP
 _ARG1 = 24  # seccomp_data.args[1], its low word
 _SIGNAL_NEVER = ("tkill", "pidfd_send_signal")
 _SIGNAL_OR_GROUP = ("kill",)  # the others take a process id (a group id only for `kill`)
@@ -483,7 +486,15 @@ def unconfined_actions() -> tuple[str, ...]:
 
                 try:
                     done = subprocess.run(  # noqa: S603
-                        [sys.executable, "-I", "-c", _PROBE, str(secret), scratch, "1" if filt._signals else "0"],
+                        [
+                            sys.executable,
+                            "-I",
+                            "-c",
+                            _PROBE,
+                            str(secret),
+                            scratch,
+                            "1" if filt._signals else "0",
+                        ],
                         preexec_fn=bind,
                         start_new_session=True,
                         capture_output=True,
