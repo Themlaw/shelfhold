@@ -376,12 +376,15 @@ class RpcSession:
             raise _NoFetcher
         fetcher = call.fetcher
         if method == "fetcher.get":
+            # `cache_ttl` only when the plugin asked for one: the host's own Fetcher (the guarded
+            # client) takes none, and a call that does not ask must not name it
+            asked = {} if model.cache_ttl is None else {"cache_ttl": model.cache_ttl}
             got = await fetcher.get(
                 model.url,
                 headers=model.headers,
                 params=model.params,
                 referer=model.referer,
-                cache_ttl=model.cache_ttl,
+                **asked,
             )
         elif method == "fetcher.post":
             got = await fetcher.post(

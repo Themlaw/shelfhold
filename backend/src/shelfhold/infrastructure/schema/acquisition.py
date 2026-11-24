@@ -567,6 +567,10 @@ plugin_revocation = sa.Table(
     metadata,
     sa.Column("kind", sa.String(), primary_key=True),
     sa.Column("value", sa.Text(), primary_key=True),
+    # M6 closure review (§3.1): a revocation binds the pair (repository, signer) that published
+    # it — another index never revokes what this one installed
+    sa.Column("index_url", sa.Text(), primary_key=True),
+    sa.Column("signer_pubkey", sa.Text(), primary_key=True),
     now_column("seen_at"),
     in_check("kind", REVOCATION_KINDS),
     sa.CheckConstraint("\"value\" <> ''", name="value_not_empty"),

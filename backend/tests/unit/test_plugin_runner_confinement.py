@@ -231,7 +231,7 @@ def test_what_a_plugin_abandons_dies_with_its_connection_and_only_then(short_dir
     pids: list[int] = []
 
     async def scenario() -> None:
-        server = server_in(short_dir)
+        server = server_in(short_dir, max_tasks=1 << 20)  # this uid does other work on a test host
         await server.start()
         try:
             leaver = await session(server, "rpc-demo", "esc:leaves")
@@ -404,7 +404,9 @@ def test_the_self_check_wants_landlock_and_a_plugins_volume_with_nothing_else(
     assert len(odd) == 1 and "shelfhold.db" in odd[0] and "library" in odd[0]
     # what a volume holds, looked at: the wheels, the core's state, what is being installed
     assert stray_entries(tmp_path / "absent") == ()
-    for name in ("site-packages", "state.json", ".staging-01ABC"):
+    # the folders the core keeps there once a plugin comes from an index (its staging, the wheel
+    # of the installed version, the one before): the core's own, closed to the companion
+    for name in ("site-packages", "state.json", ".staging-01ABC", "index", "wheels", "previous"):
         (tmp_path / name).mkdir()
     assert stray_entries(tmp_path) == ()
     (tmp_path / "data.db").write_text("x")

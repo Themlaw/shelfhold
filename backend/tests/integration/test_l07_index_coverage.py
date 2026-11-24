@@ -585,7 +585,13 @@ def test_the_refresh_over_http_applies_the_index_and_leaves_its_audit_row(
     monkeypatch.setattr("shelfhold.main.index_fetcher", lambda _network: fetcher)
     answer = api.post(f"{base}/{URL}/refresh")
     assert answer.status_code == 200, answer.text
-    assert answer.json() == {"url": URL, "version": 1, "applied": True, "rotated": False}
+    assert answer.json() == {
+        "url": URL,
+        "version": 1,
+        "applied": True,
+        "rotated": False,
+        "restart_required": [],
+    }
     rows = db_rows(
         settings, "SELECT action, target FROM audit WHERE action = 'plugin.index_refresh'"
     )

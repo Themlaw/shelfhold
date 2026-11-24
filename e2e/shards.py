@@ -77,4 +77,11 @@ SHARDS: dict[str, tuple[str, ...]] = {
         "test_a_plugin_cannot_change_a_mode_nor_leave_its_group",
         "test_a_process_that_changes_its_pid_dies_with_the_connection_and_leaves_no_zombie",
     ),
+    # M6 (L27): one journey per runner.
+    "m6-example-plugin": ("test_m6_journey_example_plugin_from_signed_index_isolated",),
+    "m6-index-rollback": ("test_m6_journey_index_rollback_refused",),
+    "m6-plugin-crash": ("test_m6_journey_plugin_crash_host_survives",),
+    "m6-sdk-wheel": ("test_m6_journey_sdk_wheel_alone",),
+    "m6-tracker-child": ("test_m6_journey_tracker_refused_to_child",),
+    "m6-kobo-sync": ("test_m6_journey_kobo_sync",),
 }

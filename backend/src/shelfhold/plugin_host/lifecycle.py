@@ -22,9 +22,8 @@ import contextlib
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
-from urllib.parse import urlsplit
 
 import sqlalchemy as sa
 from sqlalchemy import Engine
@@ -58,11 +57,14 @@ __all__ = [
     "InstallRow",
     "PluginLifecycleError",
     "announce_incompatible",
+    "disable_revoked",
     "incompatible_installed",
     "pin",
     "read_install",
     "reattach_if_same_origin",
     "retire_install",
+    "revoked_dists",
+    "revoked_installs",
     "rollback",
     "unpin",
     "update",
@@ -86,9 +88,11 @@ class _Store(Protocol):
 
     async def refresh(self, record: Any, fetcher: Any, *, principal: Any = None) -> Any: ...
 
-    def revoked_plugin_keys(self) -> frozenset[str]: ...
+    def revoked_plugin_keys(self, scope: tuple[str, str] | None = None) -> frozenset[str]: ...
 
-    def revoked_wheel_sha256(self) -> frozenset[str]: ...
+    def revoked_wheel_sha256(self, scope: tuple[str, str] | None = None) -> frozenset[str]: ...
+
+    def vetted_entry(self, document: Any, key: str, record: Any) -> Any: ...
 
     async def fetch_wheel(
         self, entry: IndexEntry, fetcher: Any, destination: Path, *, name: str | None = None
@@ -133,19 +137,37 @@ def _write(
     engine: Engine,
     key: str,
     audit: Callable[[Any], None] | None = None,
+    *,
+    moving_from: str | None = None,
     **values: Any,
 ) -> None:
     """Change the lifecycle columns of a row that exists; the pin (index, signer) is L08's and
     never moves here. The caller's audit callback runs in the same transaction: no lifecycle
-    change without its line, no line without the change."""
+    change without its line, no line without the change.
+
+    `moving_from` is the version a version change started from: the row is written only while it
+    is still unpinned and still at that version. The check of the act came before two waits on
+    the network, so the pin the admin put meanwhile (or another update) is seen here, under the
+    write lock, and nothing is written — the caller puts the files back."""
+    install = acquisition.plugin_install
+    where = [install.c.plugin_id == key]
+    if moving_from is not None:
+        where += [install.c.pinned.is_(False), install.c.version == moving_from]
     with write_transaction(engine) as connection:
-        changed = connection.execute(
-            sa.update(acquisition.plugin_install)
-            .where(acquisition.plugin_install.c.plugin_id == key)
-            .values(**values)
-        ).rowcount
+        changed = connection.execute(sa.update(install).where(*where).values(**values)).rowcount
         if not changed:
-            raise PluginLifecycleError("unknown", f"{key!r} is not an installed plugin")
+            now = connection.execute(
+                sa.select(install.c.pinned).where(install.c.plugin_id == key)
+            ).first()
+            if now is None:
+                raise PluginLifecycleError("unknown", f"{key!r} is not an installed plugin")
+            if now.pinned:
+                raise PluginLifecycleError(
+                    "pinned", "the plugin was pinned meanwhile: unpin it to move it"
+                )
+            raise PluginLifecycleError(
+                "changed", "the installed version moved meanwhile: nothing was written"
+            )
         if audit is not None:
             audit(connection)
 
@@ -362,19 +384,10 @@ async def update(
             "pinned to its own signer — remove the plugin and install it as a distinct one",
         )
     outcome = await store.refresh(record, fetcher)
-    entry = next((e for e in outcome.document.plugins if e.key == key), None)
-    if entry is None:
-        raise PluginLifecycleError("unknown_plugin", f"the index does not list {key!r}")
-    if key in store.revoked_plugin_keys():
-        raise PluginLifecycleError("plugin_revoked", f"the key of {key!r} was revoked")
-    if entry.sha256 in store.revoked_wheel_sha256():
-        raise PluginLifecycleError("wheel_revoked", "the index revoked this wheel")
-    if version_key(entry.min_host) > version_key(HOST_VERSION):
-        raise PluginLifecycleError(
-            "min_host",
-            f"the index vouches for a plugin that needs host {entry.min_host} or newer "
-            f"(this host is {HOST_VERSION})",
-        )
+    # the refresh may have rotated the pin: the revocations that bind this install are the ones
+    # of the (repository, signer) the repository pins now
+    record = next((r for r in store.list() if r.url == row.index_url), record)
+    entry, wheel_name = store.vetted_entry(outcome.document, key, record)
     if entry.version == row.version:
         raise PluginLifecycleError(
             "already_newest", "the installed version is the one the index lists"
@@ -387,11 +400,6 @@ async def update(
         )
     from shelfhold.plugin_host.index.staging import discard_staged_wheel
 
-    wheel_name = PurePosixPath(urlsplit(entry.wheel_url).path).name
-    if not wheel_name.endswith(".whl") or wheel_name == ".whl" or not wheel_name[:-4]:
-        raise PluginLifecycleError(
-            "wheel_name_invalid", "the wheel address does not name a wheel file"
-        )
     kept = _kept_wheel_of(layout, key, plugin.wheel_sha256)
     wheel = await store.fetch_wheel(entry, fetcher, layout.root / "index", name=wheel_name)
     aside = previous_wheel_path(layout, key)
@@ -415,6 +423,7 @@ async def update(
                 engine,
                 key,
                 audit,
+                moving_from=row.version,
                 version=installed.version,
                 sha256=_prefixed(installed.digest),  # the files digest, like the attestation sync
                 previous_version=row.version,
@@ -461,7 +470,9 @@ def rollback(
         raise PluginLifecycleError(
             "pinned", "the installed version is pinned: unpin it to roll the plugin back"
         )
-    if key in store.revoked_plugin_keys():
+    # only the word of the (repository, signer) that vouched for the install binds it
+    scope = None if row.index_url is None else (row.index_url, row.signer_pubkey or "")
+    if scope is not None and key in store.revoked_plugin_keys(scope):
         raise PluginLifecycleError("plugin_revoked", f"the key of {key!r} was revoked")
     if row.previous_version is None or row.previous_sha256 is None:
         raise PluginLifecycleError(
@@ -476,7 +487,7 @@ def rollback(
             f"the plugin state was written by {newest_state}, newer than the previous kept "
             f"version {row.previous_version}: rolling back would read state it cannot parse",
         )
-    if row.previous_sha256 in store.revoked_wheel_sha256():
+    if scope is not None and row.previous_sha256 in store.revoked_wheel_sha256(scope):
         raise PluginLifecycleError(
             "wheel_revoked", "the index revoked the wheel of the previous kept version"
         )
@@ -508,6 +519,7 @@ def rollback(
                 engine,
                 key,
                 audit,
+                moving_from=row.version,
                 version=installed.version,
                 sha256=_prefixed(installed.digest),  # the files digest, like the attestation sync
                 previous_version=None,
@@ -568,6 +580,69 @@ def reattach_if_same_origin(
         return 0
     with write_transaction(engine) as connection:
         return reattach_orphaned(connection, key)
+
+
+def revoked_installs(engine: Engine, layout: Layout) -> dict[str, tuple[str, str]]:
+    """The installed plugins their own index revoked, by plugin key: the distribution, and the
+    closed reason (`plugin_revoked`, `wheel_revoked`). A revocation binds the (repository,
+    signer) that published it: only an install pinned to that very pair is judged by it, and the
+    sha256 judged is the one of the wheel the guard installed. A wheel the admin gave by hand
+    has no index, so no index revokes it."""
+    from shelfhold.plugin_host.public import installed_by_key
+
+    found = installed_by_key(layout)
+    if not found:
+        return {}
+    install, revocation = acquisition.plugin_install, acquisition.plugin_revocation
+    with engine.connect() as connection:
+        tables = set(sa.inspect(connection).get_table_names())
+        if not {install.name, revocation.name} <= tables:
+            return {}  # a database not migrated yet has nothing revoked
+        pins = {
+            row.plugin_id: (row.index_url, row.signer_pubkey)
+            for row in connection.execute(
+                sa.select(install.c.plugin_id, install.c.index_url, install.c.signer_pubkey).where(
+                    install.c.index_url.is_not(None)
+                )
+            )
+        }
+        seen = {
+            (row.kind, row.value, row.index_url, row.signer_pubkey)
+            for row in connection.execute(
+                sa.select(
+                    revocation.c.kind, revocation.c.value,
+                    revocation.c.index_url, revocation.c.signer_pubkey,
+                )
+            )
+        }  # fmt: skip
+    judged: dict[str, tuple[str, str]] = {}
+    for key, plugin in found.items():
+        pin = pins.get(key)
+        if pin is None:
+            continue
+        if ("plugin_key", key, *pin) in seen:
+            judged[key] = (plugin.name, "plugin_revoked")
+        elif ("wheel_sha256", _prefixed(plugin.wheel_sha256), *pin) in seen:
+            judged[key] = (plugin.name, "wheel_revoked")
+    return judged
+
+
+def revoked_dists(engine: Engine, layout: Layout) -> dict[str, str]:
+    """`revoked_installs`, by distribution name: what `verdicts` judges the installed plugins by."""
+    return {dist: code for dist, code in revoked_installs(engine, layout).values()}
+
+
+def disable_revoked(engine: Engine, layout: Layout) -> list[tuple[str, str]]:
+    """An index's revocation reaches the installs it binds (D14): each revoked install that was
+    activated loses its confirmation and its activation. The (key, reason) of each one the call
+    disabled, for the caller's audit line; an install already off is told no more."""
+    disabled: list[tuple[str, str]] = []
+    for key, (dist, code) in sorted(revoked_installs(engine, layout).items()):
+        state = guard.read_state(layout)
+        if dist in state.confirmed or dist in state.enabled:
+            guard.unconfirm(layout, dist)
+            disabled.append((key, code))
+    return disabled
 
 
 def incompatible_installed(

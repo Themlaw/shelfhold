@@ -78,6 +78,9 @@ RUN groupadd --gid 1000 shelfhold \
  && chown 1001:1001 /plugin-rpc
 
 COPY --from=builder /opt/venv /opt/venv
+# the installer of `shelfhold plugin install` (it unpacks a hashed wheel, nothing else): without
+# it the image cannot install a plugin at all
+COPY --from=uv /uv /usr/local/bin/uv
 COPY --from=frontend / /app/frontend/
 COPY docker/healthcheck.py /usr/local/bin/shelfhold-healthcheck
 

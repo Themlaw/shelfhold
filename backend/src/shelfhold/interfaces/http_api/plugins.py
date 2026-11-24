@@ -144,6 +144,9 @@ class RefreshOut(BaseModel):
     version: int
     applied: bool
     rotated: bool
+    # the plugins this refresh deactivated: the process that already runs them keeps serving
+    # until it restarts (ADR-0056)
+    restart_required: list[str] = []
 
 
 _INDEX_PROBLEMS = {
@@ -165,6 +168,9 @@ class PluginOut(BaseModel):
     """One installed third-party plugin: its mode (D13) and why it is not loaded."""
 
     name: str
+    # the plugin key the lifecycle and attestation routes are addressed by (the distribution
+    # name above is not it); None for a distribution that carries no loadable plugin
+    key: str | None = None
     version: str
     mode: str
     status: str  # `enabled` in its own mode, else `disabled`
@@ -410,6 +416,7 @@ def build_plugins_router(
             version=outcome.document.version,
             applied=outcome.applied,
             rotated=outcome.rotated,
+            restart_required=list(outcome.disabled),
         )
 
     # -- the guard of M6 L06 (D13, EF-SRC-019): the mode, the activation, the reason -----------
@@ -417,15 +424,20 @@ def build_plugins_router(
     # own, with the plugin as its target, once the guard has agreed — a refusal (unknown plugin,
     # in-process mode over the wire) leaves no row that says something was allowed.
 
+    def _key_of(dist: str) -> str | None:
+        return next((k for k, found in installed_for().items() if found.dist == dist), None)
+
     def _plugins() -> PluginsOut:
         layout = guard.Layout.of(data_dir())
         state = guard.read_state(layout)
         items = []
-        for verdict in guard.verdicts(layout, os.environ):  # the server's own environment
+        revoked = lifecycle.revoked_dists(engine(), layout)  # an index's word, read every time
+        for verdict in guard.verdicts(layout, os.environ, revoked=revoked):  # the server's env
             plugin = state.installed[verdict.name]
             items.append(
                 PluginOut(
                     name=verdict.name,
+                    key=_key_of(verdict.name),
                     version=plugin.version,
                     mode=verdict.mode,
                     status="enabled" if verdict.granted else "disabled",
@@ -441,7 +453,13 @@ def build_plugins_router(
     def _one(layout: guard.Layout, name: str, *, notice: str | None = None) -> PluginOut:
         state = guard.read_state(layout)
         verdict = next(
-            (v for v in guard.verdicts(layout, os.environ) if v.name == guard.normalise_name(name)),
+            (
+                v
+                for v in guard.verdicts(
+                    layout, os.environ, revoked=lifecycle.revoked_dists(engine(), layout)
+                )
+                if v.name == guard.normalise_name(name)
+            ),
             None,
         )
         plugin = state.installed.get(guard.normalise_name(name))
@@ -449,6 +467,7 @@ def build_plugins_router(
             raise ProblemError("plugin.unknown")
         return PluginOut(
             name=verdict.name,
+            key=_key_of(verdict.name),
             version=plugin.version,
             mode=verdict.mode,
             status="enabled" if verdict.granted else "disabled",
@@ -590,8 +609,9 @@ def build_plugins_router(
                 dist,
                 audit=_lifecycle_audit(principal, "plugin.rollback", key),
             )
-        except lifecycle.PluginLifecycleError as exc:
-            _audit(principal, "plugin.rollback_refused", f"{key}:{exc.code}")
+        except (lifecycle.PluginLifecycleError, guard.PluginInstallError) as exc:
+            code = getattr(exc, "code", "rollback_failed")
+            _audit(principal, "plugin.rollback_refused", f"{key}:{code}")
             raise ProblemError("plugin.rollback_refused", detail=exc.detail) from None
         # another version: the word given for the other one lapses
         attestations().sync_installed(installed_for())

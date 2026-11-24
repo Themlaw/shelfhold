@@ -46,6 +46,25 @@ Clôture de M6 : plugins tiers isolés et index signé, SDK 2.0 prêt à publier
 - Caches : l'effaceur ne touche qu'un fichier régulier ou un lien, jamais un dossier ; chemin borné par une allowlist fermée.
 - Komga : preuve fraîche (36 h) pour un lien familial ; audit quotidien et à la demande.
 
+### Correctifs de la relecture de clôture
+
+Le contradicteur de jalon (`docs/decisions/M6.md`, « Clôture : contradicteur de jalon ») a trouvé deux défauts de gravité élevée, cinq moyens et un bogue d'écran ; tous sont corrigés avant la 1.3.0.
+
+- **Révocation qui désactive (S1)** : un rafraîchissement d'index qui porte une révocation retire l'activation des installations dont la clé ou la roue est révoquée, écrit `plugin.revoked`, et le démarrage et la liste des modules la jugent de nouveau. Une révocation est liée au couple (dépôt, signataire) qui l'a publiée : un autre index ne révoque rien (migration 0118). Le plugin déjà chargé ne s'arrête pas à chaud : la réponse du rafraîchissement donne `restart_required` (HTTP et CLI) avec les clés désactivées.
+- **Mise de côté des secrets (S2)** : une roue installée à la main met de côté l'état et les secrets d'une installation signée précédente (`plugin.state_held`), avant de poser la roue, et la retire sur tout échec ; une identité déjà prise reçoit le suffixe libre suivant, aucune mise de côté n'est perdue.
+- **Clé unique (S6)** : une roue qui déclare une clé déjà installée par une autre distribution est refusée (`conflict`) ; son sha256 est vérifié avant qu'elle soit ouverte. `migrate-to` refuse un remplaçant absent ou d'un autre signataire.
+- **Signaux et lectures entre plugins dans le compagnon (S5, S7)** : un plugin ne peut ni signaler le compagnon ou un autre plugin, ni lire le dossier de travail d'un autre. Landlock ABI 6 porte `scoped = SIGNAL | ABSTRACT_UNIX_SOCKET` ; en dessous, seccomp refuse `kill`, `tkill`, `tgkill`, `rt_sigqueueinfo`, `pidfd_send_signal` et les `F_SETOWN`/`FIOSETOWN` hors du plugin et de son groupe. Landlock gère `READ_FILE` et `READ_DIR` : un plugin lit le système, l'interpréteur et son environnement, les roues installées, son dossier de travail, `/dev/null` et `/dev/urandom`. Le cœur lit `SO_PEERCRED` et refuse un compagnon dont l'uid n'est pas 1001 ; `RLIMIT_NPROC` et `RLIMIT_FSIZE` sont posés ; `HOME` pointe hors du dossier de travail.
+- **Contrôle parental (S4, S3)** : un changement de rôle supprime l'autorisation de tracker du profil (`tracker.allowance_cleared_role_change`) et on n'autorise un tracker que pour un enfant (`tracker_refused`, `not_a_child`) ; `?since=` rend `removed_editions` et le client évince les copies hors ligne d'une Édition devenue invisible, même quand l'Œuvre reste visible par une autre Édition.
+- **Écran des modules par clé (F1)** : `PluginOut` expose `key` ; épingler, désépingler, mettre à jour, revenir en arrière et les attestations s'adressent à la clé du plugin, plus au nom de la distribution.
+- **`plugin.failed` (502)** : un plugin isolé qui meurt pendant un appel donne un refus codé, plus un 500 sans code ; rien du plugin n'atteint la réponse.
+- **Autres** : une mise à jour qui croise un épinglage ne l'écrase plus (S10) ; le retour arrière HTTP refusé par l'installeur répond comme la mise à jour (S12) ; `DataFolder.touch` ne suit plus un lien (S11) ; l'annulation d'une marque d'enfant par l'administrateur écrit une ligne d'audit.
+- **Simplicité** : une seule boucle d'éviction des caches, une seule rejouée de ré-authentification pour les écrans M6, la page Kobo sans appareil et du code mort retirés.
+
+### Ruptures
+
+- **Le compagnon `plugin-runner` exige un noyau 6.2 ou plus (Landlock ABI 3).** Un hôte plus ancien (Debian 12, noyau 6.1, ABI 2) ne démarre plus les plugins isolés : le compagnon sort avec le code 3 et le dit dans son journal (`restart: unless-stopped` le relance en boucle). Mettez à jour le noyau, ou gardez le mode `in_process` (confirmation tapée) en connaissance de cause. Le texte « Landlock 5.13 ou plus » des fichiers compose est corrigé.
+- **`pids_limit` du compagnon : 640.** Le conteneur `plugin-runner` du compose passe de 128 à 640 tâches (512 pour les plugins, 128 de marge) ; reportez la valeur dans votre compose.
+
 ### Reporté en M7
 
 Aucun nouvel élément reporté ; les points ouverts restent dans « Limites connues » (essais sur appareil réel, second registre et miroir, relecture juridique de l'exception de plugin).
@@ -58,8 +77,12 @@ Aucun nouvel élément reporté ; les points ouverts restent dans « Limites con
 - **Second registre et miroir (ENF-GOV-004)** : le code est livré, la poussée réelle attend le compte et le secret ; la release part sur GHCR seul.
 - **Plugins en mode intégré** : la façade garde `_inner` ; la vraie frontière n'existe qu'en mode isolé.
 - **Copies hors ligne** : une copie déjà téléchargée n'est pas révocable à distance (R66).
+- **Compagnon** : en repli seccomp (noyau 6.2 à 6.11, sans portée de signaux), `F_SETOWN`, `F_SETOWN_EX`, `FIOSETOWN` et `SIOCSPGRP` réussissent sans effet : une bibliothèque qui compte sur `SIGIO` pour elle-même ne le reçoit pas ; un plugin n'arrête ses sous-processus que par `killpg` (`subprocess.run(timeout=…)` et `Popen.terminate()` lèvent `PermissionError`). Les plugins du compagnon partagent ses 512 Mio et ses tâches : un plugin peut en priver les autres (déni de service), limite écrite.
+- **Plugins** : `migrate_state` ne tourne que pour un plugin en processus (le garde `state_newer` du retour arrière est presque inerte pour un plugin isolé) ; le retour arrière ne rafraîchit pas l'index ; un plugin tracker isolé est refusé en 1.3.0 (le contrat `Tracker` reste en processus, first-party). Deux `update` ou `rollback` simultanés d'un même plugin peuvent laisser le disque en désaccord avec la base (échec fermé), et une révocation qu'un index ultérieur omet ne revient qu'avec un index de nouveau numéro de version : v1.3.1.
+- **Webhooks** : pas de rotation immédiate, la fenêtre de 24 h est obligatoire (v1.3.1).
+- **Copies hors ligne** : une session d'adulte expirée sans déconnexion laisse ses copies lisibles sur ce navigateur ; se déconnecter les efface.
 
-Migration : oui (0110 à 0117 depuis la 1.2.0), réversible : non (`shelfhold migrate` sauvegarde la base avant de migrer).
+Migration : oui (0110 à 0118 depuis la 1.2.0), réversible : non (`shelfhold migrate` sauvegarde la base avant de migrer).
 
 ## 1.2.0 - à compléter (date de la release)
 

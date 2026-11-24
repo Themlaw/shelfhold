@@ -34,7 +34,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from importlib import metadata
@@ -552,8 +552,11 @@ def requirement_line(name: str, wheel: Path, sha256: str) -> str:
 
 
 def _run(argv: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    # the process has no home to keep a cache in (and the root of the image is read-only): the
+    # installer's own cache lives in the staging folder, which leaves with the install
+    env = {**os.environ, "UV_CACHE_DIR": str(cwd / ".uv-cache")}
     return subprocess.run(  # noqa: S603 - fixed argv, no shell, local file only
-        list(argv), capture_output=True, text=True, check=False, timeout=300, cwd=cwd
+        list(argv), capture_output=True, text=True, check=False, timeout=300, cwd=cwd, env=env
     )
 
 
@@ -565,14 +568,9 @@ def file_sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def install_wheel(
-    layout: Layout,
-    wheel: Path,
-    sha256: str,
-    *,
-    runner: Runner = _run,
-    prefix: Sequence[str] | None = None,
-) -> Installed:
+def verify_wheel_sha256(wheel: Path, sha256: str) -> str:
+    """The expected digest, once the file is known to hash to it: a wheel is opened (listed,
+    read) only after this, never before (M6 closure re-check, R5)."""
     expected = sha256.lower().removeprefix("sha256:")
     if not _SHA256.match(expected):
         raise PluginInstallError("hash_invalid", "expected a 64-digit sha256")
@@ -582,6 +580,18 @@ def install_wheel(
         raise PluginInstallError("bad_wheel", str(exc)) from exc
     if actual != expected:
         raise PluginInstallError("hash_mismatch", f"the file hashes to {actual}")
+    return expected
+
+
+def install_wheel(
+    layout: Layout,
+    wheel: Path,
+    sha256: str,
+    *,
+    runner: Runner = _run,
+    prefix: Sequence[str] | None = None,
+) -> Installed:
+    expected = verify_wheel_sha256(wheel, sha256)
     info = inspect_wheel(wheel)
     state = read_state(layout)
     check_conflicts(info, layout, state)
@@ -918,18 +928,24 @@ def verdicts(
     environ: dict[str, str] | os._Environ[str],
     *,
     interpreter: Interpreter | None = None,
+    revoked: Mapping[str, str] | None = None,
 ) -> list[Verdict]:
     """For each installed plugin, in its own mode: granted only when the activation of that
     mode holds (the reserved action for isolated, the variable and the typed confirmation for
     in process). Each condition is checked again at every start; none is remembered on its own.
     The wheel's tags are compared to the interpreter first (ENF-OPS-018): a plugin whose ABI
     no longer matches — the host moved to a newer Python — is never granted, whatever its
-    mode, and the reason says the guided reinstall."""
+    mode, and the reason says the guided reinstall. `revoked` maps a distribution to the closed
+    reason its own index revoked it for (`lifecycle.revoked_dists`): such a plugin is never
+    granted either, whatever it was enabled with — the revocation is read at every start."""
     judge = current_interpreter() if interpreter is None else interpreter
     state = read_state(layout)
     strays = unexpected_entries(layout, state)
     out = []
     for name, plugin in sorted(state.installed.items()):
+        if revoked is not None and name in revoked:
+            out.append(Verdict(name, False, f"revoked by its index ({revoked[name]})", plugin.mode))
+            continue
         problem = _sound_and_unchanged(layout, plugin, strays)
         tags = installed_wheel_tags(layout, plugin)
         if tags:

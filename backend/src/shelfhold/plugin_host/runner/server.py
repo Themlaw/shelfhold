@@ -38,7 +38,7 @@ from pathlib import Path
 
 import structlog
 
-from shelfhold.plugin_host.adapters.rpc.stdio import spawn_stdio
+from shelfhold.plugin_host.adapters.rpc.stdio import MAX_TASKS, spawn_stdio
 from shelfhold.plugin_host.rpc import codec, runner_wire
 from shelfhold.plugin_host.rpc.protocol import Channel, RpcLimits
 from shelfhold.plugin_host.runner import confine
@@ -66,6 +66,7 @@ class RunnerConfig:
     plugins_root: Path  # the volume: `site-packages` holds the installed wheels
     limits: RpcLimits = field(default_factory=RpcLimits)  # the ceilings; the core asks for less
     max_plugins: int = 16
+    max_tasks: int = MAX_TASKS  # `RLIMIT_NPROC` of a plugin's process (`stdio.MAX_TASKS`)
     core_uid: int = CORE_UID  # the one uid whose connections are served (`--core-uid`)
 
     @property
@@ -259,7 +260,7 @@ class RunnerServer:
         """The plugin's process: bound by Landlock to a scratch folder of its own."""
         scratch = Path(tempfile.mkdtemp(prefix="plugin-"))
         self._scratch[request.key] = scratch
-        rules = confine.Ruleset([scratch])
+        rules = confine.Ruleset([scratch], confine.read_roots(self._config.site))
         try:
             filt = confine.Filter()
 
@@ -270,8 +271,9 @@ class RunnerServer:
             return await spawn_stdio(
                 self._argv(request.entry),
                 limits=self._limits(request),
-                extra_env={"TMPDIR": str(scratch)},
+                extra_env={"TMPDIR": str(scratch), "HOME": str(scratch)},
                 confine=bind,
+                max_tasks=self._config.max_tasks,
             )
         finally:
             rules.close()

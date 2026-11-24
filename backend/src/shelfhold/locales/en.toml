@@ -283,6 +283,7 @@
   index_none = "No index repository pinned."
   index_row = "{url} {key_id} v{version} expires {expires}"
   index_refreshed = "Index of {url} applied: version {version}{rotated, plural, =0 {} other { (key rotated)}}."
+  restart_required = "Revoked and deactivated: {keys}. A process that already runs them keeps serving until it restarts: restart the server and the companion."
   index_unchanged = "Index of {url} unchanged: version {version} already applied."
   index_removed = "Repository {url} removed; a new add starts from zero."
   index_not_found_detail = "No index repository is pinned at this address."
@@ -1868,6 +1869,11 @@
     title = "This source setting is refused."
     action = "Correct the named field; a secret is regulated separately, by set-secret, never as a value."
     cause = "The value of a setting does not follow the format expected by this source, or a secret was entered like a regular setting."
+
+  [errors."plugin.failed"]
+    title = "The isolated plugin stopped responding."
+    action = "Retry the search or re-enable the plugin, then try again."
+    cause = "The plugin's companion process stopped during the call: it crashed or was stopped."
 
   [errors."plugin.unknown"]
     title = "No loaded or installed plugin carries this key."

@@ -4062,6 +4062,10 @@ export type PlanOut = {
  */
 export type PluginOut = {
     /**
+     * Key
+     */
+    key?: string | null;
+    /**
      * Mode
      */
     mode: string;
@@ -4619,6 +4623,10 @@ export type PublicationOut = {
      */
     carrier_type: 'content' | 'export_item';
     /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
      * Expires At
      */
     expires_at: string;
@@ -5027,6 +5035,10 @@ export type RefreshOut = {
      * Applied
      */
     applied: boolean;
+    /**
+     * Restart Required
+     */
+    restart_required?: Array<string>;
     /**
      * Rotated
      */
@@ -8404,6 +8416,10 @@ export type WorksPageOut = {
      * Removed
      */
     removed: Array<string>;
+    /**
+     * Removed Editions
+     */
+    removed_editions: Array<string>;
     /**
      * Series
      */

@@ -6809,6 +6809,17 @@
       "PluginOut": {
         "description": "One installed third-party plugin: its mode (D13) and why it is not loaded.",
         "properties": {
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
           "mode": {
             "title": "Mode",
             "type": "string"
@@ -7728,6 +7739,10 @@
             "title": "Carrier Type",
             "type": "string"
           },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
           "expires_at": {
             "format": "date-time",
             "title": "Expires At",
@@ -7829,6 +7844,7 @@
           "reading_direction",
           "series_id",
           "work_id",
+          "edition_id",
           "expires_at",
           "pages",
           "spine",
@@ -8435,6 +8451,14 @@
           "applied": {
             "title": "Applied",
             "type": "boolean"
+          },
+          "restart_required": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Restart Required",
+            "type": "array"
           },
           "rotated": {
             "title": "Rotated",
@@ -13915,6 +13939,13 @@
             "title": "Removed",
             "type": "array"
           },
+          "removed_editions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed Editions",
+            "type": "array"
+          },
           "series": {
             "anyOf": [
               {
@@ -13942,7 +13973,8 @@
           "items",
           "total",
           "since",
-          "removed"
+          "removed",
+          "removed_editions"
         ],
         "title": "WorksPageOut",
         "type": "object"
@@ -37418,6 +37450,10 @@
     "/api/v1/problems/plugin.enable-refused": {
       "code": "plugin.enable_refused",
       "status": 422
+    },
+    "/api/v1/problems/plugin.failed": {
+      "code": "plugin.failed",
+      "status": 502
     },
     "/api/v1/problems/plugin.incompatible": {
       "code": "plugin.incompatible",

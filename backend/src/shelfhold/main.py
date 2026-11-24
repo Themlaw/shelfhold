@@ -134,6 +134,7 @@ from shelfhold.ops.requests import build_service, resolve_request_ref, subscribe
 from shelfhold.ops.wiring import open_ops
 from shelfhold.plugin_host import lifecycle
 from shelfhold.plugin_host.adapters.rpc.runner_socket import (
+    RUNNER_UID,
     connect_runner,
 )
 from shelfhold.plugin_host.attestation import AttestationStore
@@ -410,7 +411,9 @@ def create_app(
         layout = Layout.of(resolved.data_dir)
         granted_isolated = [
             verdict.name
-            for verdict in verdicts(layout, os.environ)
+            for verdict in verdicts(
+                layout, os.environ, revoked=lifecycle.revoked_dists(engine, layout)
+            )
             if verdict.granted and verdict.mode == MODE_ISOLATED
         ]
         if not granted_isolated:
@@ -436,7 +439,9 @@ def create_app(
             for key, entry in entries:
 
                 async def _connect(key: str = key, entry: str = entry) -> Any:
-                    channel = await connect_runner(socket_path, key=key, entry=entry, limits=limits)
+                    channel = await connect_runner(
+                        socket_path, key=key, entry=entry, limits=limits, runner_uid=RUNNER_UID
+                    )
                     try:
                         session = await RpcSession.open(
                             channel, key=key, limits=limits, on_event=_sink
@@ -673,7 +678,8 @@ def create_app(
             schema_for,
             lambda: resolved.data_dir,  # M6 L06: the guard reads the installed plugins
             lambda: engine,
-            lambda: RepoStore(engine, now=clock.now),  # M6 L07: the pinned plugin indexes
+            # M6 L07: the pinned plugin indexes; a refresh disables what an index revoked
+            lambda: RepoStore(engine, now=clock.now, layout=Layout.of(resolved.data_dir)),
             lambda: index_fetcher(composition.network),
             lambda: installed_versions(resolved),  # M6 L09a: the lifecycle, by the plugin key
         ),

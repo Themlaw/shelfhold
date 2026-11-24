@@ -18,6 +18,8 @@ import pytest
 if TYPE_CHECKING:
     from journey import Journey
 
+from m6_hosts import NAMES as M6_NAMES
+
 COMPOSE_FILE = Path(__file__).resolve().parents[1] / "compose.yaml"
 
 
@@ -95,6 +97,7 @@ M3_FILES = [*M2_FILES, "m3.yaml"]
 M4_FILES = [*M2_FILES, "m4.yaml"]
 M5_FILES = [*M4_FILES, "m5.yaml"]
 M5_OIDC_FILES = [*M5_FILES, "m5-oidc.yaml"]
+M6_FILES = [*M5_FILES, "m6.yaml"]
 
 
 @pytest.fixture
@@ -152,11 +155,18 @@ def journey_m5_oidc(tmp_path: Path) -> Iterator["Journey"]:
     yield from _journey(M5_OIDC_FILES, extra_env=env)
 
 
+@pytest.fixture
+def journey_m6(tmp_path: Path) -> Iterator["Journey"]:
+    """The M5 stack with the M6 overlay: plugin index, isolated companion, Kobo sync."""
+    yield from _journey(M6_FILES, extra_env=_m2_env(tmp_path))
+
+
 def _m2_env(tmp_path: Path) -> dict[str, str]:
     from pki import make
 
     folder = tmp_path / "pki"
-    make(folder, ["fr.wikisource.org", "ws-export.wmcloud.org", "standardebooks.org", "idp.e2e.test"])
+    make(folder, ["fr.wikisource.org", "ws-export.wmcloud.org", "standardebooks.org", "idp.e2e.test",
+                  *M6_NAMES])
     return {
         "E2E_PKI_DIR": str(folder),
         **({"E2E_LOG_LEVEL": os.environ["E2E_LOG_LEVEL"]} if "E2E_LOG_LEVEL" in os.environ else {}),

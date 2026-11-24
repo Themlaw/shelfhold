@@ -142,3 +142,21 @@ def make_cli(tmp_path: Path) -> Cli:
     done = cli.run("migrate")
     assert done.returncode == 0, done.stderr
     return cli
+
+
+def install_plugin_wheel(data_dir: Path, dist: str, key: str) -> None:
+    """Install, through the guard, a wheel whose entry point declares `key` (the plugin is
+    installed and disabled, as every third-party plugin starts)."""
+    import tempfile
+
+    from shelfhold.plugin_host import install as guard
+
+    module = dist.replace("-", "_")
+    with tempfile.TemporaryDirectory() as scratch:
+        wheel = build_wheel(
+            Path(scratch),
+            dist,
+            {f"{module}/__init__.py": "x = 1\n"},
+            entry=(key, f"{module}:plugin"),
+        )
+        guard.install_wheel(guard.Layout.of(data_dir), wheel.path, wheel.sha256)

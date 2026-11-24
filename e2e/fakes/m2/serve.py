@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from books import book  # noqa: E402
+from plugin_index import serve as plugin_index  # noqa: E402
 from httpshell import make_server  # noqa: E402
 
 from tests.fakes.opds import acquisition_entry, atom_feed, kavita_description, navigation_entry  # noqa: E402
@@ -142,6 +143,8 @@ def handle(method: str, target: str, headers: dict[str, str], body: bytes) -> Re
         return publisher(path)
     if host == OPDS:
         return opds(path, query)
+    if host in plugin_index.HOSTS:  # the plugin repository of the M6 journeys
+        return plugin_index.handle(host, path)
     return 404, {}, quote(host).encode()
 
 
