@@ -10,7 +10,7 @@ Ce qui existe aujourd'hui et ce qui est à venir :
 | --- | --- | --- |
 | Contrat | stable, SDK 2.0 ([source.md](source.md), [compatibilite.md](compatibilite.md)) | contrat 2.0 : plan `FsOp` et `ApiCall.body` figés, le reste **provisoire** ([destination.md](destination.md)) ; `api` 1 accepté par le shim jusqu'en 2027-11 |
 | Kit de conformité | livré ([kit.md](kit.md)) | à venir en M4 : seuls le contrôle du plan d'opérations et celui des déclarations existent |
-| Index officiel, hébergement d'un index tiers, migrations d'état | à venir en M6 | à venir en M6 |
+| Index officiel, hébergement d'un index tiers, migrations d'état | livré en M6 ([index.md](index.md), [heberger-un-index.md](heberger-un-index.md), [cycle-de-vie.md](cycle-de-vie.md)) | livré en M6 |
 
 Un plugin tiers est **désactivé par défaut** et tourne avec les droits de Shelfhold : lisez
 [../admin/plugins-tiers.md](../admin/plugins-tiers.md) avant d'en publier un.
@@ -59,13 +59,20 @@ pas, publiez votre plugin sous une licence **compatible AGPL**. Ne dépendez d'a
 
 Une source qui vise l'index officiel passe la liste d'admission de [source.md](source.md#liste-dadmission-enf-leg-003)
 (preuve de licence ou d'autorisation, conditions et robots lus, limites déclarées, aucun secret, kit vert,
-revue CODEOWNERS). Une destination n'a pas d'index avant M6.
+revue CODEOWNERS). Une destination passe par le même index signé qu'une source (voir [index.md](index.md)) et le même
+mode isolé ([isolation.md](isolation.md)).
 
-## 7. Proposer le plugin
+## 7. Publier et proposer le plugin
 
-Ouvrez une PR avec le gabarit de PR du dépôt (`.github/pull_request_template.md`). Les commits portent une
-ligne `Signed-off-by` (DCO). L'index officiel et l'hébergement d'un index tiers sont **à venir en M6** :
-d'ici là, un plugin s'installe localement et reste désactivé tant que l'admin ne l'a pas attesté.
+1. Publiez la roue sur PyPI (publication de confiance OIDC) ou servez-la vous-même, avec
+   `shelfhold-sdk>=2.0,<3` en dépendance.
+2. Demandez l'inscription à l'index officiel (voir [index.md](index.md)) ou hébergez votre propre
+   index (voir [heberger-un-index.md](heberger-un-index.md)).
+3. Ouvrez une PR avec le gabarit de PR du dépôt (`.github/pull_request_template.md`). Les commits
+   portent une ligne `Signed-off-by` (DCO).
+
+Un plugin reste **désactivé par défaut** tant que l'administrateur ne l'a pas installé et activé.
+Le mode isolé est recommandé ([isolation.md](isolation.md)).
 
 ## Démos et captures
 
