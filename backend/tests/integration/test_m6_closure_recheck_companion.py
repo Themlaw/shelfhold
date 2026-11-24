@@ -101,7 +101,7 @@ def test_control_abi6_scope_also_stops_f_setown() -> None:
     assert got == [] and sibling_code is None, out
 
 
-# -- régressions du repli seccomp : un processus fils du plugin -----------------------------
+# -- régressions du repli seccomp : un processus enfant du plugin -----------------------------
 
 CHILDREN = """
 import os, signal, subprocess, sys
@@ -169,8 +169,8 @@ print(out)
 
 @needs_landlock
 def test_a_bound_plugin_can_still_find_its_home() -> None:
-    """Le plugin reçoit un environnement fermé (ni HOME ni USER) : Path.home() et getuser()
-    passaient par /etc/passwd, que la nouvelle liste de lecture ne contient pas."""
+    """Le plugin reçoit des variables fermées (ni HOME ni USER) : Path.home() et getuser()
+    passaient par /etc/passwd, que la nouvelle liste de lecture ne couvre pas."""
     scratch = Path(tempfile.mkdtemp(prefix="plugin-"))
     rules = confine.Ruleset([scratch], confine.read_roots())
     try:
