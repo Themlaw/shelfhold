@@ -33,6 +33,19 @@ ADMIN = Principal("1000", "uid:1000", "admin", Credential.LOCAL_CLI)
 REPLACEMENT = "plugin-b"
 
 
+def _named(env: object, replacement: str) -> None:
+    """The install row an index wrote for the old plugin: its entry named the replacement —
+    the word `migrate_to` moves by, never a key the admin alone picked."""
+    with env.inst.engine.begin() as connection:
+        connection.execute(
+            sa.insert(acquisition.plugin_install).values(
+                plugin_id=PLUGIN, version="1.0.0", api="2", origin="local",
+                sha256="sha256:" + "a" * 64, index_url="https://index.example.org/index.json",
+                signer_pubkey="k", min_host="1.0.0", replaced_by=replacement,
+            )
+        )  # fmt: skip
+
+
 def _items(env: object) -> list[tuple[str, str]]:
     with env.inst.engine.connect() as connection:
         rows = connection.execute(
@@ -52,6 +65,7 @@ def test_identity_migration_consults_tombstones(
         live(env, "hit-1")  # its old form resolves, by an alias, to the erased reference
         alias(env, "hit-1", GONE)
         erase(env, monkeypatch, settings, gone)  # the purge takes the erased series' own row
+        _named(env, REPLACEMENT)  # the index named the replacement: the word the move needs
 
         # the reserved action and its door: the host CLI through the operating channel
         assert "plugin.migrate_to" in RESERVED_ACTIONS

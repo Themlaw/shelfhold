@@ -70,6 +70,7 @@ def test_poc_migrate_to_leaves_erased_series_open_under_the_replacement(
         live(env, "hit-1")
         alias(env, "hit-1", GONE)
         erase(env, monkeypatch, settings, gone)
+        _named(env, REPLACEMENT)  # the install row: the index named the replacement
 
         PluginMigrationOps(env.inst.comp).migrate_to(
             key=PLUGIN, replacement=REPLACEMENT, principal=ADMIN

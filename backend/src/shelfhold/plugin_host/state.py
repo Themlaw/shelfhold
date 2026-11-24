@@ -14,6 +14,7 @@ one the state names — the refusal says so, and the installed plugin is left ex
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -132,8 +133,9 @@ def migrate_documents(
     Refused, closed: a schema that changed without the hook (`migration_missing`), a state
     newer than the version the plugin declares (`state_newer`) — a version that did not write
     it cannot be trusted to read it — and a hook that is the plugin's own bug: one that raises,
-    or one that answers nothing (`hook_failed`). The plugin is untrusted; its error is not the
-    host's. A refusal migrates nothing: the documents are left exactly as they were."""
+    one that answers nothing, or one that answers what the host cannot keep (`hook_failed`).
+    The plugin is untrusted; its error is not the host's. A refusal migrates nothing: the
+    documents are left exactly as they were."""
     declared = declared_schema(instance)
     hook = _hook_of(instance)
     documents = read_documents(engine, plugin_id)
@@ -166,6 +168,14 @@ def migrate_documents(
                 f"migrate_state answered nothing for the document {document.key!r}: a state "
                 "document is never replaced by an empty answer",
             )
+        try:  # the host keeps the payload as the JSON column takes it, or not at all
+            json.dumps(payload)
+        except (TypeError, ValueError):
+            raise PluginStateError(
+                "hook_failed",
+                f"migrate_state answered a payload the host cannot keep for the document "
+                f"{document.key!r}: a state document is kept as it can be read back",
+            ) from None
         migrated.append(StateDocument(document.key, payload, declared, version))
     if not migrated:  # fmt: skip
         return 0

@@ -4,10 +4,9 @@ replacement its index named.
 A reserved action (`plugin.migrate_to`): the host CLI or a fresh admin session, never a key.
 The replacement is the key the old plugin's signed index named in `replaced_by` — the word the
 install kept beside its pin, like `min_host` — and never a revoked key. A plugin no index ever
-vouched for (nothing ever installed it) has no such word: only its own family, the same first
-segment of its key (a re-keying of the same plugin), moves without one. The replacement is never
-installed by the index's word alone (another key is a new install, with its own checks) — this
-is the admin's own act on what the old plugin owns.
+vouched for has no word: nothing moves for it, whatever key the admin names. The replacement is
+never installed by the index's word alone (another key is a new install, with its own checks) —
+this is the admin's own act on what the old plugin owns.
 
 Every living line is asked about as a family of references: its new form under the replacing
 plugin and its old form (the inverse alias), because a line that would meet a tombstone,
@@ -84,44 +83,57 @@ class PluginMigrationOps:
                         acquisition.source_item.c.remote_id,
                     ).where(acquisition.source_item.c.plugin_id == key)
                 ).all()
-                if not items:
+                # A migration cut before its seal leaves the old key with no line: the
+                # tombstones under it are still to be sealed under the replacement, and the
+                # rerun finishes that job before it refuses — the seal is the whole act left.
+                unsealed = not items and bool(service.erased_series_sources(key))
+                if not items and not unsealed:
                     raise CodedRefusal(
                         "unknown", f"unknown plugin: no source of {key!r} is in the library"
                     )
                 self._check_replacement(connection, key, replacement)
-                # the family of each line: its new form under the replacing plugin, and its old
-                # form (the inverse alias) — a tombstone met by either one holds the line
-                families = [
-                    (
-                        row.id,
+                if unsealed:  # no line is left: the seal is the whole act, after the lock
+                    blocked: set[str] = set()
+                    moved: list[Any] = []
+                else:
+                    # the family of each line: its new form under the replacing plugin, and
+                    # its old form (the inverse alias) — a tombstone met by either one holds
+                    # the line
+                    families = [
                         (
-                            SeriesBindingRef(replacement, row.source_key, row.remote_id),
-                            SeriesBindingRef(key, row.source_key, row.remote_id),
-                        ),
-                    )
-                    for row in items
-                ]
-                blocked = service.screen_refs(families, announce=False)
-                moved = [row for row in items if row.id not in blocked]
-                self._refuse_collisions(connection, key, replacement, moved)
-                for row in moved:
+                            row.id,
+                            (
+                                SeriesBindingRef(replacement, row.source_key, row.remote_id),
+                                SeriesBindingRef(key, row.source_key, row.remote_id),
+                            ),
+                        )
+                        for row in items
+                    ]
+                    blocked = service.screen_refs(families, announce=False)
+                    moved = [row for row in items if row.id not in blocked]
+                    self._refuse_collisions(connection, key, replacement, moved)
+                    for row in moved:
+                        connection.execute(
+                            sa.update(acquisition.source_item)
+                            .where(acquisition.source_item.c.id == row.id)
+                            .values(plugin_id=replacement)
+                        )
+                    self._move_aliases(connection, key, replacement, blocked)
                     connection.execute(
-                        sa.update(acquisition.source_item)
-                        .where(acquisition.source_item.c.id == row.id)
-                        .values(plugin_id=replacement)
-                    )
-                self._move_aliases(connection, key, replacement, blocked)
-                connection.execute(
-                    sa.insert(identity.audit).values(
-                        id=new_ulid(), actor_id=principal.actor_id, action="plugin.migrated_to",
-                        target=f"{key}->{replacement};rows:{len(moved)};blocked:{len(blocked)}",
-                        session_id=principal.session_id, auth_time=principal.auth_time,
-                    )
-                )  # fmt: skip
+                        sa.insert(identity.audit).values(
+                            id=new_ulid(), actor_id=principal.actor_id,
+                            action="plugin.migrated_to",
+                            target=f"{key}->{replacement};rows:{len(moved)};blocked:{len(blocked)}",
+                            session_id=principal.session_id, auth_time=principal.auth_time,
+                        )
+                    )  # fmt: skip
         # After the lock is let go (the tombstones write in their own transactions): the new
-        # forms are sealed, and the hits told. A cut in between leaves the migration to be made
-        # again: the forms still to seal are the same ones, so a rerun finishes the job.
+        # forms are sealed, and the hits told. A cut in between leaves the migration to be
+        # made again: the forms still to seal are the same ones, so a rerun finishes the job —
+        # and a rerun with no line left seals before it refuses, so the job is always finished.
         self._seal(service, key, replacement, items, blocked)
+        if unsealed:
+            raise CodedRefusal("unknown", f"unknown plugin: no source of {key!r} is in the library")
         if blocked:  # after the lock is let go, like every migration that tells its hits
             service.announce_hits(["series_binding"])
         return {"moved": len(moved), "blocked": len(blocked)}
@@ -129,8 +141,7 @@ class PluginMigrationOps:
     def _check_replacement(self, connection: Connection, key: str, replacement: str) -> None:
         """The replacement is the key the old plugin's signed index named in `replaced_by` —
         the word the install kept beside its pin — and never a revoked key. A plugin no index
-        ever vouched for has no word: only its own family (the same first segment of its key, a
-        re-keying of the same plugin) moves without one."""
+        ever vouched for has no word: whatever key the admin names is refused."""
         named = connection.execute(
             sa.select(acquisition.plugin_install.c.replaced_by).where(
                 acquisition.plugin_install.c.plugin_id == key
@@ -141,14 +152,7 @@ class PluginMigrationOps:
             raise CodedRefusal(
                 "revoked", f"revoked: the key of {replacement!r} was revoked by an index"
             )  # fmt: skip
-        if named is not None:
-            if replacement != named.replaced_by:
-                raise CodedRefusal(
-                    "not_named",
-                    f"not_named: no index named {replacement!r} as the replacement of {key!r}",
-                )
-            return
-        if replacement.partition("-")[0] != key.partition("-")[0]:
+        if named is None or replacement != named.replaced_by:
             raise CodedRefusal(
                 "not_named",
                 f"not_named: no index named {replacement!r} as the replacement of {key!r}",

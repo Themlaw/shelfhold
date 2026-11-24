@@ -248,6 +248,39 @@ def test_host_calls_migrate_state_before_the_first_call_of_a_new_version(
         engine.dispose()
 
 
+@pytest.mark.req("EF-SRC-030")
+def test_migrate_state_answering_an_unkeepable_payload_is_a_closed_refusal(
+    settings: Settings,
+) -> None:
+    """The hook answers a set: the host keeps a payload as the JSON column takes it, and an
+    answer it cannot keep is the plugin's own bug (`hook_failed`), never the host's crash —
+    the start-up that catches the refusal keeps going, and the state stays as it was."""
+    migrate(settings)
+    engine = create_db_engine(settings.database_path)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                sa.insert(acquisition.plugin_state).values(
+                    plugin_id=KEY, key="cursor", payload={"page": 1}, payload_schema=1
+                )
+            )
+
+        class Unkeepable:
+            payload_schema = 2
+
+            def migrate_state(self, from_version: int, key: str, payload: Any) -> Any:
+                return {"pages"}  # a set: no JSON document keeps it
+
+        with pytest.raises(state.PluginStateError) as raised:
+            state.migrate_documents(engine, KEY, Unkeepable(), "2.0.0")
+        assert raised.value.code == "hook_failed"
+        assert state.read_documents(engine, KEY) == [
+            state.StateDocument("cursor", {"page": 1}, 1, None)
+        ]
+    finally:
+        engine.dispose()
+
+
 # -- the rollback is refused toward a version that cannot read the written state ------------------
 
 
@@ -483,3 +516,67 @@ def test_index_fields_deprecated_replaced_by_min_host(
     out = capsys.readouterr().out
     assert "déprécié" in out
     assert _state_version(settings) == "2.0.0"
+    engine = create_db_engine(settings.database_path)
+    try:
+        with engine.connect() as connection:
+            replaced_by = connection.execute(
+                sa.select(acquisition.plugin_install.c.replaced_by)
+            ).scalar()
+        assert replaced_by == "acme2"  # the update keeps the new entry's word too
+    finally:
+        engine.dispose()
+
+
+def test_index_refresh_keeps_the_replaced_by_word_of_the_installed_plugin(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """The index deprecates the installed version, then names another successor: the install
+    row keeps the index's own word — a migration moves by it, never by a stale one, and the
+    plugin itself is untouched by the refresh."""
+    migrate(settings)
+    signer = make_key()
+    assert (
+        run_cli(monkeypatch, settings, "plugin", "index", "add", URL, "--pubkey", signer.public_b64)
+        == 0
+    )
+    wheel = _wheel(tmp_path, "1.0.0")
+    fetcher = FakeFetcher()
+    _served(fetcher, signer, version=1, wheel=wheel, plugin_version="1.0.0", min_host="1.0.0")
+    assert _install(monkeypatch, settings, fetcher) == 0
+
+    def _replaced_by(settings: Settings) -> str | None:
+        engine = create_db_engine(settings.database_path)
+        try:
+            with engine.connect() as connection:
+                return connection.execute(
+                    sa.select(acquisition.plugin_install.c.replaced_by)
+                ).scalar()
+        finally:
+            engine.dispose()
+
+    assert _replaced_by(settings) is None
+
+    # the index deprecates the installed version: the refresh keeps the word, the plugin
+    # itself is untouched
+    deprecated = FakeFetcher()
+    _served(
+        deprecated, signer, version=2, wheel=wheel, plugin_version="1.0.0",
+        min_host="1.0.0", deprecated=True, replaced_by="acme2",
+    )  # fmt: skip
+    monkeypatch.setattr(
+        "shelfhold.interfaces.cli.plugin.index_fetcher", lambda _network: deprecated
+    )
+    assert run_cli(monkeypatch, settings, "plugin", "index", "refresh", URL) == 0
+    assert _replaced_by(settings) == "acme2"
+    assert _state_version(settings) == "1.0.0"
+
+    # a later index names another successor: the word follows, the install still untouched
+    successor = FakeFetcher()
+    _served(
+        successor, signer, version=3, wheel=wheel, plugin_version="1.0.0",
+        min_host="1.0.0", deprecated=True, replaced_by="acme3",
+    )  # fmt: skip
+    monkeypatch.setattr("shelfhold.interfaces.cli.plugin.index_fetcher", lambda _network: successor)
+    assert run_cli(monkeypatch, settings, "plugin", "index", "refresh", URL) == 0
+    assert _replaced_by(settings) == "acme3"
+    assert _state_version(settings) == "1.0.0"

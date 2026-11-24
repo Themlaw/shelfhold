@@ -421,6 +421,7 @@ async def update(
                 previous_sha256=_prefixed(plugin.wheel_sha256),  # proven byte for byte above
                 api=str(entry.api),
                 min_host=entry.min_host,
+                replaced_by=entry.replaced_by,  # the new entry's word, like the install's pin
             )
         except Exception:
             _restore(layout, key, dist, row.version, plugin.wheel_sha256, grant)

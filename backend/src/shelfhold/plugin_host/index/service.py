@@ -403,6 +403,19 @@ class RepoStore:
                     .values(kind="wheel_sha256", value=wheel)
                     .on_conflict_do_nothing()
                 )
+            for entry in document.plugins:
+                # the index's own word about an install it vouches for: a version it
+                # deprecates, or a successor it names instead of the one kept, is kept in
+                # the install row — the migration moves by that word, never by what the
+                # host remembers of a document it no longer has
+                connection.execute(
+                    sa.update(acquisition.plugin_install)
+                    .where(
+                        acquisition.plugin_install.c.plugin_id == entry.key,
+                        acquisition.plugin_install.c.index_url == record.url,
+                    )
+                    .values(replaced_by=entry.replaced_by)
+                )
             if principal is not None:
                 self._audit(connection, principal, "plugin.index_refresh", record.url)
         log.info(
