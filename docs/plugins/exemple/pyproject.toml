@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shelfhold-plugin-exemple"
+version = "0.1.0"
+description = "Source d'exemple de Shelfhold (catalogue synthetique hors ligne)"
+requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = ["shelfhold-sdk>=2.0,<3"]
+
+[project.entry-points."shelfhold.plugins"]
+exemple = "plugin_exemple.source:ExampleSource"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

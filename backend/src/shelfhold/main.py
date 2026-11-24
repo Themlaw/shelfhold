@@ -4,11 +4,12 @@ import asyncio
 import contextlib
 import os
 import signal
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import cache
 from pathlib import Path
+from typing import Any
 
 import sqlalchemy as sa
 import structlog
@@ -132,9 +133,21 @@ from shelfhold.ops.notifications import subscribe_notifications
 from shelfhold.ops.requests import build_service, resolve_request_ref, subscribe_arrivals
 from shelfhold.ops.wiring import open_ops
 from shelfhold.plugin_host import lifecycle
+from shelfhold.plugin_host.adapters.rpc.runner_socket import (
+    connect_runner,
+)
 from shelfhold.plugin_host.attestation import AttestationStore
 from shelfhold.plugin_host.index import RepoStore, index_fetcher
+from shelfhold.plugin_host.install import MODE_ISOLATED, Layout, read_state, verdicts
 from shelfhold.plugin_host.public import PluginRegistry, installed_versions, start_plugins
+from shelfhold.plugin_host.registry import (
+    InstalledPlugin,
+    PluginOrigin,
+    publish_plugin_event,
+    third_party_entries,
+)
+from shelfhold.plugin_host.rpc.host_side import RpcSession
+from shelfhold.plugin_host.rpc.protocol import RpcLimits
 from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse_settings_schema
 from shelfhold.progress_lease import build_progress_lease
 from shelfhold.reading.application.content_access import (
@@ -285,6 +298,9 @@ def log_effective_config(settings: Settings) -> None:
         structlog.get_logger().info("startup.comicvine", notice=NOTICE, terms_url=TERMS_URL)
 
 
+ISOLATED_START_GRACE_S = 1.5  # start-up waits this long, at most, for the isolated plugins
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -356,7 +372,22 @@ def create_app(
             return None
         return parse_settings_schema(record.manifest.settings_schema)
 
-    def load_plugins() -> None:
+    isolated_sessions: list[RpcSession] = []
+    isolated_start: list[asyncio.Task[None]] = []  # the background start, kept by reference
+
+    async def stop_isolated() -> None:
+        """Cancel the start still going, then close every isolated session it opened."""
+        for task in isolated_start:
+            task.cancel()
+        for task in isolated_start:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+        isolated_start.clear()
+        while isolated_sessions:
+            with contextlib.suppress(Exception):
+                await isolated_sessions.pop().close()
+
+    async def load_plugins() -> Callable[[], Coroutine[Any, Any, None]] | None:
         registry, _records = start_plugins(resolved)
         installed = installed_versions(resolved)
         if installed:  # EF-EXP-065: nothing to attest without a third-party plugin
@@ -373,6 +404,57 @@ def create_app(
             lifecycle.announce_incompatible(engine, composition.bus, judged)
         plugins[:] = [registry]
         composition.plugins = lambda: plugins[0] if plugins else None
+
+        # The core starts the granted isolated plugins: connect_runner, then load_isolated, and only
+        # for the verdicts that are isolated and granted (never a disabled or in-process plugin).
+        layout = Layout.of(resolved.data_dir)
+        granted_isolated = [
+            verdict.name
+            for verdict in verdicts(layout, os.environ)
+            if verdict.granted and verdict.mode == MODE_ISOLATED
+        ]
+        if not granted_isolated:
+            return None
+        # resolve each granted key to its entry point, reading the recorded distributions only
+        state = read_state(layout)
+        installed_plugins = [
+            InstalledPlugin(i.name, i.top_levels) for i in state.installed.values()
+        ]
+        entries: list[tuple[str, str]] = third_party_entries(
+            layout.site, installed_plugins, set(granted_isolated)
+        )
+
+        socket_path = os.environ.get("SHELFHOLD_PLUGIN_RUNNER_SOCKET", "/plugin-rpc/runner.sock")
+        limits = RpcLimits()
+        engine_local = engine
+
+        def _sink(key: str, event_name: str, payload: Any) -> None:
+            with write_transaction(engine_local) as connection:
+                publish_plugin_event(composition.bus, connection, key, event_name, payload)
+
+        async def start_isolated() -> None:
+            for key, entry in entries:
+
+                async def _connect(key: str = key, entry: str = entry) -> Any:
+                    channel = await connect_runner(socket_path, key=key, entry=entry, limits=limits)
+                    try:
+                        session = await RpcSession.open(
+                            channel, key=key, limits=limits, on_event=_sink
+                        )
+                    except BaseException:
+                        await channel.close()
+                        raise
+                    isolated_sessions.append(session)
+                    return session
+
+                try:
+                    await registry.load_isolated(key, PluginOrigin.THIRD_PARTY, _connect)
+                except Exception as exc:  # a plugin that cannot start is reported, never fatal
+                    structlog.get_logger().warning(
+                        "plugin.isolated_start_failed", key=key, error=type(exc).__name__
+                    )
+
+        return start_isolated
 
     @cache
     def content_access() -> ContentAccess:  # M5 L05a: one, it holds the lists of the excerpts
@@ -597,7 +679,8 @@ def create_app(
         ),
     )
 
-    def on_shutdown() -> None:
+    async def on_shutdown() -> None:
+        await stop_isolated()
         runtime.shutdown()  # SIGTERM: stop claiming, checkpoint, free the locks (ENF-OPS-007)
         runtime.stop()
         health.close()  # a read of the status still running would open a connection after
@@ -640,19 +723,24 @@ def create_app(
 
     health = OpsHealth(HealthProbe(resolved), ops_services)
 
-    def on_startup() -> None:
+    async def on_startup() -> None:
         log_effective_config(resolved)
         ensure_volumes(resolved)
         runtime.acquire()  # ENF-OPS-015: first, before anything else; a second instance refuses
         try:
             check_schema_not_newer(resolved)  # ENF-OPS-002: refuse to run on a newer schema
             # EF-SRC-019: third-party code only once this process owns /data and the schema is ours
-            load_plugins()
+            start_isolated = await load_plugins()
+            if start_isolated is not None:  # in the background: a slow companion holds nothing
+                isolated_start.append(asyncio.create_task(start_isolated()))
             start_owned()
             ready.set(runtime.owns_volumes)  # waiting for a migration's lock: not ready yet
             if runtime.owns_volumes:
                 health.prime()  # the first `/healthz` finds the shared status already read
+            if isolated_start:  # a short grace for the plugins that answer at once
+                await asyncio.wait(isolated_start, timeout=ISOLATED_START_GRACE_S)
         except BaseException:
+            await stop_isolated()
             runtime.stop()
             raise
 
