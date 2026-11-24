@@ -382,5 +382,5 @@ since = "1.3"
 
 [[migration]]
 file = "0115_kobo_sync_point.py"
-sha256 = "5b06643a1d6b8a1b2967d9f6c80c8c2bc8653f52edaf8521757c39b4cd244c97"
+sha256 = "f80fca4170b858c1f61910627ad912930c34827124a875322dc3317b69615057"
 since = "1.3"

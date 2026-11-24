@@ -9,7 +9,7 @@ not what the last page could see. Created from the schema so the DDL stays ident
 `metadata.create_all` (ENF-OPS-002); nothing existing is touched. Reversible: the downgrade drops
 the table, and every device then syncs as if for the first time (a full sync, no data lost).
 
-Number: 0115 is the one the launch of L17a names (0109 to 0114 are held by other lots, all merged before it).
+Number: 0115 is the one the launch of L17a names (0109 to 0114 are held by other lots).
 `down_revision` is the head of main (0113, L13).
 """
 
