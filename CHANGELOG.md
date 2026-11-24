@@ -4,11 +4,85 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement
 
 ## 1.3.0 - à paraître
 
-Clôture de M6 : plugins tiers isolés dans un conteneur compagnon.
+Clôture de M6 : plugins tiers isolés et index signé, SDK 2.0 prêt à publier sur PyPI, trackers, synchronisation Kobo minimale, dossier Kobo et KEPUB, caches et quotas, écrans (modules, trackers, webhooks, « Même œuvre ? »), copies hors ligne pour tout profil, annulation d'une marque de lecture, Komga (relais de scan, audit quotidien, preuve fraîche), une seule requête « lu ailleurs ». Aucune candidate publiée.
+
+### Ajouté
+
+- **Plugins tiers isolés et compagnon (M6 L04, L05, L06, EF-SRC-016, ENF-SEC-009)** : fil `rpc_protocol` 1 (JSON-RPC à préfixe de longueur) entre le cœur et un plugin isolé ; compagnon `plugin-runner` sous un uid distinct, sans `/data`, sans socket CLI, sans réseau, en lecture seule, un sous-processus par plugin, auto-contrôle au démarrage ; compose et compose e2e. Garde sous les noms de la spécification dans les deux modes : isolé par défaut, activer un plugin isolé est une action réservée, le mode intégré reste derrière un drapeau ; attestation appliquée aux plugins isolés.
+- **Index de plugins signé (M6 L07, L08, EF-SRC-017, D14)** : signature minisign avec commentaire signé, version monotone, expiration, sha256, révocation, rotation ; installation depuis l'index, clé épinglée à son signataire (un nouveau signataire = une nouvelle installation), état et secrets déplacés seulement après confirmation.
+- **Cycle de vie d'un plugin (M6 L09a, L09b)** : mise à jour, épinglage, retour arrière, désinstallation ; liaisons orphelines signalées sans perte de contenu ; migrations d'état et montée de version de l'hôte (`migrate_state`), refus du retour arrière sur un état plus récent, drapeau d'incompatibilité ABI, `replaced_by` à travers les tombstones.
+- **Exemple et chemin d'auteur (M6 L10, L11)** : exemple de plugin tiers installé depuis un index signé et exécuté isolé ; le kit passe dans les deux modes ; le cœur démarre les plugins isolés autorisés. Chemin d'auteur complet : publication, enregistrement et hébergement d'index, qui signe, `deprecated`/`replaced_by`/`min_host`, `migrate_state`, licence.
+- **SDK 2.0 (M6 L02, L03)** : `shelfhold-sdk` 2.0 comme distribution propre (MIT), prête à publier sur PyPI par publication de confiance (OIDC, environnements protégés, attestations PEP 740), essai à blanc sur chaque PR.
+- **Contrat `Tracker` et hôte (M6 L13, EF-INT-010, D18, D-P6)** : `link`, `push_progress`, `pull` ; hôte lié par profil, opt-in pour la poussée, tirée comme indice ; jeton distant scellé ; aucune marque « lu » écrite par la tirée.
+- **Émulation de synchronisation Kobo, surface minimale (M6 L17a, EF-INT-012, D20)** : jeton d'appareil dans le chemin, initialisation, synchronisation de la bibliothèque page par page ; trois routes réelles et un attrape-tout ; l'état de lecture GET/PUT, le KEPUB et les couvertures en cache et le proxy du store sont reportés.
+- **Dossier Kobo (M6 L16)** : destination qui écrit un arbre de `.kepub.epub` depuis le dérivé neutralisé.
+- **Rétention et quotas des caches dérivés (M6 L12, EF-BIB-018, D17)** : balayage quotidien de `/data`, éviction protégée par une allowlist fermée, état dans `shelfhold status` et la page Santé, neuf réglages `SHELFHOLD_CACHE_*`.
+- **Écran des modules (M6 L15)** : index, installation, activation, attestation, carte de confiance, mise à jour, épinglage et retour arrière ; écran des trackers d'un profil.
+- **Écran des webhooks (M6 L23b)** : liste, création, rotation, suppression, dernières livraisons.
+- **Rotation du secret d'un webhook (M6 L23a, EF-INT-005, D23)** : fenêtre de deux signatures pendant 24 h, événement `webhook.dead`.
+- **Écran « Même œuvre ? » (M6 L24, EF-BIB-029)** : proposition, plan de fusion par l'API existante, tombstones consultés.
+- **Copies hors ligne pour tout profil (M6 L20, D-P7 (b))** : bouton dans le lecteur, verrou entre onglets, base orpheline effacée, `/hors-ligne` à jour en direct.
+- **Annulation d'une marque de lecture (M6 L18, EF-LEC-014, D21)** : route et écran, le membre pour lui-même, l'administrateur pour un enfant ; journalisée, propagée à la destination.
+- **Étagère de l'enfant remplie à l'arrivée (M6 L21, EF-USR-020)** : un livre demandé atterrit sur l'étagère de lecture de l'enfant à son arrivée.
+- **Komga (M6 L22, EF-EXP-020, EF-EXP-047, ENF-SEC-016)** : relais de scan de la passe, audit quotidien des comptes, preuve fraîche pour un lien familial ; conflits de disposition au rattachement.
+- **Une seule requête « lu ailleurs » (M6 L19, EF-LEC-008, EF-INT-007)** : définition unique dans `content_access`, `target` par type de destination, PSE selon D-P7a ; `open_urls` par profil.
+- **Textes et documentation (M6 L26)** : textes M6 (fr, en) pour tout le code nouveau ; index, trackers, Kobo, caches, hors ligne.
+- **Dettes de M6 (M6 L25)** : allowlist vidée ou déplacée vers des déclencheurs écrits, méthodes CWA inutilisées retirées, EF-INT-012 soldée, traçabilité à 100 %.
 
 ### Modifié
 
-- **Rupture : le compagnon `plugin-runner` exige un noyau 6.2 ou plus (Landlock ABI 3).** Un hôte plus ancien (Debian 12, noyau 6.1, ABI 2) ne démarre plus les plugins isolés : le compagnon sort avec le code 3 et le dit dans son journal. Mettez à jour le noyau, ou gardez le mode `in_process` (confirmation tapée) en connaissance de cause.
+- **Performance de l'export** : le miroir d'une série est écrit une fois par plan, les alias une fois par passe ; la version d'étape d'un apply parcourt les lignes de l'étagère ; le banc du dossier natif mesure sa propre passe.
+- **Komga** : une liaison Komga qui posséderait l'arbre est refusée (`binding.komga_layout_conflict`) ; le rendu n'est jamais réécrit.
+- **PSE** : n'applique plus la règle « lu ailleurs » et ne la demande plus (D-P7a) ; un volume d'une page redevient un flux.
+- **`open_urls`** : par profil, l'adresse est portée par l'entrée (`ContinueItemOut.open_url`), plus de `kavita_url`.
+- **Allowlist de joignabilité** : aucune entrée `until = "M6"` ne reste ; les entrées restantes portent un déclencheur écrit.
+
+### Sécurité
+
+- Plugins isolés : sous-processus distinct, pas de `/data`, pas de réseau, lecture seule, attestation appliquée ; activer un plugin isolé est une action réservée.
+- Index signé : signature minisign, version monotone, révocation, rotation ; un nouveau signataire est une nouvelle installation.
+- Trackers : jeton scellé, jamais journalisé, jamais dans une réponse ; le plugin ne reçoit qu'une façade `get`/`post`.
+- Kobo : jeton dans le chemin, jamais journalisé, TLS requis pour `/kobo` ; un jeton d'une autre porte n'ouvre rien.
+- Caches : l'effaceur ne touche qu'un fichier régulier ou un lien, jamais un dossier ; chemin borné par une allowlist fermée.
+- Komga : preuve fraîche (36 h) pour un lien familial ; audit quotidien et à la demande.
+
+### Correctifs de la relecture de clôture
+
+Le contradicteur de jalon (`docs/decisions/M6.md`, « Clôture : contradicteur de jalon ») a trouvé deux défauts de gravité élevée, cinq moyens et un bogue d'écran ; tous sont corrigés avant la 1.3.0.
+
+- **Révocation qui désactive (S1)** : un rafraîchissement d'index qui porte une révocation retire l'activation des installations dont la clé ou la roue est révoquée, écrit `plugin.revoked`, et le démarrage et la liste des modules la jugent de nouveau. Une révocation est liée au couple (dépôt, signataire) qui l'a publiée : un autre index ne révoque rien (migration 0118). Le plugin déjà chargé ne s'arrête pas à chaud : la réponse du rafraîchissement donne `restart_required` (HTTP et CLI) avec les clés désactivées.
+- **Mise de côté des secrets (S2)** : une roue installée à la main met de côté l'état et les secrets d'une installation signée précédente (`plugin.state_held`), avant de poser la roue, et la retire sur tout échec ; une identité déjà prise reçoit le suffixe libre suivant, aucune mise de côté n'est perdue.
+- **Clé unique (S6)** : une roue qui déclare une clé déjà installée par une autre distribution est refusée (`conflict`) ; son sha256 est vérifié avant qu'elle soit ouverte. `migrate-to` refuse un remplaçant absent ou d'un autre signataire.
+- **Signaux et lectures entre plugins dans le compagnon (S5, S7)** : un plugin ne peut ni signaler le compagnon ou un autre plugin, ni lire le dossier de travail d'un autre. Landlock ABI 6 porte `scoped = SIGNAL | ABSTRACT_UNIX_SOCKET` ; en dessous, seccomp refuse `kill`, `tkill`, `tgkill`, `rt_sigqueueinfo`, `pidfd_send_signal` vers tout autre processus que le plugin et son groupe, et neutralise `F_SETOWN`, `F_SETOWN_EX`, `FIOSETOWN` et `SIOCSPGRP` (le noyau enverrait `SIGIO` à un autre processus). Landlock gère `READ_FILE` et `READ_DIR` : un plugin lit le système, l'interpréteur et son environnement, les roues installées, son dossier de travail, `/dev/null` et `/dev/urandom`. Le cœur lit `SO_PEERCRED` et refuse un compagnon dont l'uid n'est pas 1001 ; `RLIMIT_NPROC` et `RLIMIT_FSIZE` sont posés ; `HOME` et `TMPDIR` valent le dossier de travail du plugin.
+- **Contrôle parental (S4, S3)** : un changement de rôle supprime l'autorisation de tracker du profil (`tracker.allowance_cleared_role_change`) et on n'autorise un tracker que pour un enfant (`tracker_refused`, `not_a_child`) ; `?since=` rend `removed_editions` et le client évince les copies hors ligne d'une Édition devenue invisible, même quand l'Œuvre reste visible par une autre Édition.
+- **Écran des modules par clé (F1)** : `PluginOut` expose `key` ; épingler, désépingler, mettre à jour, revenir en arrière et les attestations s'adressent à la clé du plugin, plus au nom de la distribution.
+- **`plugin.failed` (502)** : un plugin isolé qui meurt pendant un appel donne un refus codé, plus un 500 sans code ; rien du plugin n'atteint la réponse.
+- **Autres** : une mise à jour qui croise un épinglage ne l'écrase plus (S10) ; le retour arrière HTTP refusé par l'installeur répond comme la mise à jour (S12) ; `DataFolder.touch` ne suit plus un lien (S11) ; l'annulation d'une marque d'enfant par l'administrateur écrit une ligne d'audit.
+- **Simplicité** : une seule boucle d'éviction des caches, un seul rejeu de ré-authentification pour les écrans M6, la page Kobo sans appareil et du code mort retirés.
+
+### Ruptures
+
+- **Le compagnon `plugin-runner` exige un noyau 6.2 ou plus (Landlock ABI 3).** Un hôte plus ancien (Debian 12, noyau 6.1, ABI 2) ne démarre plus les plugins isolés : le compagnon sort avec le code 3 et le dit dans son journal (`restart: unless-stopped` le relance en boucle). Mettez à jour le noyau, ou gardez le mode `in_process` (confirmation tapée) en connaissance de cause. Le texte « Landlock 5.13 ou plus » des fichiers compose est corrigé.
+- **`pids_limit` du compagnon : 640.** Le conteneur `plugin-runner` du compose passe de 128 à 640 tâches (512 pour les plugins, 128 de marge) ; reportez la valeur dans votre compose.
+
+### Reporté en M7
+
+Aucun nouvel élément reporté ; les points ouverts restent dans « Limites connues » (essais sur appareil réel, second registre et miroir, relecture juridique de l'exception de plugin).
+
+### Limites connues
+
+- **Synchronisation Kobo** : surface minimale ; l'état de lecture GET/PUT, le KEPUB et les couvertures en cache et le proxy du store sont reportés ; l'usage passe par KOReader.
+- **Essais sur appareil réel** : KOReader, `/lite` depuis une Kobo et la lecture d'un EPUB sur téléphone ne sont prouvés en CI que par des vecteurs de requêtes ; D-P8 (b) garde trois exigences en `[[partial]]` (EF-LEC-009, EF-LEC-010, ENF-COMP-002).
+- **Publication du SDK sur PyPI** : le workflow de publication de confiance est prêt et essayé à blanc ; la première publication de `shelfhold-sdk` 2.0.0 est faite par le porteur (compte PyPI).
+- **Second registre et miroir (ENF-GOV-004)** : le code est livré, la poussée réelle attend le compte et le secret ; la release part sur GHCR seul.
+- **Plugins en mode intégré** : la façade garde `_inner` ; la vraie frontière n'existe qu'en mode isolé.
+- **Copies hors ligne** : une copie déjà téléchargée n'est pas révocable à distance (R66).
+- **Compagnon** : en repli seccomp (noyau 6.2 à 6.11, sans portée de signaux), `F_SETOWN`, `F_SETOWN_EX`, `FIOSETOWN` et `SIOCSPGRP` réussissent sans effet : une bibliothèque qui compte sur `SIGIO` pour elle-même ne le reçoit pas ; un plugin n'arrête ses sous-processus que par `killpg` (`subprocess.run(timeout=…)` et `Popen.terminate()` lèvent `PermissionError`). Les plugins du compagnon partagent ses 512 Mio et ses tâches : un plugin peut en priver les autres (déni de service), limite écrite.
+- **Plugins** : `migrate_state` ne tourne que pour un plugin en processus (le garde `state_newer` du retour arrière est presque inerte pour un plugin isolé) ; le retour arrière ne rafraîchit pas l'index ; un plugin tracker isolé est refusé en 1.3.0 (le contrat `Tracker` reste en processus, first-party). Deux `update` ou `rollback` simultanés d'un même plugin peuvent laisser le disque en désaccord avec la base (échec fermé), et une révocation qu'un index ultérieur omet ne revient qu'avec un index de nouveau numéro de version : v1.3.1.
+- **Webhooks** : pas de rotation immédiate, la fenêtre de 24 h est obligatoire (v1.3.1).
+- **Copies hors ligne** : une session d'adulte expirée sans déconnexion laisse ses copies lisibles sur ce navigateur ; se déconnecter les efface.
+
+Migration : oui (0110 à 0118 depuis la 1.2.0), réversible : non (`shelfhold migrate` sauvegarde la base avant de migrer).
 
 ## 1.2.0 - à compléter (date de la release)
 
@@ -66,6 +140,7 @@ Détail et raisons dans `docs/decisions/M5.md` (section de clôture) : relais de
 ### Limites connues
 
 - **Essais sur appareil réel** : KOReader, `/lite` depuis une Kobo et la lecture d'un EPUB sur téléphone ne sont prouvés en CI que par des vecteurs de requêtes et un navigateur sans JavaScript ; le porteur les fait sur la candidate avant la release.
+- **Publication du SDK sur PyPI** : le workflow de publication de confiance est prêt et essayé à blanc ; la première publication de `shelfhold-sdk` 2.0.0 est faite par le porteur (compte PyPI).
 - **Second registre et miroir (ENF-GOV-004)** : le code est livré (1.1.0), la poussée réelle attend le compte et le secret ; la release part sur GHCR seul.
 - **Lecteur EPUB** : exige Safari 16.4 ou plus (héritage de la politique de sécurité par les `blob:`) ; un navigateur plus ancien est refusé par le registre du moteur.
 - **Copies hors ligne** : pas de verrou entre onglets (une base orpheline d'un profil est possible, jamais ouverte par un autre profil) ; `/hors-ligne` lit sa liste à l'ouverture seulement.

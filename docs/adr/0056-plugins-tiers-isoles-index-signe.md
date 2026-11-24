@@ -68,7 +68,7 @@ Chaque sous-processus de plugin : environnement vidé (aucune variable `SHELFHOL
 
 Aucune garantie de réseau de cette ADR ne repose sur seccomp (seule l'étanchéité entre plugins s'y appuie : signaux avant l'ABI 6, changements de mode) : l'absence de réseau est tenue par `network_mode: none` et vérifiée par l'auto-contrôle. Le filtre seccomp du worker de décodage (M1a, `docs/decisions/M1a.md`) peut être posé sur chaque sous-processus en défense en profondeur ; aucun test d'isolation n'en dépend.
 
-**Risque résiduel accepté** : les plugins d'un même compagnon partagent l'uid 1001 (un uid par plugin demanderait `CAP_SETUID`, refusé). Un plugin compromis peut gêner un autre plugin (signal, épuisement du `tmpfs`) ; `PR_SET_DUMPABLE = 0` empêche la lecture de sa mémoire. Rien de secret ne transite par le compagnon, ce qui borne l'enjeu. Écrit dans `docs/admin/plugins-isoles.md`.
+**Risque résiduel accepté** : les plugins d'un même compagnon partagent l'uid 1001 (un uid par plugin demanderait `CAP_SETUID`, refusé). Un plugin compromis peut gêner un autre plugin (signal, épuisement du `tmpfs`) ; la restriction `ptrace` de Landlock entre domaines frères empêche la lecture de sa mémoire (`PR_SET_DUMPABLE = 0` protège le compagnon, non un plugin : `exec` remet l'attribut). Rien de secret ne transite par le compagnon, ce qui borne l'enjeu. Écrit dans `docs/admin/plugins-isoles.md`.
 
 ### Le cœur n'exécute jamais ce que le compagnon renvoie
 Tout ce qui vient du compagnon est une **donnée non fiable** :

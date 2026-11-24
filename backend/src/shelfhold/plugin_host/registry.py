@@ -601,7 +601,7 @@ class PluginRegistry:
                     f"{session.protocol}",
                 )
             if manifest is not None and manifest.kind is PluginKind.TRACKER:
-                manifest = None  # no contract to call until L13: nothing could be asked of it
+                manifest = None  # refused in 1.3.0: the Tracker contract stays in-process
                 verdict = ApiVerdict(
                     PluginStatus.INCOMPATIBLE, "tracker plugins have no contract before L13"
                 )

@@ -207,7 +207,7 @@ def test_traceability_blocks_every_delivered_milestone() -> None:
         for s in ci["jobs"]["traceability"]["steps"]
         if "run" in s and "traceability.py" in s["run"]
     )
-    assert "for ms in M0 M1a M1b M2 M3 M4 M5; do" in run
+    assert "for ms in M0 M1a M1b M2 M3 M4 M5 M6; do" in run
     assert "case " not in run, "a milestone is exempted from the blocking status"
     assert "[ $code -eq 0 ] || status=1" in run
 
