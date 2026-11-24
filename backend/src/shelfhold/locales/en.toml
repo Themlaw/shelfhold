@@ -144,6 +144,8 @@
   plugin_pin_help = "Pins a plugin's installed version: no update, no rollback, until the pin is taken away."
   plugin_unpin_help = "Takes a plugin's pin away: updates and the rollback become possible again."
   plugin_rollback_help = "Returns to the previous kept version (reserved action, audited); none other is kept after it."
+  plugin_migrate_to_help = "Moves the sources of a plugin to the replacement its index named (reserved action, audited; a tombstoned source stays)."
+  plugin_replacement_help = "Key of the replacing plugin."
   plugin_index_remove_help = "Unpins an index repository (audited); an add starts from zero again."
   plugin_index_url_help = "Address of the index document (plain http(s) URL)."
   plugin_index_pubkey_help = "Signer's minisign public key, base64 (without it, no pin)."
@@ -300,6 +302,10 @@
   unpin_refused = "Unpinning refused ({code}): {detail}"
   rolled_back = "Plugin {name} returned to {version}; no previous version is kept anymore."
   rollback_refused = "Rollback refused ({code}): {detail}"
+  deprecated = "The index repository marks {name} as deprecated."
+  deprecated_replaced = "The index repository marks {name} as deprecated: it names {replaced} as the replacement (a replacement is never installed by that word alone)."
+  migrated_to = "{moved, plural, one {# source of {name} moved to {replacement}} other {# sources of {name} moved to {replacement}}}."
+  migration_blocked = "{blocked, plural, one {# source was held back by a tombstone: nothing was recreated for it.} other {# sources were held back by a tombstone: nothing was recreated for them.}}"
   orphaned = "{count, plural, one {# source binding is marked orphaned} other {# source bindings are marked orphaned}}: what they hold is intact, a reinstall of the same key reattaches them."
   reattached = "{count, plural, one {# orphaned binding reattached} other {# orphaned bindings reattached}}."
 
@@ -1926,6 +1932,11 @@
     title = "Pinning the plugin is refused."
     action = "Check that the plugin is still installed, then try again."
     cause = "The pin was refused: the installed plugin could not be read as such."
+
+  [errors."plugin.incompatible"]
+    title = "An installed plugin is incompatible with this host."
+    action = "Update the plugin from its index repository, or remove it."
+    cause = "A host upgrade left the plugin out of the api window or above the host's own version (min_host)."
 
   [errors."source.not_loaded"]
     title = "A source is not loaded."

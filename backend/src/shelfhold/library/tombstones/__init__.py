@@ -13,7 +13,7 @@ from shelfhold.library.tombstones.index import (
     MembershipIndex,
     Normalizers,
 )
-from shelfhold.library.tombstones.scopes import EmptyRefError, fold_ref, safe_fold
+from shelfhold.library.tombstones.scopes import EmptyRefError, alias_family, fold_ref, safe_fold
 from shelfhold.library.tombstones.service import (
     FROZEN_LOST_KEYRING_PHRASE,
     LOST_KEYRING_PHRASE,
@@ -76,6 +76,7 @@ __all__ = [
     "VariantRef",
     "Verdict",
     "WorkRef",
+    "alias_family",
     "default_normalizers",
     "fold_ref",
     "missing_citable",

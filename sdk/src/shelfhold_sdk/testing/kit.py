@@ -220,6 +220,15 @@ def _implements_fetch_range(source: Source) -> bool:
     return callable(method) and method is not Source.fetch_range
 
 
+def _payload_schema(source: Source) -> int:
+    """The `payload_schema` the plugin declares for its state documents (1 when it says
+    nothing: the schema every plugin starts with)."""
+    declared = getattr(source, "payload_schema", 1)
+    if isinstance(declared, bool) or not isinstance(declared, int) or declared < 1:
+        return 1
+    return declared
+
+
 def _missing_methods(source: Source) -> list[str]:
     missing = [n for n in ("get_series", "list_units") if not callable(getattr(source, n, None))]
     caps = source.manifest.capabilities
@@ -267,6 +276,7 @@ async def run_source_conformance(
     isolated: bool = False,
     sandbox: Any = None,
     core_uid: int | None = None,
+    previous_payload_schema: int = 1,
 ) -> ConformanceReport:
     """Run every check against `source`; `fetcher` must be scripted (no network is possible).
 
@@ -277,6 +287,10 @@ async def run_source_conformance(
     Every call into the plugin runs under the direct-I/O detector (EF-SRC-002): a socket, a
     process or a file the plugin opens itself raises `ForbiddenIOError` and fails `no_direct_io`,
     even if the plugin catches the error.
+
+    `previous_payload_schema` is the schema of the state the previous version wrote: a plugin
+    whose `payload_schema` differs from it must ship `migrate_state(from_version, key, payload)`
+    (EF-SRC-030), or the `state_migration_declared` check fails.
     """
     report = ConformanceReport()
     if isolated:
@@ -302,6 +316,16 @@ async def run_source_conformance(
     api_ok = manifest.api in (API_VERSION, API_VERSION - 1)
     report.add("api_compatible", api_ok, "" if api_ok else f"api {manifest.api} is not N or N-1")
     report.add_waiting_states(manifest)
+    declared_schema = _payload_schema(source)
+    hook = getattr(source, "migrate_state", None)
+    report.add(
+        "state_migration_declared",
+        declared_schema == previous_payload_schema or callable(hook),
+        ""
+        if declared_schema == previous_payload_schema or callable(hook)
+        else f"payload_schema changed from {previous_payload_schema} to {declared_schema} "
+        "without migrate_state(from_version)",
+    )
     missing = _missing_methods(source)
     report.add(
         "capabilities_implemented", not missing, f"missing: {', '.join(missing)}" if missing else ""
