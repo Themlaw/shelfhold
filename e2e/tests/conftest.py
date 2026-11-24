@@ -95,6 +95,7 @@ M3_FILES = [*M2_FILES, "m3.yaml"]
 M4_FILES = [*M2_FILES, "m4.yaml"]
 M5_FILES = [*M4_FILES, "m5.yaml"]
 M5_OIDC_FILES = [*M5_FILES, "m5-oidc.yaml"]
+M6_FILES = [*M5_FILES, "m6.yaml"]
 
 
 @pytest.fixture
@@ -150,6 +151,12 @@ def journey_m5_oidc(tmp_path: Path) -> Iterator["Journey"]:
         "E2E_OIDC_SUB": "e2e-person-" + secrets.token_hex(4),
     }
     yield from _journey(M5_OIDC_FILES, extra_env=env)
+
+
+@pytest.fixture
+def journey_m6(tmp_path: Path) -> Iterator["Journey"]:
+    """The M5 stack with the M6 overlay: plugin index, isolated companion, Kobo sync."""
+    yield from _journey(M6_FILES, extra_env=_m2_env(tmp_path))
 
 
 def _m2_env(tmp_path: Path) -> dict[str, str]:

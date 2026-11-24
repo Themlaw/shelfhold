@@ -1,0 +1,13 @@
+# M6 overlay (L27)
+name: shelfhold-e2e-m6
+
+services:
+  egress-watch:
+    ports:
+      - "127.0.0.1:18080:8080"
+
+  library-init:
+    command:
+      - sh
+      - -c
+      - "mkdir -p /library/manga && chown 1000:1000 /library /library/manga /library/native /import /tree"
