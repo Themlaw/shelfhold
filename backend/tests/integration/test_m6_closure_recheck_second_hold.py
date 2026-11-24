@@ -68,7 +68,7 @@ def test_a_second_hold_under_the_same_identity_leaves_the_hand_wheel_with_a_secr
     assert run_cli(monkeypatch, settings, "plugin", "remove", DIST) == 0
     try:
         code: object = run_cli(monkeypatch, settings, *hand)
-    except Exception as exc:  # noqa: BLE001 - the CLI must refuse, not crash after the install
+    except Exception as exc:  # the CLI must refuse, not crash after the install
         code = repr(exc)
 
     installed = "evil-plug" in guard.read_state(guard.Layout.of(settings.data_dir)).installed
@@ -79,5 +79,6 @@ def test_a_second_hold_under_the_same_identity_leaves_the_hand_wheel_with_a_secr
         engine.dispose()
     rows = db_rows(settings, "SELECT plugin_id FROM source_config")
     assert not (installed and inherited), (
-        f"the hand wheel is installed and reads signer A's secret (cli: {code}; config rows: {rows})"
+        "the hand wheel is installed and reads signer A's secret "
+        f"(cli: {code}; config rows: {rows})"
     )
