@@ -9,7 +9,6 @@ cours = "cours"
 sur = "sur"
 opf = "opf"
 appareil = "appareil"
-exemple = "exemple"  # the example plugin's own name (docs/plugins/exemple), and its synthetic host
 
 # Exact identifiers: a pydantic setting and the in-toto provenance file name.
 [default.extend-identifiers]
