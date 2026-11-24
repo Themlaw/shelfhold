@@ -65,7 +65,13 @@ from shelfhold.plugin_host.install import (
     keep_wheel,
     wheel_plugin_keys,
 )
-from shelfhold.plugin_host.lifecycle import reattach_if_same_origin
+from shelfhold.plugin_host.lifecycle import (
+    HOST_VERSION,
+    reattach_if_same_origin,
+)
+from shelfhold.plugin_host.lifecycle import (
+    version_key as _version_key,
+)
 from shelfhold.plugin_host.public import installed_keys
 from shelfhold.plugin_host.rpc.runner_wire import KEY as PLUGIN_KEY
 from shelfhold.plugin_host.settings import Vault, held_identity, hold_plugin_data
@@ -150,11 +156,15 @@ class RefreshOutcome:
 
 @dataclass(frozen=True)
 class IndexInstall:
-    """What an install from an index did: the plugin the guard installed, and the held identity
-    of a previous install (another signer) whose data waits for the admin's confirmed word."""
+    """What an install from an index did: the plugin the guard installed, the held identity
+    of a previous install (another signer) whose data waits for the admin's confirmed word,
+    and the index's own word about the entry — deprecated, and its named replacement (the
+    word is the admin's to read; the replacement is never installed by it)."""
 
     installed: Installed
     held: str | None = None
+    deprecated: bool = False
+    replaced_by: str | None = None
 
 
 def _record(row: Any) -> RepoRecord:
@@ -393,6 +403,22 @@ class RepoStore:
                     .values(kind="wheel_sha256", value=wheel)
                     .on_conflict_do_nothing()
                 )
+            for entry in document.plugins:
+                # the index's own word about an install it vouches for: a version it
+                # deprecates, or a successor it names instead of the one kept, is kept in
+                # the install row — the migration moves by that word, never by what the
+                # host remembers of a document it no longer has; and only an install pinned
+                # to this signer (L08): the same address pinned again to another key does not
+                # speak for the installs the previous key made
+                connection.execute(
+                    sa.update(acquisition.plugin_install)
+                    .where(
+                        acquisition.plugin_install.c.plugin_id == entry.key,
+                        acquisition.plugin_install.c.index_url == record.url,
+                        acquisition.plugin_install.c.signer_pubkey == pubkey,
+                    )
+                    .values(replaced_by=entry.replaced_by)
+                )
             if principal is not None:
                 self._audit(connection, principal, "plugin.index_refresh", record.url)
         log.info(
@@ -482,9 +508,12 @@ class RepoStore:
             ).first()
         return None if row is None else (row.index_url, row.signer_pubkey)
 
-    def _pin(self, key: str, installed: Installed, record: RepoRecord) -> None:
-        """Keep the triple (key, index, signer) this install is pinned to. The row is the one
-        `AttestationStore.sync_installed` keeps in step at start-up; it never touches the pin."""
+    def _pin(self, key: str, installed: Installed, record: RepoRecord, entry: Any) -> None:
+        """Keep the triple (key, index, signer) this install is pinned to, and the api,
+        `min_host` and `replaced_by` its entry declared: a later host judges the install and
+        its migration by the index's own word, not by what it remembers of the document. The
+        row is the one `AttestationStore.sync_installed` keeps in step at start-up; it never
+        touches the pin."""
         digest = (
             installed.digest
             if installed.digest.startswith("sha256:")
@@ -495,11 +524,14 @@ class RepoStore:
             "sha256": digest,
             "index_url": record.url,
             "signer_pubkey": record.pubkey,
+            "api": str(entry.api),
+            "min_host": entry.min_host,
+            "replaced_by": entry.replaced_by,
         }
         with write_transaction(self._engine) as connection:
             connection.execute(
                 sqlite_insert(acquisition.plugin_install)
-                .values(plugin_id=key, api="", origin=THIRD_PARTY_ORIGIN, enabled=False, **values)
+                .values(plugin_id=key, origin=THIRD_PARTY_ORIGIN, enabled=False, **values)
                 .on_conflict_do_update(index_elements=["plugin_id"], set_=values)
             )
 
@@ -548,6 +580,12 @@ class RepoStore:
             raise PluginIndexError("plugin_revoked", f"the key of {key!r} was revoked")
         if entry.sha256 in self.revoked_wheel_sha256():
             raise PluginIndexError("wheel_revoked", "the index revoked this wheel")
+        if _version_key(entry.min_host) > _version_key(HOST_VERSION):
+            raise PluginIndexError(
+                "min_host",
+                f"the index vouches for a plugin that needs host {entry.min_host} or newer "
+                f"(this host is {HOST_VERSION})",
+            )
         previous = self._previous_pin(key)
         held: str | None = None
         if previous is not None and previous != (record.url, record.pubkey):
@@ -599,11 +637,13 @@ class RepoStore:
             keep_wheel(layout, key, wheel)
         finally:
             discard_staged_wheel(wheel)  # the installed copy is the guard's own
-        self._pin(key, installed, record)
+        self._pin(key, installed, record, entry)
         # the bindings orphaned by an uninstall of the same key come back only when the origin
         # did not change: the previous install's (index, signer), read before this install
         # rewrote the row — never the row itself, which now tells this install's own origin
         reattached = reattach_if_same_origin(self._engine, key, previous, record.url, record.pubkey)
         if reattached:
             log.info("plugin_lifecycle.reattached", key=key, bindings=reattached)
-        return IndexInstall(installed, held)
+        return IndexInstall(
+            installed, held, deprecated=entry.deprecated, replaced_by=entry.replaced_by
+        )

@@ -13,6 +13,7 @@ from typing import Any
 
 import sqlalchemy as sa
 import structlog
+from shelfhold_sdk.models import API_VERSION
 from sqlalchemy import Engine
 
 from shelfhold import __version__
@@ -131,6 +132,7 @@ from shelfhold.ops.health import OpsHealth
 from shelfhold.ops.notifications import subscribe_notifications
 from shelfhold.ops.requests import build_service, resolve_request_ref, subscribe_arrivals
 from shelfhold.ops.wiring import open_ops
+from shelfhold.plugin_host import lifecycle
 from shelfhold.plugin_host.adapters.rpc.runner_socket import (
     connect_runner,
 )
@@ -394,6 +396,12 @@ def create_app(
             attestations = AttestationStore(engine, clock=clock)
             attestations.sync_installed(installed)
             registry.apply_attestations(attestations.valid())
+        # M6 L09b (EF-SRC-030): a host upgrade that left a plugin behind is told, once
+        judged = lifecycle.incompatible_installed(
+            engine, host_version=lifecycle.HOST_VERSION, api_version=API_VERSION
+        )
+        if judged:
+            lifecycle.announce_incompatible(engine, composition.bus, judged)
         plugins[:] = [registry]
         composition.plugins = lambda: plugins[0] if plugins else None
 

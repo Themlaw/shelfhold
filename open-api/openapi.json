@@ -37419,6 +37419,10 @@
       "code": "plugin.enable_refused",
       "status": 422
     },
+    "/api/v1/problems/plugin.incompatible": {
+      "code": "plugin.incompatible",
+      "status": 409
+    },
     "/api/v1/problems/plugin.index-expired": {
       "code": "plugin.index_expired",
       "status": 409

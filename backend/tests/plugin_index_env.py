@@ -95,7 +95,7 @@ def plugin_entry(
         "rpc_protocol": 1,
         "wheel_url": wheel_url,
         "sha256": sha256 or "sha256:" + "a" * 64,
-        "min_host": "1.3.0",
+        "min_host": "1.0.0",  # below the host's own version: an entry the host can run
         "deprecated": False,
         "replaced_by": None,
         **over,

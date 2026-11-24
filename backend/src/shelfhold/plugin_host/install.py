@@ -33,13 +33,14 @@ import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from importlib import metadata
 from importlib.machinery import PathFinder
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Final
 
 import sqlalchemy as sa
 from sqlalchemy.engine import Engine
@@ -499,7 +500,14 @@ def installer_prefix() -> list[str]:
     return [uv, "pip", "install", "--python", sys.executable]
 
 
-def install_command(prefix: Sequence[str], target: Path, requirements: Path) -> list[str]:
+def install_command(
+    prefix: Sequence[str], target: Path, requirements: Path, tags: str = ""
+) -> list[str]:
+    """The command that unpacks the wheel, and nothing else: binary only, hashes required, no
+    resolution, no index, no configuration of the machine it runs on. `tags` is the wheel's own
+    tag section: the installer is told the Python the wheel declares (PEP 425) so that it never
+    refuses on tags — placing files is all it does, and the start-up compares the tags to the
+    interpreter and never loads a wheel that does not match it (ENF-OPS-018)."""
     tool = "pip" if "-m" in prefix else "uv"
     return [
         *prefix,
@@ -508,9 +516,35 @@ def install_command(prefix: Sequence[str], target: Path, requirements: Path) -> 
         *PIP_FLAGS,
         NO_COMPILE[tool],
         NO_CONFIG[tool],
+        *_target_flags(tags, tool),
         "-r",
         str(requirements),
     ]
+
+
+_PYTHON_TAG = re.compile(r"^(?:cp|ip|pp|py)(\d)(\d+)$")
+
+
+def _target_flags(tags: str, tool: str) -> list[str]:
+    """The target environment the wheel itself declares, in the installer's own words: the
+    first python tag that names a version (`cp312` → 3.12), with its abi and platform for pip.
+    The generic words (`py3`) say nothing: the installer's own environment decides, and they
+    match it anyway."""
+    section = tags.split("-")
+    if len(section) != 3:
+        return []
+    py, abi, platform = (part.split(".")[0] for part in section)
+    match = _PYTHON_TAG.match(py)
+    if match is None:
+        return []
+    version = f"{match.group(1)}.{match.group(2)}"
+    if tool == "uv":  # uv judges the platform against the machine it runs on
+        return ["--python-version", version]
+    return [
+        "--python-version", version,
+        "--implementation", py[:2],
+        "--abi", abi, "--platform", platform,
+    ]  # fmt: skip
 
 
 def requirement_line(name: str, wheel: Path, sha256: str) -> str:
@@ -559,7 +593,7 @@ def install_wheel(
         requirements.write_text(requirement_line(info.name, wheel, expected), encoding="utf-8")
         target = staging / "target"
         argv = install_command(
-            prefix if prefix is not None else installer_prefix(), target, requirements
+            prefix if prefix is not None else installer_prefix(), target, requirements, info.tags
         )
         done = runner(argv, staging)
         if done.returncode != 0:
@@ -801,15 +835,108 @@ class Verdict:
         return self.granted and self.mode == MODE_IN_PROCESS
 
 
-def verdicts(layout: Layout, environ: dict[str, str] | os._Environ[str]) -> list[Verdict]:
+@dataclass(frozen=True)
+class Interpreter:
+    """The interpreter the host runs, in PEP 425's own three words: the Python version, its
+    ABI tag, its platform. What an installed wheel's tags are compared to at start-up."""
+
+    python: str
+    abi: str
+    platform: str
+
+
+def current_interpreter() -> Interpreter:
+    """The interpreter this process runs (CPython's own tags: `cp313`, the platform of the
+    build)."""
+    major, minor = sys.version_info[:2]
+    return Interpreter(
+        python=f"{major}.{minor}",
+        abi=f"cp{major}{minor}",
+        platform=sysconfig.get_platform().replace("-", "_").replace(".", "_"),
+    )
+
+
+def abi_problem(tags: Sequence[str], interpreter: Interpreter) -> str | None:
+    """Why none of a wheel's declared tags matches the interpreter, or None when one does
+    (PEP 425): `py3-none-any` runs anywhere, an `abi3` wheel runs from its Python onward,
+    everything else must be the interpreter's own ABI and platform. A Linux platform tag is
+    the interpreter's when its architecture is (`manylinux_*`, `musllinux_*`, PEP 600/656):
+    the interpreter's own tag says `linux_x86_64`, never what a wheel built for its libc
+    says, and the guard refuses compiled modules at the install anyway (D16)."""
+    for tag in tags:
+        parts = tag.split("-")
+        if len(parts) != 3:
+            continue  # a malformed tag matches nothing, like one that does not fit
+        py, abi, platform = parts
+        major, minor = interpreter.python.split(".")
+        python_ok = py in ("py3", f"py{major}", f"py{major}.{minor}", interpreter.abi) or (
+            # the stable ABI: a wheel built for an older CPython runs on this one
+            abi == "abi3"
+            and py.startswith("cp")
+            and py[2:].isdigit()
+            and int(py[2:]) <= int(interpreter.abi[2:])
+        )
+        abi_ok = abi in ("none", "abi3") or abi == interpreter.abi
+        if python_ok and abi_ok and _platform_fits(platform, interpreter.platform):
+            return None
+    return (
+        f"ABI incompatible: the wheel's tags ({', '.join(tags)}) do not match this "
+        f"interpreter ({interpreter.python}, {interpreter.abi}) — remove the plugin and "
+        "install a wheel built for it (shelfhold plugin install)"
+    )
+
+
+_LINUX_WHEEL: Final = re.compile(r"^(?:manylinux|musllinux)(?:\d+)?(?:_\d+)*_(.+)$")
+
+
+def _platform_fits(platform: str, interpreter_platform: str) -> bool:
+    """A wheel's platform tag matches the interpreter's platform: the very tag, `any`, or a
+    Linux libc tag of the same architecture (`manylinux_2_17_x86_64` on `linux_x86_64`)."""
+    if platform == "any" or platform == interpreter_platform:
+        return True
+    if not interpreter_platform.startswith("linux_"):
+        return False
+    wheel = _LINUX_WHEEL.match(platform)
+    return wheel is not None and wheel.group(1) == interpreter_platform[len("linux_") :]
+
+
+def installed_wheel_tags(layout: Layout, plugin: Installed) -> list[str]:
+    """The tags the installed wheel's own WHEEL metadata declares (PEP 425), read from the
+    installed copy: the publisher's word about what the wheel runs on, never the filename."""
+    wheel = layout.site / plugin.dist_info / "WHEEL"
+    if not wheel.exists():
+        return []
+    return [
+        line.split(":", 1)[1].strip()
+        for line in wheel.read_text(encoding="utf-8").splitlines()
+        if line.startswith("Tag:")
+    ]
+
+
+def verdicts(
+    layout: Layout,
+    environ: dict[str, str] | os._Environ[str],
+    *,
+    interpreter: Interpreter | None = None,
+) -> list[Verdict]:
     """For each installed plugin, in its own mode: granted only when the activation of that
     mode holds (the reserved action for isolated, the variable and the typed confirmation for
-    in process). Each condition is checked again at every start; none is remembered on its own."""
+    in process). Each condition is checked again at every start; none is remembered on its own.
+    The wheel's tags are compared to the interpreter first (ENF-OPS-018): a plugin whose ABI
+    no longer matches — the host moved to a newer Python — is never granted, whatever its
+    mode, and the reason says the guided reinstall."""
+    judge = current_interpreter() if interpreter is None else interpreter
     state = read_state(layout)
     strays = unexpected_entries(layout, state)
     out = []
     for name, plugin in sorted(state.installed.items()):
         problem = _sound_and_unchanged(layout, plugin, strays)
+        tags = installed_wheel_tags(layout, plugin)
+        if tags:
+            abi = abi_problem(tags, judge)
+            if abi is not None:
+                out.append(Verdict(name, False, abi, plugin.mode))
+                continue
         if plugin.mode == MODE_IN_PROCESS:
             confirmation = state.confirmed.get(name)
             if not env_allows(environ):

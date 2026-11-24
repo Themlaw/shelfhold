@@ -58,6 +58,8 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("plugin.update_refused", 422, "admin"),
     ErrorCode("plugin.rollback_refused", 422, "admin"),
     ErrorCode("plugin.pin_refused", 422, "admin"),  # the pin itself was refused
+    # M6 L09b (EF-SRC-030): a host upgrade left an installed plugin out of api or min_host
+    ErrorCode("plugin.incompatible", 409, "admin", event=True),
     # EF-SRC-003: a plugin's Fetcher asked for a host outside its DomainRules
     ErrorCode("source.domain_not_allowed", 403, "admin"),
     # EF-SRC-002: a plugin did network, disk or process I/O itself (the audit-hook detector)

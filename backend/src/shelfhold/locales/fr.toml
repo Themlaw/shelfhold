@@ -143,6 +143,8 @@ plugin_update_help = "Met à jour un plugin installé depuis le dépôt d'index 
 plugin_pin_help = "Épingle la version installée d'un plugin : ni mise à jour ni retour arrière tant que l'épingle n'est pas retirée."
 plugin_unpin_help = "Retire l'épingle d'un plugin : les mises à jour et le retour arrière redeviennent possibles."
 plugin_rollback_help = "Revient à la version précédente gardée (action réservée, auditée) ; aucune autre ne l'est ensuite."
+plugin_migrate_to_help = "Déplace les sources d'un plugin vers le remplacement nommé par son index (action réservée, auditée ; une source sous pierre tombale reste)."
+plugin_replacement_help = "Clé du plugin de remplacement."
 plugin_index_remove_help = "Retire le signet d'un dépôt d'index (audité) ; un ajout repart de zéro."
 plugin_index_url_help = "Adresse du document d'index (URL http(s) simple)."
 plugin_index_pubkey_help = "Clé publique minisign du signataire, en base64 (sans elle, aucun épinglement)."
@@ -299,6 +301,10 @@ pin_refused = "Épinglage refusé ({code}) : {detail}"
 unpin_refused = "Retrait d'épingle refusé ({code}) : {detail}"
 rolled_back = "Plugin {name} revenu à la version {version} ; plus aucune version précédente n'est gardée."
 rollback_refused = "Retour arrière refusé ({code}) : {detail}"
+deprecated = "Le dépôt d'index marque {name} comme déprécié."
+deprecated_replaced = "Le dépôt d'index marque {name} comme déprécié : il nomme {replaced} comme remplacement (un remplacement n'est jamais installé par ce seul mot)."
+migrated_to = "{moved, plural, one {# source de {name} a été déplacée vers {replacement}} other {# sources de {name} ont été déplacées vers {replacement}}}."
+migration_blocked = "{blocked, plural, one {# source a été retenue par une pierre tombale : rien n'a été recréé pour elle.} other {# sources ont été retenues par une pierre tombale : rien n'a été recréé pour elles.}}"
 orphaned = "{count, plural, one {# liaison de source est marquée orpheline} other {# liaisons de source sont marquées orphelines}} : leur contenu est intact, une réinstallation de la même clé les rattache."
 reattached = "{count, plural, one {# liaison orpheline rattachée} other {# liaisons orphelines rattachées}}."
 
@@ -1895,6 +1901,11 @@ cause = "Le retour arrière a été refusé : version épinglée, aucune version
 title = "L'épinglage du plugin est refusé."
 action = "Vérifiez que le plugin est bien installé, puis réessayez."
 cause = "L'épinglage a été refusé : le plugin installé n'a pas pu être lu comme tel."
+
+[errors."plugin.incompatible"]
+title = "Un plugin installé est incompatible avec cet hôte."
+action = "Mettez le plugin à jour depuis son dépôt d'index, ou retirez-le."
+cause = "Une montée de l'hôte a laissé le plugin hors de la fenêtre d'api ou au-dessus de la version de l'hôte (min_host)."
 
 [errors."source.not_loaded"]
 title = "Une source n'est pas chargée."

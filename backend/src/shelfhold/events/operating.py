@@ -36,6 +36,8 @@ OPERATING_EVENTS: frozenset[str] = frozenset(
         "metadata.provider_down",
         "mount.sentinel_missing",
         "notify.failed",
+        # M6 L09b (EF-SRC-030): a host upgrade left an installed plugin out of api or min_host
+        "plugin.incompatible",
         "reconcile.drift",
         "secret.undecryptable",
         "series.awaiting_shelf",
