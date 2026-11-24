@@ -128,7 +128,7 @@ show_missing = true
 [tool.ruff]
 line-length = 100
 # the adversarial-review proofs are kept exactly as the reviewer wrote them
-extend-exclude = ["tests/unit/test_m4_l41_contradicteur.py", "tests/integration/test_m6_l06_review_poc.py", "tests/integration/test_l22_review_poc.py", "tests/integration/test_l22_review_pending_poc.py", "tests/integration/test_l22_review_reason_poc.py", "tests/unit/test_l22_review_relay_poc.py", "tests/unit/test_publish_sdk_review_poc.py"]
+extend-exclude = ["tests/unit/test_m4_l41_contradicteur.py", "tests/integration/test_m6_l06_review_poc.py", "tests/integration/test_l22_review_poc.py", "tests/integration/test_l22_review_pending_poc.py", "tests/integration/test_l22_review_reason_poc.py", "tests/unit/test_l22_review_relay_poc.py", "tests/unit/test_publish_sdk_review_poc.py", "tests/integration/test_m6_l10_review_poc.py"]
 target-version = "py313"
 src = ["src", "tests"]
 
