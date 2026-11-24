@@ -1,12 +1,12 @@
 # Héberger un index tiers
 
-N'importe qui peut héberger un index de plugins : c'est un **fichier JSON signé** servi en HTTPS,
+N'importe qui peut héberger un index de plugins : c'est un **fichier JSON signé** servi en HTTPS de préférence (HTTP est accepté : c'est la signature, pas le transport, qui fait foi),
 plus sa signature. Le produit ne livre aucune clé et ne fait confiance à aucun dépôt par défaut :
 c'est l'administrateur qui épingle, par adresse et par clé publique.
 
 ## Ce qu'il faut servir
 
-À la racine d'un site HTTPS ordinaire :
+À la racine d'un site ordinaire, en HTTPS de préférence :
 
 - `index.json` — le document (voir les champs dans [index.md](index.md)) ;
 - `index.json.minisig` — la signature détachée (quatre lignes) ;

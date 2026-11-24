@@ -13,7 +13,7 @@ installé dans [cycle-de-vie.md](cycle-de-vie.md) ; le mode isolé dans [isolati
 - Déclarez la dépendance au SDK publié : `shelfhold-sdk>=2.0,<3` (distribution MIT, import
   `shelfhold_sdk`). Ne dépendez jamais de l'intérieur de Shelfhold (ENF-LEG-010).
 - Publiez sur PyPI par **publication de confiance (OIDC)**, sans jeton longue durée, ou
-  conservez la roue et servez-la vous-même : un index pointe vers une `wheel_url` HTTPS.
+  conservez la roue et servez-la vous-même : un index pointe vers une `wheel_url` (HTTPS recommandé ; HTTP est accepté, car la signature de l'index et le `sha256` de la roue en garantissent l'intégrité).
 - Le manifeste déclare `api = 2` (ou `1` pendant la fenêtre du shim, jusqu'en 2027-11) et
   `rpc_protocol = 1`.
 
@@ -57,7 +57,7 @@ Chaque entrée :
 | `version` | version sémantique de la roue |
 | `api` | numéro du contrat de données (`2` ou `1` par le shim) |
 | `rpc_protocol` | version du protocole fil (`1`) |
-| `wheel_url` | adresse HTTPS de la roue |
+| `wheel_url` | adresse de la roue (`http` ou `https`, HTTPS recommandé) |
 | `sha256` | `sha256:` + 64 hexadécimaux ; la roue est vérifiée contre cette valeur |
 | `min_host` | version minimale de Shelfhold (dotted) |
 | `deprecated` | booléen, lu par l'administrateur, jamais agi par l'hôte |
