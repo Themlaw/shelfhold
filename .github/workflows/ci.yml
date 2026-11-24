@@ -389,7 +389,11 @@ jobs:
         env:
           COVERAGE_FILE: .coverage.integration-${{ matrix.shard }}
           SHARD: ${{ matrix.shard }}/${{ needs.changes.outputs.backend_integration_shard_total }}
-        run: uv run --locked pytest tests/integration -n auto --shard "$SHARD" --cov --cov-report= --cov-fail-under=0
+        run: uv run --locked pytest tests/integration -n auto --shard "$SHARD" -m 'not contract and not nightly and not timing' --cov --cov-report= --cov-fail-under=0
+      - name: pytest (timing, alone, no xdist)
+        if: matrix.shard == 1
+        working-directory: backend
+        run: uv run --locked pytest tests/integration -p no:xdist -m timing --no-cov
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-integration-${{ matrix.shard }}

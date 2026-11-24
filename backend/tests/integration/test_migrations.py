@@ -81,6 +81,7 @@ def test_migrate_creates_schema_at_head(settings: Settings) -> None:
 
 
 @pytest.mark.req("ENF-OPS-002")
+@pytest.mark.timing
 def test_migration_fits_the_ten_minute_budget(settings: Settings) -> None:
     # ENF-OPS-002: budget <= 10 min on the reference profile. At M0 the schema is the
     # initial one, so this guards the order of magnitude; the volume profile comes with M1a.

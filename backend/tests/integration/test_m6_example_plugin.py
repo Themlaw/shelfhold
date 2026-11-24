@@ -438,6 +438,7 @@ def _start_plugins_in(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> di
 
 
 @pytest.mark.req("ENF-OBS-003", "EF-SRC-020", "ENF-QUAL-003")
+@pytest.mark.timing
 def test_example_plugin_declares_namespaced_event_and_waiting_exit(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
 ) -> None:

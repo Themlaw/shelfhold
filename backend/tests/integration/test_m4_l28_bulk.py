@@ -413,6 +413,7 @@ def test_orders_that_can_no_longer_be_applied_are_dropped_at_the_next_preview(ri
 
 
 @pytest.mark.req("EF-BIB-023")
+@pytest.mark.timing
 def test_a_thousand_works_are_rated_in_one_order_and_the_write_lock_is_short(rig: _Rig) -> None:
     """Measured, not guessed: the 1 000 Works of the largest order, in tranches of `TRANCHE`, each
     under its own `BEGIN IMMEDIATE` (about a tenth of the total, ~1 s, on the slow test host)."""
