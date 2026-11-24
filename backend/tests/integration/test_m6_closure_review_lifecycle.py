@@ -2,7 +2,7 @@
 
 1. une roue donnée à la main après une install signée (même clé) hérite des secrets, des
    réglages et de l'état de l'install signée — sans mise de côté ni confirmation ;
-2. une roue donnée à la main (autre distribution, même clé) s’installe à côté d'une install
+2. une roue donnée à la main (autre distribution, même clé) est acceptée à côté d'une installation
    signée et lui retire son épinglage d'index ;
 3. un ``pin`` posé pendant l'``update`` (entre la vérification et l'écriture) est ignoré ;
 4. un rollback HTTP dont l'installeur refuse remonte en 500, sans ligne de refus.
