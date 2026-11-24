@@ -179,6 +179,25 @@ SAFE_USES: dict[str, dict[str, int]] = {
         'self.__dict__["_inner"] = inner': 1,
         'setattr(self.__dict__["_inner"], name, value)': 1,
     },
+    # the tracker link of one profile (M6 L13, EF-INT-010): `link` is the domain's word for a
+    # profile's own remote reading account — a row of the database with the token sealed to it,
+    # never a file, never a name on the disk; the SDK contract method and its fake say the same
+    "identity/domain/catalogue.py": {'_action("tracker.link", Effect.TOUCHES_SECRETS),': 1},
+    "integrations/trackers/host.py": {
+        "def link(self, principal: Any, user_id: str, plugin_key: str, token: object) -> LinkView:": 1,
+        "ref = asyncio.run(record.instance.link(fetcher, SessionState(), {}))": 1,
+    },
+    "interfaces/http_api/trackers.py": {
+        '_LINK = reserved_action(RESERVED_ACTIONS["tracker.link"], roles=_ANY_ROLE, audit=False)': 1,
+        "def link(": 1,
+        "view = run(lambda: get_host().link(principal, user_id, plugin_key, body.token))": 1,
+    },
+    "sdk/testing/fakes.py": {
+        "async def link(self, f: Any, account: SessionState, ids: dict[str, Any]) -> TrackerRef:": 1
+    },
+    "sdk/tracker.py": {
+        "async def link(self, f: Fetcher, account: SessionState, ids: dict[str, Any]) -> TrackerRef:": 1
+    },
 }
 
 

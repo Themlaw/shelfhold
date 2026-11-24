@@ -53,6 +53,7 @@ from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.settings_store import load_db_settings
 from shelfhold.infrastructure.volumes import ensure_volumes
 from shelfhold.integrations.notify import ProfileDestinations
+from shelfhold.integrations.trackers import TrackerHost
 from shelfhold.integrations.webhooks import WebhookAdmin
 from shelfhold.interfaces.http_api.activity import build_activity_router
 from shelfhold.interfaces.http_api.app import HttpApplication, Routers, create_http_app
@@ -117,6 +118,7 @@ from shelfhold.interfaces.http_api.sync_status import build_sync_status_router
 from shelfhold.interfaces.http_api.tachibk_import import build_tachibk_import_router
 from shelfhold.interfaces.http_api.teams import build_teams_router
 from shelfhold.interfaces.http_api.thumbnails import build_thumbnails_router
+from shelfhold.interfaces.http_api.trackers import build_trackers_router
 from shelfhold.interfaces.http_api.triage import build_triage_router
 from shelfhold.interfaces.http_api.webhooks import build_webhooks_router
 from shelfhold.interfaces.local_cli import IdentityDispatcher
@@ -129,6 +131,7 @@ from shelfhold.ops.notifications import subscribe_notifications
 from shelfhold.ops.requests import build_service, resolve_request_ref, subscribe_arrivals
 from shelfhold.ops.wiring import open_ops
 from shelfhold.plugin_host.attestation import AttestationStore
+from shelfhold.plugin_host.index import RepoStore, index_fetcher
 from shelfhold.plugin_host.public import PluginRegistry, installed_versions, start_plugins
 from shelfhold.plugin_host.settings import SettingsSchema, SourceSettings, parse_settings_schema
 from shelfhold.progress_lease import build_progress_lease
@@ -463,6 +466,15 @@ def create_app(
         build_notify_destination_router(  # M4 L39: where an adult's titles go, sealed
             lambda: ProfileDestinations(engine, composition.vault, clock)
         ),
+        build_trackers_router(  # M6 L13: a profile's own tracker, sealed and hinted
+            lambda: TrackerHost(
+                engine,
+                composition.vault,
+                clock,
+                registry_of=composition.plugins,
+                fetcher_for=lambda origin: composition.network.one_shot(origin),
+            )
+        ),
         build_sync_status_router(ops_services),  # M4 L33b: the sync state, member by member
         build_edition_shelf_router(lambda: ShelfService(engine, clock=clock)),
         build_headless_router(headless_admin, lambda: resolved.public_url),
@@ -569,8 +581,10 @@ def create_app(
             lambda: SourceSettings(engine, composition.vault, now=clock.now),
             lambda: AttestationStore(engine, clock=clock),
             schema_for,
-            lambda: resolved.data_dir,
+            lambda: resolved.data_dir,  # M6 L06: the guard reads the installed plugins
             lambda: engine,
+            lambda: RepoStore(engine, now=clock.now),  # M6 L07: the pinned plugin indexes
+            lambda: index_fetcher(composition.network),
         ),
     )
 

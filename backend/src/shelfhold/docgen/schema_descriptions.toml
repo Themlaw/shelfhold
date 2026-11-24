@@ -229,12 +229,14 @@ path_entry = "Entry of the path map the root was created from."
 predecessor_instance_ids = "JSON list of earlier instance identifiers that wrote to this root."
 
 [tables.plugin_install]
-description = "Installed source plugins. A third-party plugin is installed disabled."
+description = "Installed source plugins. A third-party plugin is installed disabled. Since M6 L08 an install from a signed index is pinned to (key, index, signer)."
 [tables.plugin_install.columns]
 api = "Plugin API version the plugin targets."
 origin = "`builtin` or `local`."
 sha256 = "Hash of the installed plugin code."
 state_schema = "Version of the plugin's stored state format."
+index_url = "Repository of signed indexes the plugin was installed from; NULL for a wheel the admin gave by hand."
+signer_pubkey = "Public key of the signer of that index: the key is pinned to it (GAP-8-13), and another signer is a new install."
 installed_at = "When the plugin was installed (UTC)."
 
 [tables.plugin_state]
@@ -1602,3 +1604,35 @@ books = "The entitlements the device was given, as JSON: entitlement id -> the E
 tags = "The tags the device was given, as JSON: tag id -> the shelf's name and the entitlements it held."
 in_progress = "The sync in flight, as JSON, frozen by its first page (the walk, the deletions, the tags, the reading states, the instant of page 1); empty when no sync is running."
 created_at = "When the row was written (UTC); the point is replaced at each completion, so it dates the last one."
+[tables.tracker_link]
+description = "A profile's account on a reading tracker: the reference the plugin returned, the profile's accord to the push, and the remote token sealed to the row (M6 L13)."
+[tables.tracker_link.columns]
+id = "Link identifier (ULID); the sealed envelope is bound to it, so linking again keeps the row."
+user_id = "The profile whose remote account is linked; one link per profile and per tracker, gone with the profile."
+plugin_key = "Key of the tracker plugin the account is linked through."
+remote_ref = "The `TrackerRef` the plugin returned, kept as JSON and handed back to it as it was."
+origin = "The `api` origin the token was sealed for; a plugin that declares another domain under the same key receives nothing."
+linked_at = "When the account was linked, or last linked again (UTC)."
+push_enabled = "Whether the profile gave their explicit accord to the push; off until they do."
+token_fingerprint = "Short keyed digest of the token, the only thing the API shows of it."
+
+[tables.tracker_allowance]
+description = "The admin's word that one tracker may be linked by one child profile: a row means allowed, no row means refused (M6 L13)."
+[tables.tracker_allowance.columns]
+user_id = "The child profile the word is about; gone with the profile."
+plugin_key = "Key of the tracker plugin the child may link."
+allowed_by = "Admin who said the word (`user.id`); NULL once that account is gone."
+allowed_at = "When the word was last said (UTC)."
+[tables.plugin_repo]
+description = "A repository of signed plugin indexes the admin pinned (M6 L07, EF-SRC-017, D14): by its URL and the public key of its signer, never without the key, and none is preconfigured."
+[tables.plugin_repo.columns]
+url = "Address of the index document; the row's identity, and what a refresh fetches through the host's Fetcher."
+pubkey = "Public key of the signer (minisign format, base64), pinned when the repository was added: every index is verified against exactly this key."
+key_id = "Fingerprint of the signer's key (16 uppercase hex characters), what the admin sees and the audit line carries."
+last_version = "Highest index version applied (the monotone floor): a document behind it is a rollback and is refused."
+expires = "Expiry of the last applied index (UTC); NULL before the first refresh."
+content_sha256 = "Hash of the last applied index document (`sha256:<hex>`): the same version number must keep the same words."
+added_at = "When the repository was pinned (UTC)."
+
+[tables.plugin_revocation]
+description = "A revocation seen in a signed index stays seen, even if a later index omits it (M6 L07, D14): a plugin by its key, a wheel by its sha256. One row per revocation."

@@ -21,7 +21,7 @@ from tests.integration.test_schema_migration_0002 import alembic_config, tables
 
 pytestmark = pytest.mark.req("ENF-OPS-002", "EF-INT-012")
 
-HEAD_BEFORE = "0114"
+HEAD_BEFORE = "0113"
 USER = new_ulid()
 DEVICE = new_ulid()
 
@@ -41,7 +41,7 @@ def _seed_device(database: str) -> None:
         )
 
 
-def test_the_revision_is_0115_the_head_on_0114() -> None:
+def test_the_revision_is_0115_the_head_on_0113() -> None:
     script = ScriptDirectory(str(default_script_location()))
     assert script.get_heads() == ["0115"]  # the head is pinned here, by the newest
     assert script.get_revision("0115").down_revision == HEAD_BEFORE

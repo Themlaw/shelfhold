@@ -70,6 +70,7 @@ _device = identity.device_token
 _registry = identity.device  # M5 L02: the device a token belongs to
 _passkey = identity.webauthn_credential
 _oidc = identity.oidc_identity  # M5 L03
+_tracker_link = platform.tracker_link  # M6 L13: a child keeps no tracker of her adult days
 
 
 def _retire_devices(
@@ -830,6 +831,12 @@ class SqlIdentityStore:
                     conn, "tracker_hints", hint, hint.c.user_id == user_id,
                     "id", "pending_item_id", "tracker", "remote_id", "last_chapter", "created_at",
                 ),
+                # M6 L13: the trackers she linked — the plugin's name and when, her accord to
+                # the push; never the token, its envelope or its fingerprint
+                "tracker_links": rows(
+                    conn, "tracker_links", _tracker_link, _tracker_link.c.user_id == user_id,
+                    "id", "plugin_key", "linked_at", "push_enabled", "created_at",
+                ),
                 "request_list_imports": rows(
                     conn, "request_list_imports", listing, listing.c.user_id == user_id,
                     "id", "name", "collection_id", "created_at",
@@ -947,6 +954,22 @@ class SqlIdentityStore:
                                 AuditEntry(
                                     actor_id=actor_id,
                                     action="oidc.unlinked_role_change",
+                                    target=user_id,
+                                    at=now,
+                                )
+                            )
+                        )
+                    # nor to a reading tracker (M6 L13): the link — the sealed token with it —
+                    # and its push leave with the role that made them
+                    gone = conn.execute(
+                        sa.delete(_tracker_link).where(_tracker_link.c.user_id == user_id)
+                    ).rowcount
+                    if gone:
+                        conn.execute(
+                            audit_insert(
+                                AuditEntry(
+                                    actor_id=actor_id,
+                                    action="tracker.unlinked_role_change",
                                     target=user_id,
                                     at=now,
                                 )

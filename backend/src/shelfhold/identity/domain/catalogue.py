@@ -107,6 +107,17 @@ _DECLARED = (
     # Shelfhold pull, what each profile has read there: instance data on the move, fresh, never a
     # key's. Turning it off is the same action: one door, one audit line
     _action("destination.sync_progress", Effect.MOVES_INSTANCE_DATA),
+    # M6 L13 (EF-INT-010): a profile links the tracker of their own remote reading account: the
+    # token is a secret handed over once and sealed to its row, so it is fresh in every profile
+    # and never a key's. A child links one only where the admin allowed it (tracker.allow_child)
+    _action("tracker.link", Effect.TOUCHES_SECRETS),
+    # Removing the link erases the sealed token; linking the tracker again undoes it
+    _action("tracker.unlink", Effect.MANAGES_CREDENTIALS),
+    # Saying yes to the push: the profile's reading goes out to the remote service, as with the
+    # progress sync of a binding. Saying no again is the same action: one door, one audit line
+    _action("tracker.push_opt_in", Effect.MOVES_INSTANCE_DATA),
+    # The admin's word that one tracker may be linked by one child profile: a parental decision
+    _action("tracker.allow_child", Effect.PARENTAL_CONTROL),
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),
@@ -189,6 +200,11 @@ _DECLARED = (
     # `access_partitioning` it is also parental control (which shelves may be bound to it)
     _action("plugin.attest", Effect.ATTESTS_TRUST),
     _action("plugin.attest_partitioning", Effect.ATTESTS_TRUST, Effect.PARENTAL_CONTROL),
+    # M6 L07 (D14, EF-SRC-017): adding or removing an index repository pins or unpins the
+    # signer of third-party code, and a removal resets the anti-rollback floor: the admin's
+    # word, a fresh session or the host CLI, never a key
+    _action("plugin.index_add", Effect.ACCEPTS_ADMIN_RISK),
+    _action("plugin.index_remove", Effect.ACCEPTS_ADMIN_RISK),
     # M6 L06 (D13, EF-SRC-019): enabling an isolated plugin runs third-party code on the
     # admin's word; a fresh session or the host CLI, never a key, and the in-process mode
     # keeps its typed phrase besides (CLI-only: no phrase crosses the wire)
@@ -196,6 +212,10 @@ _DECLARED = (
     # M6 L06: silencing a plugin is an admin gesture too (a plugin disabled in secret is a
     # silent outage), with its own name: the audit says what was done, not something else
     _action("plugin.disable_isolated", Effect.ACCEPTS_ADMIN_RISK),
+    # M6 L08 (EF-SRC-017 passe 8, GAP-8-13): moving the state, the settings and the secrets of
+    # a previous install to another signer's code is the admin's word, not the index's: the
+    # signature vouches for the bytes, never for the secrets they will read
+    _action("plugin.adopt_state", Effect.ACCEPTS_ADMIN_RISK),
 )
 
 RESERVED_ACTIONS: Mapping[str, ReservedAction] = MappingProxyType(

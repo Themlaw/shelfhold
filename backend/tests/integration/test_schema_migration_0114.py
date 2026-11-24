@@ -39,7 +39,7 @@ def _insert_subscription(database: str) -> None:
 
 def test_the_revision_is_0114_the_head_on_0108() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it (0115 pins it)
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     assert script.get_revision("0114").down_revision == HEAD_BEFORE
 
 

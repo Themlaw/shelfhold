@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "version": 1,
+  "expires": "2027-02-01T00:00:00Z",
+  "plugins": [
+    {
+      "key": "demo-plug",
+      "version": "1.0.0",
+      "api": 2,
+      "rpc_protocol": 1,
+      "wheel_url": "https://index.example.org/wheels/demo-plug-1.0.0-py3-none-any.whl",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "min_host": "1.3.0",
+      "deprecated": false,
+      "replaced_by": null
+    }
+  ],
+  "revoked": {
+    "plugin_keys": [],
+    "wheel_sha256": []
+  }
+}

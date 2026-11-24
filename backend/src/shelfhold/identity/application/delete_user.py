@@ -38,6 +38,9 @@ SECTIONS = (
     "reader_settings",
     # M5 L21: her saved selections (a name and a stored query, no result)
     "saved_selections",
+    # M6 L13: the trackers she linked (the plugin's name and when, her accord to the push;
+    # never the token, its envelope or its fingerprint)
+    "tracker_links",
 )  # fmt: skip
 
 

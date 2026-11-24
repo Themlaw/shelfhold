@@ -30,10 +30,13 @@ from shelfhold_sdk.metadata import (
 )
 from shelfhold_sdk.models import (
     API_VERSION,
+    AuthApiKey,
     AuthFlow,
     Cursor,
+    DomainRule,
     FilterSpec,
     Page,
+    Permissions,
     PluginKind,
     RateLimit,
     SessionState,
@@ -50,6 +53,7 @@ from shelfhold_sdk.refs import (
     UnitRef,
 )
 from shelfhold_sdk.source import Capability, ContentRemoved, SourceManifest, SubSource
+from shelfhold_sdk.tracker import TrackerHint, TrackerManifest, TrackerRef, TrackProgress
 
 
 class NetworkForbidden(Exception):
@@ -71,6 +75,9 @@ class FakeFetcher:
         self._responses = dict(responses or {})
         self._downloads = dict(downloads or {})
         self.unscripted: list[str] = []
+        # what left through this fetcher: (method, url, headers) — the credential the host
+        # injected shows here, so a test can prove it went to the wire and nowhere else
+        self.seen: list[tuple[str, str, dict[str, str]]] = []
 
     @classmethod
     def from_cassette(cls, path: Path) -> "FakeFetcher":
@@ -86,7 +93,8 @@ class FakeFetcher:
         }
         return cls(responses)
 
-    def _reply(self, method: str, url: str) -> Response:
+    def _reply(self, method: str, url: str, headers: dict[str, str] | None = None) -> Response:
+        self.seen.append((method, url, dict(headers or {})))
         try:
             return self._responses[(method, url)]
         except KeyError:
@@ -102,7 +110,7 @@ class FakeFetcher:
         referer: str | None = None,
         cache_ttl: int | None = None,
     ) -> Response:
-        return self._reply("GET", url)
+        return self._reply("GET", url, headers)
 
     async def post(
         self,
@@ -112,7 +120,7 @@ class FakeFetcher:
         json: Any = None,
         headers: dict[str, str] | None = None,
     ) -> Response:
-        return self._reply("POST", url)
+        return self._reply("POST", url, headers)
 
     async def download(self, req: ImageRequest) -> DownloadedFile:
         if req.url not in self._downloads:
@@ -435,3 +443,48 @@ class FakeMetadataProvider:
 
     async def refresh(self, f: Any, s: SessionState) -> SessionState:
         return s
+
+
+# --- the fake tracker (M6 L13, EF-INT-010) -------------------------------------------------
+
+
+TRACKER_KEY = "fake-tracker"
+TRACKER_ORIGIN = "https://tracker.invalid"
+
+
+class FakeTracker:
+    """A tracker plugin of the kit (D-P6: M6 ships the contract, the host and this fake; a real
+    tracker is another lot). It speaks to a scripted remote at `TRACKER_ORIGIN` through the
+    Fetcher the host hands over — the one that already carries the account's token, which this
+    plugin never sees and never asks for. Everything it is given and everything it does is
+    recorded, so a test can prove the token stayed on the host's side of the contract.
+    """
+
+    def __init__(self) -> None:
+        self.manifest = TrackerManifest(
+            key=TRACKER_KEY,
+            kind=PluginKind.TRACKER,
+            version="1.0.0",
+            api=API_VERSION,
+            name="Fake tracker",
+            permissions=Permissions(domains=[DomainRule(pattern="tracker.invalid", purpose="api")]),
+            auth=AuthApiKey(location="header", name="Authorization"),
+        )
+        self.calls: list[tuple[Any, ...]] = []
+        self.accounts: list[SessionState] = []
+
+    async def link(self, f: Any, account: SessionState, ids: dict[str, Any]) -> TrackerRef:
+        self.accounts.append(account)
+        self.calls.append(("link", dict(ids)))
+        response = await f.post(f"{TRACKER_ORIGIN}/links", json=dict(ids))
+        return TrackerRef(remote_id=json.loads(response.body)["remote_id"])
+
+    async def push_progress(self, f: Any, ref: TrackerRef, p: TrackProgress) -> None:
+        self.calls.append(("push", ref.remote_id, p.fraction))
+        await f.post(f"{TRACKER_ORIGIN}/progress/{ref.remote_id}", json={"fraction": p.fraction})
+
+    async def pull(self, f: Any, ref: TrackerRef) -> TrackerHint | None:
+        self.calls.append(("pull", ref.remote_id))
+        response = await f.get(f"{TRACKER_ORIGIN}/progress/{ref.remote_id}")
+        data = json.loads(response.body)
+        return TrackerHint(fraction=data.get("fraction"), at=data.get("at"))

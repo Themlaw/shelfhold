@@ -361,11 +361,26 @@ sha256 = "dff808b7c45e82f44660d702da983f26e9202c3c6b933f2074f181341d23eb0e"
 since = "1.2"
 
 [[migration]]
+file = "0110_plugin_repo.py"
+sha256 = "5f15fd38c58709005199418901306401a2210486f8ad2b7672265ff6b644da18"
+since = "1.3"
+
+[[migration]]
+file = "0111_plugin_signer_pin.py"
+sha256 = "771c5dc3cdaff0728c760041f8db57ac71fc8ddbb4c942f6645b879b642d85da"
+since = "1.3"
+
+[[migration]]
 file = "0114_webhook_rotation.py"
 sha256 = "2ede6c3e7aea9efd9af795fcee03e9e44b9da6876332f8b462500086ec9ddf09"
 since = "1.3"
 
 [[migration]]
+file = "0113_tracker_link.py"
+sha256 = "d6116e95981aa9d62b217222e695833c57aeaf2927e53cfa397caa590caf0ddd"
+since = "1.3"
+
+[[migration]]
 file = "0115_kobo_sync_point.py"
-sha256 = "986dbd3f37fc8cf1d75089d3f7fcd9775c8053514142241d3c9c5c5099ea7a94"
+sha256 = "5b06643a1d6b8a1b2967d9f6c80c8c2bc8653f52edaf8521757c39b4cd244c97"
 since = "1.3"

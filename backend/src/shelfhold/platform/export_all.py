@@ -100,6 +100,8 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     "device": _CREDENTIAL,  # M5 L02: the registry of the e-readers whose tokens stay behind
     "oidc_identity": _CREDENTIAL,  # M5 L03: who of the provider may sign in as whom, linked again
     "notify_destination": _CREDENTIAL,
+    "tracker_link": _CREDENTIAL,  # M6 L13: a remote account's token, sealed to the row
+    "tracker_allowance": _CREDENTIAL,  # M6 L13: the admin's word for a child, said again
     "source_secret": _CREDENTIAL, "source_config": _CREDENTIAL, "plugin_attestation": _CREDENTIAL,
     "provider_secret": _CREDENTIAL, "webhook_subscription": _CREDENTIAL,
     "idempotency_key": _CREDENTIAL,
@@ -109,6 +111,9 @@ EXCLUDED_TABLES: Final[Mapping[str, str]] = {
     # the host's setup
     "physical_root": _HOST, "mount_sentinel": _HOST, "instance": _HOST, "app_setting": _HOST,
     "schedule": _HOST, "time_window": _HOST, "plugin_install": _HOST, "plugin_state": _HOST,
+    # the repositories of signed plugin indexes the admin pinned and the revocations seen
+    # (M6 L07, D14): the host's own trust decisions, pinned again on the new instance
+    "plugin_repo": _HOST, "plugin_revocation": _HOST,
     "shelf_destination": _HOST, "shelf_destination_remote_library": _HOST,
     "tree": _HOST, "tree_indexer": _HOST,
     "remote_library": _HOST, "kavita_instance": _HOST, "kavita_access_audit": _HOST,

@@ -126,16 +126,53 @@ def make_lang_tags(out_dir: Path) -> None:
     (target / "cases.tsv").write_bytes(source.read_bytes())
 
 
+PLUGIN_INDEX_JSON = (
+    "{\n"
+    '  "format": 1,\n'
+    '  "version": 1,\n'
+    '  "expires": "2027-02-01T00:00:00Z",\n'
+    '  "plugins": [\n'
+    "    {\n"
+    '      "key": "demo-plug",\n'
+    '      "version": "1.0.0",\n'
+    '      "api": 2,\n'
+    '      "rpc_protocol": 1,\n'
+    '      "wheel_url": "https://index.example.org/wheels/demo-plug-1.0.0-py3-none-any.whl",\n'
+    '      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",\n'
+    '      "min_host": "1.3.0",\n'
+    '      "deprecated": false,\n'
+    '      "replaced_by": null\n'
+    "    }\n"
+    "  ],\n"
+    '  "revoked": {\n'
+    '    "plugin_keys": [],\n'
+    '    "wheel_sha256": []\n'
+    "  }\n"
+    "}\n"
+)
+
+
+def make_plugin_index(out_dir: Path) -> None:
+    """The unsigned sample document of a signed plugin index (M6 L07): a public vector.
+
+    No key and no signature live here: a test signs it with a key it makes itself (D-P3).
+    """
+    target = out_dir / "plugin_index"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "index.json").write_text(PLUGIN_INDEX_JSON, encoding="utf-8")
+
+
 def generate(out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     make_lang_tags(out_dir)
+    make_plugin_index(out_dir)
     make_cbz(out_dir / "comic_a_001.cbz", "Synthetic Series A", 1, 3)
     make_cbz(out_dir / "comic_a_002.cbz", "Synthetic Series A", 2, 4)
     make_epub(out_dir / "book_a.epub")
     lines = [
         f"{sha256_file(p)}  {p.relative_to(out_dir).as_posix()}"
         for p in sorted(out_dir.rglob("*"))
-        if p.suffix in {".cbz", ".epub", ".tsv"}
+        if p.suffix in {".cbz", ".epub", ".tsv", ".json"}
     ]
     (out_dir / "MANIFEST.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
 

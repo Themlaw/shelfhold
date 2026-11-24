@@ -41,6 +41,7 @@ __all__ = [
     "PluginState",
     "PluginStatus",
     "first_party_candidates",
+    "installed_keys",
     "installed_versions",
     "load_plugin_state",
     "publisher_attested",
@@ -129,6 +130,19 @@ def start_plugins(
             "plugin.third_party", key=record.key, status=record.status.value, reason=record.reason
         )
     return registry, records
+
+
+def installed_keys(layout: Layout) -> frozenset[str]:
+    """The plugin keys the installed third-party plugins declare, by their entry points. Nothing
+    is imported: the distributions the guard recorded are read from the third-party directory
+    alone. A key is how an index (and an attestation) names a plugin; a distribution name is how
+    the guard does — this is the bridge between the two. The discovery stays behind the start-up
+    facade: no other module reaches the registry's loader (ENF-SEC-009)."""
+    state = read_state(layout)
+    if not state.installed:
+        return frozenset()
+    installed = [InstalledPlugin(i.name, i.top_levels) for i in state.installed.values()]
+    return frozenset(c.key for c in third_party_candidates(layout.site, installed, blocked={}))
 
 
 def installed_versions(settings: Settings) -> dict[str, InstalledVersion]:
