@@ -2,9 +2,9 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
-## 1.3.0 - à paraître
+## 1.3.0 - 2026-11-25
 
-Clôture de M6 : plugins tiers isolés et index signé, SDK 2.0 prêt à publier sur PyPI, trackers, synchronisation Kobo minimale, dossier Kobo et KEPUB, caches et quotas, écrans (modules, trackers, webhooks, « Même œuvre ? »), copies hors ligne pour tout profil, annulation d'une marque de lecture, Komga (relais de scan, audit quotidien, preuve fraîche), une seule requête « lu ailleurs ». Aucune candidate publiée.
+Clôture de M6 : plugins tiers isolés et index signé, SDK 2.0 prêt à publier sur PyPI, trackers, synchronisation Kobo minimale, dossier Kobo et KEPUB, caches et quotas, écrans (modules, trackers, webhooks, « Même œuvre ? »), copies hors ligne pour tout profil, annulation d'une marque de lecture, Komga (relais de scan, audit quotidien, preuve fraîche), une seule requête « lu ailleurs ». Candidate : `1.3.0-rc.1`. **La 1.2.0 n'a pas été publiée** : la 1.3.0 la contient (section suivante), on passe directement de la 1.1.0 à la 1.3.0.
 
 ### Ajouté
 
@@ -82,11 +82,11 @@ Aucun nouvel élément reporté ; les points ouverts restent dans « Limites con
 - **Webhooks** : pas de rotation immédiate, la fenêtre de 24 h est obligatoire (v1.3.1).
 - **Copies hors ligne** : une session d'adulte expirée sans déconnexion laisse ses copies lisibles sur ce navigateur ; se déconnecter les efface.
 
-Migration : oui (0110 à 0118 depuis la 1.2.0), réversible : non (`shelfhold migrate` sauvegarde la base avant de migrer).
+Migration : oui (0100 à 0118 depuis la 1.1.0), réversible : non (`shelfhold migrate` sauvegarde la base avant de migrer).
 
-## 1.2.0 - à compléter (date de la release)
+## 1.2.0 - non publiée (incluse dans la 1.3.0)
 
-Clôture de M5 : un lecteur intégré (images et EPUB) pour le contenu non exporté et pour « Lire un extrait », des liseuses mieux servies (jetons d'appareil enregistrés, kosync pour EPUB, OPDS-PSE, OPDS 2.0, KEPUB, page `/lite` sans JavaScript), la connexion OpenID Connect, l'application installable avec copies hors ligne. Reprend les changements de la candidate `1.2.0-rc.1`. **La date est celle de la release**, qui attend les essais sur appareil réel du porteur.
+Clôture de M5 : un lecteur intégré (images et EPUB) pour le contenu non exporté et pour « Lire un extrait », des liseuses mieux servies (jetons d'appareil enregistrés, kosync pour EPUB, OPDS-PSE, OPDS 2.0, KEPUB, page `/lite` sans JavaScript), la connexion OpenID Connect, l'application installable avec copies hors ligne. Reprend les changements de la candidate `1.2.0-rc.1`. Jamais publiée seule : ses changements sont livrés par la 1.3.0.
 
 ### Ajouté
 

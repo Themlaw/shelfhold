@@ -27,7 +27,8 @@ from shelfhold.platform.update_check import UpdateStatus, check_for_update, upda
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "publish-mirror.yml"
 URL = "https://updates.example.org/shelfhold/latest.json"
-OK = json.dumps({"version": "1.2.0"}).encode()
+# a published version above any release of this line, so "newer" holds whatever __version__ is
+OK = json.dumps({"version": "9.0.0"}).encode()
 
 
 class RecordingFetcher:
@@ -485,7 +486,7 @@ def test_update_check_real_client_sends_a_neutral_agent_and_nothing_else() -> No
 
     network, recorder = _network(lambda _r: httpx2.Response(200, content=OK))
     status = asyncio.run(_real(network))
-    assert (status.state, status.latest, status.newer) == ("ok", "1.2.0", True)
+    assert (status.state, status.latest, status.newer) == ("ok", "9.0.0", True)
     (request,) = recorder.requests
     headers = {k.lower(): v for k, v in request.headers.items()}
     assert headers["user-agent"] == UPDATE_USER_AGENT
