@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -240,3 +241,66 @@ def test_poc_manylinux_wheel_flagged_on_the_linux_interpreter_it_matches() -> No
     linux = guard.Interpreter(python="3.13", abi="cp313", platform="linux_x86_64")
     assert guard.abi_problem(["cp313-cp313-manylinux_2_17_x86_64"], linux) is None
     assert guard.abi_problem(["cp313-abi3-manylinux2014_x86_64"], linux) is None
+
+
+# -- counter-review: the seal of a cut migration, the family that is no index's word ------------
+
+
+def _named(env: Any, replacement: str) -> None:
+    """The install row an index wrote for `plugin-a`: its entry named `replacement`."""
+    with env.inst.engine.begin() as connection:
+        connection.execute(
+            sa.insert(acquisition.plugin_install).values(
+                plugin_id=PLUGIN, version="1.0.0", api="2", origin="local",
+                sha256="sha256:" + "a" * 64, index_url="https://index.example.org/index.json",
+                signer_pubkey="k", min_host="1.0.0", replaced_by=replacement,
+            )
+        )  # fmt: skip
+
+
+@pytest.mark.req("EF-BIB-054", "EF-SRC-030")
+def test_poc_a_migration_cut_before_its_seal_never_seals_again(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, tmp_path: Path
+) -> None:
+    """Every living line moved, then the process is cut before the seal (the rows are
+    committed, the tombstones under the replacing key are not). The rerun the module promises
+    must finish the job: the erased series stays blocked under the replacement."""
+    with seeded(settings, tmp_path / "inst") as env:
+        gone = live(env, GONE)
+        live(env, "keep-1")
+        erase(env, monkeypatch, settings, gone)
+        _named(env, REPLACEMENT)
+
+        def cut(*_args: Any, **_kwargs: Any) -> None:
+            raise RuntimeError("the process is cut after the commit")
+
+        ops = PluginMigrationOps(env.inst.comp)
+        with monkeypatch.context() as patch:
+            patch.setattr(PluginMigrationOps, "_seal", cut)
+            with pytest.raises(RuntimeError):
+                ops.migrate_to(key=PLUGIN, replacement=REPLACEMENT, principal=ADMIN)
+        with contextlib.suppress(Exception):  # the rerun; judged by what stays blocked
+            PluginMigrationOps(env.inst.comp).migrate_to(
+                key=PLUGIN, replacement=REPLACEMENT, principal=ADMIN
+            )
+        service = SourceMigrationOps(env.inst.comp)._service()
+        assert service.check(SeriesBindingRef(REPLACEMENT, SOURCE, GONE), root_id=None).blocked
+
+
+@pytest.mark.req("EF-BIB-054", "EF-SRC-030")
+def test_poc_a_plugin_no_index_named_moves_to_any_key_of_its_family(
+    settings: Settings, tmp_path: Path
+) -> None:
+    """`plugin-a` was never installed from an index: no `replaced_by` was ever said for it. A
+    key that only shares its first segment is no index's word either: refused, nothing moves."""
+    with seeded(settings, tmp_path / "inst") as env:
+        live(env, "keep-1")
+        with pytest.raises(Exception):  # noqa: B017 - any closed refusal will do
+            PluginMigrationOps(env.inst.comp).migrate_to(
+                key=PLUGIN, replacement="plugin-anyone", principal=ADMIN
+            )
+        with env.inst.engine.connect() as connection:
+            owners = set(
+                connection.execute(sa.select(acquisition.source_item.c.plugin_id)).scalars()
+            )
+        assert owners == {PLUGIN}
