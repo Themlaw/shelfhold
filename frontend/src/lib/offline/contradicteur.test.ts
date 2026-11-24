@@ -43,7 +43,7 @@ function publicationOf(carrier: string, work: string): PublicationOut {
   return {
     carrier_type: 'content',
     carrier_id: carrier,
-    work_id: work, series_id: work,
+    work_id: work, series_id: work, edition_id: 'E1',
     scope: 'full',
     kind: 'pages',
     title: carrier,

@@ -9,7 +9,9 @@ import Page from './+page.svelte';
 const BASE = 'http://shelfhold.test';
 const server = setupServer();
 const REPO_URL = 'https://index.example.org/plugins';
-const PLUGIN = 'fake-plugin';
+// the distribution name is not the plugin key: the lifecycle and the attestations speak the key
+const PLUGIN = 'shelfhold-plugin-exemple';
+const KEY = 'exemple';
 
 const stale = () =>
   HttpResponse.json(
@@ -81,9 +83,9 @@ describe('Écran des modules', () => {
     server.use(
       http.get(`${BASE}/api/v1/plugin-repos`, () => HttpResponse.json({ items: [] })),
       http.get(`${BASE}/api/v1/plugins`, () =>
-        HttpResponse.json({ items: [{ name: PLUGIN, version: '1.0.0', mode: 'isolated', status: 'disabled' }] })
+        HttpResponse.json({ items: [{ name: PLUGIN, key: KEY, version: '1.0.0', mode: 'isolated', status: 'disabled' }] })
       ),
-      http.get(`${BASE}/api/v1/plugins/${PLUGIN}/attestations`, () => HttpResponse.json({ items: [] })),
+      http.get(`${BASE}/api/v1/plugins/${KEY}/attestations`, () => HttpResponse.json({ items: [] })),
       http.post(`${BASE}/api/v1/plugins/${PLUGIN}/enabled`, () => stale())
     );
     render(Page);
@@ -98,19 +100,19 @@ describe('Écran des modules', () => {
     server.use(
       http.get(`${BASE}/api/v1/plugin-repos`, () => HttpResponse.json({ items: [] })),
       http.get(`${BASE}/api/v1/plugins`, () =>
-        HttpResponse.json({ items: [{ name: PLUGIN, version: '1.0.0', mode: 'isolated', status: 'enabled' }] })
+        HttpResponse.json({ items: [{ name: PLUGIN, key: KEY, version: '1.0.0', mode: 'isolated', status: 'enabled' }] })
       ),
-      http.get(`${BASE}/api/v1/plugins/${PLUGIN}/attestations`, () =>
-        HttpResponse.json({ items: posted ? [{ plugin_key: PLUGIN, field: 'content_trust', value: 'publisher', plugin_version: '1.0.0', attested_at: '2026-11-01T00:00:00Z' }] : [] })
+      http.get(`${BASE}/api/v1/plugins/${KEY}/attestations`, () =>
+        HttpResponse.json({ items: posted ? [{ plugin_key: KEY, field: 'content_trust', value: 'publisher', plugin_version: '1.0.0', attested_at: '2026-11-01T00:00:00Z' }] : [] })
       ),
-      http.post(`${BASE}/api/v1/plugins/${PLUGIN}/attestations`, async ({ request }) => {
+      http.post(`${BASE}/api/v1/plugins/${KEY}/attestations`, async ({ request }) => {
         posted = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json({ plugin_key: PLUGIN, field: 'content_trust', value: 'publisher', plugin_version: '1.0.0', attested_at: '2026-11-01T00:00:00Z' });
+        return HttpResponse.json({ plugin_key: KEY, field: 'content_trust', value: 'publisher', plugin_version: '1.0.0', attested_at: '2026-11-01T00:00:00Z' });
       })
     );
     render(Page);
     await screen.findByRole('heading', { name: 'Modules', level: 1 });
-    await userEvent.type(screen.getByLabelText('Module'), PLUGIN);
+    await userEvent.type(screen.getByLabelText('Module'), KEY);
     await userEvent.click(screen.getByRole('button', { name: 'Attester' }));
     expect(posted).toMatchObject({ field: 'content_trust', value: 'publisher' });
     expect(await screen.findByText(/content_trust: publisher/)).toBeTruthy();
@@ -121,10 +123,10 @@ describe('Écran des modules', () => {
     server.use(
       http.get(`${BASE}/api/v1/plugin-repos`, () => HttpResponse.json({ items: [] })),
       http.get(`${BASE}/api/v1/plugins`, () =>
-        HttpResponse.json({ items: [{ name: PLUGIN, version: '1.0.0', mode: 'isolated', status: 'enabled' }] })
+        HttpResponse.json({ items: [{ name: PLUGIN, key: KEY, version: '1.0.0', mode: 'isolated', status: 'enabled' }] })
       ),
-      http.get(`${BASE}/api/v1/plugins/${PLUGIN}/attestations`, () =>
-        HttpResponse.json({ items: [{ plugin_key: PLUGIN, field: 'content_trust', value: 'publisher', plugin_version: '1.0.0', attested_at: '2026-11-01T00:00:00Z' }] })
+      http.get(`${BASE}/api/v1/plugins/${KEY}/attestations`, () =>
+        HttpResponse.json({ items: [{ plugin_key: KEY, field: 'content_trust', value: 'publisher', plugin_version: '1.0.0', attested_at: '2026-11-01T00:00:00Z' }] })
       )
     );
     render(Page);
@@ -139,21 +141,21 @@ describe('Écran des modules', () => {
     server.use(
       http.get(`${BASE}/api/v1/plugin-repos`, () => HttpResponse.json({ items: [] })),
       http.get(`${BASE}/api/v1/plugins`, () =>
-        HttpResponse.json({ items: [{ name: PLUGIN, version: '1.0.0', mode: 'isolated', status: 'enabled' }] })
+        HttpResponse.json({ items: [{ name: PLUGIN, key: KEY, version: '1.0.0', mode: 'isolated', status: 'enabled' }] })
       ),
-      http.get(`${BASE}/api/v1/plugins/${PLUGIN}/attestations`, () => HttpResponse.json({ items: [] })),
-      http.post(`${BASE}/api/v1/plugins/${PLUGIN}/update`, () =>
-        HttpResponse.json({ name: PLUGIN, version: '1.1.0', mode: 'isolated', status: 'enabled' })
+      http.get(`${BASE}/api/v1/plugins/${KEY}/attestations`, () => HttpResponse.json({ items: [] })),
+      http.post(`${BASE}/api/v1/plugins/${KEY}/update`, () =>
+        HttpResponse.json({ name: PLUGIN, key: KEY, version: '1.1.0', mode: 'isolated', status: 'enabled' })
       ),
-      http.post(`${BASE}/api/v1/plugins/${PLUGIN}/pin`, () => {
+      http.post(`${BASE}/api/v1/plugins/${KEY}/pin`, () => {
         pinned = true;
-        return HttpResponse.json({ name: PLUGIN, version: '1.1.0', mode: 'isolated', status: 'enabled' });
+        return HttpResponse.json({ name: PLUGIN, key: KEY, version: '1.1.0', mode: 'isolated', status: 'enabled' });
       }),
-      http.delete(`${BASE}/api/v1/plugins/${PLUGIN}/pin`, () => {
+      http.delete(`${BASE}/api/v1/plugins/${KEY}/pin`, () => {
         unpinned = true;
-        return HttpResponse.json({ name: PLUGIN, version: '1.1.0', mode: 'isolated', status: 'enabled' });
+        return HttpResponse.json({ name: PLUGIN, key: KEY, version: '1.1.0', mode: 'isolated', status: 'enabled' });
       }),
-      http.post(`${BASE}/api/v1/plugins/${PLUGIN}/rollback`, () => stale())
+      http.post(`${BASE}/api/v1/plugins/${KEY}/rollback`, () => stale())
     );
     render(Page);
     await userEvent.click(await screen.findByRole('button', { name: 'Mettre à jour' }));

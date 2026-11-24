@@ -452,11 +452,11 @@ class TrackerHost:
             raise TrackerError("not_found")
         now = self._clock.now()
         with write_transaction(self._engine) as connection:
-            if (
-                connection.execute(sa.select(_user.c.id).where(_user.c.id == user_id)).first()
-                is None
-            ):
+            who = connection.execute(sa.select(_user.c.role).where(_user.c.id == user_id)).first()
+            if who is None:
                 raise TrackerError("not_found")
+            if allowed and who.role != "child":  # the word is for a child; an adult needs none
+                raise TrackerError("not_a_child")
             if allowed:
                 there = connection.execute(
                     sa.select(_allowance.c.user_id).where(

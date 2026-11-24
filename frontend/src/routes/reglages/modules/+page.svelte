@@ -80,8 +80,9 @@
     plugins = pluginsData?.items ?? [];
     const next: Record<string, AttestationOut[]> = {};
     for (const plugin of plugins) {
-      const { data } = await readAttestations({ path: { key: plugin.name }, throwOnError: false });
-      next[plugin.name] = data?.items ?? [];
+      if (!plugin.key) continue; // nothing loadable: the attestations are addressed by the key
+      const { data } = await readAttestations({ path: { key: plugin.key }, throwOnError: false });
+      next[plugin.key] = data?.items ?? [];
     }
     attestations = next;
   }
@@ -176,11 +177,15 @@
     await call();
   }
 
+  /** The lifecycle and attestation routes are addressed by the plugin key, never by the name of
+   * its distribution. A plugin without a key is not offered these actions (the buttons are off). */
+  const lifecycleKey = (plugin: PluginOut): string => plugin.key ?? '';
+
   async function pin(plugin: PluginOut, pinned: boolean): Promise<void> {
     busy = true;
     try {
       const fn = pinned ? pinPlugin : unpinPlugin;
-      const { data, error } = await fn({ path: { name: plugin.name }, headers: headers(), throwOnError: false });
+      const { data, error } = await fn({ path: { name: lifecycleKey(plugin) }, headers: headers(), throwOnError: false });
       if (error) {
         say(t('modules.action_refused'), 'alert');
         return;
@@ -194,13 +199,13 @@
   async function update(plugin: PluginOut): Promise<void> {
     busy = true;
     try {
-      const { data, error } = await updatePlugin({ path: { name: plugin.name }, headers: headers(), throwOnError: false });
+      const { data, error } = await updatePlugin({ path: { name: lifecycleKey(plugin) }, headers: headers(), throwOnError: false });
       if (error) {
         say(t('modules.action_refused'), 'alert');
         return;
       }
       if (data) plugins = plugins.map((p) => (p.name === plugin.name ? data : p));
-      await loadAttestations(plugin.name);
+      await loadAttestations(lifecycleKey(plugin));
     } finally {
       busy = false;
     }
@@ -210,14 +215,14 @@
     busy = true;
     const call = async (): Promise<void> => {
       try {
-        const { data, error } = await rollbackPlugin({ path: { name: plugin.name }, headers: headers(), throwOnError: false });
+        const { data, error } = await rollbackPlugin({ path: { name: lifecycleKey(plugin) }, headers: headers(), throwOnError: false });
         if (error) {
           if (askAgain(error, call)) return;
           say(t('modules.action_refused'), 'alert');
           return;
         }
         if (data) plugins = plugins.map((p) => (p.name === plugin.name ? data : p));
-        await loadAttestations(plugin.name);
+        await loadAttestations(lifecycleKey(plugin));
       } finally {
         busy = false;
       }
@@ -273,7 +278,7 @@
   }
 
   function trustOf(plugin: PluginOut): TrustCardOut {
-    const atts = attestations[plugin.name] ?? [];
+    const atts = attestations[plugin.key ?? ''] ?? [];
     const publisher = atts.some((a) => a.field === 'content_trust' && a.value === 'publisher');
     const level: 'official' | 'community' | 'unknown' = publisher ? 'community' : 'unknown';
     const lines: TrustLineOut[] = [
@@ -353,23 +358,23 @@
               <button type="button" onclick={() => togglePlugin(plugin, plugin.status !== 'enabled')} disabled={busy}>
                 {plugin.status === 'enabled' ? t('modules.disable') : t('modules.enable')}
               </button>
-              <button type="button" onclick={() => pin(plugin, true)} disabled={busy}>{t('modules.pin')}</button>
-              <button type="button" onclick={() => pin(plugin, false)} disabled={busy}>{t('modules.unpin')}</button>
-              <button type="button" onclick={() => update(plugin)} disabled={busy}>{t('modules.update')}</button>
-              <button type="button" onclick={() => rollback(plugin)} disabled={busy}>{t('modules.rollback')}</button>
+              <button type="button" onclick={() => pin(plugin, true)} disabled={busy || !plugin.key}>{t('modules.pin')}</button>
+              <button type="button" onclick={() => pin(plugin, false)} disabled={busy || !plugin.key}>{t('modules.unpin')}</button>
+              <button type="button" onclick={() => update(plugin)} disabled={busy || !plugin.key}>{t('modules.update')}</button>
+              <button type="button" onclick={() => rollback(plugin)} disabled={busy || !plugin.key}>{t('modules.rollback')}</button>
 
               <TrustCard trust={trustOf(plugin)} />
 
               <div class="attestations">
                 <h3>{t('modules.attestations')}</h3>
-                {#if (attestations[plugin.name] ?? []).length === 0}
+                {#if (attestations[plugin.key ?? ''] ?? []).length === 0}
                   <p>{t('modules.no_attestations')}</p>
                 {:else}
                   <ul>
-                    {#each attestations[plugin.name] ?? [] as a (a.field + a.value)}
+                    {#each attestations[plugin.key ?? ''] ?? [] as a (a.field + a.value)}
                       <li>
                         {a.field}: {a.value}
-                        <button type="button" onclick={() => doWithdraw(plugin.name, a.field)} disabled={busy}>{t('modules.withdraw')}</button>
+                        <button type="button" onclick={() => doWithdraw(lifecycleKey(plugin), a.field)} disabled={busy}>{t('modules.withdraw')}</button>
                       </li>
                     {/each}
                   </ul>

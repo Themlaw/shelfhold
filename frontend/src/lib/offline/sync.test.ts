@@ -24,7 +24,7 @@ const position = (carrier: string, ts: string, index = 3): PositionIn => ({
 
 function publicationOf(carrier: string, work: string): PublicationOut {
   return {
-    carrier_type: 'content', carrier_id: carrier, work_id: work, series_id: work, scope: 'full', kind: 'pages', title: carrier,
+    carrier_type: 'content', carrier_id: carrier, work_id: work, edition_id: `E-${carrier}`, series_id: work, scope: 'full', kind: 'pages', title: carrier,
     number: null, language: null, reading_direction: 'ltr', expires_at: '2026-11-19T10:10:00Z', pages: [], spine: [], package: null
   };
 }
@@ -132,6 +132,17 @@ describe('what left the view is evicted at reconnection by ?since=', () => {
     const result = await syncOffline({ store, profileId: ALICE, api: api({ works }) });
     expect(result.evicted).toEqual([WORK_A]);
     expect((await store.copies(ALICE)).map((c) => c.workId)).toEqual([WORK_B]);
+    expect(await store.since(ALICE)).toBe('fresh');
+  });
+
+  // req: EF-LEC-012, EF-INT-001, ENF-SEC-010
+  it('an Edition named by removed_editions is evicted though its Work stays visible; the other copies stay', async () => {
+    const { store } = await setup();
+    await store.setSince(ALICE, 'old');
+    const works = vi.fn(async (since: string | null) => ({ status: 200, since: 'fresh', removed: [], removedEditions: since === 'old' ? [`E-${A}`, 'E-never-kept'] : [] }));
+    const result = await syncOffline({ store, profileId: ALICE, api: api({ works }) });
+    expect(result.evicted).toEqual([WORK_A]);
+    expect((await store.copies(ALICE)).map((c) => c.carrierId)).toEqual([B]);
     expect(await store.since(ALICE)).toBe('fresh');
   });
 

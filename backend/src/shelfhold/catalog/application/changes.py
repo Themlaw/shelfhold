@@ -18,6 +18,11 @@ transaction of the change:
   each Work whose visibility to her moved. `removed_ids` reads, for a child, the events of her own
   profile besides the needs. Wrapped by `track_shelf_changes`.
 
+- `ops.edition_visibility` `{edition_id, profile_id, visible_before, visible_after}`: the same, one
+  level down. An Edition filed on a shelf closed to a child no longer answers her, though its Work
+  stays visible through another Edition: no Work event is written then, yet a copy she kept of
+  that Edition must go. `removed_edition_ids` reads them (`removed_editions` of `?since=`).
+
 The payload holds ids and numbers, never a title: a token reveals nothing about the object.
 
 **Never an item the reader never saw.** A reader is told about a removal only if she could see the
@@ -52,7 +57,11 @@ from typing import Any, Final, Literal
 
 import sqlalchemy as sa
 
-from shelfhold.catalog.application.queries import age_visible_works_clause, visible_work_ids
+from shelfhold.catalog.application.queries import (
+    age_visible_works_clause,
+    visible_edition_ids,
+    visible_work_ids,
+)
 from shelfhold.events.bus import check_payload
 from shelfhold.infrastructure.schema import catalog, identity, platform
 
@@ -66,6 +75,7 @@ __all__ = [
     "history_marker",
     "record_removed",
     "record_work_removed",
+    "removed_edition_ids",
     "removed_ids",
     "restore_epoch",
     "scope_code",
@@ -82,6 +92,7 @@ VISIBILITY_EVENT: Final = "ops.work_visibility"
 WORK_REMOVED_EVENT: Final = "ops.work_removed"
 SHELF_REMOVED_EVENT: Final = "ops.shelf_removed"
 PROFILE_EVENT: Final = "ops.profile_visibility"
+EDITION_EVENT: Final = "ops.edition_visibility"
 _MAX_CEILING = 99  # X
 Kind = Literal["work", "shelf"]
 
@@ -204,6 +215,20 @@ def _works_on(connection: sa.Connection, shelf_ids: list[str], edition_ids: list
     return found
 
 
+def _editions_of(connection: sa.Connection, work_ids: Iterable[str]) -> set[str]:
+    edition = catalog.edition.c
+    ids = sorted(set(work_ids))
+    found: set[str] = set()
+    for start in range(0, len(ids), 500):
+        found.update(
+            r[0]
+            for r in connection.execute(
+                sa.select(edition.id).where(edition.work_id.in_(ids[start : start + 500]))
+            )
+        )
+    return found
+
+
 @contextmanager
 def track_shelf_changes(
     connection: sa.Connection,
@@ -224,9 +249,27 @@ def track_shelf_changes(
         return
     candidates = _works_on(connection, shelves, editions)
     before = {c.profile_id: visible_work_ids(connection, c, candidates) for c in children}
+    held = _editions_of(connection, candidates)
+    seen_before = {c.profile_id: visible_edition_ids(connection, c, held) for c in children}
     yield
     candidates |= _works_on(connection, shelves, editions)  # an Edition that moved is the same one
+    held |= _editions_of(connection, candidates)
     for child in children:
+        seen_after = visible_edition_ids(connection, child, held)
+        for edition_id in sorted(held):
+            was_seen = edition_id in seen_before[child.profile_id]
+            if was_seen != (edition_id in seen_after):
+                _insert(
+                    connection,
+                    EDITION_EVENT,
+                    {
+                        "edition_id": edition_id,
+                        "profile_id": child.profile_id,
+                        "visible_before": was_seen,
+                        "visible_after": edition_id in seen_after,
+                    },
+                    now,
+                )
         after = visible_work_ids(connection, child, candidates)
         was = before[child.profile_id]
         for work_id in sorted(candidates):
@@ -388,6 +431,37 @@ def removed_ids(
         ):
             out.append(work_id)
     return _capped(out)
+
+
+def removed_edition_ids(connection: sa.Connection, scope: Any, since_seq: int) -> list[str]:
+    """The Editions this child may no longer see since `since_seq` (and had at the token): her
+    kept copies of them go, whatever happens to the Work. An adult's view of an Edition never
+    changes, so an adult gets none. The first event of an Edition after the token says whether it
+    was hers at the token, the last whether it is now."""
+    own = getattr(scope, "profile_id", None)
+    if own is None or getattr(scope, "unrestricted", False):
+        return []
+    rows = connection.execute(
+        sa.select(platform.event.c.payload)
+        .where(platform.event.c.type == EDITION_EVENT, platform.event.c.id > since_seq)
+        .order_by(platform.event.c.id)
+    )
+    first: dict[str, bool] = {}
+    last: dict[str, bool] = {}
+    for row in rows:
+        payload = row.payload
+        edition_id, was, now = (
+            payload.get("edition_id"),
+            payload.get("visible_before"),
+            payload.get("visible_after"),
+        )
+        if payload.get("profile_id") != own or not isinstance(edition_id, str):
+            continue  # another profile's events say nothing of hers
+        if not isinstance(was, bool) or not isinstance(now, bool):
+            continue
+        first.setdefault(edition_id, was)
+        last[edition_id] = now
+    return _capped([e for e, was in first.items() if was and not last[e]])
 
 
 def _capped(found: list[str]) -> list[str]:

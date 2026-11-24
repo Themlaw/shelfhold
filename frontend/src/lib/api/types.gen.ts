@@ -4062,6 +4062,10 @@ export type PlanOut = {
  */
 export type PluginOut = {
     /**
+     * Key
+     */
+    key?: string | null;
+    /**
      * Mode
      */
     mode: string;
@@ -4618,6 +4622,10 @@ export type PublicationOut = {
      * Carrier Type
      */
     carrier_type: 'content' | 'export_item';
+    /**
+     * Edition Id
+     */
+    edition_id: string;
     /**
      * Expires At
      */
@@ -8404,6 +8412,10 @@ export type WorksPageOut = {
      * Removed
      */
     removed: Array<string>;
+    /**
+     * Removed Editions
+     */
+    removed_editions: Array<string>;
     /**
      * Series
      */

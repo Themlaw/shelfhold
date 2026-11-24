@@ -194,6 +194,27 @@ def test_the_journal_of_the_undo_says_who_and_whose(world: World) -> None:
     assert "kid" not in repr(event)  # a username never enters the journal
 
 
+@pytest.mark.req("EF-LEC-014", "EF-USR-016")
+def test_the_admin_undo_of_a_child_mark_is_a_line_of_the_audit_table(world: World) -> None:
+    """Closure review (§3.9): the administrator's undo of a child's mark leaves a row in the audit
+    table (who, whose), not only a line of the application journal. Her own undo writes none."""
+    unit, carrier = read_unit(world)
+    kid = user_id_of(world.seed.engine, "kid")
+    admin = user_id_of(world.seed.engine, "admin")
+    query = sa.text(
+        "SELECT actor_id, target FROM audit WHERE action = 'reading.read_mark_undone_by_admin'"
+    )
+    mark_read(world, "kid", unit, carrier)
+    assert undo(world, world.kid, unit).json() == {"undone": 1}  # her own: no audit line
+    with world.seed.engine.connect() as connection:
+        assert connection.execute(query).all() == []
+    mark_read(world, "kid", unit, carrier)
+    assert undo(world, world.admin, unit, for_child=kid).json() == {"undone": 1}
+    with world.seed.engine.connect() as connection:
+        rows = connection.execute(query).all()
+    assert [(r.actor_id, r.target) for r in rows] == [(admin, kid)]
+
+
 @pytest.mark.req("EF-LEC-014", "ENF-SEC-010")
 def test_an_api_key_cannot_undo_a_read_mark(world: World) -> None:
     """A key of the API is not the reader's session: neither door of the undo answers it, and

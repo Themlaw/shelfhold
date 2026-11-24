@@ -27,6 +27,7 @@ from shelfhold.catalog.public import (
     history_marker,
     list_visible_series,
     list_visible_works,
+    removed_edition_ids,
     removed_ids,
     restore_epoch,
     scope_code,
@@ -70,6 +71,9 @@ class WorksPageOut(BaseModel):
     series: list[SeriesChoiceOut] | None = None  # only with `facets`: series she may filter by
     since: str  # the token to send next time
     removed: list[str]  # Work ids that left this reader's view since the token (empty without one)
+    # Edition ids she may no longer see since the token, though their Work may stay visible
+    # through another Edition: a kept copy of one of them goes
+    removed_editions: list[str]
 
 
 class ShelfItemOut(BaseModel):
@@ -135,10 +139,13 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
     ) -> WorksPageOut:
         with get_engine().connect() as connection:
             scope = reader_scope(connection, principal.user_id)
-            token, removed = _removals(
-                connection, raw, key, WORKS_KIND, scope_code(scope),
-                lambda seq: removed_ids(connection, scope, seq),
-            )  # fmt: skip
+            editions: list[str] = []
+
+            def read(seq: int) -> list[str]:
+                editions.extend(removed_edition_ids(connection, scope, seq))
+                return removed_ids(connection, scope, seq)
+
+            token, removed = _removals(connection, raw, key, WORKS_KIND, scope_code(scope), read)
             page = list_visible_works(
                 connection, scope, limit=limit, offset=offset, recent=sort == "recent",
                 shelf_id=shelf_id, series_id=series_id,
@@ -156,7 +163,7 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
                 )
                 for w in page
             ],
-            total=total, series=series, since=token, removed=removed,
+            total=total, series=series, since=token, removed=removed, removed_editions=editions,
         )  # fmt: skip
 
     @router.get("/shelves", response_model=ShelvesPageOut)
