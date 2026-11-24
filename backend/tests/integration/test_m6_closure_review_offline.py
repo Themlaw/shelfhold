@@ -33,6 +33,7 @@ def world(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[World
     yield from _make_world(monkeypatch, settings)
 
 
+@pytest.mark.req("EF-LEC-012", "EF-INT-001", "ENF-SEC-010")
 def test_child_copy_of_edition_moved_off_her_shelves_is_named_by_since(world: World) -> None:
     content = book(world, pages_of(3), edition="ok")  # Work "ok" also has "ok_second", open to her
     kept = publication(world.kid, "content", content)

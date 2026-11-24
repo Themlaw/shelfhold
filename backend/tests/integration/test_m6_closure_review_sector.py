@@ -26,6 +26,7 @@ def _token() -> str:
     return secrets.token_urlsafe(32)
 
 
+@pytest.mark.req("EF-INT-010", "EF-USR-024", "ENF-SEC-005")
 def test_allowance_given_to_an_adult_survives_a_demotion_to_child(fx: Fixture) -> None:
     """L'autorisation `tracker.allow_child` est acceptée pour un profil qui n'est pas enfant, et
     elle survit au changement de rôle (qui efface pourtant le lien et les politiques de source) :
@@ -43,6 +44,7 @@ def test_allowance_given_to_an_adult_survives_a_demotion_to_child(fx: Fixture) -
     assert done.status_code == 403, f"enfant rétrogradé lié sans autorisation: {done.status_code}"
 
 
+@pytest.mark.req("EF-INT-010", "EF-USR-024", "ENF-SEC-005")
 def test_allowance_survives_child_member_child_cycle(fx: Fixture) -> None:
     kid_id = fx.add("kid", "child", max_age_rating=10)
     path = trackers_path(kid_id, TRACKER_KEY, "/allowance")
@@ -52,6 +54,7 @@ def test_allowance_survives_child_member_child_cycle(fx: Fixture) -> None:
     assert fx.allowances() == [], "l'autorisation de l'ancien rôle enfant survit au cycle"
 
 
+@pytest.mark.req("EF-BIB-018")
 def test_rendition_touch_follows_a_symlink(tmp_path: Path) -> None:
     """`DataFolder.touch` (appelé par `RenditionService._touch` après la lecture O_NOFOLLOW) se
     dit « never a link » mais `os.utime(name, dir_fd=...)` suit les liens : un lien posé à la
