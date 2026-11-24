@@ -421,7 +421,7 @@ def create_app(
         engine_local = engine
 
         def _sink(key: str, event_name: str, payload: Any) -> None:
-            with engine_local.connect() as connection, connection.begin():
+            with write_transaction(engine_local) as connection:
                 publish_plugin_event(composition.bus, connection, key, event_name, payload)
 
         async def start_isolated() -> None:
