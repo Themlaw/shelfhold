@@ -15227,6 +15227,158 @@ export type EnablePluginResponses = {
 
 export type EnablePluginResponse = EnablePluginResponses[keyof EnablePluginResponses];
 
+export type UnpinPluginData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/plugins/{name}/pin';
+};
+
+export type UnpinPluginErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type UnpinPluginError = UnpinPluginErrors[keyof UnpinPluginErrors];
+
+export type UnpinPluginResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginOut;
+};
+
+export type UnpinPluginResponse = UnpinPluginResponses[keyof UnpinPluginResponses];
+
+export type PinPluginData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/plugins/{name}/pin';
+};
+
+export type PinPluginErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PinPluginError = PinPluginErrors[keyof PinPluginErrors];
+
+export type PinPluginResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginOut;
+};
+
+export type PinPluginResponse = PinPluginResponses[keyof PinPluginResponses];
+
+export type RollbackPluginData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/plugins/{name}/rollback';
+};
+
+export type RollbackPluginErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type RollbackPluginError = RollbackPluginErrors[keyof RollbackPluginErrors];
+
+export type RollbackPluginResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginOut;
+};
+
+export type RollbackPluginResponse = RollbackPluginResponses[keyof RollbackPluginResponses];
+
+export type UpdatePluginData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/plugins/{name}/update';
+};
+
+export type UpdatePluginErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type UpdatePluginError = UpdatePluginErrors[keyof UpdatePluginErrors];
+
+export type UpdatePluginResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginOut;
+};
+
+export type UpdatePluginResponse = UpdatePluginResponses[keyof UpdatePluginResponses];
+
 export type ProbeData = {
     body: ProbeIn;
     path?: never;

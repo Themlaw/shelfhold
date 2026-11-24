@@ -229,7 +229,7 @@ path_entry = "Entry of the path map the root was created from."
 predecessor_instance_ids = "JSON list of earlier instance identifiers that wrote to this root."
 
 [tables.plugin_install]
-description = "Installed source plugins. A third-party plugin is installed disabled. Since M6 L08 an install from a signed index is pinned to (key, index, signer)."
+description = "Installed source plugins. A third-party plugin is installed disabled. Since M6 L08 an install from a signed index is pinned to (key, index, signer); since M6 L09a its version can be pinned by the admin and the previous kept version is recorded for the rollback."
 [tables.plugin_install.columns]
 api = "Plugin API version the plugin targets."
 origin = "`builtin` or `local`."
@@ -237,6 +237,9 @@ sha256 = "Hash of the installed plugin code."
 state_schema = "Version of the plugin's stored state format."
 index_url = "Repository of signed indexes the plugin was installed from; NULL for a wheel the admin gave by hand."
 signer_pubkey = "Public key of the signer of that index: the key is pinned to it (GAP-8-13), and another signer is a new install."
+pinned = "The admin froze this version: no update, no rollback, until the pin is taken away."
+previous_version = "Version kept aside by the last update, the one the reserved rollback returns to; NULL once it is back."
+previous_sha256 = "Hash of the kept previous version's wheel, `sha256:` prefixed; it must be the recorded one byte for byte."
 installed_at = "When the plugin was installed (UTC)."
 
 [tables.plugin_state]

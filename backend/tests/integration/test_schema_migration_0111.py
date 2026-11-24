@@ -3,7 +3,7 @@
 Two columns, `index_url` and `signer_pubkey`, both NULL for every plugin installed before (a
 wheel the admin gave by hand is pinned by the admin's own act, not by a signature), and the
 `pin_paired` check: an install is pinned or it is not — the repository and its signer come and go
-together. The head of the migrations is pinned here, by the newest one.
+together. The head of the migrations is no longer pinned here: 0112 (M6 L09a) follows it.
 """
 
 import sqlite3

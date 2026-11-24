@@ -266,6 +266,19 @@ class WheelInfo:
     version: str
     top_levels: tuple[str, ...]
     dist_info: str
+    tags: str  # the filename's tag section its own WHEEL metadata declares (PEP 425)
+
+
+def _tag_section(declared: list[str]) -> str:
+    """The tag section of a filename for the tags a wheel declares (PEP 425): the python tags
+    compress into one when the abi and the platform are shared, else the first declared tag
+    stands in the name — the publisher's own first word, never a made-up section."""
+    split = [tag.rsplit("-", 2) for tag in declared]
+    if any(len(parts) != 3 for parts in split):
+        raise PluginInstallError("bad_wheel", "a declared wheel tag is not py-abi-platform")
+    if len({(abi, platform) for _, abi, platform in split}) == 1:
+        return "-".join((".".join(py for py, _, _ in split), split[0][1], split[0][2]))
+    return declared[0]
 
 
 def _top_level(path: str) -> str:
@@ -343,12 +356,23 @@ def _inspect_names(names: list[str], read: Callable[[str], bytes]) -> WheelInfo:
     name = normalise_name(declared.group(1))
     if normalise_name(match.group("name")) != name:
         raise PluginInstallError("bad_wheel", "dist-info name differs from METADATA Name")
+    try:
+        wheel_meta = read(f"{dist_info}/WHEEL").decode("utf-8", "replace")
+    except KeyError as exc:
+        raise PluginInstallError("bad_wheel", "no WHEEL metadata") from exc
+    tags = [
+        line.removeprefix("Tag:").strip()
+        for line in wheel_meta.splitlines()
+        if line.startswith("Tag:")
+    ]
+    if not tags:
+        raise PluginInstallError("bad_wheel", "the WHEEL metadata declares no Tag")
     tops = sorted(
         {_top_level(n) for n in names if not PurePosixPath(n).parts[0].endswith(".dist-info")}
     )
     if not tops:
         raise PluginInstallError("bad_wheel", "no module")
-    return WheelInfo(name, match.group("version"), tuple(tops), dist_info)
+    return WheelInfo(name, match.group("version"), tuple(tops), dist_info, _tag_section(tags))
 
 
 def wheel_plugin_keys(wheel: Path) -> frozenset[str]:
@@ -629,6 +653,42 @@ def remove_plugin(layout: Layout, name: str) -> Installed:
     state.enabled.pop(key, None)
     write_state(layout, state)
     return plugin
+
+
+# -- the kept wheels of the lifecycle (M6 L09a, EF-SRC-020, D15) ------------------------------
+
+
+def kept_wheel_path(layout: Layout, key: str) -> Path:
+    """The wheel of the installed version, kept for the day the plugin is updated: the previous
+    version is the one — and the only one — the reserved rollback returns to."""
+    return layout.root / "wheels" / f"{key}.whl"
+
+
+def previous_wheel_path(layout: Layout, key: str) -> Path:
+    """The wheel of the previous kept version, moved aside by an update, gone once the rollback
+    has put it back."""
+    return layout.root / "previous" / f"{key}.whl"
+
+
+def keep_wheel(layout: Layout, key: str, wheel: Path, dest: Path | None = None) -> Path:
+    """Keep a copy of a verified wheel under the plugins volume (never on ``sys.path``, never in
+    ``site-packages``: the guard's stray check does not see it). The caller has verified the
+    wheel; the copy is byte for byte the one the index vouched for. ``dest`` stages the copy
+    under another name first, for an act that must not leave anything fallible after its line
+    is committed (M6 L09a)."""
+    kept = dest if dest is not None else kept_wheel_path(layout, key)
+    kept.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    kept.write_bytes(wheel.read_bytes())
+    return kept
+
+
+def drop_kept_wheels(layout: Layout, key: str) -> None:
+    """An uninstall leaves none of the plugin's code behind: the kept wheels go with the files."""
+    for kept in (kept_wheel_path(layout, key), previous_wheel_path(layout, key)):
+        # a staged copy (M6 L09a) a dead process left beside a kept wheel is the plugin's code too
+        for path in (kept, kept.with_name(f"{kept.name}.next")):
+            if path.exists():
+                path.unlink()
 
 
 # -- activation --------------------------------------------------------------------------------

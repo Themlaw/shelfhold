@@ -585,6 +585,7 @@ def create_app(
             lambda: engine,
             lambda: RepoStore(engine, now=clock.now),  # M6 L07: the pinned plugin indexes
             lambda: index_fetcher(composition.network),
+            lambda: installed_versions(resolved),  # M6 L09a: the lifecycle, by the plugin key
         ),
     )
 

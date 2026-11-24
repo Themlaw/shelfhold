@@ -18,12 +18,17 @@
 - `POST|DELETE /api/v1/plugins/{name}/enabled`: the reserved action `plugin.enable_isolated`
   (M6 L06, D13) — a fresh admin session or the host CLI, never a key. The in-process mode is
   never enabled over the wire: its typed phrase cannot cross it.
+- `POST|DELETE /api/v1/plugins/{key}/pin`, `POST .../update`, `POST .../rollback`: the lifecycle
+  of an installed plugin (M6 L09a, EF-SRC-020, D15) — by its key, like the index and the
+  attestations. The pin freezes the version; the update installs what the pinned index vouches
+  for now, keeping the previous wheel; the rollback returns to that previous version and is the
+  reserved action `plugin.rollback` (a fresh admin session or the host CLI, never a key).
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -38,6 +43,7 @@ from shelfhold.identity.public import RESERVED_ACTIONS, Credential, Principal, a
 from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.plugin_host import install as guard
+from shelfhold.plugin_host import lifecycle
 from shelfhold.plugin_host.attestation import (
     AttestationError,
     AttestationNotNeeded,
@@ -50,6 +56,7 @@ from shelfhold.plugin_host.settings import (
     SettingsView,
     SettingValueError,
     SourceSettings,
+    write_audit,
 )
 
 __all__ = ["build_plugins_router"]
@@ -66,6 +73,10 @@ _INDEX_REMOVE = reserved_action(RESERVED_ACTIONS["plugin.index_remove"], audit=F
 # the plugin as its target, once the guard has agreed (a refusal leaves no "allowed" row)
 _ENABLE_ISOLATED = reserved_action(RESERVED_ACTIONS["plugin.enable_isolated"], audit=False)
 _DISABLE_ISOLATED = reserved_action(RESERVED_ACTIONS["plugin.disable_isolated"], audit=False)
+# M6 L09a (EF-SRC-020, D15): the rollback puts code the index no longer vouches for back —
+# the gate checks the credentials and writes no line, the route writes its own once the
+# previous kept version is back (a refusal leaves no "allowed" row)
+_ROLLBACK = reserved_action(RESERVED_ACTIONS["plugin.rollback"], audit=False)
 
 
 class SecretStateOut(BaseModel):
@@ -197,6 +208,7 @@ def build_plugins_router(
     engine: Callable[[], Engine],
     repos: Callable[[], RepoStore],
     index_fetcher_for: Callable[[], Any],
+    installed_for: Callable[[], Mapping[str, Any]],
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["sources"])
 
@@ -487,5 +499,103 @@ def build_plugins_router(
                 language=negotiate(request.headers.get("accept-language")),
             )
         return _one(layout, name, notice=notice)
+
+    # -- the lifecycle of an installed plugin (M6 L09a, EF-SRC-020, D15) -------------------------
+    # The pin and the update are the admin's ordinary acts; the rollback is a reserved action.
+    # Each route hands its audit line to the act itself, written in the same transaction as the
+    # change it vouches for: no line without the act, no act without its line. A refusal leaves
+    # its own trace (`plugin.*_refused`, `key:code`) — never a row that says something moved.
+
+    def _lifecycle_audit(principal: Principal, action: str, target: str) -> Callable[[Any], None]:
+        """The audit line of a lifecycle act, handed to the act itself: it is written in the
+        same transaction as the change it vouches for (M6 L09a), like the CLI's own callback."""
+        actor = _actor(principal)
+        return lambda connection: write_audit(connection, action, target, actor)
+
+    def _installed_dist(name: str) -> tuple[str, str]:
+        """The key and the distribution of an installed plugin: the lifecycle speaks the key,
+        like the index and the attestations, never the distribution name."""
+        found = installed_for().get(guard.normalise_name(name))
+        if found is None:
+            raise ProblemError("plugin.unknown")
+        return guard.normalise_name(name), found.dist
+
+    def _pin_route(name: str, principal: Principal, *, pinned: bool) -> PluginOut:
+        key, dist = _installed_dist(name)
+        layout = guard.Layout.of(data_dir())
+        act = lifecycle.pin if pinned else lifecycle.unpin
+        action = "plugin.pin" if pinned else "plugin.unpin"
+        refused = "plugin.pin_refused" if pinned else "plugin.unpin_refused"
+        try:
+            act(engine(), layout, key, dist, audit=_lifecycle_audit(principal, action, key))
+        except lifecycle.PluginLifecycleError as exc:
+            if exc.code == "unknown":
+                raise ProblemError("plugin.unknown") from None
+            _audit(principal, refused, f"{key}:{exc.code}")
+            raise ProblemError("plugin.pin_refused", detail=exc.detail) from None
+        # the guard's view speaks the distribution name, the route was addressed by the key
+        return _one(layout, dist)
+
+    @router.post("/plugins/{name}/pin")
+    def pin_plugin(name: str, principal: Principal = Depends(admin_only)) -> PluginOut:  # noqa: B008
+        return _pin_route(name, principal, pinned=True)
+
+    @router.delete("/plugins/{name}/pin")
+    def unpin_plugin(name: str, principal: Principal = Depends(admin_only)) -> PluginOut:  # noqa: B008
+        return _pin_route(name, principal, pinned=False)
+
+    @router.post("/plugins/{name}/update")
+    async def update_plugin(
+        name: str,
+        principal: Principal = Depends(admin_only),  # noqa: B008
+    ) -> PluginOut:
+        key, dist = _installed_dist(name)
+        layout = guard.Layout.of(data_dir())
+        fetcher = index_fetcher_for()
+        try:
+            await lifecycle.update(
+                engine(),
+                repos(),
+                layout,
+                key,
+                dist,
+                fetcher,
+                audit=_lifecycle_audit(principal, "plugin.update", key),
+            )
+        except (
+            lifecycle.PluginLifecycleError,
+            PluginIndexError,
+            guard.PluginInstallError,
+        ) as exc:
+            code = getattr(exc, "code", "update_failed")
+            _audit(principal, "plugin.update_refused", f"{key}:{code}")
+            raise ProblemError("plugin.update_refused", detail=exc.detail) from None
+        finally:
+            await fetcher.aclose()
+        # a new version: the word given for the old one lapses
+        attestations().sync_installed(installed_for())
+        # the guard's view speaks the distribution name, the route was addressed by the key
+        return _one(layout, dist)
+
+    @router.post("/plugins/{name}/rollback")
+    def rollback_plugin(name: str, principal: Principal = Depends(_ROLLBACK)) -> PluginOut:  # noqa: B008
+        key, dist = _installed_dist(name)
+        layout = guard.Layout.of(data_dir())
+        try:
+            lifecycle.rollback(
+                engine(),
+                repos(),
+                layout,
+                key,
+                dist,
+                audit=_lifecycle_audit(principal, "plugin.rollback", key),
+            )
+        except lifecycle.PluginLifecycleError as exc:
+            _audit(principal, "plugin.rollback_refused", f"{key}:{exc.code}")
+            raise ProblemError("plugin.rollback_refused", detail=exc.detail) from None
+        # another version: the word given for the other one lapses
+        attestations().sync_installed(installed_for())
+        # the guard's view speaks the distribution name, the route was addressed by the key
+        return _one(layout, dist)
 
     return router

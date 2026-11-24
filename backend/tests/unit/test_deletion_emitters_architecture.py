@@ -180,6 +180,10 @@ EXPECTED_CLOSED = {
         "shelfhold/infrastructure/local_socket/server.py::bind_private",
         "shelfhold/plugin_host/install.py::install_wheel",
         "shelfhold/plugin_host/install.py::remove_plugin",
+        # M6 L09a: the kept wheels of the lifecycle, dropped with the code they belong to
+        "shelfhold/plugin_host/install.py::drop_kept_wheels",
+        "shelfhold/plugin_host/lifecycle.py::_drop",
+        "shelfhold/plugin_host/lifecycle.py::rollback",
         "shelfhold/plugin_host/install.py::_undo",
         # the companion's socket file: a stale one removed at start, its own removed at close
         "shelfhold/plugin_host/runner/server.py::RunnerServer.close",

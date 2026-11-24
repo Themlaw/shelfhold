@@ -62,8 +62,10 @@ from shelfhold.plugin_host.install import (
     Installed,
     Layout,
     install_wheel,
+    keep_wheel,
     wheel_plugin_keys,
 )
+from shelfhold.plugin_host.lifecycle import reattach_if_same_origin
 from shelfhold.plugin_host.public import installed_keys
 from shelfhold.plugin_host.rpc.runner_wire import KEY as PLUGIN_KEY
 from shelfhold.plugin_host.settings import Vault, held_identity, hold_plugin_data
@@ -591,7 +593,17 @@ class RepoStore:
                     "the wheel does not declare exactly the key its index entry names",
                 )
             installed = install_wheel(layout, wheel, entry.sha256)
+            # M6 L09a (EF-SRC-020, D15): the wheel of the installed version is kept (the
+            # rollback's own) while the staged copy is still there — the staged file leaves
+            # with the try, the kept copy never was on sys.path
+            keep_wheel(layout, key, wheel)
         finally:
             discard_staged_wheel(wheel)  # the installed copy is the guard's own
         self._pin(key, installed, record)
+        # the bindings orphaned by an uninstall of the same key come back only when the origin
+        # did not change: the previous install's (index, signer), read before this install
+        # rewrote the row — never the row itself, which now tells this install's own origin
+        reattached = reattach_if_same_origin(self._engine, key, previous, record.url, record.pubkey)
+        if reattached:
+            log.info("plugin_lifecycle.reattached", key=key, bindings=reattached)
         return IndexInstall(installed, held)

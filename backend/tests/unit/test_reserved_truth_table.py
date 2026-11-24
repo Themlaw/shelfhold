@@ -326,9 +326,10 @@ FRESHNESS_LINE = {
             "oidc.unlink_account",  # M5 L04: nor an admin do it unseen
             "plugin.enable_isolated",  # M6 L06 (D13): third-party code runs on the admin's word
             "plugin.disable_isolated",  # M6 L06: silencing a plugin is an admin gesture too
+            "plugin.adopt_state",  # M6 L08: a previous signer's held data moves on this word
+            "plugin.rollback",  # M6 L09a: code the index no longer vouches for comes back
             "tracker.link",  # M6 L13: a remote account's token is a secret, sealed
             "tracker.push_opt_in",  # M6 L13: the profile's reading goes out to the tracker
-            "plugin.adopt_state",  # M6 L08: a previous signer's held data moves on this word
         ),
         "p3",
     ),

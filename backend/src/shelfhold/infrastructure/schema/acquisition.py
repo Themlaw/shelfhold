@@ -23,7 +23,16 @@ from shelfhold.infrastructure.schema._base import (
 )
 from shelfhold.infrastructure.schema.catalog import UNIT_TRACKS, lang_check, norm_by_check
 
-DISABLED_REASONS = ("not_loaded", "content_failures", "removed_upstream", "manual")
+DISABLED_REASONS = (
+    "not_loaded",
+    "content_failures",
+    "removed_upstream",
+    "manual",
+    # M6 L09a (EF-SRC-020, D15): the plugin the binding's source belongs to is uninstalled; the
+    # binding stays (the Work, its Units, the exports and the positions are kept) and a reinstall
+    # of the same key at the same signer reattaches it
+    "orphaned",
+)
 CONTENT_TRUSTS = ("publisher", "untrusted")  # default untrusted (EF-BIB-051)
 BACKFILL_MODES = ("none", "gaps", "all")
 UPGRADE_POLICIES = ("keep_first", "prefer_rank")
@@ -429,6 +438,10 @@ upstream_snapshot = sa.Table(
 # GAP-8-13) the row also keeps the pin of an install from a signed index: the repository's URL
 # and the public key of its signer. A wheel the admin gave by hand has neither (the pin is the
 # admin's own act); a plugin installed from an index has both — and another signer publishing the
+# same key is a new install, never an update. Since M6 L09a (EF-SRC-020, D15) the row also keeps
+# the lifecycle: `pinned` freezes the installed version (no update, no rollback), and the previous
+# kept version (`previous_version`, `previous_sha256`) is the one — and the only one — the
+# reserved rollback returns to; the pair comes and goes together (`previous_paired`).
 # same key is a new install, never an update.
 plugin_install = sa.Table(
     "plugin_install",
@@ -442,13 +455,22 @@ plugin_install = sa.Table(
     sa.Column("state_schema", sa.Integer(), nullable=True),
     sa.Column("index_url", sa.Text(), nullable=True),
     sa.Column("signer_pubkey", sa.Text(), nullable=True),
+    bool_column("pinned", default=False),
+    sa.Column("previous_version", sa.Text(), nullable=True),
+    sa.Column("previous_sha256", sa.Text(), nullable=True),
     now_column("installed_at"),
     prefixed_hash_check("sha256"),
+    prefixed_hash_check("previous_sha256"),
     in_check("origin", PLUGIN_ORIGINS),
     sa.CheckConstraint(
         '("index_url" IS NULL AND "signer_pubkey" IS NULL)'
         ' OR ("index_url" IS NOT NULL AND "signer_pubkey" IS NOT NULL)',
         name="pin_paired",
+    ),
+    sa.CheckConstraint(
+        '("previous_version" IS NULL AND "previous_sha256" IS NULL)'
+        ' OR ("previous_version" IS NOT NULL AND "previous_sha256" IS NOT NULL)',
+        name="previous_paired",
     ),
 )
 

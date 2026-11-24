@@ -139,6 +139,10 @@ plugin_adopt_help = "Transfère à un plugin installé l'état, les réglages et
 plugin_adopt_held_help = "Identité tenue à l'écart à transférer, telle que l'affiche le refus d'un transfert ambigu (clé@empreinte)."
 plugin_index_list_help = "Liste les dépôts d'index épinglés et leur dernière version crue."
 plugin_index_refresh_help = "Actualise les index épinglés (ou un seul, par URL) : signature, version, expiration."
+plugin_update_help = "Met à jour un plugin installé depuis le dépôt d'index épinglé (la version précédente est gardée pour le retour arrière)."
+plugin_pin_help = "Épingle la version installée d'un plugin : ni mise à jour ni retour arrière tant que l'épingle n'est pas retirée."
+plugin_unpin_help = "Retire l'épingle d'un plugin : les mises à jour et le retour arrière redeviennent possibles."
+plugin_rollback_help = "Revient à la version précédente gardée (action réservée, auditée) ; aucune autre ne l'est ensuite."
 plugin_index_remove_help = "Retire le signet d'un dépôt d'index (audité) ; un ajout repart de zéro."
 plugin_index_url_help = "Adresse du document d'index (URL http(s) simple)."
 plugin_index_pubkey_help = "Clé publique minisign du signataire, en base64 (sans elle, aucun épinglement)."
@@ -287,6 +291,16 @@ nothing_held = "Rien n'est tenu à l'écart pour {name} : il n'y a rien à trans
 adopt_ambiguous = "Plusieurs installations précédentes sont tenues à l'écart pour {name} ({held}) : nommez celle à transférer avec --held."
 held_unknown = "Rien n'est tenu à l'écart pour {name} sous {held}."
 adopt_refused = "Transfert refusé ({code}) : {detail}"
+updated = "Plugin {name} passé à la version {version} ; la version précédente est gardée pour le retour arrière."
+update_refused = "Mise à jour refusée ({code}) : {detail}"
+pinned = "Plugin {name} épinglé à la version {version} : ni mise à jour ni retour arrière tant que l'épingle n'est pas retirée."
+unpinned = "Épingle de {name} retirée : les mises à jour et le retour arrière redeviennent possibles."
+pin_refused = "Épinglage refusé ({code}) : {detail}"
+unpin_refused = "Retrait d'épingle refusé ({code}) : {detail}"
+rolled_back = "Plugin {name} revenu à la version {version} ; plus aucune version précédente n'est gardée."
+rollback_refused = "Retour arrière refusé ({code}) : {detail}"
+orphaned = "{count, plural, one {# liaison de source est marquée orpheline} other {# liaisons de source sont marquées orphelines}} : leur contenu est intact, une réinstallation de la même clé les rattache."
+reattached = "{count, plural, one {# liaison orpheline rattachée} other {# liaisons orphelines rattachées}}."
 
 [secrets]
 exported = "Trousseau exporté (age, scrypt) : {path}"
@@ -1866,6 +1880,21 @@ cause = "Le mode en processus garde la garde de M1b : la phrase tapée ne passe 
 title = "L'activation du plugin est refusée."
 action = "Vérifiez que les fichiers installés n'ont pas changé depuis l'installation, puis réessayez."
 cause = "La garde a refusé l'activation : fichiers modifiés ou état enregistré illisible."
+
+[errors."plugin.update_refused"]
+title = "La mise à jour du plugin est refusée."
+action = "Vérifiez l'épingle, la version servie par le dépôt d'index et les révocations, puis réessayez."
+cause = "La mise à jour a été refusée : version épinglée, version égale ou inférieure, clé ou roue révoquée, ou roue gardée introuvable."
+
+[errors."plugin.rollback_refused"]
+title = "Le retour arrière du plugin est refusé."
+action = "Vérifiez l'épingle et la version précédente gardée, puis réessayez."
+cause = "Le retour arrière a été refusé : version épinglée, aucune version précédente gardée, ou sa roue introuvable."
+
+[errors."plugin.pin_refused"]
+title = "L'épinglage du plugin est refusé."
+action = "Vérifiez que le plugin est bien installé, puis réessayez."
+cause = "L'épinglage a été refusé : le plugin installé n'a pas pu être lu comme tel."
 
 [errors."source.not_loaded"]
 title = "Une source n'est pas chargée."

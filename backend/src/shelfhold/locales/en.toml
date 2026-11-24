@@ -140,6 +140,10 @@
   plugin_adopt_held_help = "Held identity to move, as shown by the refusal of an ambiguous transfer (key@fingerprint)."
   plugin_index_list_help = "Lists the pinned index repositories and the last version believed."
   plugin_index_refresh_help = "Refreshes the pinned indexes (or one, by URL): signature, version, expiry."
+  plugin_update_help = "Updates an installed plugin from its pinned index repository (the previous version is kept for the rollback)."
+  plugin_pin_help = "Pins a plugin's installed version: no update, no rollback, until the pin is taken away."
+  plugin_unpin_help = "Takes a plugin's pin away: updates and the rollback become possible again."
+  plugin_rollback_help = "Returns to the previous kept version (reserved action, audited); none other is kept after it."
   plugin_index_remove_help = "Unpins an index repository (audited); an add starts from zero again."
   plugin_index_url_help = "Address of the index document (plain http(s) URL)."
   plugin_index_pubkey_help = "Signer's minisign public key, base64 (without it, no pin)."
@@ -288,6 +292,16 @@
   adopt_ambiguous = "Several previous installs are held aside for {name} ({held}): name the one to move with --held."
   held_unknown = "Nothing is held aside for {name} under {held}."
   adopt_refused = "Transfer refused ({code}): {detail}"
+  updated = "Plugin {name} updated to {version}; the previous version is kept for the rollback."
+  update_refused = "Update refused ({code}): {detail}"
+  pinned = "Plugin {name} pinned to {version}: no update, no rollback, until the pin is taken away."
+  unpinned = "Pin of {name} taken away: updates and the rollback become possible again."
+  pin_refused = "Pinning refused ({code}): {detail}"
+  unpin_refused = "Unpinning refused ({code}): {detail}"
+  rolled_back = "Plugin {name} returned to {version}; no previous version is kept anymore."
+  rollback_refused = "Rollback refused ({code}): {detail}"
+  orphaned = "{count, plural, one {# source binding is marked orphaned} other {# source bindings are marked orphaned}}: what they hold is intact, a reinstall of the same key reattaches them."
+  reattached = "{count, plural, one {# orphaned binding reattached} other {# orphaned bindings reattached}}."
 
 [secrets]
   exported = "Exported keychain (age, scrypt): {path}"
@@ -1897,6 +1911,21 @@
     title = "Enabling the plugin is refused."
     action = "Check that the installed files have not changed since the installation, then try again."
     cause = "The guard refused the activation: changed files or unreadable recorded state."
+
+  [errors."plugin.update_refused"]
+    title = "The plugin update is refused."
+    action = "Check the pin, the version the index repository serves and the revocations, then try again."
+    cause = "The update was refused: pinned version, same or lower version, revoked key or wheel, or a missing kept wheel."
+
+  [errors."plugin.rollback_refused"]
+    title = "The plugin rollback is refused."
+    action = "Check the pin and the previous kept version, then try again."
+    cause = "The rollback was refused: pinned version, no previous kept version, or its wheel is missing."
+
+  [errors."plugin.pin_refused"]
+    title = "Pinning the plugin is refused."
+    action = "Check that the plugin is still installed, then try again."
+    cause = "The pin was refused: the installed plugin could not be read as such."
 
   [errors."source.not_loaded"]
     title = "A source is not loaded."

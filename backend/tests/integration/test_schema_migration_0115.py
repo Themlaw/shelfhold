@@ -43,7 +43,7 @@ def _seed_device(database: str) -> None:
 
 def test_the_revision_is_0115_the_head_on_0113() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0115"]  # the head is pinned here, by the newest
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     assert script.get_revision("0115").down_revision == HEAD_BEFORE
 
 
@@ -73,6 +73,6 @@ def test_a_database_created_fresh_runs_the_migration_once(settings: Settings) ->
     migration is the one that creates it either way, and running it again changes nothing."""
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     result = migrate(settings)
-    assert result.applied[-1] == "0115"
+    assert "0115" in result.applied  # not the last one once a later lot chains after it
     assert "kobo_sync_point" in tables(settings.database_path)
     assert migrate(settings).applied == ()
