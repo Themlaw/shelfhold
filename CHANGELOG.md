@@ -48,7 +48,7 @@ Clôture de M6 : plugins tiers isolés et index signé, SDK 2.0 prêt à publier
 
 ### Reporté en M7
 
-Aucun nouvel élément reporté ; les points ouverts restent dans « Limites connues » (essais sur appareil réel, second registre et miroir, revue de chevauchement sans réseau, relecture juridique de l'exception de plugin).
+Aucun nouvel élément reporté ; les points ouverts restent dans « Limites connues » (essais sur appareil réel, second registre et miroir, relecture juridique de l'exception de plugin).
 
 ### Limites connues
 
