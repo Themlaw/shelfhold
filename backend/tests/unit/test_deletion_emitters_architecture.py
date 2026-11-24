@@ -166,6 +166,7 @@ EXPECTED_CLOSED = {
     },
     "database_rows": {
         "shelfhold/acquisition/application/instance.py::_purge_orphans",
+        "shelfhold/integrations/trackers/host.py::purge_plugin",
         "shelfhold/reading/bundle/plan.py::purge_stale_partitions",
         "shelfhold/reading/bundle/store.py::purge",
         "shelfhold/reading/bundle/store.py::purge_partition_versions",

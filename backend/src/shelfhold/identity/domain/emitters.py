@@ -116,6 +116,10 @@ CLOSED_SITES: Mapping[str, frozenset[str]] = MappingProxyType(
                 "shelfhold/reading/bundle/store.py::purge",
                 "shelfhold/reading/bundle/store.py::purge_partition_versions",
                 "shelfhold/reading/bundle/plan.py::purge_stale_partitions",
+                # The links of a tracker plugin gone from the instance (M6 L13, EF-INT-010): the
+                # rows of `tracker_link` — the sealed tokens with them — and of `tracker_allowance`
+                # in one transaction; database rows only, no file is reachable from it.
+                "shelfhold/integrations/trackers/host.py::purge_plugin",
             }
         ),
         # Rolls the database file (and its sidecars) back to the copy taken before a migration.

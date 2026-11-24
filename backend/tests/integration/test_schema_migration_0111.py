@@ -36,7 +36,7 @@ def _table_sql(database: str) -> str:
 
 def test_the_revision_is_0111_the_head_on_0110() -> None:
     script = ScriptDirectory(str(default_script_location()))
-    assert script.get_heads() == ["0111"]  # the head is pinned here, by the newest
+    assert len(script.get_heads()) == 1  # one head, whichever later lot moved it
     assert script.get_revision("0111").down_revision == "0110"
 
 

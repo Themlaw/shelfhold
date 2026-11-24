@@ -254,6 +254,26 @@ export type AdoptedLibraryIn = {
 };
 
 /**
+ * AllowanceIn
+ */
+export type AllowanceIn = {
+    /**
+     * Allowed
+     */
+    allowed: boolean;
+};
+
+/**
+ * AllowanceOut
+ */
+export type AllowanceOut = {
+    /**
+     * Allowed
+     */
+    allowed: boolean;
+};
+
+/**
  * AppliedOut
  */
 export type AppliedOut = {
@@ -2485,6 +2505,27 @@ export type HealthzResponse = {
 };
 
 /**
+ * HintOut
+ *
+ * A pull's answer: where the profile is on the remote service. `hint` is always true —
+ * this is a hint for the reader, never a read mark (EF-INT-010).
+ */
+export type HintOut = {
+    /**
+     * At
+     */
+    at?: string | null;
+    /**
+     * Fraction
+     */
+    fraction?: number | null;
+    /**
+     * Hint
+     */
+    hint?: boolean;
+};
+
+/**
  * HistoryEntryOut
  */
 export type HistoryEntryOut = {
@@ -2940,6 +2981,59 @@ export type LinkIn = {
      * Token
      */
     token: string;
+};
+
+/**
+ * LinkItem
+ *
+ * One line of the listing: the fingerprint stays off it — the answers of the list carry
+ * no field whose name even says "token" (EF-INT-010).
+ */
+export type LinkItem = {
+    /**
+     * Linked At
+     */
+    linked_at: string;
+    /**
+     * Plugin Key
+     */
+    plugin_key: string;
+    /**
+     * Push Enabled
+     */
+    push_enabled: boolean;
+};
+
+/**
+ * LinkList
+ */
+export type LinkList = {
+    /**
+     * Items
+     */
+    items: Array<LinkItem>;
+};
+
+/**
+ * LinkOut
+ */
+export type LinkOut = {
+    /**
+     * Linked At
+     */
+    linked_at: string;
+    /**
+     * Plugin Key
+     */
+    plugin_key: string;
+    /**
+     * Push Enabled
+     */
+    push_enabled: boolean;
+    /**
+     * Token Fingerprint
+     */
+    token_fingerprint: string | null;
 };
 
 /**
@@ -4401,6 +4495,20 @@ export type ProfilesOut = {
 };
 
 /**
+ * ProgressIn
+ */
+export type ProgressIn = {
+    /**
+     * At
+     */
+    at?: string | null;
+    /**
+     * Fraction
+     */
+    fraction: number;
+};
+
+/**
  * ProgressRead
  *
  * A position, or nothing at all (`{}`): KOReader then says "no progress found".
@@ -4562,6 +4670,36 @@ export type PurgeIn = {
      * Typed
      */
     typed: string;
+};
+
+/**
+ * PushIn
+ */
+export type PushIn = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+};
+
+/**
+ * PushOut
+ */
+export type PushOut = {
+    /**
+     * Push Enabled
+     */
+    push_enabled: boolean;
+};
+
+/**
+ * PushedOut
+ */
+export type PushedOut = {
+    /**
+     * Pushed
+     */
+    pushed: boolean;
 };
 
 /**
@@ -7127,6 +7265,18 @@ export type ToShelveOut = {
      * Items
      */
     items: Array<ToShelveItem>;
+};
+
+/**
+ * TrackerLinkIn
+ *
+ * The remote account's token, once. Nothing else: the plugin knows the rest.
+ */
+export type TrackerLinkIn = {
+    /**
+     * Token
+     */
+    token: string;
 };
 
 /**
@@ -15717,6 +15867,338 @@ export type ListChoicesResponses = {
 };
 
 export type ListChoicesResponse = ListChoicesResponses[keyof ListChoicesResponses];
+
+export type ListLinksData = {
+    body?: never;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{user_id}/trackers';
+};
+
+export type ListLinksErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ListLinksError = ListLinksErrors[keyof ListLinksErrors];
+
+export type ListLinksResponses = {
+    /**
+     * Successful Response
+     */
+    200: LinkList;
+};
+
+export type ListLinksResponse = ListLinksResponses[keyof ListLinksResponses];
+
+export type UnlinkData = {
+    body?: never;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+        /**
+         * Plugin Key
+         */
+        plugin_key: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{user_id}/trackers/{plugin_key}';
+};
+
+export type UnlinkErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type UnlinkError = UnlinkErrors[keyof UnlinkErrors];
+
+export type UnlinkResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type UnlinkResponse = UnlinkResponses[keyof UnlinkResponses];
+
+export type GetLinkData = {
+    body?: never;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+        /**
+         * Plugin Key
+         */
+        plugin_key: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{user_id}/trackers/{plugin_key}';
+};
+
+export type GetLinkErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type GetLinkError = GetLinkErrors[keyof GetLinkErrors];
+
+export type GetLinkResponses = {
+    /**
+     * Successful Response
+     */
+    200: LinkOut;
+};
+
+export type GetLinkResponse = GetLinkResponses[keyof GetLinkResponses];
+
+export type LinkData = {
+    body: TrackerLinkIn;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+        /**
+         * Plugin Key
+         */
+        plugin_key: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{user_id}/trackers/{plugin_key}';
+};
+
+export type LinkErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type LinkError = LinkErrors[keyof LinkErrors];
+
+export type LinkResponses = {
+    /**
+     * Successful Response
+     */
+    200: LinkOut;
+};
+
+export type LinkResponse = LinkResponses[keyof LinkResponses];
+
+export type SetAllowanceData = {
+    body: AllowanceIn;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+        /**
+         * Plugin Key
+         */
+        plugin_key: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{user_id}/trackers/{plugin_key}/allowance';
+};
+
+export type SetAllowanceErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SetAllowanceError = SetAllowanceErrors[keyof SetAllowanceErrors];
+
+export type SetAllowanceResponses = {
+    /**
+     * Successful Response
+     */
+    200: AllowanceOut;
+};
+
+export type SetAllowanceResponse = SetAllowanceResponses[keyof SetAllowanceResponses];
+
+export type PushData = {
+    body: ProgressIn;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+        /**
+         * Plugin Key
+         */
+        plugin_key: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{user_id}/trackers/{plugin_key}/progress';
+};
+
+export type PushErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PushError = PushErrors[keyof PushErrors];
+
+export type PushResponses = {
+    /**
+     * Successful Response
+     */
+    200: PushedOut;
+};
+
+export type PushResponse = PushResponses[keyof PushResponses];
+
+export type PullData = {
+    body?: never;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+        /**
+         * Plugin Key
+         */
+        plugin_key: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{user_id}/trackers/{plugin_key}/pull';
+};
+
+export type PullErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type PullError = PullErrors[keyof PullErrors];
+
+export type PullResponses = {
+    /**
+     * Successful Response
+     */
+    200: HintOut;
+};
+
+export type PullResponse = PullResponses[keyof PullResponses];
+
+export type SetPushData = {
+    body: PushIn;
+    path: {
+        /**
+         * User Id
+         */
+        user_id: string;
+        /**
+         * Plugin Key
+         */
+        plugin_key: string;
+    };
+    query?: never;
+    url: '/api/v1/profiles/{user_id}/trackers/{plugin_key}/push';
+};
+
+export type SetPushErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type SetPushError = SetPushErrors[keyof SetPushErrors];
+
+export type SetPushResponses = {
+    /**
+     * Successful Response
+     */
+    200: PushOut;
+};
+
+export type SetPushResponse = SetPushResponses[keyof SetPushResponses];
 
 export type QueuePauseData = {
     body: ScopeIn;

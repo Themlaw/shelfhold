@@ -107,6 +107,17 @@ _DECLARED = (
     # Shelfhold pull, what each profile has read there: instance data on the move, fresh, never a
     # key's. Turning it off is the same action: one door, one audit line
     _action("destination.sync_progress", Effect.MOVES_INSTANCE_DATA),
+    # M6 L13 (EF-INT-010): a profile links the tracker of their own remote reading account: the
+    # token is a secret handed over once and sealed to its row, so it is fresh in every profile
+    # and never a key's. A child links one only where the admin allowed it (tracker.allow_child)
+    _action("tracker.link", Effect.TOUCHES_SECRETS),
+    # Removing the link erases the sealed token; linking the tracker again undoes it
+    _action("tracker.unlink", Effect.MANAGES_CREDENTIALS),
+    # Saying yes to the push: the profile's reading goes out to the remote service, as with the
+    # progress sync of a binding. Saying no again is the same action: one door, one audit line
+    _action("tracker.push_opt_in", Effect.MOVES_INSTANCE_DATA),
+    # The admin's word that one tracker may be linked by one child profile: a parental decision
+    _action("tracker.allow_child", Effect.PARENTAL_CONTROL),
     # Parental control
     _action("shelf.max_age_rating", Effect.PARENTAL_CONTROL),
     _action("shelf.allowed_profiles", Effect.PARENTAL_CONTROL),

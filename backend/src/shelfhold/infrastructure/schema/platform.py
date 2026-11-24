@@ -15,6 +15,7 @@ from shelfhold.infrastructure.schema._base import (
     ulid_check,
     ulid_column,
 )
+from shelfhold.infrastructure.schema.acquisition import sealed_secret_columns
 
 REFRESH_MODES = ("piloted", "always_on")
 ROOT_MODES = ("rw", "adopt_ro")  # PathMap mode: `adopt_ro` is never written (EF-EXP-060)
@@ -330,4 +331,57 @@ time_window = sa.Table(
     sa.CheckConstraint("\"scope\" <> ''", name="scope_not_empty"),
     sa.CheckConstraint("\"tz\" <> ''", name="tz_not_empty"),
     sa.Index("ix_time_window_scope", "scope"),
+)
+
+# A profile's account on a reading tracker (M6 L13, EF-INT-010): one row per profile and per
+# tracker plugin. `remote_ref` is the `TrackerRef` the plugin returned, kept as JSON and handed
+# back as it was; `push_enabled` is the profile's explicit accord to the push, never on by
+# default. The remote account's token is a sealed envelope, as in `destination_account`
+# (ENF-SEC-005): the API shows `token_fingerprint` and nothing reads the token back but the host,
+# which injects it into the Fetcher and never hands it to the plugin. A child profile links one
+# only where `tracker_allowance` says the admin allowed it.
+tracker_link = sa.Table(
+    "tracker_link",
+    metadata,
+    ulid_column("id", primary_key=True),  # a sealed table has a single-column key (rotation)
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    ),
+    sa.Column("plugin_key", sa.String(), nullable=False),
+    sa.Column("remote_ref", sa.Text(), nullable=False),  # the TrackerRef, as JSON
+    sa.Column(
+        "origin", sa.String(), nullable=False
+    ),  # the api origin the token was sealed for: it follows the origin, not the key
+    sa.Column("linked_at", UtcDateTime(), nullable=False),
+    bool_column("push_enabled", default=False),  # the push leaves only after the profile's yes
+    *sealed_secret_columns(),
+    sa.Column("token_fingerprint", sa.String(), nullable=True),
+    now_column(),
+    ulid_check("id"),
+    sa.CheckConstraint('json_valid("remote_ref")', name="remote_ref_json"),
+    sa.CheckConstraint("\"plugin_key\" <> ''", name="plugin_key_not_empty"),
+    sa.CheckConstraint("\"origin\" <> ''", name="origin_not_empty"),
+    sa.CheckConstraint('"secret_ct" IS NOT NULL', name="sealed"),
+    sa.CheckConstraint(
+        '("token_fingerprint" IS NULL) = ("secret_ct" IS NULL)', name="fingerprint_iff_sealed"
+    ),
+    sa.UniqueConstraint("user_id", "plugin_key"),
+)
+
+# The admin's word that one tracker may be linked by one child profile (M6 L13, EF-INT-010,
+# EF-USR-024): a row means allowed, no row means refused — a child is refused by default. Written
+# by a fresh admin session only (the reserved action `tracker.allow_child`); withdrawing the
+# allowance takes the child's link away with it.
+tracker_allowance = sa.Table(
+    "tracker_allowance",
+    metadata,
+    sa.Column(
+        "user_id", sa.String(26), sa.ForeignKey("user.id", ondelete="CASCADE"), primary_key=True
+    ),
+    sa.Column("plugin_key", sa.String(), primary_key=True),
+    sa.Column(
+        "allowed_by", sa.String(26), sa.ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    ),
+    sa.Column("allowed_at", UtcDateTime(), nullable=False),
+    sa.CheckConstraint("\"plugin_key\" <> ''", name="plugin_key_not_empty"),
 )

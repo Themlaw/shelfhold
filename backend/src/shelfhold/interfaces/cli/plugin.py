@@ -43,6 +43,7 @@ from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.secrets.diagnostics import boot_check
 from shelfhold.infrastructure.secrets.errors import SecretsError
 from shelfhold.infrastructure.secrets.vault import SecretVault
+from shelfhold.integrations.trackers import purge_plugin
 from shelfhold.interfaces.cli._headless import read_secret
 from shelfhold.plugin_host import install as guard
 from shelfhold.plugin_host.attestation import (
@@ -423,6 +424,9 @@ def run_remove(args: argparse.Namespace, resolved: ResolvedSettings) -> int:
             store = AttestationStore(engine)
             for key in keys:
                 store.revoke(key)
+            # nor a tracker link: the sealed tokens must not outlive the code they were
+            # handed to, and the allowances said in the plugin's name go with them (M6 L13)
+            purge_plugin(engine, keys)
         finally:
             engine.dispose()
     print(t("plugin.removed", name=args.name))

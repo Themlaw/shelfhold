@@ -38,7 +38,7 @@ EXPORT_KEYS = {
     "download_requests", "notification_digests", "truncated", "device_tokens", "devices",
     "collections", "collection_items", "destination_accounts", "notify_destinations",
     "read_markers", "tracker_hints", "request_list_imports", "source_accounts", "tachibk_imports",
-    "reading_conflicts", "reader_settings", "saved_selections",
+    "reading_conflicts", "reader_settings", "saved_selections", "tracker_links",
 }  # fmt: skip
 
 
