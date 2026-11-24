@@ -605,7 +605,8 @@ def incompatible_installed(
 
 def announce_incompatible(engine: Engine, bus: Any, judged: dict[str, str]) -> list[str]:
     """Tell `plugin.incompatible` once per (plugin, reason): the events already told are read
-    back first, so a host that starts twice says nothing twice. Returns the keys it told."""
+    back first, so a host that starts twice says nothing twice, and each one is handed to the
+    subscribers (`deliver`, like every event the bus owes). Returns the keys it told."""
     with engine.connect() as connection:
         told = {
             (row.payload.get("plugin"), row.payload.get("reason"))
@@ -616,10 +617,14 @@ def announce_incompatible(engine: Engine, bus: Any, judged: dict[str, str]) -> l
             )
         }
     announced: list[str] = []
+    published: list[Any] = []
     for key, reason in sorted(judged.items()):
         if (key, reason) in told:
             continue
         with write_transaction(engine) as connection:
-            bus.publish(connection, "plugin.incompatible", {"plugin": key, "reason": reason})
+            published.append(
+                bus.publish(connection, "plugin.incompatible", {"plugin": key, "reason": reason})
+            )
         announced.append(key)
+    bus.deliver(published)
     return announced

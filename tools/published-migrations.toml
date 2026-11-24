@@ -394,3 +394,8 @@ since = "1.3"
 file = "0116_plugin_state_migrations.py"
 sha256 = "559144cd8b2326eca0b61be353ccc3071981570b27ed2b61169f3210e0919019"
 since = "1.3"
+
+[[migration]]
+file = "0117_plugin_replaced_by.py"
+sha256 = "173aae1dcd6b0e4ced2163a05d7c51145bf054700f5d31c0a3fb799629625003"
+since = "1.3"

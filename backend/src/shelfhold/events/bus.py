@@ -42,7 +42,10 @@ VISIBILITIES: Final = ("private", "household", "ops")
 _ULID: Final = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}\Z")
 _CODE: Final = re.compile(r"[a-z][a-z0-9_]*(?:[.:-][a-z0-9_]+)*\Z")
 _ENUM_KEYS: Final = ("reason", "kind", "state", "code", "error_code", "scope", "volume")
-_FREE_CODE_KEYS: Final = frozenset({"job_kind", "plugin"})  # named in code, never typed in
+_FREE_CODE_KEYS: Final = frozenset({"job_kind"})  # named in code, never typed in
+# A free-code key only one event family takes: `plugin` names a plugin key, and no event
+# outside `plugin.*` may carry one (ENF-SEC-015: the guard is not widened to the whole bus)
+_FAMILY_CODE_KEYS: Final[Mapping[str, str]] = MappingProxyType({"plugin": "plugin."})
 GENERIC_REASONS: Final = frozenset(
     {
         "unreachable", "timeout", "unauthorized", "forbidden", "not_found", "http_503",
@@ -269,7 +272,9 @@ def check_payload(payload: Mapping[str, object], event_type: str | None = None) 
             allowed = PAYLOAD_ENUMS.get(event_type or "", {}).get(key, _DEFAULT_ENUMS[key])
             if value not in allowed:
                 raise EventPayloadError(f"{key} is not one of the values of this event type")
-        elif key in _FREE_CODE_KEYS:
+        elif key in _FREE_CODE_KEYS or (
+            key in _FAMILY_CODE_KEYS and (event_type or "").startswith(_FAMILY_CODE_KEYS[key])
+        ):
             if len(value) > _MAX_CODE or not _CODE.fullmatch(value):
                 raise EventPayloadError(f"{key} must be a lowercase code")
         else:

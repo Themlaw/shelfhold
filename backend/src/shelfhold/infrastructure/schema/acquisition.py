@@ -461,6 +461,9 @@ plugin_install = sa.Table(
     # M6 L09b (EF-SRC-030): the minimum host version the installed version's index entry
     # declared — what a host upgrade is judged against at the next start-up
     sa.Column("min_host", sa.Text(), nullable=True),
+    # M6 L09b (EF-SRC-030): the key the installed version's index entry named in `replaced_by` —
+    # the only replacement `plugin migrate-to` accepts for this plugin's sources
+    sa.Column("replaced_by", sa.Text(), nullable=True),
     now_column("installed_at"),
     prefixed_hash_check("sha256"),
     prefixed_hash_check("previous_sha256"),

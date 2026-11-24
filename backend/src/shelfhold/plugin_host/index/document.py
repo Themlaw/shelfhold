@@ -10,12 +10,14 @@ designates the key the pin moves to once the same document is signed by both key
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Final
 from urllib.parse import urlsplit
 
 from shelfhold.plugin_host.index.minisign import PinnedKey, PluginIndexError, parse_public_key
+from shelfhold.plugin_host.rpc.runner_wire import KEY
 
 __all__ = [
     "MAX_AHEAD",
@@ -43,6 +45,8 @@ _ENTRY_FIELDS = frozenset(
     }
 )
 _REVOKED_FIELDS = frozenset({"plugin_keys", "wheel_sha256"})
+# a host version is dotted numbers, nothing else compares (M6 L09b, EF-SRC-030)
+VERSION: Final = re.compile(r"\d+(?:\.\d+)*")
 
 
 def _object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -119,20 +123,39 @@ def _entry(raw: Any) -> IndexEntry:
         raise PluginIndexError("document_invalid", "a plugin entry is not an object")
     if not set(raw) <= _ENTRY_FIELDS:
         raise PluginIndexError("document_invalid", "a plugin entry has unknown members")
+    key = _text(raw.get("key"), "a plugin key")
+    if not KEY.fullmatch(key):
+        raise PluginIndexError("document_invalid", f"the plugin key {key!r} is not a plugin key")
     replaced_by = raw.get("replaced_by")
     if replaced_by is not None:
         replaced_by = _text(replaced_by, "the replacing plugin key")
+        # a plugin that replaces itself says nothing, and a key spelled like no key names
+        # nothing: both are refused here, a revoked one below, once the document is whole
+        if replaced_by == key:
+            raise PluginIndexError(
+                "document_invalid", "a plugin's replaced_by names the entry itself"
+            )
+        if not KEY.fullmatch(replaced_by):
+            raise PluginIndexError(
+                "document_invalid", f"the replacing key {replaced_by!r} is not a plugin key"
+            )
+    min_host = _text(raw.get("min_host"), "the minimum host version")
+    if not VERSION.fullmatch(min_host):
+        # "latest" or "9.x" compares below every host and would never refuse anything
+        raise PluginIndexError(
+            "document_invalid", f"the minimum host version {min_host!r} is not a dotted version"
+        )
     deprecated = raw.get("deprecated")
     if not isinstance(deprecated, bool):
         raise PluginIndexError("document_invalid", "deprecated is not a boolean")
     return IndexEntry(
-        key=_text(raw.get("key"), "a plugin key"),
+        key=key,
         version=_text(raw.get("version"), "a plugin version"),
         api=_positive_int(raw.get("api"), "the api version"),
         rpc_protocol=_positive_int(raw.get("rpc_protocol"), "the rpc protocol"),
         wheel_url=_web_url(raw.get("wheel_url"), "the wheel address"),
         sha256=_sha256(raw.get("sha256"), "the wheel sha256"),
-        min_host=_text(raw.get("min_host"), "the minimum host version"),
+        min_host=min_host,
         deprecated=deprecated,
         replaced_by=replaced_by,
     )
@@ -179,12 +202,19 @@ def parse_document(data: bytes) -> IndexDocument:
         if entry.key in seen:
             raise PluginIndexError("document_invalid", f"the plugin {entry.key!r} has two entries")
         seen.add(entry.key)
+    revoked_keys = frozenset(_text(k, "a revoked plugin key") for k in keys)
+    for entry in entries:  # a successor the document itself revoked replaces nothing
+        if entry.replaced_by is not None and entry.replaced_by in revoked_keys:
+            raise PluginIndexError(
+                "document_invalid",
+                f"the replacing key {entry.replaced_by!r} of {entry.key!r} is revoked",
+            )
     return IndexDocument(
         format=FORMAT,
         version=version,
         expires=expires,
         plugins=entries,
-        revoked_plugin_keys=frozenset(_text(k, "a revoked plugin key") for k in keys),
+        revoked_plugin_keys=revoked_keys,
         revoked_wheel_sha256=frozenset(_sha256(w, "a revoked wheel sha256") for w in wheels),
         next_pubkey=next_pubkey,
     )

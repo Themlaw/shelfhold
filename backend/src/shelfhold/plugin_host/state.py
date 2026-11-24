@@ -129,10 +129,11 @@ def migrate_documents(
     the plugin's declared schema does not match is handed to the plugin's ``migrate_state``
     and rewritten under the new schema, stamped with the version that migrated it.
 
-    Refused, closed: a schema that changed without the hook (`migration_missing`), and a state
+    Refused, closed: a schema that changed without the hook (`migration_missing`), a state
     newer than the version the plugin declares (`state_newer`) — a version that did not write
-    it cannot be trusted to read it. A refusal migrates nothing: the documents are left exactly
-    as they were."""
+    it cannot be trusted to read it — and a hook that is the plugin's own bug: one that raises,
+    or one that answers nothing (`hook_failed`). The plugin is untrusted; its error is not the
+    host's. A refusal migrates nothing: the documents are left exactly as they were."""
     declared = declared_schema(instance)
     hook = _hook_of(instance)
     documents = read_documents(engine, plugin_id)
@@ -152,7 +153,19 @@ def migrate_documents(
                 f"payload_schema changed from {document.payload_schema} to {declared} without "
                 "migrate_state(from_version)",
             )
-        payload = hook(document.payload_schema, document.key, document.payload)
+        try:
+            payload = hook(document.payload_schema, document.key, document.payload)
+        except Exception as error:  # the plugin is untrusted: its bug is a refusal, never the
+            raise PluginStateError(  # host's own crash — and the state stays exactly as it was
+                "hook_failed",
+                f"migrate_state raised {type(error).__name__} for the document {document.key!r}",
+            ) from error
+        if payload is None:
+            raise PluginStateError(
+                "hook_failed",
+                f"migrate_state answered nothing for the document {document.key!r}: a state "
+                "document is never replaced by an empty answer",
+            )
         migrated.append(StateDocument(document.key, payload, declared, version))
     if not migrated:  # fmt: skip
         return 0

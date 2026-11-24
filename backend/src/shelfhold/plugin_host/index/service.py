@@ -493,10 +493,11 @@ class RepoStore:
         return None if row is None else (row.index_url, row.signer_pubkey)
 
     def _pin(self, key: str, installed: Installed, record: RepoRecord, entry: Any) -> None:
-        """Keep the triple (key, index, signer) this install is pinned to, and the api and
-        `min_host` its entry declared: a later host judges the install by the index's own
-        word, not by what it remembers of the document. The row is the one
-        `AttestationStore.sync_installed` keeps in step at start-up; it never touches the pin."""
+        """Keep the triple (key, index, signer) this install is pinned to, and the api,
+        `min_host` and `replaced_by` its entry declared: a later host judges the install and
+        its migration by the index's own word, not by what it remembers of the document. The
+        row is the one `AttestationStore.sync_installed` keeps in step at start-up; it never
+        touches the pin."""
         digest = (
             installed.digest
             if installed.digest.startswith("sha256:")
@@ -509,6 +510,7 @@ class RepoStore:
             "signer_pubkey": record.pubkey,
             "api": str(entry.api),
             "min_host": entry.min_host,
+            "replaced_by": entry.replaced_by,
         }
         with write_transaction(self._engine) as connection:
             connection.execute(

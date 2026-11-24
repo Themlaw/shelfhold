@@ -66,12 +66,13 @@ def test_identity_migration_consults_tombstones(
         # series — and the clean one moved to the replacement
         assert _items(env) == [(PLUGIN, "hit-1"), (REPLACEMENT, "keep-1")]
 
-        # the block came from the old form (the inverse alias): the new form alone names
-        # nothing erased
+        # the block came from the old form (the inverse alias), and the migration sealed the
+        # new forms under the replacing key: the erased series, and the line the alias held
+        # back, stay blocked under the replacement too — it acquires nothing the old plugin
+        # had lost
         service = SourceMigrationOps(env.inst.comp)._service()
-        assert not service.check(
-            SeriesBindingRef(REPLACEMENT, SOURCE, "hit-1"), root_id=None
-        ).blocked
+        assert service.check(SeriesBindingRef(REPLACEMENT, SOURCE, GONE), root_id=None).blocked
+        assert service.check(SeriesBindingRef(REPLACEMENT, SOURCE, "hit-1"), root_id=None).blocked
         assert service.check(SeriesBindingRef(PLUGIN, SOURCE, "hit-1"), root_id=None).blocked
 
         # the hit was told, once, with the scope only

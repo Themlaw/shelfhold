@@ -40,7 +40,7 @@ from datetime import UTC, datetime
 from importlib import metadata
 from importlib.machinery import PathFinder
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Final
 
 import sqlalchemy as sa
 from sqlalchemy.engine import Engine
@@ -859,7 +859,10 @@ def current_interpreter() -> Interpreter:
 def abi_problem(tags: Sequence[str], interpreter: Interpreter) -> str | None:
     """Why none of a wheel's declared tags matches the interpreter, or None when one does
     (PEP 425): `py3-none-any` runs anywhere, an `abi3` wheel runs from its Python onward,
-    everything else must be the interpreter's own ABI and platform."""
+    everything else must be the interpreter's own ABI and platform. A Linux platform tag is
+    the interpreter's when its architecture is (`manylinux_*`, `musllinux_*`, PEP 600/656):
+    the interpreter's own tag says `linux_x86_64`, never what a wheel built for its libc
+    says, and the guard refuses compiled modules at the install anyway (D16)."""
     for tag in tags:
         parts = tag.split("-")
         if len(parts) != 3:
@@ -874,14 +877,27 @@ def abi_problem(tags: Sequence[str], interpreter: Interpreter) -> str | None:
             and int(py[2:]) <= int(interpreter.abi[2:])
         )
         abi_ok = abi in ("none", "abi3") or abi == interpreter.abi
-        platform_ok = platform == "any" or platform == interpreter.platform
-        if python_ok and abi_ok and platform_ok:
+        if python_ok and abi_ok and _platform_fits(platform, interpreter.platform):
             return None
     return (
         f"ABI incompatible: the wheel's tags ({', '.join(tags)}) do not match this "
         f"interpreter ({interpreter.python}, {interpreter.abi}) — remove the plugin and "
         "install a wheel built for it (shelfhold plugin install)"
     )
+
+
+_LINUX_WHEEL: Final = re.compile(r"^(?:manylinux|musllinux)(?:\d+)?(?:_\d+)*_(.+)$")
+
+
+def _platform_fits(platform: str, interpreter_platform: str) -> bool:
+    """A wheel's platform tag matches the interpreter's platform: the very tag, `any`, or a
+    Linux libc tag of the same architecture (`manylinux_2_17_x86_64` on `linux_x86_64`)."""
+    if platform == "any" or platform == interpreter_platform:
+        return True
+    if not interpreter_platform.startswith("linux_"):
+        return False
+    wheel = _LINUX_WHEEL.match(platform)
+    return wheel is not None and wheel.group(1) == interpreter_platform[len("linux_") :]
 
 
 def installed_wheel_tags(layout: Layout, plugin: Installed) -> list[str]:
