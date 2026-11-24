@@ -74,7 +74,7 @@ def create_http_app(
     *,
     health: HealthPort,
     on_startup: Callable[[], Any],
-    on_shutdown: Callable[[], None] | None = None,
+    on_shutdown: Callable[[], Any] | None = None,
     background: Callable[[], AbstractAsyncContextManager[None]] | None = None,
     version: str,
     frontend_dir: Path | None = None,
@@ -106,7 +106,9 @@ def create_http_app(
                 yield
         finally:
             if on_shutdown is not None:
-                on_shutdown()
+                closing = on_shutdown()
+                if hasattr(closing, "__await__"):
+                    await closing
 
     app = FastAPI(
         title="Shelfhold",
