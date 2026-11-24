@@ -470,6 +470,10 @@ def check_allowlist(entries: list[dict[str, Any]]) -> list[str]:
         if not str(e.get("reason", "")).strip():
             problems.append(f"{label}: no reason")
         until = e.get("until", "")
+        if until == "trigger":
+            if not str(e.get("trigger", "")).strip():
+                problems.append(f"{label}: trigger entry must name its trigger")
+            continue
         permanent = until == "permanent" and label in PERMANENT_CATEGORIES
         if not permanent and not UNTIL_RE.match(until):
             problems.append(f"{label}: until {until!r} names neither an M1b lot nor a milestone")

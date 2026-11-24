@@ -32,18 +32,19 @@ symbols = [
 
 [[allow]]
 category = "unwired-m4-cwa"
-reason = "2026-11-16 (M4 L09): the CWA drop box is described, executed by the pass (`dropbox_destinations`, `CwaSource` read by `FirstPartyDestinations`) and tested end to end, the target is now created (M4 L46: `target add cwa`, `POST /api/v1/targets/cwa`, reserved action). What stays unwired are the calls a drop box never makes (an inventory and sidecars: nothing is indexed, nothing is written beside the book). 2026-11-19 (M5 L22b): redated M6, with the same reason: a drop box has no inventory and no sidecar to write, so no M5 lot calls them; they stay declared because the destination contract asks for them (docs/decisions/M5.md, section of L22b). 2026-11-21 (M6 L02): `interpret` and `supported_versions` join them — since the reserved-target fixtures moved to the `shelfhold_sdk` distribution (outside the host graph), the req tests of test_reserved_destinations.py no longer name an in-graph class, and these two members of the host's CwaDestination surface as cited by tests only; no production path calls them."
-until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md): a drop box never calls them, no lot plans to — L25
+reason = "2026-11-16 (M4 L09): the CWA drop box is described, executed by the pass (`dropbox_destinations`, `CwaSource` read by `FirstPartyDestinations`) and tested end to end, the target is now created (M4 L46: `target add cwa`, `POST /api/v1/targets/cwa`, reserved action). What stays unwired are the calls a drop box never makes (an inventory and sidecars: nothing is indexed, nothing is written beside the book). 2026-11-19 (M5 L22b): redated M6, with the same reason: a drop box has no inventory and no sidecar to write, so no M5 lot calls them; they stay declared because the destination contract asks for them (docs/decisions/M5.md, section of L22b). 2026-11-21 (M6 L02): `interpret` and `supported_versions` join them — since the reserved-target fixtures moved to the `shelfhold_sdk` distribution (outside the host graph), the req tests of test_reserved_destinations.py no longer name an in-graph class, and these two members of the host's CwaDestination surface as cited by tests only; no production path calls them. 2026-11-24 (M6 L25): `render_sidecars` and `inventory_calls` are removed from `CwaDestination` (a drop box writes one file and nothing beside it); `interpret` and `supported_versions` stay declared by the contract and are moved to a written trigger."
+until = "trigger"
+trigger = "a CWA drop box grows an inventory endpoint or writes a sidecar beside the book (an observable capability of the ingester, not a lot)"
 symbols = [
-  "shelfhold.export.targets.cwa.destination:CwaDestination.render_sidecars",
   "shelfhold.export.targets.cwa.destination:CwaDestination.interpret",
   "shelfhold.export.targets.cwa.destination:CwaDestination.supported_versions",
 ]
 
 [[allow]]
 category = "unwired-m6-kobo-folder"
-reason = "2026-11-20 (M6 L16): the Kobo folder is a first-party destination: the pass reaches it through `FirstPartyDestinations` (`capabilities`, `kepub`, `plan`) and writes KEPUB files into the folder. The other members of the destination contract are never called for it: a folder has no inventory to read and no sidecar to write, its configuration and naming template are fixed by the core (no schema shown, no template chosen by the admin), and it answers no third-party version. They stay declared because the contract asks for them, and they are proved by the tests of L16."
-until = "M6"  # M6 L16: settled with the other contract members by L25
+reason = "2026-11-20 (M6 L16): the Kobo folder is a first-party destination: the pass reaches it through `FirstPartyDestinations` (`capabilities`, `kepub`, `plan`) and writes KEPUB files into the folder. The other members of the destination contract are never called for it: a folder has no inventory to read and no sidecar to write, its configuration and naming template are fixed by the core (no schema shown, no template chosen by the admin), and it answers no third-party version. They stay declared because the contract asks for them, and they are proved by the tests of L16. 2026-11-24 (M6 L25): moved to a written trigger (no `until = \"M6\"` remains)."
+until = "trigger"
+trigger = "a Kobo folder destination exposes a configurable schema, a naming template, an interpreter or a sidecar (an observable capability, not a lot)"
 symbols = [
   "shelfhold.export.targets.kobo.destination:KoboDestination.config_schema",
   "shelfhold.export.targets.kobo.destination:KoboDestination.default_template",
@@ -66,8 +67,9 @@ tests = [
 
 [[allow]]
 category = "m4-l43-normalizer-migration"
-reason = "2026-11-17 (M4 L43, D21): the preview of a migration to a new version of a normalizer (`normalize migrate`, EF-BIB-054, ENF-OPS-021) has no caller before a normalizer changes version. M4 raises none: the Unicode folding of L30 is a function of comparison, not a normalizer, and every normalizer is still at its first version. Redated M5, then to the first version bump of a normalizer, whichever milestone brings it (docs/decisions/M4.md, table of the debts). It is proved by its tests until then. 2026-11-19 (M5 L22b): redated M6, then to the first version bump of a normalizer. M5 raises none (no change of `normalizers.py` since `v1.1.0`)."
-until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md): settled by the first version bump of a normalizer — L25
+reason = "2026-11-17 (M4 L43, D21): the preview of a migration to a new version of a normalizer (`normalize migrate`, EF-BIB-054, ENF-OPS-021) has no caller before a normalizer changes version. M4 raises none: the Unicode folding of L30 is a function of comparison, not a normalizer, and every normalizer is still at its first version. Redated M5, then to the first version bump of a normalizer, whichever milestone brings it (docs/decisions/M4.md, table of the debts). It is proved by its tests until then. 2026-11-19 (M5 L22b): redated M6, then to the first version bump of a normalizer. M5 raises none (no change of `normalizers.py` since `v1.1.0`). 2026-11-24 (M6 L25): moved to a written trigger (D25)."
+until = "trigger"  # M6 L25 (D25): written trigger, not a lot
+trigger = "a normalizer's version is bumped (a row carries a normalizer_version above the one the code emits)"
 symbols = [
   "shelfhold.catalog.domain.normalizers:NormalizerRegistry.plan_migration",
 ]
@@ -75,8 +77,10 @@ symbols = [
 
 [[allow]]
 category = "deferred-l24-deprecation-window"
-reason = "2026-11-17 (M4 L24): `Deprecation` builds the window during which an event is sent in two versions of its shape (EF-INT-005). Every event of the catalogue is still at its first version, so no entry declares one: the double emission is proved with a catalogue the test builds, and the bounds are checked when any catalogue is built. It comes with the first change of the shape of an event. 2026-11-19 (M5 L22b): redated M6 (D18), then to the first change of the shape of an event. No event changes shape in M5 (the catalogue of events and the webhooks are untouched since `v1.1.0`), so there is nothing to declare yet."
-until = "M6"  # M5 L22b (2026-11-19, docs/decisions/M5.md, D18): the first change of the shape of an event — L25
+reason = "2026-11-17 (M4 L24): `Deprecation` builds the window during which an event is sent in two versions of its shape (EF-INT-005). Every event of the catalogue is still at its first version, so no entry declares one: the double emission is proved with a catalogue the test builds, and the bounds are checked when any catalogue is built. It comes with the first change of the shape of an event. 2026-11-19 (M5 L22b): redated M6 (D18), then to the first change of the shape of an event. No event changes shape in M5 (the catalogue of events and the webhooks are untouched since `v1.1.0`), so there is nothing to declare yet. 2026-11-24 (M6 L25): moved to a written trigger (D25)."
+
+until = "trigger"  # M6 L25 (D25): written trigger, not a lot
+trigger = "an event of the catalogue is published in a second shape (a Deprecation is declared for it)"
 symbols = [
   "shelfhold.integrations.webhooks.catalogue:Deprecation",
 ]
