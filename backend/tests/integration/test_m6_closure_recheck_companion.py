@@ -19,6 +19,8 @@ import pytest
 from shelfhold.plugin_host.adapters.rpc.stdio import closed_environment
 from shelfhold.plugin_host.runner import confine
 
+pytestmark = pytest.mark.req("EF-SRC-016", "ENF-SEC-009")
+
 needs_seccomp = pytest.mark.skipif(not confine.seccomp_ready(), reason="no seccomp")
 needs_abi6 = pytest.mark.skipif(confine.landlock_abi() < 6, reason="needs Landlock ABI 6")
 needs_landlock = pytest.mark.skipif(confine.landlock_abi() < 3, reason="needs Landlock ABI 3")
@@ -221,7 +223,7 @@ def test_control_a_plugin_cannot_ptrace_another_and_reads_tz_locale_ssl() -> Non
         return confine.Ruleset([scratch], confine.read_roots()), None
 
     rb, _ = bound()
-    b = subprocess.Popen(  # noqa: S603
+    b = subprocess.Popen(
         [sys.executable, "-I", "-c", "import time; time.sleep(30)"],
         preexec_fn=rb.restrict, start_new_session=True,
     )  # fmt: skip

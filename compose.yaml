@@ -114,7 +114,7 @@ services:
   #     core: 0
   #   init: true
   #   mem_limit: 512m
-  #   pids_limit: 128
+  #   pids_limit: 640
   #   tmpfs: ["/tmp:size=64m"]               # each plugin's scratch folder: the one place it may write
   #   volumes:
   #     - ./data/plugins:/plugins:ro         # the wheels the core installs: read-only here

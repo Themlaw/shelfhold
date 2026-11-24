@@ -41,7 +41,7 @@ Sans lui, aucun plugin isolé ne démarre ; l'ancien mode (en processus, derriè
   le tient (`SIGNAL`, `ABSTRACT_UNIX_SOCKET`) ; avant, le filtre seccomp refuse `kill`, `tkill`,
   `tgkill`, `rt_sigqueueinfo`, `rt_tgsigqueueinfo` et `pidfd_send_signal` vers tout processus autre
   que lui-même et son groupe (un enfant se signale donc par son groupe, `killpg`). Chaque processus
-  de plugin a aussi un plafond de processus (`RLIMIT_NPROC`, 64, sous les 128 processus du conteneur : le compagnon garde de quoi lancer un plugin pendant qu'un autre « fork-bombe ») et de taille de fichier
+  de plugin a aussi un plafond de processus (`RLIMIT_NPROC`, 512, sous les 640 processus du conteneur (`pids_limit`) : le compagnon garde 128 processus pour lui, de quoi lancer un plugin pendant qu'un autre « fork-bombe ») et de taille de fichier
   (`RLIMIT_FSIZE`, 256 Mio). Avec un noyau qui offre
   l'ABI 4 de Landlock (6.7 ou plus), il ne peut pas non plus ouvrir de connexion TCP : une seconde
   barrière réseau derrière `network_mode: none`.
@@ -57,7 +57,7 @@ Sans lui, aucun plugin isolé ne démarre ; l'ancien mode (en processus, derriè
   échoue donc dans son dossier de travail ; `shutil.copyfile` convient.
 - Le compagnon récupère **en continu** les processus que ses plugins ont abandonnés (il adopte les
   orphelins de son conteneur), au lieu d'attendre la fin d'une connexion : un plugin qui
-  « fork-bombe » ne peut pas épuiser les 128 processus du conteneur par ses zombies. Le balayage de
+  « fork-bombe » ne peut pas épuiser les 640 processus du conteneur par ses zombies. Le balayage de
   fin de connexion reste en filet : il arrête les processus adoptés avant de les tuer.
 - Le compagnon n'est **pas « dumpable »** : un plugin ne lit ni son environnement ni sa mémoire.
 - Il **ne sert qu'un uid**, celui du cœur (`--core-uid`, 1000 par défaut), lu par le noyau sur le

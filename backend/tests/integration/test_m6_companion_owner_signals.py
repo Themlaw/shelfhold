@@ -54,5 +54,5 @@ def test_the_fallback_refuses_the_owner_commands_and_only_those(arch: str) -> No
 def test_the_environment_names_a_home_and_a_user_and_the_ceiling_leaves_room() -> None:
     env = stdio.closed_environment({})
     assert env["HOME"] and env["USER"] and env["LOGNAME"]
-    # under the container's `pids_limit` (128), with room for the companion
-    assert stdio.MAX_TASKS <= 64
+    # under the container's `pids_limit` (640), with 128 tasks of room for the companion
+    assert stdio.MAX_TASKS + 128 <= 640

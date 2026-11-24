@@ -23,11 +23,12 @@ __all__ = ["MAX_FILE_BYTES", "MAX_TASKS", "closed_environment", "spawn_stdio"]
 # `RLIMIT_NPROC` is compared with every process and thread the uid has, in the kernel's whole
 # user namespace, and the plugins of one companion share a uid: this is a ceiling on the
 # companion's container (it has a uid of its own there), where a fork bomb stops while the
-# container's `pids_limit` (128) is a backstop. 64 stays under it, so the companion keeps room to
-# start a plugin and to run its own threads while a plugin's fork bomb is stopped by this ceiling.
-# On a host where the uid does other work (a test machine) it is too low: the runner's
+# container's `pids_limit` (640, in the three compose files) is a backstop above it: 512 leaves
+# room for sixteen plugins with their thread pools, and the 128 tasks between the two are the
+# companion's own (its threads, the plugin it is starting), so a fork bomb stops at this ceiling
+# before the container's. On a host where the uid does other work (a test machine) it is too low: the runner's
 # configuration (`RunnerConfig.max_tasks`) raises it.
-MAX_TASKS = 64
+MAX_TASKS = 512
 # The largest file a plugin may write or grow (`SIGXFSZ`, then `EFBIG`): its scratch folder is a
 # bounded `tmpfs`, and no plugin has a reason to build a file near the size of that `tmpfs`.
 MAX_FILE_BYTES = 256 << 20
