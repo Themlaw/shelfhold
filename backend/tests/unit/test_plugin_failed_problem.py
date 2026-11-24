@@ -54,5 +54,5 @@ def test_a_dead_plugin_is_refused_by_the_acquire_doors_under_plugin_failed() -> 
     assert run.value.code == "plugin.failed"
     ops.acquirer = lambda **_: _GoneAcquirer()  # type: ignore[method-assign,assignment,return-value]
     with pytest.raises(CodedRefusal) as filters:
-        ops.filters("exemple:catalogue")
+        ops.filters("sample:catalogue")
     assert filters.value.code == "plugin.failed"
