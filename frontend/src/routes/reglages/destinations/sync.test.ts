@@ -61,9 +61,9 @@ describe('Progress sync switch', () => {
     ]);
     render(Page);
     const kavita = await line(/manga\//);
-    expect(within(kavita).getByRole('checkbox', { name: 'Synchroniser la progression' })).not.toBeChecked();
+    expect(within(kavita).getByRole('switch', { name: 'Synchroniser la progression' })).not.toBeChecked();
     const komga = await line(/comics\//);
-    expect(within(komga).queryByRole('checkbox', { name: 'Synchroniser la progression' })).toBeNull();
+    expect(within(komga).queryByRole('switch', { name: 'Synchroniser la progression' })).toBeNull();
   });
 
   // req: EF-LEC-014
@@ -78,7 +78,7 @@ describe('Progress sync switch', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const box = within(await line(/manga\//)).getByRole('checkbox', { name: 'Synchroniser la progression' });
+    const box = within(await line(/manga\//)).getByRole('switch', { name: 'Synchroniser la progression' });
     await user.click(box);
     expect(await screen.findByText('Synchro de progression allumée.')).toBeTruthy();
     expect(body).toEqual({ enabled: true });
@@ -101,7 +101,7 @@ describe('Progress sync switch', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    await user.click(within(await line(/manga\//)).getByRole('checkbox', { name: 'Synchroniser la progression' }));
+    await user.click(within(await line(/manga\//)).getByRole('switch', { name: 'Synchroniser la progression' }));
     const prompt = await screen.findByRole('region', { name: 'Confirmez votre identité' });
     await user.type(within(prompt).getByLabelText('Mot de passe'), ADMIN_PW);
     await user.click(within(prompt).getByRole('button', { name: 'Confirmer' }));
@@ -122,7 +122,7 @@ describe('Progress sync switch', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const box = within(await line(/manga\//)).getByRole('checkbox', { name: 'Synchroniser la progression' });
+    const box = within(await line(/manga\//)).getByRole('switch', { name: 'Synchroniser la progression' });
     await user.click(box);
     expect(await screen.findByRole('alert')).toHaveTextContent('Cette destination ne sait pas synchroniser la progression.');
     expect(box).not.toBeChecked();

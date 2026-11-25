@@ -20,14 +20,14 @@ describe('TypedConfirm', () => {
   it('shows the phrase to copy and keeps the button disabled while nothing is typed', () => {
     setup();
     expect(screen.getByText(PHRASE)).toBeTruthy();
-    expect(confirm()).toBeDisabled();
+    expect(confirm()).toHaveAttribute('aria-disabled', 'true');
   });
 
   // req: EF-EXP-031
   it('enables the button for the exact phrase and hands the typed text over', async () => {
     const { onconfirm, user } = setup();
     await user.type(input(), PHRASE);
-    expect(confirm()).toBeEnabled();
+    expect(confirm()).not.toHaveAttribute('aria-disabled');
     await user.click(confirm());
     expect(onconfirm).toHaveBeenCalledTimes(1);
     expect(onconfirm).toHaveBeenCalledWith(PHRASE);
@@ -44,7 +44,7 @@ describe('TypedConfirm', () => {
   ])('keeps the button disabled for %s', async (_why, typed) => {
     const { onconfirm, user } = setup();
     await user.type(input(), typed);
-    expect(confirm()).toBeDisabled();
+    expect(confirm()).toHaveAttribute('aria-disabled', 'true');
     await user.click(confirm());
     expect(onconfirm).not.toHaveBeenCalled();
   });
@@ -60,9 +60,9 @@ describe('TypedConfirm', () => {
   it('disables the button again when the phrase is spoiled after being right', async () => {
     const { user } = setup();
     await user.type(input(), PHRASE);
-    expect(confirm()).toBeEnabled();
+    expect(confirm()).not.toHaveAttribute('aria-disabled');
     await user.type(input(), '!');
-    expect(confirm()).toBeDisabled();
+    expect(confirm()).toHaveAttribute('aria-disabled', 'true');
   });
 
   // req: EF-EXP-031

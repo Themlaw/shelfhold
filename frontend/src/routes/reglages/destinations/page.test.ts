@@ -156,7 +156,7 @@ describe('Destinations', () => {
     await user.click(screen.getByRole('button', { name: 'Voir ce qui sera perdu' }));
     await screen.findByText(REMOVE_PHRASE);
     await user.type(phrase(), 'retirer manga/');
-    expect(screen.getByRole('button', { name: 'Confirmer' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Confirmer' })).toHaveAttribute('aria-disabled', 'true');
     expect(called).toBe(0);
     await user.clear(phrase());
     await user.type(phrase(), REMOVE_PHRASE);
