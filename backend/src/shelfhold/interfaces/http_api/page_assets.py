@@ -11,7 +11,7 @@ under `/fonts/`: no second copy, no remote host.
 
 import hashlib
 from functools import cache
-from importlib import resources
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
@@ -27,6 +27,7 @@ __all__ = [
     "serve_asset",
 ]
 
+_PAGES = Path(__file__).parent / "pages"
 STYLE_PATH = "/pages/paper-ink.css"
 APPEARANCE_PATH = "/pages/appearance.js"
 LOGIN_SCRIPT_PATH = "/pages/login.js"
@@ -35,11 +36,7 @@ CONFIRM_SCRIPT_PATH = "/pages/confirm.js"
 
 @cache
 def read_page_file(name: str) -> str:
-    return (
-        resources.files("shelfhold.interfaces.http_api")
-        .joinpath(f"pages/{name}")
-        .read_text("utf-8")
-    )
+    return (_PAGES / name).read_text("utf-8")
 
 
 def paper_ink_style() -> str:
