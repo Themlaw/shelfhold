@@ -7,6 +7,7 @@ Run after `shelfhold migrate` and `shelfhold admin create`, before `shelfhold se
     python seed.py <data-dir>
 """
 
+import hashlib
 import io
 import json
 import random
@@ -99,6 +100,17 @@ def synthetic_cover(rng: random.Random) -> bytes:
     return out.getvalue()
 
 
+CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+
+def stable_ulid(name: str) -> str:
+    """A ULID drawn from a name: the same work keeps the same identifier, and so the same drawn
+    cover, from one run of the harness to the next (a ULID starts with 0 to 7)."""
+    digest = int.from_bytes(hashlib.sha256(name.encode()).digest()[:17], "big")
+    chars = [CROCKFORD[(digest >> (5 * i)) & 31] for i in range(26)]
+    return "0" + "".join(chars[1:])
+
+
 def credit(db: sa.Connection, work_id: str, author: str) -> None:
     """The author of a Work, as a metadata provider names it (`contributors`)."""
     db.execute(
@@ -115,7 +127,7 @@ def add_work(
 ) -> tuple[str, str]:
     """A Work, its author and one Edition on the shelf; rated when `age` is given. Returns the
     ids of the Work and of its Edition."""
-    work_id, edition_id = new_ulid(), new_ulid()
+    work_id, edition_id = stable_ulid(f"work:{title}"), stable_ulid(f"edition:{title}")
     rated = SEEDED if age is not None else None
     db.execute(
         sa.insert(catalog.work).values(
