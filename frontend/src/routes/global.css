@@ -1,20 +1,64 @@
+/* ==========================================================================
+   Global styles of the SPA, direction « Papier et encre »
+   (docs/design/papier-et-encre.md). Tokens: src/lib/themes/foundation.css (shared)
+   and src/lib/themes/<theme>/tokens.json (colours). Order: base, page
+   typography, layout utilities, baseline of the native controls, the rules
+   of accessibility (ENF-A11Y-*), legacy form screen.
+   ========================================================================== */
+
+/* ---------- Base ----------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  accent-color: var(--color-accent);
+  caret-color: var(--color-accent);
+  scrollbar-color: var(--color-rule-strong) transparent;
+}
 body {
   margin: 0;
+  min-height: 100dvh;
   background: var(--color-bg);
   color: var(--color-ink);
-  font-family: var(--font-ui);
-  line-height: 1.5;
+  font: var(--step-0) / var(--leading-ui) var(--font-ui);
+  font-kerning: normal;
+}
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-ink);
 }
 
 /* ENF-A11Y-002: the keyboard focus is always visible. The sub-fields of a time input hold the focus
    inside the control, which `:focus-visible` does not report on the control itself. */
 :focus-visible,
 input:focus-within {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
 
-/* Vertical rhythm: headings and paragraphs spaced consistently. */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-text);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  text-wrap: balance;
+}
+h5,
+h6 {
+  font-family: var(--font-ui);
+  font-weight: 700;
+}
+p {
+  text-wrap: pretty;
+}
+
+/* Vertical rhythm: more space above a heading than below it, it belongs to what follows. */
 h1,
 h2,
 h3,
@@ -23,80 +67,341 @@ h5,
 h6,
 p {
   margin-top: 0;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
 }
-
 h1:not(:first-child),
 h2:not(:first-child),
 h3:not(:first-child),
 h4:not(:first-child),
 h5:not(:first-child),
 h6:not(:first-child) {
-  margin-top: 1.5rem;
+  margin-top: var(--space-5);
+}
+h1 {
+  font-size: var(--step-3);
+  letter-spacing: -0.015em;
+}
+h2 {
+  font-size: var(--step-2);
+}
+h3 {
+  font-size: var(--step-1);
 }
 
-/* Form screen styles: centered layout with readable width, only for form pages */
-main.form-screen {
-  max-width: 44rem;
-  margin: 0 auto;
-  padding: 1.5rem 1rem;
+a {
+  color: var(--color-accent-text);
+  text-decoration-thickness: var(--rule-hair);
+  text-underline-offset: 0.18em;
+}
+a:hover {
+  text-decoration-thickness: var(--rule-mid);
+}
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+code {
+  overflow-wrap: anywhere;
+}
+small {
+  font-size: var(--step--1);
+}
+hr {
+  border: 0;
+  border-top: var(--rule-hair) solid var(--color-rule);
+  margin: var(--space-5) 0;
+}
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+  height: auto;
+}
+table {
+  font-variant-numeric: tabular-nums;
 }
 
-.form-screen form {
+/* ---------- Page typography (shared by every screen) ------------------------ */
+.visually-hidden {
+  position: absolute !important;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.muted {
+  color: var(--color-muted);
+}
+.hint {
+  color: var(--color-subtle);
+  font-size: var(--step--1);
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+/* Book figures: old-style in running text, italic as a folio */
+.folio {
+  font-family: var(--font-text);
+  font-style: italic;
+  font-variant-numeric: oldstyle-nums proportional-nums;
+  color: var(--color-muted);
+}
+.nowrap {
+  white-space: nowrap;
+}
+
+/* The width of a screen: one of three, never decided by the page */
+.page {
+  max-width: var(--content-max);
+  margin-inline: auto;
+}
+.page--form {
+  max-width: var(--form-max);
+}
+.page--read {
+  max-width: var(--read-max);
+}
+
+/* Running head: the line at the head of a book page, with its rule and folio */
+.running-head {
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--rule-hair) solid var(--color-rule-strong);
+  font: italic var(--step--1) / var(--leading-ui) var(--font-text);
+  color: var(--color-muted);
+}
+.running-head a {
+  color: inherit;
+}
+.running-head__folio {
+  margin-left: auto;
+  font-variant-numeric: oldstyle-nums;
 }
 
-.form-screen label {
-  display: block;
-  margin-bottom: 0.25rem;
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.page-head__text {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+.page-head__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.page-title {
+  margin: 0;
+  font-size: var(--step-3);
+  letter-spacing: -0.015em;
+}
+.page-title--work {
+  font-size: var(--step-4);
   font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.lede {
+  margin: var(--space-3) 0 0;
+  max-width: var(--measure);
+  font: var(--step-1) / var(--leading-read) var(--font-text);
+  color: var(--color-muted);
 }
 
-.form-screen input:not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='button']):not([type='reset']),
-.form-screen select,
-.form-screen textarea {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius-cover);
+/* Double « English » rule: thick, then hair */
+.rule-double {
+  border: 0;
+  height: calc(var(--rule-thick) + var(--space-1) + var(--rule-hair));
+  border-top: var(--rule-thick) solid var(--color-ink);
+  border-bottom: var(--rule-hair) solid var(--color-ink);
+  margin: var(--space-6) 0;
+}
+
+.section {
+  margin-top: var(--space-7);
+}
+.section:first-child {
+  margin-top: 0;
+}
+.section-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--rule-hair) solid var(--color-ink);
+}
+.section-head > h2,
+.section-head > h3 {
+  margin: 0;
+  font-size: var(--step-2);
+}
+.section-head .folio {
+  font-size: var(--step-0);
+}
+.section-head__more {
+  margin-left: auto;
+}
+
+.prose {
+  max-width: var(--measure);
+  font: var(--step-1) / var(--leading-read) var(--font-text);
+}
+.prose p + p {
+  text-indent: 1.5em;
+  margin-top: calc(-1 * var(--space-4));
+}
+
+/* ---------- Layout utilities ------------------------------------------------- */
+.stack > * + * {
+  margin-top: var(--space-4);
+}
+.stack-lg > * + * {
+  margin-top: var(--space-6);
+}
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+.cols {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr);
+  align-items: start;
+}
+.cols--even {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+}
+/* A sheet laid on the table: panels, boxes of facts */
+.panel {
+  background: var(--color-surface);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-1);
+}
+.panel > h2,
+.panel > h3 {
+  font-size: var(--step-2);
+}
+/* A list of entries between rules: requests, events, exports */
+.entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: var(--rule-hair) solid var(--color-ink);
+}
+.entries > li {
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+}
+/* Facts as sentences, not as a two-column table */
+.meta-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+}
+.meta-list dt {
+  color: var(--color-muted);
+}
+.meta-list dd {
+  margin: 0;
+  min-width: 0;
+}
+@media (max-width: 60rem) {
+  .cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 40rem) {
+  .meta-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .meta-list dd {
+    margin-bottom: var(--space-2);
+  }
+}
+
+/* ---------- Baseline of the native controls ----------------------------------
+   The screens not yet redrawn keep native controls: they get the house look
+   here, at the lowest specificity (`:where`), so that a component of
+   src/lib/ui always wins. */
+:where(button, input, select, textarea) {
+  font: inherit;
+  color: inherit;
+}
+:where(button:not([class])) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-weight: 500;
+  line-height: 1.1;
   background: var(--color-surface);
   color: var(--color-ink);
-  box-sizing: border-box;
-}
-
-.form-screen .hint {
-  color: var(--color-muted);
-  font-size: 0.875rem;
-  margin-top: -0.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.form-screen button[type='submit'],
-.form-screen input[type='submit'] {
-  background: var(--color-accent);
-  color: var(--color-on-accent);
-  border: none;
-  border-radius: var(--radius-cover);
-  padding: 0.75rem 1.5rem;
-  font-size: 1rem;
-  font-weight: 500;
+  border: var(--rule-hair) solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  box-sizing: border-box;
 }
-
-.form-screen button[type='submit']:hover:not(:disabled),
-.form-screen input[type='submit']:hover:not(:disabled) {
-  filter: brightness(1.1);
+:where(button:not([class]):hover:not(:disabled)) {
+  background: var(--color-surface-2);
 }
-
-.form-screen button[type='submit']:disabled,
-.form-screen input[type='submit']:disabled {
-  opacity: 0.6;
+:where(button:not([class]):disabled) {
+  opacity: 0.55;
   cursor: not-allowed;
 }
+:where(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='submit'], [type='button'], [type='reset']),
+    select,
+    textarea
+  ) {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: var(--rule-hair) solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  max-width: 100%;
+}
+:where(input, select, textarea):disabled {
+  background: var(--color-surface-2);
+  color: var(--color-subtle);
+}
+:where(input, textarea)::placeholder {
+  color: var(--color-subtle);
+  font-style: italic;
+  opacity: 1;
+}
+:where(fieldset) {
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-sm);
+}
+:where(legend) {
+  font-weight: 700;
+  padding-inline: var(--space-1);
+}
+:where(summary) {
+  cursor: pointer;
+  font-weight: 500;
+}
 
+/* ---------- Accessibility rules ------------------------------------------- */
 /* ENF-A11Y-004: every target is at least 44x44 px. A checkbox is reached through its label. */
 button,
 [role='button'],
@@ -112,7 +417,7 @@ textarea {
 label:has(> input[type='checkbox']) {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-height: 44px;
 }
 /* a link that stands alone on its line is a target; a link inside a sentence is not */
@@ -122,14 +427,6 @@ a.standalone {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-}
-
-img,
-svg,
-video,
-canvas {
-  max-width: 100%;
-  height: auto;
 }
 
 /* ENF-A11Y-004: below 600 px the tables become stacked cards and the main action of a form stays
@@ -154,10 +451,10 @@ canvas {
     clip-path: inset(50%);
   }
   tr {
-    margin-block-end: 0.75rem;
-    padding: 0.5rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
+    margin-block-end: var(--space-3);
+    padding: var(--space-2);
+    border: var(--rule-hair) solid var(--color-rule);
+    border-radius: var(--radius-sm);
   }
   td[data-label]::before {
     content: attr(data-label) ' ';
@@ -166,7 +463,7 @@ canvas {
   form > button[type='submit']:last-child,
   .main-action {
     position: sticky;
-    bottom: 0.5rem;
+    bottom: calc(var(--tabbar-h) + var(--space-2));
     z-index: 1;
     background: var(--color-bg);
   }
@@ -174,6 +471,50 @@ canvas {
   .form-screen form > button[type='submit']:last-child {
     background: var(--color-accent);
   }
+}
+
+/* ---------- Legacy form screen (screens not yet redrawn) -------------------- */
+main.form-screen {
+  max-width: var(--form-max);
+  margin: 0 auto;
+}
+.form-screen form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.form-screen label {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-weight: 700;
+}
+.form-screen input:not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='button']):not([type='reset']),
+.form-screen select,
+.form-screen textarea {
+  width: 100%;
+}
+.form-screen .hint {
+  margin-top: calc(-1 * var(--space-2));
+  margin-bottom: var(--space-3);
+}
+.form-screen button[type='submit'],
+.form-screen input[type='submit'] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border: var(--rule-hair) solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-5);
+  font-weight: 500;
+  cursor: pointer;
+}
+.form-screen button[type='submit']:hover:not(:disabled),
+.form-screen input[type='submit']:hover:not(:disabled) {
+  background: var(--color-accent-strong);
+}
+.form-screen button[type='submit']:disabled,
+.form-screen input[type='submit']:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 /* ENF-A11Y-003: nothing moves for someone who asked the system for less motion. */

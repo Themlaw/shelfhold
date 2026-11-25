@@ -71,7 +71,8 @@ describe('no component reads the name of the theme (I51)', () => {
         const path = relative(root, full);
         if (allowed(path) || !/\.(svelte|ts|css)$/.test(name)) continue;
         const text = readFileSync(full, 'utf8');
-        if (/data-theme|data-color-scheme|dataset\.(theme|colorScheme)|bibliotheque|\[data-theme/.test(text)) {
+        // `/bibliotheque` is the address of the library screen, not the name of the theme
+        if (/data-theme|data-color-scheme|dataset\.(theme|colorScheme)|(?<!\/)bibliotheque|\[data-theme/.test(text)) {
           offenders.push(path);
         }
       }

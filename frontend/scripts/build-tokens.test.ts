@@ -15,9 +15,10 @@ describe('design tokens', () => {
   });
 
   // req: EF-UX-012
-  it('ships the "Bibliothèque" theme with a light and a dark palette and no web font', () => {
-    expect(tokens.light.color.bg.$value).toBe('#F6F1E7');
-    expect(tokens.dark.color.bg.$value).toBe('#1A1714');
+  it('ships the "Bibliothèque" theme with a light and a dark palette and no remote font', () => {
+    expect(tokens.light.color.bg.$value).toBe('#F1ECE1');
+    expect(tokens.dark.color.bg.$value).toBe('#191714');
+    expect(tokens.shared.font.text.$value).toMatch(/^Alegreya,/);
     expect(JSON.stringify(tokens)).not.toMatch(/https?:|url\(/);
   });
 });

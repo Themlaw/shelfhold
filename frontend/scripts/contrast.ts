@@ -6,14 +6,35 @@ import { fileURLToPath } from 'node:url';
 
 export const themesDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'lib', 'themes');
 export const AA_TEXT = 4.5;
+/** WCAG 2.2 1.4.11: a field border, an icon that carries meaning and the focus ring. */
+export const AA_NON_TEXT = 3;
 
 type Group = { [key: string]: unknown };
-export type Pair = { text: string; background: string };
-export type Failure = { scheme: string; text: string; background: string; ratio: number };
+export type Pair = { text: string; background: string; min: number };
+export type Failure = { scheme: string; text: string; background: string; ratio: number; min: number };
 
-// Text colors and the backgrounds they sit on. `on-accent` is the label of an accent button.
-const TEXT_ON_PAGE = ['ink', 'muted', 'accent', 'ok', 'warn', 'err'];
-const PAGE_BACKGROUNDS = ['bg', 'surface'];
+// Text colors and the backgrounds they sit on (docs/design/papier-et-encre.md): every text role on
+// every surface, the label of the filled buttons, each state on its own soft background, and the
+// non-text marks (field border, focus ring, shelf rule) at 3:1. `accent` is a fill; the text in the
+// accent colour is `accent-text`.
+const TEXT_ON_PAGE = ['ink', 'muted', 'subtle', 'accent-text', 'ok', 'warn', 'err'];
+const PAGE_BACKGROUNDS = ['bg', 'surface', 'surface-2', 'surface-chrome', 'surface-float'];
+const TEXT_PAIRS: [string, string][] = [
+  ['on-accent', 'accent'],
+  ['on-accent', 'accent-strong'],
+  ['on-err', 'err'],
+  ['ink', 'accent-soft'],
+  ['muted', 'accent-soft'],
+  ['accent-text', 'accent-soft'],
+  ['ok', 'ok-soft'],
+  ['warn', 'warn-soft'],
+  ['err', 'err-soft'],
+  ['ink', 'ok-soft'],
+  ['ink', 'warn-soft'],
+  ['ink', 'err-soft']
+];
+const MARKS = ['rule-strong', 'focus'];
+const MARK_BACKGROUNDS = ['bg', 'surface', 'surface-2'];
 
 function channel(value: number): number {
   const c = value / 255;
@@ -50,13 +71,15 @@ function colors(scheme: Group): Record<string, string> {
 export function pairsOf(scheme: Group): (Pair & { names: string })[] {
   const c = colors(scheme);
   const pairs: (Pair & { names: string })[] = [];
-  const add = (text: string, background: string) => {
+  const add = (text: string, background: string, min = AA_TEXT) => {
     if (c[text] && c[background]) {
-      pairs.push({ text: c[text], background: c[background], names: `${text}/${background}` });
+      pairs.push({ text: c[text], background: c[background], names: `${text}/${background}`, min });
     }
   };
   for (const text of TEXT_ON_PAGE) for (const bg of PAGE_BACKGROUNDS) add(text, bg);
-  add('on-accent', 'accent');
+  for (const [text, bg] of TEXT_PAIRS) add(text, bg);
+  for (const mark of MARKS) for (const bg of MARK_BACKGROUNDS) add(mark, bg, AA_NON_TEXT);
+  add('shelf', 'bg', AA_NON_TEXT);
   return pairs;
 }
 
@@ -67,8 +90,8 @@ export function failingPairs(tokens: { light: Group; dark?: Group }): (Failure &
     if (!group) continue;
     for (const p of pairsOf(group)) {
       const ratio = contrastRatio(p.text, p.background);
-      if (ratio < AA_TEXT) {
-        failures.push({ scheme, text: p.text, background: p.background, names: p.names, ratio });
+      if (ratio < p.min) {
+        failures.push({ scheme, text: p.text, background: p.background, names: p.names, ratio, min: p.min });
       }
     }
   }
@@ -80,7 +103,7 @@ export function checkAll(dir = themesDir): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory())) {
     const tokens = JSON.parse(readFileSync(join(dir, e.name, 'tokens.json'), 'utf8'));
     for (const f of failingPairs(tokens)) {
-      lines.push(`${e.name} (${f.scheme}) ${f.names}: ${f.ratio.toFixed(2)} < ${AA_TEXT}`);
+      lines.push(`${e.name} (${f.scheme}) ${f.names}: ${f.ratio.toFixed(2)} < ${f.min}`);
     }
   }
   return lines;
