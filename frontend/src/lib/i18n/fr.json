@@ -709,6 +709,7 @@
   "shelves.plan_stale": "Le plan a changé : recalculez-le.",
   "destinations.title": "Destinations",
   "adoption.title": "Adopter une bibliothèque Kavita existante",
+  "adoption.loading": "Chargement des destinations…",
   "adoption.explain": "Voyez d'abord ce qui serait adopté : rien n'est écrit tant que vous n'avez pas confirmé. Les fichiers déjà là restent où ils sont, Shelfhold n'en modifie, n'en déplace et n'en supprime aucun. La première page de chaque archive est lue par le bac à sable de décodage, jamais par le cœur.",
   "adoption.no_destination": "Aucune destination n'existe encore : créez-en une dans l'assistant de première configuration.",
   "adoption.destination": "Destination",

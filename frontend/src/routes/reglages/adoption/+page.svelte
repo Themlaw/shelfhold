@@ -9,6 +9,13 @@
   import { previewAdoption } from '#lib/adoption.ts';
   import type { WizardDestinationOut, WizardPreviewOut } from '#lib/api/types.gen.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { hasMessage, t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
@@ -107,64 +114,106 @@
   <title>{t('adoption.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('adoption.title')}</h1>
+<main class="page page--form">
+  <PageHead
+    title={t('adoption.title')}
+    crumbs={[{ label: t('settings.title'), href: '/reglages' }, { label: t('adoption.title') }]}
+  />
 
   {#if signedOut}
-    <p role="alert">{t('admin.wizard.signed_out')}</p>
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <p><a href="/login" data-sveltekit-reload>{t('admin.wizard.login')}</a></p>
+    <Alert tone="warning" title={t('admin.wizard.signed_out')} live="assertive">
+      {#snippet actions()}
+        <Button href="/login" data-sveltekit-reload>{t('admin.wizard.login')}</Button>
+      {/snippet}
+    </Alert>
   {:else}
-    {#if reauthMethods}
-      <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
-    {/if}
-    {#if problem}
-      <ProblemCard {problem} />
-    {/if}
-    {#if message}
-      <p role="status">{message}</p>
-    {/if}
-
-    {#if loaded && destinations.length === 0}
-      <p>{t('adoption.no_destination')}</p>
-    {:else if loaded}
-      <p>{t('adoption.explain')}</p>
-      {#if destinations.length > 1}
-        <label>
-          {t('adoption.destination')}
-          <select bind:value={destination} onchange={() => (preview = null)}>
-            {#each destinations as item (item.id)}
-              <option value={item.id}>{item.id}</option>
-            {/each}
-          </select>
-        </label>
+    <div class="stack">
+      {#if reauthMethods}
+        <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
       {/if}
-      <button type="button" disabled={busy} onclick={look}>{t('adoption.preview')}</button>
-      {#if waiting}
-        <p role="status">{t('adoption.waiting')}</p>
+      {#if problem}
+        <ProblemCard {problem} />
+      {/if}
+      {#if message}
+        <Alert tone="success" title={message} live="polite" />
       {/if}
 
-      {#if preview}
-        <p>{t('adoption.preview_result', { series: preview.series, files: preview.files })}</p>
-        <p>{t('adoption.not_probed')}</p>
-        {#if preview.child_library}
-          <p role="status">{t('adoption.child_library')}</p>
-        {/if}
-        {#if preview.to_check.length > 0}
-          <section aria-labelledby="to-check-title">
-            <h2 id="to-check-title">
-              {t('adoption.to_check_title', { count: preview.to_check.length })}
-            </h2>
-            <p>{t('adoption.to_check_explain')}</p>
-            <ul>
-              {#each preview.to_check as item (item.path)}
-                <li><code>{item.path}</code> : {reason(item.reason)}</li>
-              {/each}
-            </ul>
+      {#if !loaded}
+        <div aria-busy="true">
+          <p class="visually-hidden" role="status">{t('adoption.loading')}</p>
+          <Skeleton shape="block" /><Skeleton short />
+        </div>
+      {:else if destinations.length === 0}
+        <EmptyState title={t('adoption.no_destination')} art={false} />
+      {:else}
+        <p class="lede">{t('adoption.explain')}</p>
+        <div class="panel step">
+          {#if destinations.length > 1}
+            <Field label={t('adoption.destination')}>
+              {#snippet children(control)}
+                <Select
+                  {...control}
+                  bind:value={destination}
+                  onchange={() => (preview = null)}
+                  options={destinations.map((item) => ({ value: item.id, label: item.id }))}
+                />
+              {/snippet}
+            </Field>
+          {/if}
+          <div><Button variant={preview ? 'secondary' : 'primary'} icon="eye" loading={busy && !preview} onclick={look}>{t('adoption.preview')}</Button></div>
+          {#if waiting}
+            <p role="status" class="muted">{t('adoption.waiting')}</p>
+          {/if}
+        </div>
+
+        {#if preview}
+          <section class="panel step" aria-label={t('adoption.preview')}>
+            <p class="figures">{t('adoption.preview_result', { series: preview.series, files: preview.files })}</p>
+            <p class="muted">{t('adoption.not_probed')}</p>
+            {#if preview.child_library}
+              <Alert tone="info" title={t('adoption.child_library')} live="polite" />
+            {/if}
+            {#if preview.to_check.length > 0}
+              <section aria-labelledby="to-check-title">
+                <div class="section-head">
+                  <h2 id="to-check-title">{t('adoption.to_check_title', { count: preview.to_check.length })}</h2>
+                </div>
+                <p>{t('adoption.to_check_explain')}</p>
+                <ul class="entries">
+                  {#each preview.to_check as item (item.path)}
+                    <li class="check"><code>{item.path}</code> : {reason(item.reason)}</li>
+                  {/each}
+                </ul>
+              </section>
+            {/if}
+            <div><Button variant="primary" loading={busy} onclick={adopt}>{t('adoption.adopt')}</Button></div>
           </section>
         {/if}
-        <button type="button" disabled={busy} onclick={adopt}>{t('adoption.adopt')}</button>
       {/if}
-    {/if}
+    </div>
   {/if}
 </main>
+
+<style>
+  .step {
+    display: grid;
+    gap: var(--space-4);
+    justify-items: start;
+  }
+  .step > :global(*) {
+    max-width: 100%;
+  }
+  .figures {
+    margin: 0;
+    font: 500 var(--step-2) / var(--leading-tight) var(--font-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .check {
+    padding: var(--space-2) 0;
+    overflow-wrap: anywhere;
+  }
+  .check code {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--step--1);
+  }
+</style>

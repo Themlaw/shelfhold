@@ -709,6 +709,7 @@
   "shelves.plan_stale": "The plan changed: compute it again.",
   "destinations.title": "Shelf destinations",
   "adoption.title": "Adopt an existing Kavita library",
+  "adoption.loading": "Loading the destinations…",
   "adoption.explain": "Look at what would be adopted first: nothing is written until you confirm. The files already there stay where they are: Shelfhold never changes, moves or deletes one. The first page of each archive is read by the decode sandbox, never by the core.",
   "adoption.no_destination": "No destination exists yet: create one in the first-run wizard.",
   "adoption.destination": "Destination",
