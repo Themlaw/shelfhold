@@ -115,8 +115,7 @@
 
 <main class="page page--read">
   <div class="running-head">
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <a href="/a-approuver/liste">{t('lists.back_lists')}</a>
+    <span>{t('lists.title')}</span>
   </div>
   {#if !loaded}
     <div class="page-head"><h1 class="page-title">{t('lists.review_title')}</h1></div>

@@ -72,8 +72,8 @@ test('test_request_from_list_bulk_single_review_screen_ui', async ({ page, conte
   await settle(page);
   await page.getByLabel('Liste', { exact: true }).fill(LIST);
   await page.getByRole('button', { name: 'Importer' }).click();
-  await expect(page.locator('section.done')).toContainText('demandés');
-  await expect(page.locator('section.done')).toContainText('1 ligne réclame une édition annotée précise');
+  await expect(page.locator('.done')).toContainText('demandés');
+  await expect(page.locator('.done')).toContainText('1 ligne réclame une édition annotée précise');
   await page.getByRole('link', { name: 'Valider toute la liste' }).click();
   await settle(page);
   // one screen, every line of the file, in its order

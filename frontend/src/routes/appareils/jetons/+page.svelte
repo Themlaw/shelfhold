@@ -200,8 +200,7 @@
 
 <main class="page">
   <div class="running-head">
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <a href="/appareils">{t('nav.devices')}</a>
+    <span>{t('nav.devices')}</span>
   </div>
   <div class="page-head">
     <div class="page-head__text">

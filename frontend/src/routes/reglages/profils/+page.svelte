@@ -353,9 +353,8 @@
           {#snippet children(control)}<Input {...control} type="number" min="0" bind:value={newAge} width="short" />{/snippet}
         </Field>
         <Checkbox bind:checked={newCanRate} label={t('profiles.can_rate')} />
-        <div class="btn-row">
-          <Button type="submit" variant="primary" icon="plus">{t('profiles.create')}</Button>
-        </div>
+        <!-- a direct child of the form: on a phone the main action of a long form stays in reach -->
+        <Button type="submit" variant="primary" icon="plus" class="main-action new__submit">{t('profiles.create')}</Button>
       </form>
     </section>
   {/if}
@@ -463,6 +462,9 @@
     display: grid;
     gap: var(--space-4);
     max-inline-size: var(--form-max);
+  }
+  .new :global(.new__submit) {
+    justify-self: start;
   }
   .notice {
     position: sticky;
