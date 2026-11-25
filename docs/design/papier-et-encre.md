@@ -40,13 +40,28 @@ Dans `frontend/src/lib/ui/`, par niveau ; chacun a ses tests de comportement et 
   `Avatar` (ex-libris), `Link`, `Icon` (jeu maison `icons.ts`), `Spinner`, `Skeleton`, `Cover`,
   `Progress`, `ProgressRibbon` (le signet), `Illustration`.
 - **Molécules** (`molecules/`) : `Field`, `SettingRow`, `SeriesCard`, `ChapterRow`, `TableRow`,
-  `Alert`, `Toast`, `Dialog`, `ConfirmDialog`, `Menu`, `Tabs`, `SearchBar`, `Pagination`,
-  `EmptyState`, `ErrorState`.
+  `Alert`, `ProblemAlert`, `Toast`, `Dialog`, `ConfirmDialog`, `Menu`, `Tabs`, `SearchBar`,
+  `Pagination`, `EmptyState`, `ErrorState`.
 - **Organismes** (`organisms/`) : `AppHeader`, `TableOfContents`, `MobileTabBar`, `Colophon`,
   `Shelf`, `DataTable`, `SettingsForm`, `ErrorScreen`.
 
 `bits-ui` fournit le focus, le clavier et l'ARIA de `Dialog`, `Menu` et `Tabs`, et n'est importé
 que par eux (ESLint). Ni thème de bibliothèque, ni Tailwind.
+
+### Notes d'usage
+
+- **`ProblemAlert`** dit une erreur du serveur avec les mots de l'interface : le problème écrit
+  par le serveur (titre, cause, action, identifiant d'incident à communiquer), jamais son corps
+  brut, avec un bouton « Réessayer » si `onretry` est donné. Un refus de session (401) ou de rôle
+  (403), repéré par `blockKind(error)`, devient un `ErrorState` avec son dessin, pour ne pas se
+  lire comme une panne de l'écran. Il remplace `ProblemCard` dans les écrans refaits.
+- **Lecteur** : page à part (`/lire`, politique CSP propre) ; il charge la fondation (jetons et
+  polices servis par l'instance). La planche d'une page d'images et la colonne webtoon posent
+  sur `--cv-paper`, qui ne s'inverse pas en sombre ; le reste de la scène suit le thème. Les
+  réglages sont une feuille du bas sous 48 rem et un panneau latéral au-delà ; ni l'un ni l'autre
+  ne piège le focus.
+- **`OfflineKeep`** a une variante `compact` (icônes seules, noms accessibles conservés) pour les
+  barres du lecteur.
 
 ## Règles
 
