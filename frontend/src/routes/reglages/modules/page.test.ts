@@ -60,9 +60,9 @@ describe('Écran des modules', () => {
     );
     render(Page);
     await screen.findByRole('heading', { name: 'Modules', level: 1 });
-    const urlInput = screen.getByLabelText(/URL de l.index/);
+    const urlInput = await screen.findByLabelText(/URL de l.index/);
     await userEvent.type(urlInput, REPO_URL);
-    const keyInput = screen.getByLabelText('Clé publique du signataire');
+    const keyInput = await screen.findByLabelText('Clé publique du signataire');
     await userEvent.type(keyInput, 'PUBKEY');
     await userEvent.click(screen.getByRole('button', { name: /Ajouter l.index/ }));
     expect(await screen.findByText(REPO_URL)).toBeTruthy();
@@ -112,7 +112,7 @@ describe('Écran des modules', () => {
     );
     render(Page);
     await screen.findByRole('heading', { name: 'Modules', level: 1 });
-    await userEvent.type(screen.getByLabelText('Module'), KEY);
+    await userEvent.type(await screen.findByLabelText('Module'), KEY);
     await userEvent.click(screen.getByRole('button', { name: 'Attester' }));
     expect(posted).toMatchObject({ field: 'content_trust', value: 'publisher' });
     expect(await screen.findByText(/content_trust: publisher/)).toBeTruthy();
@@ -165,6 +165,7 @@ describe('Écran des modules', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Désépingler' }));
     expect(unpinned).toBe(true);
     await userEvent.click(screen.getByRole('button', { name: 'Retour arrière' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Revenir en arrière' }));
     expect(await screen.findByRole('region', { name: 'Confirmez votre identité' })).toBeTruthy();
   });
 });
