@@ -160,8 +160,17 @@
           <ul>
             {#each group.entries as entry (entry.href)}
               <li>
-                <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-                <a href={entry.href}><Icon name={entry.icon} />{entry.label}</a>
+                <!-- eslint-disable svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+                {#if entry.href === '/a-classer'}
+                  <a href="/a-classer"><Icon name={entry.icon} />{entry.label}</a>
+                {:else if entry.href === '/corbeille'}
+                  <a href="/corbeille"><Icon name={entry.icon} />{entry.label}</a>
+                {:else if entry.href === '/appareils'}
+                  <a href="/appareils"><Icon name={entry.icon} />{entry.label}</a>
+                {:else}
+                  <a href={entry.href}><Icon name={entry.icon} />{entry.label}</a>
+                {/if}
+                <!-- eslint-enable svelte/no-navigation-without-resolve -->
               </li>
             {/each}
           </ul>

@@ -10,6 +10,7 @@
   import { formatDateTime } from '#lib/i18n/format.ts';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
+  import { navItems } from '#lib/nav.ts';
   import Button from '#lib/ui/atoms/Button.svelte';
   import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
   import Alert from '#lib/ui/molecules/Alert.svelte';
@@ -63,6 +64,8 @@
     if (problem === null) await loadBlocks();
     loaded = true;
   });
+
+  const activityHref = navItems(['activity'])[0].href;
 </script>
 
 <svelte:head>
@@ -72,7 +75,7 @@
 <main class="page">
   <PageHead
     title={t('history.title')}
-    crumbs={[{ label: t('nav.activity'), href: '/activite' }, { label: t('history.title') }]}
+    crumbs={[{ label: t('nav.activity'), href: activityHref }, { label: t('history.title') }]}
   />
   {#if problem}
     <ProblemCard {problem} />

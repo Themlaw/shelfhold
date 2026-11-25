@@ -47,6 +47,13 @@
 </div>
 
 <style>
+  /* the way back is a link on its own: a 44 px target (ENF-A11Y-004) */
+  nav a {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 44px;
+    min-inline-size: 44px;
+  }
   .crumb-sep {
     margin-inline: var(--space-2);
   }
