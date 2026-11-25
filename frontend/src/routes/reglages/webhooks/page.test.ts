@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { client } from '#lib/api/client.gen.ts';
 import Page from './+page.svelte';
 
@@ -250,7 +250,9 @@ describe('Écran des webhooks', () => {
     const user = userEvent.setup();
     await screen.findByText('hooks.example.org');
     await user.click(screen.getByRole('button', { name: 'Supprimer' }));
-    expect(deleted).toBe(1);
+    expect(deleted).toBe(0); // asked first, not done
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ce webhook' }));
+    await vi.waitFor(() => expect(deleted).toBe(1));
     expect(await screen.findByText('Aucun webhook.')).toBeTruthy();
     expect(screen.queryByText('hooks.example.org')).toBeNull();
   });
@@ -372,7 +374,8 @@ describe('Écran des webhooks', () => {
     // Now delete the OTHER hook - the secret should still be shown
     const secondLi = screen.getByText('other.example.org').closest('li') as HTMLElement;
     await user.click(within(secondLi).getByRole('button', { name: 'Supprimer' }));
-    expect(deletedId).toBe(OTHER_ID);
+    await user.click(await screen.findByRole('button', { name: 'Supprimer ce webhook' }));
+    await vi.waitFor(() => expect(deletedId).toBe(OTHER_ID));
     // The secret should still be visible
     expect(screen.getByText(SECRET)).toBeTruthy();
     // Only one hook should remain
@@ -417,6 +420,6 @@ describe('Écran des webhooks', () => {
     for (const name of ['Événement', 'État', 'Tentatives', 'Code HTTP', 'Erreur', 'Livrée le', 'Prochaine tentative']) {
       expect(within(table).getByRole('columnheader', { name })).toBeTruthy();
     }
-    expect(within(table).getByRole('rowheader', { name: '12' })).toBeTruthy(); // the event, named
+    expect(within(table).getByRole('cell', { name: '12' })).toBeTruthy(); // the event, named
   });
 });
