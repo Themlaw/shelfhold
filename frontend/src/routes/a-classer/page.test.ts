@@ -50,7 +50,7 @@ describe('À classer', () => {
     ]);
     for (const radio of radios) expect(radio).toHaveAccessibleName();
     const rate = screen.getByRole('button', { name: 'Classer' });
-    expect(rate).toBeDisabled();
+    expect(rate).toHaveAttribute('aria-disabled', 'true');
     // keyboard: Tab into the group, arrows move, nothing chosen until a key does it
     const user = userEvent.setup();
     await user.tab(); // the two filters come first: the state, then the search

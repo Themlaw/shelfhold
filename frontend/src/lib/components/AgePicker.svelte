@@ -25,28 +25,34 @@
   .picker {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem 0.5rem;
+    gap: var(--space-1) var(--space-2);
     border: 0;
     margin: 0;
     padding: 0;
+    min-width: 0;
   }
   legend {
     padding: 0;
+    margin-bottom: var(--space-1);
     color: var(--color-muted);
-    font-size: 0.875rem;
+    font-size: var(--step--1);
   }
   label {
     position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    justify-content: center;
     min-height: 2.75rem;
     min-width: 2.75rem;
-    padding: 0 0.625rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
+    padding: 0 var(--space-3);
+    border: var(--rule-hair) solid var(--color-rule-strong);
+    border-radius: var(--radius-sm);
     background: var(--color-surface);
+    font-variant-numeric: tabular-nums;
     cursor: pointer;
+  }
+  label:hover {
+    border-color: var(--color-ink);
   }
   label.on {
     border-color: var(--color-accent);
@@ -63,7 +69,7 @@
     margin: 0;
   }
   label:has(input:focus-visible) {
-    outline: 2px solid var(--color-accent);
+    outline: var(--rule-thick) solid var(--color-focus);
     outline-offset: 2px;
   }
 </style>
