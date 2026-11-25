@@ -160,6 +160,9 @@ describe("Source migration", () => {
     await user.click(
       screen.getByRole("button", { name: /Appliquer la migration/ }),
     );
+    await user.click(
+      await screen.findByRole("button", { name: "Confirmer la migration" }),
+    );
     expect(await screen.findByText(/Migration appliquée/)).toBeInTheDocument();
     expect(seen[2]).toEqual({ digest: "b".repeat(64) });
     expect(screen.getByText(/1 numéro à télécharger/)).toBeInTheDocument();

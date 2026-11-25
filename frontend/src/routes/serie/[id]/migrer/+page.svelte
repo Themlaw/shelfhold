@@ -22,6 +22,15 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import ConfirmDialog from '#lib/ui/molecules/ConfirmDialog.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import DataTable from '#lib/ui/organisms/DataTable.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   const GONE = ['not_loaded', 'removed_upstream'];
   const REASONS: Record<string, MessageKey> = {
@@ -42,6 +51,7 @@
   let reauthMethods = $state<string[] | null>(null);
   let retry: (() => Promise<void>) | null = null;
   let busy = $state(false);
+  let confirmingApply = $state(false);
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
   const applied = $derived(migration?.state === 'applied');
@@ -144,6 +154,11 @@
     });
   }
 
+  const COLUMNS = [
+    { key: 'source', label: t('migrate.col.source'), primary: true },
+    { key: 'library', label: t('migrate.col.library') },
+    { key: 'basis', label: t('migrate.col.basis') }
+  ] as const;
   const why = (row: Row, offset: number): string =>
     row.basis === 'offset'
       ? t('migrate.basis.offset', { offset })
@@ -155,86 +170,111 @@
     });
 </script>
 
-<main>
-  <p>
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <a href={`/serie/${editionId}`}>{t('migrate.back')}</a>
-  </p>
-  <h1>{t('migrate.title')}</h1>
-  <p>{t('migrate.intro')}</p>
+<main class="page page--read">
+  <PageHead
+    title={t('migrate.title')}
+    lede={t('migrate.intro')}
+    crumbs={[{ label: t('migrate.back'), href: `/serie/${editionId}` }, { label: t('migrate.title') }]}
+  />
 
-  {#if problem}<ProblemCard {problem} level={2} />{/if}
-  {#if reauthMethods}
-    <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
-  {/if}
+  <div class="stack-lg">
+    {#if problem}<ProblemCard {problem} level={2} />{/if}
+    {#if reauthMethods}
+      <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
+    {/if}
 
-  {#if !migration}
-    <form onsubmit={propose}>
-      <label>
-        {t('migrate.source_key')}
-        <input bind:value={sourceKey} required maxlength="500" autocomplete="off" />
-      </label>
-      <label>
-        {t('migrate.remote_id')}
-        <input bind:value={remoteId} required maxlength="1000" autocomplete="off" />
-      </label>
-      <label>
-        {t('migrate.replaces')}
-        <select bind:value={replaces}>
-          <option value="">{t('migrate.replaces_none')}</option>
-          {#each bindings as binding (binding.id)}
-            <option value={binding.id}>{source(binding)}</option>
-          {/each}
-        </select>
-      </label>
-      <button type="submit" disabled={busy}>{t('migrate.propose')}</button>
-    </form>
-  {:else}
-    {#if !applied}
-      <p>{t('migrate.summary', { held: migration.held_count, fetch: migration.to_fetch })}</p>
-      {#if migration.unmatched_units.length > 0}
-        <p>{t('migrate.unmatched', { count: migration.unmatched_units.length })}</p>
+    {#if !migration}
+      <form class="panel form" aria-label={t('migrate.propose')} onsubmit={propose}>
+        <Field label={t('migrate.source_key')} required>
+          {#snippet children(control)}
+            <Input {...control} mono bind:value={sourceKey} maxlength={500} autocomplete="off" />
+          {/snippet}
+        </Field>
+        <Field label={t('migrate.remote_id')} required>
+          {#snippet children(control)}
+            <Input {...control} mono bind:value={remoteId} maxlength={1000} autocomplete="off" />
+          {/snippet}
+        </Field>
+        <Field label={t('migrate.replaces')}>
+          {#snippet children(control)}
+            <Select
+              {...control}
+              bind:value={replaces}
+              options={[
+                { value: '', label: t('migrate.replaces_none') },
+                ...bindings.map((binding) => ({ value: binding.id, label: source(binding) }))
+              ]}
+            />
+          {/snippet}
+        </Field>
+        <div><Button type="submit" variant="primary" loading={busy}>{t('migrate.propose')}</Button></div>
+      </form>
+    {:else}
+      {#if !applied}
+        <div class="summary">
+          <p class="figures num">{t('migrate.summary', { held: migration.held_count, fetch: migration.to_fetch })}</p>
+          {#if migration.unmatched_units.length > 0}
+            <Alert tone="warning" title={t('migrate.unmatched', { count: migration.unmatched_units.length })} />
+          {/if}
+        </div>
+      {/if}
+      <DataTable
+        caption={t('migrate.table')}
+        columns={COLUMNS}
+        rows={migration.rows.map((row) => ({ ...row, id: row.place }))}
+        key={(row) => String(row.id)}
+      >
+        {#snippet cell(column, row)}
+          {#if column.key === 'source'}
+            {String(row.number) || t('migrate.unnumbered')}
+          {:else if column.key === 'library'}
+            {#if row.number && migration?.state === 'proposed'}
+              <Input
+                aria-label={t('migrate.row_target', { number: String(row.number) })}
+                value={edits[String(row.place)] ?? String(row.target)}
+                oninput={(e: Event) => (edits[String(row.place)] = (e.currentTarget as HTMLInputElement).value)}
+                inputmode="decimal"
+                maxlength={64}
+                width="short"
+              />
+            {:else}
+              {String(row.target) || t('migrate.unnumbered')}
+            {/if}
+          {:else}
+            {why(row as unknown as Row, migration?.offset ?? 0)}
+          {/if}
+        {/snippet}
+      </DataTable>
+
+      {#if applied}
+        <Alert tone="success" live="polite" title={t('migrate.done', { count: migration.to_fetch })} />
+      {:else if validated}
+        <Alert tone="info" title={t('migrate.validated')} />
+        <div><Button variant="primary" onclick={() => (confirmingApply = true)} disabled={busy}>{t('migrate.apply')}</Button></div>
+      {:else}
+        <div><Button variant="primary" onclick={validate} loading={busy}>{t('migrate.validate')}</Button></div>
       {/if}
     {/if}
-    <table>
-      <caption>{t('migrate.table')}</caption>
-      <thead>
-        <tr>
-          <th scope="col">{t('migrate.col.source')}</th>
-          <th scope="col">{t('migrate.col.library')}</th>
-          <th scope="col">{t('migrate.col.basis')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each migration.rows as row (row.place)}
-          <tr>
-            <td>{row.number || t('migrate.unnumbered')}</td>
-            <td>
-              {#if row.number && migration.state === 'proposed'}
-                <input
-                  aria-label={t('migrate.row_target', { number: row.number })}
-                  value={edits[row.place] ?? row.target}
-                  oninput={(e) => (edits[row.place] = e.currentTarget.value)}
-                  inputmode="decimal"
-                  maxlength="64"
-                />
-              {:else}
-                {row.target || t('migrate.unnumbered')}
-              {/if}
-            </td>
-            <td>{why(row, migration.offset)}</td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-
-    {#if applied}
-      <p role="status">{t('migrate.done', { count: migration.to_fetch })}</p>
-    {:else if validated}
-      <p>{t('migrate.validated')}</p>
-      <button type="button" onclick={apply} disabled={busy}>{t('migrate.apply')}</button>
-    {:else}
-      <button type="button" onclick={validate} disabled={busy}>{t('migrate.validate')}</button>
-    {/if}
-  {/if}
+  </div>
 </main>
+
+<ConfirmDialog
+  bind:open={confirmingApply}
+  title={t('migrate.apply_title')}
+  message={t('migrate.apply_message', { count: migration?.to_fetch ?? 0 })}
+  confirmLabel={t('migrate.apply_confirm')}
+  tone="primary"
+  onconfirm={apply}
+/>
+
+<style>
+  .form {
+    display: grid;
+    gap: var(--space-4);
+    max-width: var(--form-max);
+  }
+  .figures {
+    margin: 0 0 var(--space-3);
+    font: 500 var(--step-2) / var(--leading-tight) var(--font-text);
+  }
+</style>
