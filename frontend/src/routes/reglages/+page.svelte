@@ -9,11 +9,21 @@
   import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Icon from '#lib/ui/atoms/Icon.svelte';
+  import type { IconName } from '#lib/ui/atoms/icons.ts';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import SettingRow from '#lib/ui/molecules/SettingRow.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
+  import SettingsForm from '#lib/ui/organisms/SettingsForm.svelte';
 
   const LEVELS = ['essential', 'advanced', 'expert'] as const;
 
   let items = $state<ConfigRow[]>([]);
   let adminOnly = $state(false);
+  let loaded = $state(false);
   let failed = $state(false);
   let message = $state('');
   let reauthMethods = $state<string[] | null>(null);
@@ -42,6 +52,7 @@
       if (isForbidden(error)) adminOnly = true;
       message = isForbidden(error) ? t('settings.admin_only') : t('settings.error');
     }
+    loaded = true;
   }
 
   onMount(load);
@@ -83,6 +94,45 @@
     reauthMethods = null;
   }
 
+  type Entry = { href: string; label: string; icon: IconName };
+  const MINE: Entry[] = [
+    { href: '/reglages/notifications', label: t('settings.link.notifications'), icon: 'send' },
+    { href: '/reglages/apparence', label: t('settings.link.appearance'), icon: 'sun' },
+    { href: '/reglages/compte-kavita', label: t('kavita.title'), icon: 'plug' },
+    { href: '/reglages/compte/oidc', label: t('oidc.title'), icon: 'key' }
+  ];
+  const ADMIN: { title: string; entries: Entry[] }[] = [
+    {
+      title: t('settings.group.library'),
+      entries: [
+        { href: '/reglages/profils', label: t('settings.link.profiles'), icon: 'users' },
+        { href: '/reglages/etageres', label: t('shelves.title'), icon: 'books' },
+        { href: '/reglages/destinations', label: t('destinations.title'), icon: 'send' },
+        { href: '/reglages/adoption', label: t('settings.link.adoption'), icon: 'inbox' },
+        { href: '/a-classer', label: t('settings.link.to_rate'), icon: 'stamp' },
+        { href: '/corbeille', label: t('settings.link.trash'), icon: 'trash' }
+      ]
+    },
+    {
+      title: t('settings.group.instance'),
+      entries: [
+        { href: '/sante', label: t('settings.link.health'), icon: 'pulse' },
+        { href: '/sante/stockage', label: t('settings.link.storage'), icon: 'drive' },
+        { href: '/activite/file', label: t('settings.link.queue'), icon: 'tasks' },
+        { href: '/activite/historique', label: t('settings.link.history'), icon: 'clock' },
+        { href: '/sources', label: t('settings.link.sources'), icon: 'antenna' },
+        { href: '/reglages/webhooks', label: t('webhooks.title'), icon: 'plug' }
+      ]
+    },
+    {
+      title: t('settings.group.devices'),
+      entries: [
+        { href: '/appareils', label: t('settings.link.devices'), icon: 'device' },
+        { href: '/appareils/jetons', label: t('settings.link.device_tokens'), icon: 'key' }
+      ]
+    }
+  ];
+
   const groups = $derived.by(() => {
     const grouped: Record<ConfigRow['level'], ConfigRow[]> = {
       essential: [],
@@ -98,119 +148,128 @@
   <title>{t('settings.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('settings.title')}</h1>
+<main class="page">
+  <PageHead title={t('settings.title')} lede={t('settings.lede')} />
 
-  {#if !adminOnly}
-    {#each LEVELS as level (level)}
-      <section data-level={level} aria-labelledby={`level-${level}`}>
-        <h2 id={`level-${level}`}>{t(`settings.level.${level}`)}</h2>
-        {#each groups[level] as row (row.key)}
-          <div class="field" data-testid="setting-field" data-key={row.key}>
-            {#if row.secret}
-              <span class="label">{row.key}</span>
-              <span class="origin">{t('settings.secret')}</span>
-            {:else}
-              <label for={row.key}>{row.key}</label>
-              <input
-                id={row.key}
-                type="text"
-                value={shown(row.value)}
-                disabled={row.locked}
-                onchange={(e) => save(row.key, (e.target as HTMLInputElement).value)}
-              />
-              {#if row.locked}
-                <span class="origin" data-origin={originOf(row)}>{originText(row)}</span>
-              {/if}
-            {/if}
-            {#if helpOf(row)}
-              <span class="help">{helpOf(row)}</span>
-            {/if}
-            {#if row.warning}
-              <span class="warn">{row.warning}</span>
-            {/if}
-          </div>
+  <nav aria-label={t('settings.mine')} class="hub">
+    <h2 class="visually-hidden">{t('settings.mine')}</h2>
+    {#if !adminOnly}
+      {#each ADMIN as group (group.title)}
+        <section class="hub__group">
+          <h3>{group.title}</h3>
+          <ul>
+            {#each group.entries as entry (entry.href)}
+              <li>
+                <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+                <a href={entry.href}><Icon name={entry.icon} />{entry.label}</a>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/each}
+    {/if}
+    <section class="hub__group">
+      <h3>{t('settings.group.mine')}</h3>
+      <ul>
+        {#each MINE as entry (entry.href)}
+          <li>
+            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+            <a href={entry.href}><Icon name={entry.icon} />{entry.label}</a>
+          </li>
         {/each}
+      </ul>
+    </section>
+  </nav>
+
+  {#if message}
+    <Alert tone={failed ? 'danger' : 'success'} title={message} live={failed ? 'assertive' : 'polite'} />
+  {/if}
+
+  {#if !loaded}
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('settings.loading')}</p>
+      <Skeleton /><Skeleton /><Skeleton short />
+    </div>
+  {:else if !adminOnly}
+    {#each LEVELS as level (level)}
+      <section class="section" data-level={level} aria-labelledby={`level-${level}`}>
+        <div class="section-head"><h2 id={`level-${level}`}>{t(`settings.level.${level}`)}</h2></div>
+        <SettingsForm label={t(`settings.level.${level}`)}>
+          {#each groups[level] as row (row.key)}
+            <div data-testid="setting-field" data-key={row.key}>
+              <SettingRow label={row.key} help={helpOf(row) ?? undefined}>
+                {#snippet children(control)}
+                  {#if row.secret}
+                    <Badge tone="neutral" icon="lock">{t('settings.secret')}</Badge>
+                  {:else}
+                    <Input
+                      {...control}
+                      mono
+                      type="text"
+                      value={shown(row.value)}
+                      disabled={row.locked}
+                      onchange={(e: Event) => save(row.key, (e.target as HTMLInputElement).value)}
+                    />
+                    {#if row.locked}
+                      <p class="origin"><Badge tone="neutral" icon="lock">{originText(row)}</Badge></p>
+                    {/if}
+                  {/if}
+                  {#if row.warning}
+                    <p class="warn"><Icon name="alert" size="sm" />{row.warning}</p>
+                  {/if}
+                {/snippet}
+              </SettingRow>
+            </div>
+          {/each}
+        </SettingsForm>
       </section>
     {/each}
   {/if}
 
-  <nav aria-label={t('settings.mine')}>
-    <h2>{t('settings.mine')}</h2>
-    <ul>
-      {#if !adminOnly}
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/reglages/profils">{t('settings.link.profiles')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/reglages/etageres">{t('shelves.title')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/reglages/destinations">{t('destinations.title')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/reglages/webhooks">{t('webhooks.title')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/reglages/adoption">{t('settings.link.adoption')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/activite/file">{t('settings.link.queue')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/sante">{t('settings.link.health')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/sante/stockage">{t('settings.link.storage')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/activite/historique">{t('settings.link.history')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/sources">{t('settings.link.sources')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/a-classer">{t('settings.link.to_rate')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/appareils">{t('settings.link.devices')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/appareils/jetons">{t('settings.link.device_tokens')}</a></li>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <li><a href="/corbeille">{t('settings.link.trash')}</a></li>
-      {/if}
-      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-      <li><a href="/reglages/notifications">{t('settings.link.notifications')}</a></li>
-      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-      <li><a href="/reglages/apparence">{t('settings.link.appearance')}</a></li>
-      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-      <li><a href="/reglages/compte-kavita">{t('kavita.title')}</a></li>
-      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-      <li><a href="/reglages/compte/oidc">{t('oidc.title')}</a></li>
-    </ul>
-  </nav>
-
   {#if reauthMethods}
     <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
-  {/if}
-
-  {#if message}
-    <p role={failed ? 'alert' : 'status'} class:err={failed}>{message}</p>
   {/if}
 </main>
 
 <style>
-  main {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: 2rem 1rem;
-  }
-  section {
-    margin: 1.5rem 0;
-  }
-  .field {
+  .hub {
     display: grid;
-    gap: 0.25rem;
-    margin: 0.75rem 0;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: var(--space-5) var(--space-6);
+    margin-bottom: var(--space-6);
   }
-  input:disabled {
-    opacity: 0.6;
+  .hub__group h3 {
+    margin: 0 0 var(--space-2);
+    padding-bottom: var(--space-1);
+    border-bottom: var(--rule-hair) solid var(--color-ink);
+    font-size: var(--step-1);
   }
-  .origin,
-  .help {
-    color: var(--color-muted);
-    font-size: 0.875rem;
+  .hub ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
   }
-  .err {
-    color: var(--color-err);
+  .hub a {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 2.75rem;
+    color: var(--color-ink);
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+  .hub a:hover {
+    color: var(--color-accent-text);
+    text-decoration: underline;
+  }
+  .origin {
+    margin: var(--space-1) 0 0;
+  }
+  .warn {
+    display: flex;
+    gap: var(--space-1);
+    margin: var(--space-1) 0 0;
+    color: var(--color-warn);
+    font-size: var(--step--1);
   }
 </style>
