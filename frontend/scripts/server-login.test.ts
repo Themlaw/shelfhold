@@ -42,7 +42,7 @@ describe('the sign-in page script', () => {
     page.submit();
     await settle();
     expect(page.sent).toHaveLength(1);
-    expect(page.sent[0].body).toMatchObject({ username: 'alice', remember: true, confirm_remember: true });
+    expect(page.sent[0]?.body).toMatchObject({ username: 'alice', remember: true, confirm_remember: true });
   });
 
   // req: EF-USR-022
@@ -51,7 +51,7 @@ describe('the sign-in page script', () => {
     (page.document.querySelector('input[name=remember]') as HTMLInputElement).checked = false;
     page.submit();
     await settle();
-    expect(page.sent[0].body).toMatchObject({ remember: false, confirm_remember: false });
+    expect(page.sent[0]?.body).toMatchObject({ remember: false, confirm_remember: false });
   });
 
   // req: EF-USR-021

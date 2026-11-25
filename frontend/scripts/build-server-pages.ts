@@ -48,7 +48,7 @@ function fromFoundation(css: string): { faces: string; root: string; darkShadows
   const root = css.match(/\n:root \{[\s\S]*?\n\}/);
   const dark = css.match(/@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-color-scheme='light'\]\) \{([\s\S]*?)\n {2}\}\n\}/);
   if (!faces || !root || !dark) throw new Error('foundation.css no longer has the shape this script reads');
-  return { faces: faces.join('\n'), root: root[0].trim(), darkShadows: dark[1] };
+  return { faces: faces.join('\n'), root: root[0].trim(), darkShadows: dark[1] ?? '' };
 }
 
 export function compileServerPages(): string {
