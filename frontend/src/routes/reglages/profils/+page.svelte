@@ -459,12 +459,13 @@
     max-width: var(--measure);
   }
   .new {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: var(--space-4);
     max-inline-size: var(--form-max);
   }
   .new :global(.new__submit) {
-    justify-self: start;
+    align-self: flex-start;
   }
   .notice {
     position: sticky;
