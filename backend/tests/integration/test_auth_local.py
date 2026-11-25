@@ -1,6 +1,5 @@
 """L05: local admin, server sessions, CSRF, attempt limiting, neutral login page (EF-USR-021)."""
 
-import base64
 import hashlib
 import re
 from datetime import timedelta
@@ -333,33 +332,60 @@ def test_cli_revoked_session_redirects_to_login(
 # --- Pages, about, OpenAPI ---------------------------------------------------------------------
 
 
-def _inline_hashes(html: str, tag: str) -> set[str]:
-    bodies = re.findall(rf"<{tag}[^>]*>(.*?)</{tag}>", html, flags=re.DOTALL)
-    return {
-        "'sha256-" + base64.b64encode(hashlib.sha256(b.encode()).digest()).decode() + "'"
-        for b in bodies
-    }
-
-
 @pytest.mark.req("ENF-SEC-004", "EF-USR-021")
-def test_served_pages_have_hash_csp_no_unsafe_inline(
+def test_served_pages_carry_no_inline_code_and_a_csp_that_allows_none(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
+    """The sign-in page links its style and its scripts (files of its own origin): nothing inline,
+    so the policy names no hash and no `unsafe-inline`."""
     with auth_env(monkeypatch, settings) as env:
         page = env.client.get("/login")
+        files = {
+            tag: env.client.get(url)
+            for tag, url in (
+                ("style", "/pages/paper-ink.css"),
+                ("script", "/pages/login.js"),
+                ("appearance", "/pages/appearance.js"),
+            )
+        }
     assert page.status_code == 200
     assert page.headers["content-type"].startswith("text/html")
     csp = page.headers["content-security-policy"]
     assert "unsafe-inline" not in csp
     assert "unsafe-eval" not in csp
+    assert "sha256" not in csp
     directives = dict(d.strip().split(" ", 1) for d in csp.split(";") if " " in d.strip())
     assert directives["default-src"] == "'none'"
     assert directives["frame-ancestors"] == "'none'"
-    for tag, directive in (("script", "script-src"), ("style", "style-src")):
-        hashes = _inline_hashes(page.text, tag)
-        assert hashes, f"no inline {tag}"
-        assert hashes == set(directives[directive].split())
-    assert " on" not in re.sub(r"<script.*?</script>", "", page.text, flags=re.DOTALL).lower()
+    assert directives["style-src"] == "'self'"
+    assert directives["font-src"] == "'self'"
+    assert directives["script-src"] == "'self'"
+    # nothing inline: no `<style>` or inline `<script>` body, no handler, no `style=""` attribute
+    assert not re.search(r"<style", page.text, flags=re.IGNORECASE)
+    assert not re.search(r"<script(?![^>]*\ssrc=)", page.text, flags=re.IGNORECASE)
+    assert not re.search(r"\s(on[a-z]+|style)\s*=", page.text, flags=re.IGNORECASE)
+    assert '<link rel="stylesheet" href="/pages/paper-ink.css">' in page.text
+    for response in files.values():
+        assert response.status_code == 200
+    assert files["style"].headers["content-type"].startswith("text/css")
+    assert files["script"].headers["content-type"].startswith("text/javascript")
+
+
+@pytest.mark.req("EF-UX-012")
+def test_page_style_is_public_cached_by_etag_and_names_no_remote_host(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    with auth_env(monkeypatch, settings) as env:
+        first = env.client.get("/pages/paper-ink.css")
+        again = env.client.get(
+            "/pages/paper-ink.css", headers={"If-None-Match": first.headers["etag"]}
+        )
+    assert first.status_code == 200 and first.headers["cache-control"] == "no-cache"
+    assert again.status_code == 304
+    css = first.text
+    assert "--color-ink" in css and "prefers-color-scheme: dark" in css  # the tokens of the app
+    assert "url('/fonts/alegreya-latin-wght-normal.woff2')" in css  # the font of the front
+    assert not re.search(r"https?://|@import", css)
 
 
 @pytest.mark.req("ENF-PRIV-002")

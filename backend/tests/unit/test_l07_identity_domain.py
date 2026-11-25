@@ -3,9 +3,11 @@ session and the recovery kit, as pure rules."""
 
 import base64
 import dataclasses
+import re
 
 import pytest
 
+from shelfhold.identity.application.recovery_kit import STYLE_HREF
 from shelfhold.identity.domain.credentials import Credential
 from shelfhold.identity.public import (
     KEYRING_EXPORT_NAME,
@@ -76,9 +78,14 @@ def test_recovery_kit_is_one_self_contained_printable_page() -> None:
     page = render_recovery_kit()
     lowered = page.lower()
     assert lowered.startswith("<!doctype html>")
-    assert "@media print" in lowered
-    assert "<script" not in lowered and "<img" not in lowered and "<link" not in lowered
-    assert "http://" not in lowered and "src=" not in lowered
+    # no script, no image, no inline style; its one link is the style sheet of this server
+    assert "<script" not in lowered and "<img" not in lowered and "<style" not in lowered
+    assert re.findall(r"<link[^>]*>", lowered) == [f'<link rel="stylesheet" href="{STYLE_HREF}">']
+    assert "http://" not in lowered and "src=" not in lowered and " style=" not in lowered
+    from importlib import resources
+
+    sheet = resources.files("shelfhold.interfaces.http_api").joinpath("pages/paper-ink.css")
+    assert "@media print" in sheet.read_text("utf-8")  # the sheet draws the page for paper
     assert "shelfhold admin reset-password" in page
     assert "shelfhold secrets export" in page
     assert KEYRING_EXPORT_NAME in page
@@ -95,7 +102,7 @@ def test_recovery_kit_takes_no_value_that_could_be_a_secret() -> None:
     from shelfhold.identity.application import recovery_kit
 
     parameters = set(inspect.signature(recovery_kit.render_recovery_kit).parameters)
-    assert parameters <= {"keyring_export_name", "public_url"}
+    assert parameters <= {"keyring_export_name", "public_url", "language"}
     page = render_recovery_kit(keyring_export_name='<b onload="x">' + "k" * 500)
     assert "<b onload" not in page and "k" * 200 not in page
     assert base64.b64encode(b"x" * 32).decode() not in page
@@ -109,3 +116,14 @@ def test_device_token_keeps_a_given_identifier() -> None:
     with pytest.raises(ValueError, match="token_id"):
         device_token(subject_user_id=CHILD_ID, issued_by=ADMIN_ID, token_id=blank)
     assert device_token(subject_user_id=CHILD_ID, issued_by=ADMIN_ID).token_id != chosen
+
+
+@pytest.mark.req("EF-USR-023")
+def test_recovery_kit_speaks_the_language_it_is_asked_in_and_links_the_servers_sheet() -> None:
+    from shelfhold.interfaces.http_api.page_assets import STYLE_PATH
+
+    assert STYLE_HREF == STYLE_PATH  # the kit (identity) and the route (http) name one file
+    french, english = render_recovery_kit(language="fr"), render_recovery_kit(language="en")
+    assert '<html lang="fr">' in french and "Kit de secours" in french
+    assert '<html lang="en">' in english and "Kit de secours" not in english
+    assert "shelfhold admin reset-password" in english  # the commands are not translated

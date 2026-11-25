@@ -63,6 +63,43 @@ que par eux (ESLint). Ni thème de bibliothèque, ni Tailwind.
 - **`OfflineKeep`** a une variante `compact` (icônes seules, noms accessibles conservés) pour les
   barres du lecteur.
 
+## Pages écrites par le serveur
+
+La connexion (`/login`), la confirmation de liaison OIDC, le kit de secours et les pages `/lite`
+sont du HTML écrit par le backend (`backend/src/shelfhold/interfaces/http_api/`, gabarits dans
+`pages/` et `lite/templates/`). Leur politique de sécurité interdit tout code en ligne (ni
+`<style>`, ni `style=""`, ni `<script>` en ligne) : elles lient des fichiers de leur propre origine.
+
+- **Jetons et polices, un seul endroit.** `frontend/scripts/build-server-pages.ts` (`npm run
+  pages:css`) compile le thème « Bibliothèque » (`tokens.json`, clair et sombre) et la fondation
+  (`@font-face`, échelle, espacements, rayons, filets) dans
+  `pages/paper-ink.tokens.css`, copie générée et commitée ; `scripts/server-pages.test.ts` échoue si
+  elle diverge. Les fichiers de police sont ceux de `frontend/static/fonts/`, servis par le front
+  sous `/fonts/` : aucune seconde copie, aucun CDN. À la modification d'un jeton ou d'un
+  `@font-face`, relancer `npm run pages:css`.
+- **Feuilles servies par le backend** (`page_assets.py`, publiques, `no-cache` avec `ETag`) :
+  `/pages/paper-ink.css` (jetons, puis `pages/paper-ink.css` : base, champs, boutons, alerte,
+  registre des faits, kit imprimable), `/lite/style.css` (jetons pour les polices seulement, puis
+  `pages/lite.css`). Scripts : `/pages/appearance.js` (lit `shelfhold.appearance` : le choix clair ou
+  sombre de l'appareil), `/pages/login.js`, `/pages/confirm.js`, `/login/passkey.js`. La politique est
+  construite par `page_csp()` : `default-src 'none'`, `style-src 'self'`, `font-src 'self'`,
+  `script-src 'self'` seulement si la page a des scripts, `form-action 'self'`, `base-uri 'none'`.
+- **Connexion neutre** : ni nom d'outil, ni image, ni balise Open Graph, un lien vers le code source.
+  Titre, une phrase, l'alerte (titre du problème et sa piste `action`), deux champs, la case « se
+  souvenir de moi » avec ce qu'elle fait écrit dessous, un bouton principal, puis « ou » et les
+  autres voies (clé d'accès, fournisseur d'identité) au même gabarit de bouton. La case cochée est la
+  demande explicite que le profil durci attend : la page envoie `confirm_remember` avec `remember`.
+- **Kit de secours** : une feuille à imprimer (`@media print` : encre sur blanc, couleurs du
+  système), dans la langue de la personne qui l'ouvre.
+- **`/lite`** : noir et blanc stricts (`#000` sur `#fff`, 21:1) quel que soit le thème, texte de
+  20 px, cibles de 56 px (`3.5rem`), filets de 2 à 3 px, aucune ombre ni animation, zéro JavaScript.
+  Le menu garde nom, profil, quatre portes (la courante pleine) et recherche ; le pied porte la
+  déconnexion et le lien vers la version complète. Une erreur se distingue d'une note par un double
+  filet, pas par une couleur. La pagination est une table d'une ligne (« Précédente · Page n ·
+  Suivante », le côté absent en pointillés). Pas de variables CSS ni de grille : WebKit 538 et les
+  Kindle anciens ne les connaissent pas ; seules les polices viennent du front, et elles se replient
+  sur le serif de l'appareil (ils ne lisent pas le woff2).
+
 ## Règles
 
 - **Notices** (`notify()` de `ui/toast.svelte.ts`) : une seule à la fois. Sur grand écran dans

@@ -109,7 +109,7 @@ def test_second_review_out_of_range_entries_are_pages(world: World) -> None:
     kid = signed_in(world, world.kid, "10.0.4.3")
     end = kid.get("/lite/works", params={"offset": "100000"})  # en bornes, au-delà du bout
     assert end.status_code == 200
-    assert '<ul class="rows">\n</ul>' in end.text
+    assert '<ul class="lite__rows">\n</ul>' in end.text
     assert "?offset=99975" in end.text  # le marcheur ne fabrique jamais un lien hors bornes
     world.clean(end.text)
 
@@ -128,7 +128,7 @@ def test_second_review_the_pager_never_announces_hidden_works(world: World) -> N
     nothing = kid.get("/lite/search", params={"q": "zzz-no-such-word"})
     assert hidden_only.status_code == nothing.status_code == 200
     assert Links(hidden_only.text).hrefs == Links(nothing.text).hrefs
-    assert '<ul class="rows">\n</ul>' in hidden_only.text
+    assert '<ul class="lite__rows">\n</ul>' in hidden_only.text
     # la requête d'une enfant n'est pas une fuite : le titre caché ne sort que de sa propre boîte
     assert "/lite/works/" not in hidden_only.text
     for offset in (25, 50, 100000):  # marcher au bout d'une recherche vide ne sort rien du caché
@@ -219,7 +219,9 @@ def test_second_review_untrusted_forwarded_headers_change_no_link(world: World) 
     home = client.get("/lite", headers=hostile)
     assert home.status_code == 200
     hrefs = Links(home.text).hrefs
-    assert hrefs and all(h.startswith("/lite") for h in hrefs), hrefs
+    # the one address that leaves `/lite` is the full version, at the root: no host, no prefix
+    assert hrefs and all(h.startswith("/lite") or h == "/" for h in hrefs), hrefs
+    assert hrefs.count("/") == 1
     assert "elsewhere.example" not in home.text and "/evil" not in home.text
 
 
