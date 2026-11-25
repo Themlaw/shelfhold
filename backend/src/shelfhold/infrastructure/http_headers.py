@@ -31,7 +31,6 @@ WORKER_CSP = "default-src 'none'; connect-src 'self'"
 ROBOTS_TXT = "User-agent: *\nDisallow: /\n"
 BEARER_CHALLENGE = 'Bearer realm="api"'
 BASIC_CHALLENGE = 'Basic realm="Shelfhold", charset="UTF-8"'  # the e-reader's OPDS (L46)
-_INLINE = {"script-src": "script", "style-src": "style"}
 
 _FRAME_ANCESTORS_DIRECTIVE = re.compile(r"frame-ancestors[^;]*", re.IGNORECASE)
 
@@ -83,25 +82,6 @@ def attachment_disposition(filename: str) -> str:
 
 def source_hash(text: str) -> str:
     return "'sha256-" + base64.b64encode(hashlib.sha256(text.encode()).digest()).decode() + "'"
-
-
-def hash_csp(html: str) -> str:
-    """CSP of a served page: nothing by default, its inline scripts and styles by hash only
-    (ENF-SEC-004, no `unsafe-inline`); `frame-ancestors` is added by the middleware."""
-    directives = ["default-src 'none'"]
-    page = _Page(html)
-    for directive, element in _INLINE.items():
-        hashes = sorted({source_hash(body) for body in page.inline[element]})
-        if hashes:
-            directives.append(f"{directive} {' '.join(hashes)}")
-    directives += ["connect-src 'self'", "form-action 'self'", "base-uri 'none'"]
-    return "; ".join(directives)
-
-
-def allow_own_scripts(csp: str) -> str:
-    """The same CSP, with `'self'` in `script-src`: a script file of the page's own origin (the
-    passkey sign-in). Hashes stay; `unsafe-inline` never appears."""
-    return csp.replace("script-src ", "script-src 'self' ", 1)
 
 
 class _Page(HTMLParser):

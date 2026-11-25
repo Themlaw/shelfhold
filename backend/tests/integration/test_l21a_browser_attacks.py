@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 
 from shelfhold.infrastructure.db import write_transaction
-from shelfhold.infrastructure.http_headers import hash_csp
+from shelfhold.interfaces.http_api.page_assets import page_csp
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.provider_keys import ProviderKey, store_provider_key
@@ -93,7 +93,7 @@ def test_hardcover_never_called_from_browser(world: World) -> None:
     page = world.api.client.get("/")
     served = page.headers.get("content-security-policy", "")
     assert "connect-src" not in served or "connect-src 'self'" in served  # its own server only
-    csp = hash_csp("<html><body></body></html>")  # the policy of every page the server serves
+    csp = page_csp(scripts=True)  # the policy of every page the server writes itself
     assert "connect-src 'self'" in csp and "default-src 'none'" in csp
     assert not any(h in csp + served for h in HOSTS)
     for source in (REPO / "frontend" / "src").rglob("*"):
