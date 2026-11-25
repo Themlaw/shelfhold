@@ -392,10 +392,16 @@ def test_kepub_transform_time_follows_the_size_of_the_page() -> None:
 
     small = epub(book(**{"OEBPS/chapter1.xhtml": hostile(20_000, 5_000)}))
     big = epub(book(**{"OEBPS/chapter1.xhtml": hostile(80_000, 20_000)}))
-    start = time.perf_counter()
-    kepubify(small)
-    small_seconds = time.perf_counter() - start
-    start = time.perf_counter()
-    kepubify(big)
-    big_seconds = time.perf_counter() - start
+
+    def best_of_three(book_bytes: bytes) -> float:
+        # the fastest of three runs: a parallel suite's neighbours only ever add time
+        runs = []
+        for _ in range(3):
+            start = time.perf_counter()
+            kepubify(book_bytes)
+            runs.append(time.perf_counter() - start)
+        return min(runs)
+
+    small_seconds = best_of_three(small)
+    big_seconds = best_of_three(big)
     assert big_seconds < 6 * small_seconds, (small_seconds, big_seconds)
