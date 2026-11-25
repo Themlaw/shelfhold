@@ -200,7 +200,7 @@ describe('home page', () => {
     const hero = await screen.findByRole('region', { name: 'Vous en étiez là' });
     expect(hero).toHaveTextContent('Série A');
     expect(hero).toHaveTextContent('N° 2 · prochaine à lire · environ');
-    expect(within(hero).getByRole('link', { name: 'Lire, Série A, n° 2' })).toHaveAttribute('href', '/lire/content/c2');
+    expect(within(hero).getByRole('link', { name: 'Reprendre la lecture, Série A, n° 2' })).toHaveAttribute('href', '/lire/content/c2');
     const also = screen.getByRole('region', { name: 'Aussi en cours' });
     const rows = within(also).getAllByRole('listitem');
     expect(rows.map((r) => r.querySelector('.resume__text')?.textContent?.split(/\s+/).join(' ').trim())).toEqual([

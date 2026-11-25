@@ -6,7 +6,7 @@ import {
   test
 } from './fixtures';
 
-// The home with its « Reprendre la lecture » section filled (EF-LEC-008, ENF-A11Y-001..004): the
+// The home with its « Vous en étiez là » section filled (EF-LEC-008, ENF-A11Y-001..004): the
 // server's answer is stubbed at the network, so the screen is judged with entries of both targets.
 
 const ANSWER = {
@@ -22,17 +22,18 @@ test('test_continue_reading_home_axe', async ({ page }) => {
   await signInAs(page, 'admin');
   await page.route('**/api/reader/continue*', (route) => route.fulfill({ json: ANSWER }));
   await page.goto('/');
-  await page.getByRole('region', { name: 'Reprendre la lecture' }).waitFor();
+  await page.getByRole('region', { name: 'Vous en étiez là' }).waitFor();
   await expectScreenAccessible(page);
   for (const size of [{ width: 1280, height: 800 }, { width: 360, height: 780 }]) {
     await page.setViewportSize(size);
     await expectNoHorizontalScroll(page);
     // each entry is one control of at least 44 px, named by the series it opens
-    for (const link of await page.getByRole('region', { name: 'Reprendre la lecture' }).getByRole('link').all()) {
+    for (const link of await page.getByRole('region', { name: 'Vous en étiez là' }).getByRole('link').all()) {
       const box = await link.boundingBox();
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
       expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
     }
   }
-  await expect(page.getByRole('link', { name: 'Lire, Série A, n° 2' })).toHaveAttribute('href', '/lire/content/c2');
+  // the visible word leads the name read out (WCAG 2.5.3)
+  await expect(page.getByRole('link', { name: 'Reprendre la lecture, Série A, n° 2' })).toHaveAttribute('href', '/lire/content/c2');
 });

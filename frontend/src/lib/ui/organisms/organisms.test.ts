@@ -20,7 +20,7 @@ describe('AppHeader', () => {
     expect(screen.getByRole('banner')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Shelfhold/ })).toHaveAttribute('href', '/');
     expect(screen.getByRole('search')).toHaveAttribute('action', '/chercher');
-    expect(screen.getByRole('button', { name: 'Compte de Claire (Administrateur)' })).toHaveAttribute('aria-haspopup', 'menu');
+    expect(screen.getByRole('button', { name: 'Compte de Claire Administrateur' })).toHaveAttribute('aria-haspopup', 'menu');
     expect(screen.queryByRole('link', { name: 'Se connecter' })).toBeNull();
   });
 

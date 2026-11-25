@@ -13,7 +13,7 @@ test('test_spa_loads_no_third_party_resource', async ({ page }) => {
   });
 
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1, name: 'Shelfhold — pré-alpha' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Bonjour.' })).toBeVisible();
   await expect(page.getByRole('status')).toHaveText('Le serveur répond.');
   await page.waitForLoadState('networkidle');
 

@@ -155,6 +155,9 @@
     top: var(--space-2);
     left: var(--space-2);
     z-index: var(--z-toast);
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target);
     padding: var(--space-2) var(--space-4);
     color: var(--color-on-accent);
     background: var(--color-accent);

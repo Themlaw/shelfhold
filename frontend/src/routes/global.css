@@ -344,6 +344,10 @@ table {
    src/lib/ui always wins. */
 :where(button, input, select, textarea) {
   font: inherit;
+}
+/* a button keeps the colours of its own system face unless it draws its own (the ink of the page
+   on the grey face of a dark scheme falls under 4.5:1) */
+:where(input, select, textarea) {
   color: inherit;
 }
 :where(button:not([class])) {
@@ -378,6 +382,13 @@ table {
   border: var(--rule-hair) solid var(--color-rule-strong);
   border-radius: var(--radius-sm);
   max-width: 100%;
+}
+/* the file picker takes its width from its words: it never pushes the page wider */
+:where(input[type='file']) {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 :where(input, select, textarea):disabled {
   background: var(--color-surface-2);
@@ -427,6 +438,7 @@ a.standalone {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
+  min-width: 44px;
 }
 
 /* ENF-A11Y-004: below 600 px the tables become stacked cards and the main action of a form stays

@@ -1,7 +1,8 @@
 <script lang="ts">
   // A volume standing on the tablet (the signature of the direction): the cover on its shelf
   // rule, the title (two lines at most, the whole title in `title`), the author on one line, and
-  // the meta. The whole card is one link (the title's), so it is one stop in the tab order. With
+  // the meta. The whole card is one link laid over it, named by the title, so it is one stop in
+  // the tab order and a target as large as the card (WCAG 2.5.8). With
   // no `href` it is not a link (a child's locked work, a volume being prepared). Put cards in a
   // Shelf: the shelf rules join into one.
   import type { Snippet } from 'svelte';
@@ -39,17 +40,16 @@
 </script>
 
 <article class="volume">
+  {#if href && !locked}
+    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+    <a class="volume__link" {href} aria-label={shown}></a>
+  {/if}
   <div class="volume__stand">
     <Cover {title} {author} {src} {kind} {number} {progress} {done} {locked} />
   </div>
   <div class="volume__body">
     <svelte:element this={`h${headingLevel}`} class="volume__title">
-      {#if href && !locked}
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <a {href} title={shown}>{shown}</a>
-      {:else}
-        <span title={shown}>{shown}</span>
-      {/if}
+      <span title={shown}>{shown}</span>
     </svelte:element>
     {#if !locked}
       <p class="volume__author">{author ?? t('ui.cover.unknown_author')}</p>
@@ -82,7 +82,13 @@
   .volume:hover .volume__stand :global(.cover) {
     transform: translateY(calc(-1 * var(--space-1)));
   }
-  .volume:has(a:focus-visible) .volume__stand :global(.cover) {
+  .volume__link {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: var(--radius-sm);
+  }
+  .volume__link:focus-visible {
     outline: 2px solid var(--color-focus);
     outline-offset: 3px;
   }
@@ -100,18 +106,6 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .volume__title a {
-    color: var(--color-ink);
-    text-decoration: none;
-  }
-  .volume__title a::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-  }
-  .volume__title a:focus-visible {
-    outline: none;
-  }
   .volume__author {
     margin: 0;
     font: italic var(--step--1) / 1.3 var(--font-text);
@@ -122,7 +116,7 @@
   }
   .volume__meta {
     position: relative;
-    z-index: 1;
+    z-index: 2;
     display: flex;
     flex-wrap: wrap;
     align-items: center;

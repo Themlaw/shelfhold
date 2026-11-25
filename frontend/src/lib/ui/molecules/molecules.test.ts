@@ -1,5 +1,5 @@
 import { createRawSnippet, flushSync } from 'svelte';
-import { render, screen, within } from '@testing-library/svelte';
+import { render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dismiss, NOTICE_MS, notify } from '../toast.svelte.ts';
@@ -176,7 +176,8 @@ describe('Dialog and ConfirmDialog', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Table des matières' });
     expect(dialog).toHaveTextContent('Contenu');
     await userEvent.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog')).toBeNull();
+    // the closing transition may still hold the node for a frame on a slow runner
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(onclose).toHaveBeenCalled();
   });
 

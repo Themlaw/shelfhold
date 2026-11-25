@@ -1255,7 +1255,7 @@
   "ui.toc.title": "Table des matières",
   "ui.toc.waiting": "à traiter",
   "ui.tabbar.label": "Navigation principale (mobile)",
-  "ui.account.menu": "Compte de {name} ({role})",
+  "ui.account.menu": "Compte de",
   "ui.account.sign_in": "Se connecter",
   "ui.account.sign_out": "Se déconnecter",
   "ui.role.admin": "Administrateur",

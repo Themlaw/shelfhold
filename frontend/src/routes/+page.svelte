@@ -160,7 +160,7 @@
                 variant="primary"
                 size="lg"
                 icon={open.external ? 'external' : 'read'}
-                aria-label={open.label}
+                aria-label={open.external ? open.label : t('home.continue_open', { open: t('home.resume'), title: hero.title, number: hero.number })}
                 rel={open.external ? 'noopener noreferrer' : undefined}
               >
                 {open.external ? open.verb : t('home.resume')}
@@ -274,7 +274,8 @@
           </ul>
         {/if}
       </section>
-      {#if admin}
+      {#if admin || !user}
+        <!-- the state of the instance: the administrator's panel, and what a visitor sees before signing in -->
         <aside class="panel" aria-label={t('home.instance')}>
           <HealthStatus />
           <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
@@ -286,6 +287,11 @@
 </main>
 
 <style>
+  .section-head__more {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target);
+  }
   .hero {
     display: grid;
     grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
@@ -304,6 +310,7 @@
   }
   .hero__text {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-2);
     min-width: 0;
   }
@@ -381,11 +388,15 @@
     margin: var(--space-1) 0 0;
   }
   @media (max-width: 40rem) {
+    /* one column on a phone: the call to resume keeps its whole width */
     .hero {
-      grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr);
       gap: var(--space-4);
       padding: var(--space-4);
       align-items: start;
+    }
+    .hero__object {
+      inline-size: 7.5rem;
     }
     .hero__title {
       font-size: var(--step-2);

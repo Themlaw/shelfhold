@@ -1255,7 +1255,7 @@
   "ui.toc.title": "Contents",
   "ui.toc.waiting": "waiting",
   "ui.tabbar.label": "Main navigation (mobile)",
-  "ui.account.menu": "Account of {name} ({role})",
+  "ui.account.menu": "Account of",
   "ui.account.sign_in": "Sign in",
   "ui.account.sign_out": "Sign out",
   "ui.role.admin": "Administrator",

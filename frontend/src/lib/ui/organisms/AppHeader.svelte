@@ -105,9 +105,10 @@
             {...props}
             type="button"
             class="me"
-            aria-label={t('ui.account.menu', { name: user.name, role: roleLabel(user.role) })}
           >
-            <span class="me__name" aria-hidden="true"><strong>{user.name}</strong><small>{roleLabel(user.role)}</small></span>
+            <!-- the name read out holds the visible words, in their order (WCAG 2.5.3) -->
+            <span class="visually-hidden">{t('ui.account.menu')}</span>
+            <span class="me__name"><strong>{user.name}</strong> <small>{roleLabel(user.role)}</small></span>
             <Avatar name={user.name} kind={user.role} size="sm" />
           </button>
         {/snippet}
@@ -248,7 +249,12 @@
   }
   @media (max-width: 75rem) {
     .me__name {
-      display: none;
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
     }
   }
   @media (max-width: 60rem) {
