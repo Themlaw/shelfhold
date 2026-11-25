@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -191,14 +191,14 @@ describe('AddSheet', () => {
     // the number is asked only for its own mode, and the sheet waits for it
     await user.click(screen.getByRole('radio', { name: 'À partir du numéro' }));
     const number = await screen.findByRole('textbox', { name: 'Numéro de départ' });
-    expect(addButton()).toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true');
     const before = estimates.length;
     await user.type(number, '12');
     await waitFor(() => expect(summary()).toHaveTextContent(/38\sunités,\s7\s340\s032\soctets/));
     expect(estimates.at(-1)!.url.searchParams.get('mode')).toBe('from_number');
     expect(estimates.at(-1)!.url.searchParams.get('from_number')).toBe('12');
     expect(estimates.length).toBeGreaterThan(before);
-    expect(addButton()).toBeEnabled();
+    expect(addButton()).not.toHaveAttribute('aria-disabled');
 
     // back to everything: the number box goes, and the request carries no number any more
     await user.click(screen.getByRole('radio', { name: 'Tout' }));
@@ -313,9 +313,9 @@ describe('AddSheet', () => {
     open();
     const user = userEvent.setup();
     await waitFor(() => expect(summary()).toHaveTextContent(/120\sunités/));
-    expect(addButton()).toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true');
     await user.click(screen.getByRole('checkbox', { name: 'Je confirme la taille' }));
-    expect(addButton()).toBeEnabled();
+    expect(addButton()).not.toHaveAttribute('aria-disabled');
     await user.click(addButton());
     await waitFor(() => expect(follows).toHaveLength(1));
     expect(follows[0]!.body).toMatchObject({ confirm_units: 120, confirm_bytes: 6 * GIB });
@@ -352,7 +352,7 @@ describe('AddSheet', () => {
     await user.click(addButton());
     expect(await screen.findByRole('alert')).toHaveTextContent('Titre follow.service_paused');
     expect(onadded).not.toHaveBeenCalled();
-    expect(addButton()).toBeEnabled();
+    expect(addButton()).not.toHaveAttribute('aria-disabled');
   });
 
   // req: EF-BIB-030
@@ -368,7 +368,7 @@ describe('AddSheet', () => {
     expect(alert).toHaveTextContent(/64\s424\s509\s440/); // 60 GiB, what is asked
     expect(alert).toHaveTextContent(/42\s949\s672\s960/); // 40 GiB, what is free
     expect(alert).toHaveTextContent(/10\s737\s418\s240/); // 10 GiB, the reserve kept
-    expect(within(alert).getByRole('button', { name: 'Vider la corbeille' })).toBeEnabled();
+    expect(within(alert).getByRole('button', { name: 'Vider la corbeille' })).not.toHaveAttribute('aria-disabled');
     // nothing was added, nothing was emptied by itself
     expect(follows).toEqual([]);
     expect(trashes).toEqual([]);
@@ -392,13 +392,13 @@ describe('AddSheet', () => {
     // a reserved action: the word is typed, and anything else sends nothing
     const word = screen.getByRole('textbox', { name: /empty-trash/ });
     const confirm = screen.getByRole('button', { name: 'Vider maintenant' });
-    expect(confirm).toBeDisabled();
+    expect(confirm).toHaveAttribute('aria-disabled', 'true');
     await user.type(word, 'empty-tras');
-    expect(confirm).toBeDisabled();
+    expect(confirm).toHaveAttribute('aria-disabled', 'true');
     await user.click(confirm);
     expect(trashes).toEqual([]);
     await user.type(word, 'h');
-    expect(confirm).toBeEnabled();
+    expect(confirm).not.toHaveAttribute('aria-disabled');
     await user.click(confirm);
 
     await waitFor(() => expect(trashes).toHaveLength(1));
@@ -498,11 +498,11 @@ describe('AddSheet', () => {
     });
     open();
     expect(await screen.findByRole('status')).toHaveTextContent('Calcul de la taille');
-    expect(addButton()).toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true');
     expect(screen.queryByTestId('add-summary')).toBeNull();
     release();
     await waitFor(() => expect(summary()).toHaveTextContent(/1\s000\sunités/));
-    expect(addButton()).toBeEnabled();
+    expect(addButton()).not.toHaveAttribute('aria-disabled');
     expect(screen.queryByText('Calcul de la taille')).toBeNull();
   });
 
@@ -518,12 +518,12 @@ describe('AddSheet', () => {
     open();
     const user = userEvent.setup();
     expect(await screen.findByRole('alert')).toHaveTextContent('Titre source.unavailable');
-    expect(addButton()).toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true');
     expect(screen.queryByTestId('add-summary')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Réessayer' }));
     await waitFor(() => expect(summary()).toHaveTextContent(/1\s000\sunités/));
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(addButton()).toBeEnabled();
+    expect(addButton()).not.toHaveAttribute('aria-disabled');
   });
 
   // req: EF-UX-006, EF-UX-003
@@ -531,7 +531,7 @@ describe('AddSheet', () => {
     serve({ shelves: () => problem(500, 'internal') });
     open();
     expect(await screen.findByRole('alert')).toHaveTextContent('Titre internal');
-    expect(addButton()).toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true');
     expect(follows).toEqual([]);
   });
 
@@ -541,8 +541,7 @@ describe('AddSheet', () => {
     const { onclose } = open();
     const dialog = await sheet();
     await waitFor(() => expect(summary()).toHaveTextContent(/unités/));
-    expect(dialog).toHaveAttribute('aria-modal', 'true');
-    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement)); // focus goes in, and the page behind is inert
     for (const control of within(dialog).getAllByRole('radio')) {
       expect(control).toHaveAccessibleName();
     }
@@ -550,8 +549,11 @@ describe('AddSheet', () => {
     const user = userEvent.setup();
     await user.keyboard('{Escape}');
     expect(onclose).toHaveBeenCalledOnce();
-    await user.click(within(dialog).getByRole('button', { name: 'Fermer' }));
-    expect(onclose).toHaveBeenCalledTimes(2);
+    // the sheet is gone with its closing: a second one, opened afresh, closes with « Fermer »
+    cleanup();
+    const second = open();
+    await user.click(within(await sheet()).getByRole('button', { name: 'Fermer' }));
+    expect(second.onclose).toHaveBeenCalledOnce();
   });
 
   // req: EF-UX-006

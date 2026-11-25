@@ -13,6 +13,14 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Checkbox from '#lib/ui/atoms/Checkbox.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Radio from '#lib/ui/atoms/Radio.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Dialog from '#lib/ui/molecules/Dialog.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
 
   type Mode = 'all' | 'from_number' | 'new_only';
 
@@ -28,7 +36,7 @@
     onadded: (state: string) => void;
   } = $props();
 
-  let dialogEl: HTMLDivElement | undefined = $state();
+  let open = $state(true);
 
   let mode = $state<Mode>('all');
   let fromNumber = $state('');
@@ -60,7 +68,6 @@
   );
 
   onMount(async () => {
-    dialogEl?.focus();
     const { data, error } = await loadShelves({ throwOnError: false });
     if (error !== undefined) {
       shelvesProblem = problemView(error);
@@ -104,42 +111,6 @@
     void fromNumber;
     void fetchEstimate();
   });
-
-  const FOCUSABLE =
-    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-  // The sheet is modal: Tab and Shift+Tab go round inside it, never to the page behind.
-  function trapFocus(event: KeyboardEvent) {
-    if (!dialogEl) return;
-    const inside = Array.from(dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE));
-    if (inside.length === 0) {
-      event.preventDefault();
-      dialogEl.focus();
-      return;
-    }
-    const first = inside[0]!;
-    const last = inside[inside.length - 1]!;
-    const active = document.activeElement;
-    if (event.shiftKey && (active === first || active === dialogEl)) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && active === last) {
-      event.preventDefault();
-      first.focus();
-    } else if (!dialogEl.contains(active)) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
-  function onKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onclose();
-    } else if (event.key === 'Tab') {
-      trapFocus(event);
-    }
-  }
 
   function refusalOf(problem: unknown, fallbackEstimate: number) {
     const figures = problem as { estimated_bytes?: unknown; free_bytes?: unknown; reserve_bytes?: unknown };
@@ -251,175 +222,124 @@
   }
 </script>
 
-<div
-  class="add-sheet"
-  role="dialog"
-  aria-modal="true"
-  aria-label={t('add.title')}
-  tabindex="-1"
-  bind:this={dialogEl}
-  onkeydown={onKeydown}
->
-  <header>
-    <h2>{edition.title}</h2>
-    <p class="source">{sourceName}</p>
-    <button type="button" class="close" onclick={() => onclose()}>{t('add.close')}</button>
-  </header>
+<Dialog bind:open title={t('add.title')} {onclose}>
+  <div class="add-sheet">
+    <p class="edition"><strong>{edition.title}</strong> <span class="muted">{sourceName}</span></p>
+    {#if shelvesProblem}
+      <ProblemCard problem={shelvesProblem} level={2} />
+    {/if}
 
-  {#if shelvesProblem}
-    <ProblemCard problem={shelvesProblem} level={2} />
-  {/if}
+    {#if estimateLoading}
+      <p role="status" class="muted">{t('add.counting')}</p>
+    {:else if estimateProblem}
+      <ProblemCard problem={estimateProblem} level={2} />
+      <div><Button onclick={fetchEstimate}>{t('add.retry')}</Button></div>
+    {:else if estimate}
+      <p class="summary num" data-testid="add-summary">
+        {t('add.summary', { units: formatNumber(estimate.units), bytes: formatNumber(estimate.size_bytes) })}
+      </p>
+    {/if}
 
-  {#if estimateLoading}
-    <p role="status">{t('add.counting')}</p>
-  {:else if estimateProblem}
-    <ProblemCard problem={estimateProblem} level={2} />
-    <button type="button" onclick={fetchEstimate}>{t('add.retry')}</button>
-  {:else if estimate}
-    <p class="summary" data-testid="add-summary">
-      {t('add.summary', { units: formatNumber(estimate.units), bytes: formatNumber(estimate.size_bytes) })}
-    </p>
-  {/if}
+    {#if shelves.length > 0}
+      <Field label={t('add.shelf')}>
+        {#snippet children(control)}
+          <Select
+            {...control}
+            bind:value={selectedShelf}
+            options={shelves.map((shelf) => ({ value: shelf.id, label: shelf.name }))}
+          />
+        {/snippet}
+      </Field>
+    {:else if !shelvesProblem}
+      <p class="muted">{t('add.unshelved')}</p>
+    {/if}
 
-  {#if shelves.length > 0}
-    <label class="shelf">
-      {t('add.shelf')}
-      <select aria-label={t('add.shelf')} bind:value={selectedShelf}>
-        {#each shelves as shelf (shelf.id)}
-          <option value={shelf.id}>{shelf.name}</option>
-        {/each}
-      </select>
-    </label>
-  {:else if !shelvesProblem}
-    <p class="unshelved">{t('add.unshelved')}</p>
-  {/if}
+    <fieldset class="modes">
+      <legend>{t('add.mode_group')}</legend>
+      <Radio name="mode" value="all" bind:group={mode} label={t('add.mode.all')} />
+      <Radio name="mode" value="from_number" bind:group={mode} label={t('add.mode.from_number')} />
+      <Radio name="mode" value="new_only" bind:group={mode} label={t('add.mode.new_only')} />
+    </fieldset>
 
-  <fieldset class="modes">
-    <legend>{t('add.mode_group')}</legend>
-    <label><input type="radio" name="mode" value="all" bind:group={mode} /> {t('add.mode.all')}</label>
-    <label><input type="radio" name="mode" value="from_number" bind:group={mode} /> {t('add.mode.from_number')}</label>
-    <label><input type="radio" name="mode" value="new_only" bind:group={mode} /> {t('add.mode.new_only')}</label>
-  </fieldset>
+    {#if mode === 'from_number'}
+      <Field label={t('add.from_number')}>
+        {#snippet children(control)}
+          <Input {...control} type="text" bind:value={fromNumber} width="short" />
+        {/snippet}
+      </Field>
+    {/if}
 
-  {#if mode === 'from_number'}
-    <label class="number">
-      {t('add.from_number')}
-      <input type="text" aria-label={t('add.from_number')} bind:value={fromNumber} />
-    </label>
-  {/if}
+    {#if estimate && estimate.needs_confirmation}
+      <Checkbox bind:checked={confirmed} label={t('add.confirm_size')} />
+    {/if}
 
-  {#if estimate && estimate.needs_confirmation}
-    <label class="confirm">
-      <input type="checkbox" bind:checked={confirmed} />
-      {t('add.confirm_size')}
-    </label>
-  {/if}
-
-  {#if spaceRefusal}
-    <section role="alert" class="refusal">
-      <p>{t('add.refusal.estimated', { bytes: formatNumber(spaceRefusal.estimated) })}</p>
-      <p>{t('add.refusal.free', { bytes: formatNumber(spaceRefusal.free) })}</p>
-      <p>{t('add.refusal.reserve', { bytes: formatNumber(spaceRefusal.reserve) })}</p>
-      <button type="button" onclick={() => (trashConfirmOpen = true)}>{t('add.empty_trash')}</button>
+    {#if spaceRefusal}
+      <Alert tone="danger" live="assertive" title={t('add.refusal.estimated', { bytes: formatNumber(spaceRefusal.estimated) })}>
+        <p>{t('add.refusal.free', { bytes: formatNumber(spaceRefusal.free) })}</p>
+        <p>{t('add.refusal.reserve', { bytes: formatNumber(spaceRefusal.reserve) })}</p>
+        {#snippet actions()}
+          <Button onclick={() => (trashConfirmOpen = true)}>{t('add.empty_trash')}</Button>
+        {/snippet}
+      </Alert>
       {#if trashConfirmOpen}
-        <label>
-          {t('add.empty_trash_prompt')}
-          <input type="text" aria-label={t('add.empty_trash_input')} bind:value={trashWord} />
-        </label>
-        <button type="button" disabled={trashWord !== 'empty-trash' || busy} onclick={emptyTrash}>
-          {t('add.empty_trash_now')}
-        </button>
-        {#if reauthMethods}
-          <ReauthPrompt methods={reauthMethods} ondone={emptyTrash} oncancel={() => (reauthMethods = null)} />
-        {/if}
+        <div class="trash">
+          <Field label={t('add.empty_trash_prompt')}>
+            {#snippet children(control)}
+              <Input {...control} aria-label={t('add.empty_trash_input')} type="text" mono bind:value={trashWord} />
+            {/snippet}
+          </Field>
+          <div>
+            <Button variant="danger" disabled={trashWord !== 'empty-trash' || busy} onclick={emptyTrash}>
+              {t('add.empty_trash_now')}
+            </Button>
+          </div>
+          {#if reauthMethods}
+            <ReauthPrompt methods={reauthMethods} ondone={emptyTrash} oncancel={() => (reauthMethods = null)} />
+          {/if}
+        </div>
       {/if}
-    </section>
-  {/if}
+    {/if}
 
-  {#if actionProblem}
-    <ProblemCard problem={actionProblem} level={2} />
-  {/if}
+    {#if actionProblem}
+      <ProblemCard problem={actionProblem} level={2} />
+    {/if}
 
-  {#if statusMessage}
-    <p role="status">{statusMessage}</p>
-  {/if}
-
-  <footer class="actions">
-    <button type="button" disabled={!canAdd || busy} onclick={add}>{t('add.submit')}</button>
-  </footer>
-</div>
+    {#if statusMessage}
+      <Alert tone="success" live="polite" title={statusMessage} />
+    {/if}
+  </div>
+  {#snippet footer()}
+    <Button variant="primary" disabled={!canAdd || busy} loading={busy} onclick={add}>{t('add.submit')}</Button>
+  {/snippet}
+</Dialog>
 
 <style>
   .add-sheet {
     display: grid;
-    gap: 0.75rem;
-    padding: 1rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
-    background: var(--color-surface);
-    max-width: 32rem;
+    gap: var(--space-4);
+    min-width: 0;
   }
-  header {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-  h2 {
+  .edition {
     margin: 0;
-    font-size: 1.125rem;
-  }
-  .source {
-    color: var(--color-muted);
-    margin: 0;
-  }
-  .close {
-    margin-left: auto;
   }
   .summary {
     margin: 0;
-    color: var(--color-muted);
+    font: 500 var(--step-1) / var(--leading-tight) var(--font-text);
   }
   .modes {
-    border: none;
+    border: 0;
     padding: 0;
     margin: 0;
     display: grid;
-    gap: 0.25rem;
+    gap: var(--space-2);
   }
-  .modes label {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
+  .modes legend {
+    margin-bottom: var(--space-2);
+    font-weight: 600;
   }
-  .shelf select,
-  .number input {
-    min-height: 2.75rem;
-  }
-  .confirm {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-  }
-  .refusal {
+  .trash {
     display: grid;
-    gap: 0.5rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
-    padding: 1rem;
-  }
-  .actions button {
-    min-height: 2.75rem;
-    min-width: 2.75rem;
-    padding: 0 1rem;
-    border-radius: 0.5rem;
-    border: 1px solid currentColor;
-    background: var(--color-accent);
-    color: var(--color-on-accent);
-    cursor: pointer;
-  }
-  .actions button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    gap: var(--space-3);
+    justify-items: start;
   }
 </style>
