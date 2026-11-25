@@ -244,6 +244,7 @@
     padding: 0 var(--space-3);
     font-weight: 500;
     color: var(--color-accent-text);
+    white-space: nowrap;
   }
   @media (max-width: 75rem) {
     .me__name {
@@ -266,6 +267,11 @@
     }
     .brand__house {
       max-width: 10rem;
+    }
+  }
+  @media (max-width: 26rem) {
+    .brand__house {
+      max-width: 7rem;
     }
     .masthead__notice {
       display: contents;

@@ -111,7 +111,7 @@
   {:else if loaded && signedOut}
     <p role="alert">{t('admin.wizard.signed_out')}</p>
     <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <p><a href="/login">{t('admin.wizard.login')}</a></p>
+    <p><a href="/login" data-sveltekit-reload>{t('admin.wizard.login')}</a></p>
   {:else if loaded && name !== null}
     <p role="status">{t('admin.wizard.compte.signed_in', { name })}</p>
     {#if isAdmin && next}

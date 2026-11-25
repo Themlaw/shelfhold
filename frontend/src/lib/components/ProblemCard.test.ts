@@ -49,7 +49,8 @@ describe('ProblemCard (EF-UX-003)', () => {
   // req: EF-UX-003
   it('the error screen has a level-one heading (the SPA fallback of a client route)', () => {
     render(ErrorPage);
-    expect(screen.getByRole('heading', { level: 1, name: 'Une erreur est survenue.' })).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toBeInTheDocument();
+    // the kind of the failure decides the words (ErrorScreen); never the raw message, never JSON
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('main')).not.toHaveTextContent(/[{}]|Internal Error|Not Found/);
   });
 });

@@ -1,14 +1,34 @@
 <script lang="ts">
-  import Footer from '#lib/components/Footer.svelte';
-  import Nav from '#lib/components/Nav.svelte';
+  // The shell of every screen (« Papier et encre », docs/design/papier-et-encre.md): the
+  // masthead, the table of contents on the left (the places of the role, EF-UX-005), the screen,
+  // the colophon (the source link, ENF-LEG-012), and on a phone the tab bar with « More » that
+  // opens the whole table. Nobody signed in: the masthead and the colophon only.
   import { onMount } from 'svelte';
+  import { afterNavigate } from '$app/navigation';
+  import { patchPreferences } from '#lib/api/index.ts';
   import { guardOfflineSession, startOfflineSync, wipeOfflineCopies } from '#lib/offline/runtime.ts';
   import { registerServiceWorker } from '#lib/pwa/register.ts';
-  import { applyAppearance } from '#lib/themes/index.ts';
-  import { detectLanguage, setUiLanguage } from '#lib/i18n/index.ts';
+  import {
+    applyAppearance,
+    loadAppearance,
+    rememberAppearance,
+    type ColorScheme
+  } from '#lib/themes/index.ts';
+  import { detectLanguage, setUiLanguage, t } from '#lib/i18n/index.ts';
+  import { currentPlace, roleOf, tabBarPlaces, tableOfContents } from '#lib/nav.ts';
+  import { csrfToken } from '#lib/passkeys.ts';
+  import { signOut } from '#lib/session.ts';
+  import Dialog from '#lib/ui/molecules/Dialog.svelte';
+  import Toast from '#lib/ui/molecules/Toast.svelte';
+  import AppHeader, { type HeaderUser } from '#lib/ui/organisms/AppHeader.svelte';
+  import Colophon from '#lib/ui/organisms/Colophon.svelte';
+  import MobileTabBar from '#lib/ui/organisms/MobileTabBar.svelte';
+  import TableOfContents, { type TocGroup } from '#lib/ui/organisms/TableOfContents.svelte';
+  import { notify } from '#lib/ui/toast.svelte.ts';
   import '#lib/themes/base.css';
   import '#lib/themes/themes.css';
   import '#lib/themes/eink.css';
+  import '#lib/themes/foundation.css';
   import './global.css';
 
   let { children, data } = $props();
@@ -37,27 +57,177 @@
 
   // The boot script of app.html already set the attributes from the last visit; the answer of the
   // server (another device may have changed it) applies here, once the screen has its data.
+  let scheme = $state<ColorScheme>(typeof localStorage === 'undefined' ? 'auto' : loadAppearance(localStorage).colorScheme);
   $effect(() => {
-    if (data.appearance) applyAppearance(document.documentElement, data.appearance);
-    // Update the UI language when data changes (e.g., preference change or sign-in)
+    if (data.appearance) {
+      applyAppearance(document.documentElement, data.appearance);
+      scheme = data.appearance.colorScheme;
+    }
     // a later answer (a sign-in, a changed preference) changes the language too
     setUiLanguage(data.language ?? detectLanguage(navigator.languages));
   });
+
+  /** Light, dark or as the system: applied and remembered on this device at once, kept on the
+   * profile when someone is signed in (the next device opens the same way, EF-UX-012). */
+  async function chooseScheme(next: ColorScheme): Promise<void> {
+    const appearance = { ...loadAppearance(localStorage), colorScheme: next };
+    applyAppearance(document.documentElement, appearance);
+    rememberAppearance(localStorage, appearance);
+    scheme = next;
+    if (!user) return;
+    try {
+      await patchPreferences({
+        headers: { 'X-CSRF-Token': csrfToken() },
+        body: { color_scheme: next },
+        throwOnError: true
+      });
+    } catch {
+      notify({ tone: 'warning', title: t('ui.scheme.not_saved') });
+    }
+  }
+
+  async function leave(): Promise<void> {
+    if (!(await signOut())) notify({ tone: 'danger', title: t('nav.logout_failed') });
+  }
+
+  // Who is signed in, and the places of their role.
+  const role = $derived(roleOf(data.user?.role));
+  const user = $derived<HeaderUser | null>(
+    data.user && role
+      ? { name: data.user.name, role: role === 'member' ? 'adult' : role }
+      : null
+  );
+  const groups = $derived(tableOfContents(data.nav ?? [], role));
+  const toc = $derived<TocGroup[]>(
+    groups.map((group) => ({
+      label: t(group.labelKey),
+      entries: group.items.map((place) => ({ href: place.href, label: t(place.labelKey), icon: place.icon }))
+    }))
+  );
+  const tabs = $derived(
+    tabBarPlaces(data.nav ?? [], role).map((place) => ({ href: place.href, label: t(place.labelKey), icon: place.icon }))
+  );
+
+  // The address shown, for the entry marked as current (the router does not reload the layout).
+  let pathname = $state(typeof location === 'undefined' ? '/' : location.pathname);
+  afterNavigate((navigation) => {
+    if (navigation?.to?.url) pathname = navigation.to.url.pathname;
+    sheet = false;
+  });
+  const current = $derived.by(() => {
+    const places = groups.flatMap((group) => group.items);
+    const id = currentPlace(pathname, places);
+    return places.find((place) => place.id === id)?.href ?? null;
+  });
+
+  let sheet = $state(false);
 </script>
 
-<div class="page">
-  <Nav ids={data.nav ?? []} />
-  <div class="screen">{@render children()}</div>
-  <Footer sourceUrl={data.sourceUrl} />
+<a class="skip" href="#contenu">{t('ui.layout.skip')}</a>
+<div class="app" class:app--toc={toc.length > 0}>
+  <AppHeader {user} {scheme} onscheme={(next) => void chooseScheme(next)} onsignout={() => void leave()}>
+    {#snippet notice()}<Toast />{/snippet}
+  </AppHeader>
+  {#if toc.length > 0}
+    <aside class="app__toc">
+      <TableOfContents groups={toc} {current} title={t('ui.toc.title')} label={t('nav.label')} />
+    </aside>
+  {/if}
+  <div class="app__screen" id="contenu" tabindex="-1">{@render children()}</div>
+  <Colophon sourceUrl={data.sourceUrl} />
 </div>
+{#if tabs.length > 0}
+  <MobileTabBar
+    entries={tabs}
+    {current}
+    label={t('ui.tabbar.label')}
+    moreOpen={sheet}
+    onmore={() => (sheet = true)}
+  />
+  <Dialog bind:open={sheet} title={t('ui.toc.title')}>
+    <TableOfContents groups={toc} {current} label={t('nav.label')} onnavigate={() => (sheet = false)} />
+  </Dialog>
+{/if}
 
 <style>
-  .page {
-    display: flex;
-    flex-direction: column;
-    min-height: 100vh;
+  .skip {
+    position: absolute;
+    top: var(--space-2);
+    left: var(--space-2);
+    z-index: var(--z-toast);
+    padding: var(--space-2) var(--space-4);
+    color: var(--color-on-accent);
+    background: var(--color-accent);
+    border-radius: var(--radius-sm);
+    transform: translateY(-200%);
   }
-  .screen {
-    flex: 1;
+  .skip:focus-visible {
+    transform: none;
+  }
+  .app {
+    display: grid;
+    min-height: 100dvh;
+    grid-template:
+      'head' auto
+      'main' 1fr
+      'foot' auto / minmax(0, 1fr);
+  }
+  .app--toc {
+    grid-template:
+      'head head' auto
+      'side main' 1fr
+      'side foot' auto / var(--sidebar) minmax(0, 1fr);
+  }
+  .app > :global(.masthead) {
+    grid-area: head;
+  }
+  .app__toc {
+    grid-area: side;
+    position: sticky;
+    top: calc(var(--header-h) + var(--space-1));
+    align-self: start;
+    max-height: calc(100dvh - var(--header-h) - var(--space-1));
+    overflow-y: auto;
+    padding: var(--space-6) var(--space-4) var(--space-5) var(--space-5);
+  }
+  .app__screen {
+    grid-area: main;
+    min-width: 0;
+    padding: var(--space-6) var(--space-7) var(--space-8);
+  }
+  .app__screen:focus {
+    outline: none;
+  }
+  .app--toc .app__screen {
+    border-left: var(--rule-hair) solid var(--color-rule);
+  }
+  .app > :global(.colophon) {
+    grid-area: foot;
+  }
+  @media (max-width: 75rem) {
+    .app__screen {
+      padding-inline: var(--space-5);
+    }
+  }
+  @media (max-width: 60rem) {
+    .app--toc {
+      grid-template:
+        'head' auto
+        'main' 1fr
+        'foot' auto / minmax(0, 1fr);
+    }
+    .app__toc {
+      display: none;
+    }
+    .app--toc .app__screen {
+      border-left: 0;
+    }
+    .app__screen {
+      padding: var(--space-5) var(--space-4) var(--space-7);
+    }
+    /* the end of the page is never under the tab bar nor under a notice docked on it */
+    .app--toc > :global(.colophon) {
+      padding-bottom: calc(var(--tabbar-h) + var(--notice-h) + var(--space-4));
+    }
   }
 </style>
