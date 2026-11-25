@@ -695,7 +695,11 @@ def test_lite_pager_is_one_line_and_says_the_page(world: World) -> None:
     nav = re.search(r'<nav class="lite__pager"[^>]*>(.*?)</nav>', end, flags=re.DOTALL)
     assert nav is not None
     cells = re.findall(r'class="(lite__cell[^"]*)"', nav[1])
-    assert cells == ["lite__cell lite__cell--prev", "lite__cell lite__count", "lite__cell lite__cell--next"]
+    assert cells == [
+        "lite__cell lite__cell--prev",
+        "lite__cell lite__count",
+        "lite__cell lite__cell--next",
+    ]
     assert 'href="/lite/works?offset=99975"' in nav[1]  # the way back is a link
     assert 'aria-disabled="true"' in nav[1]  # the way on is drawn, not a link
     assert "Page 4001" in nav[1]

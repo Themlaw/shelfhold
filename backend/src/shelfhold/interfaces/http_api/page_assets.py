@@ -22,7 +22,6 @@ __all__ = [
     "LOGIN_SCRIPT_PATH",
     "STYLE_PATH",
     "build_page_assets_router",
-    "page_csp",
     "lite_style",
     "paper_ink_style",
     "serve_asset",
@@ -36,32 +35,21 @@ CONFIRM_SCRIPT_PATH = "/pages/confirm.js"
 
 @cache
 def read_page_file(name: str) -> str:
-    return resources.files("shelfhold.interfaces.http_api").joinpath(f"pages/{name}").read_text("utf-8")
+    return (
+        resources.files("shelfhold.interfaces.http_api")
+        .joinpath(f"pages/{name}")
+        .read_text("utf-8")
+    )
 
 
 def paper_ink_style() -> str:
     """The tokens, then the base and the components of the server pages."""
-    return read_page_file("paper-ink.tokens.css") + "\n" + read_page_file("paper-ink.css")
+    return read_page_file("paper-ink.tokens.css") + read_page_file("paper-ink.css")
 
 
 def lite_style() -> str:
     """The same tokens (the fonts), then the black-and-white sheet of the e-readers."""
-    return read_page_file("paper-ink.tokens.css") + "\n" + read_page_file("lite.css")
-
-
-
-
-def page_csp(*, scripts: bool = False, images: bool = False) -> str:
-    """The policy of a page that links its own files: styles and fonts from this origin, scripts
-    only when the page has some (still this origin), no inline code, no other host."""
-    directives = ["default-src 'none'", "style-src 'self'", "font-src 'self'"]
-    if scripts:
-        directives.append("script-src 'self'")
-        directives.append("connect-src 'self'")
-    if images:
-        directives.append("img-src 'self'")
-    directives += ["form-action 'self'", "base-uri 'none'"]
-    return "; ".join(directives)
+    return read_page_file("paper-ink.tokens.css") + read_page_file("lite.css")
 
 
 def serve_asset(request: Request, body: str, media_type: str) -> Response:

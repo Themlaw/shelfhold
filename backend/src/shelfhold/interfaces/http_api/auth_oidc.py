@@ -38,6 +38,7 @@ from shelfhold.identity.public import (
     Principal,
     ThrottledError,
 )
+from shelfhold.infrastructure.http_headers import page_csp
 from shelfhold.interfaces.http_api.auth import (
     LOGIN_PAGE,
     OIDC_LOGIN_PATH,
@@ -53,7 +54,6 @@ from shelfhold.interfaces.http_api.page_assets import (
     APPEARANCE_PATH,
     CONFIRM_SCRIPT_PATH,
     STYLE_PATH,
-    page_csp,
 )
 from shelfhold.interfaces.http_api.problems import ProblemError
 

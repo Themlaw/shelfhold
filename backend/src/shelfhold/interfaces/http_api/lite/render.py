@@ -18,7 +18,7 @@ from urllib.parse import urlencode
 from fastapi.responses import HTMLResponse
 
 from shelfhold.i18n import t_lang
-from shelfhold.interfaces.http_api.page_assets import page_csp
+from shelfhold.infrastructure.http_headers import page_csp
 
 __all__ = ["HEADERS", "Page", "Paths", "esc", "fragment", "page_response", "render_fragment", "t"]
 
@@ -133,9 +133,7 @@ class Page:
     """What a page needs to put itself together: the language, the paths, and (signed in) the
     token of its forms."""
 
-    def __init__(
-        self, lang: str, paths: Paths, csrf: str | None = None, name: str = ""
-    ) -> None:
+    def __init__(self, lang: str, paths: Paths, csrf: str | None = None, name: str = "") -> None:
         self.lang, self.paths, self.csrf, self.name = lang, paths, csrf, name
 
     def header(self, query: str = "", current: str = "") -> str:
@@ -151,10 +149,7 @@ class Page:
             ("recent", paths.recent(), "lite.recent"),
         )
         listed = "".join(
-            fragment(
-                "door_current" if key == current else "door", href=href, label=t(label, self)
-            )
-            + "\n"
+            fragment("door_current" if key == current else "door", href=href, label=t(label, self))
             for key, href, label in doors
         )
         return fragment(

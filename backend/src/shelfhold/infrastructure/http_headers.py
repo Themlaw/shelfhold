@@ -84,6 +84,20 @@ def source_hash(text: str) -> str:
     return "'sha256-" + base64.b64encode(hashlib.sha256(text.encode()).digest()).decode() + "'"
 
 
+def page_csp(*, scripts: bool = False, images: bool = False) -> str:
+    """The policy of a page the server writes itself, which links its own files (style sheet,
+    fonts, scripts): styles and fonts from this origin, scripts only when the page has some (still
+    this origin), covers only when asked, no inline code and no other host. `frame-ancestors` is
+    added by the middleware."""
+    directives = ["default-src 'none'", "style-src 'self'", "font-src 'self'"]
+    if scripts:
+        directives += ["script-src 'self'", "connect-src 'self'"]
+    if images:
+        directives.append("img-src 'self'")
+    directives += ["form-action 'self'", "base-uri 'none'"]
+    return "; ".join(directives)
+
+
 class _Page(HTMLParser):
     """What a page carries itself, read by a real HTML parser (a regex on tags is bypassed by
     `</script >`, case, attributes or a comment): its inline script and style bodies, and the CSP

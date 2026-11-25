@@ -42,7 +42,6 @@ from shelfhold.interfaces.http_api.kepub_download import kepub_response
 from shelfhold.interfaces.http_api.lite.render import (
     HEADERS,
     Page,
-    esc,
     fragment,
     page_response,
     render_fragment,
@@ -137,9 +136,7 @@ def build_lite_router(
     def _scope(connection: Connection, who: Reader) -> ReaderScope:
         return reader_scope(connection, who.principal.user_id)
 
-    def _pager(
-        page: Page, make: Callable[[int], str], offset: int, *, has_next: bool
-    ) -> str:
+    def _pager(page: Page, make: Callable[[int], str], offset: int, *, has_next: bool) -> str:
         """One line, always: « previous · page n · next », the absent side drawn dashed so that
         the line keeps its shape. Nothing at all on a list that fits one page."""
         if offset == 0 and not has_next:
@@ -163,12 +160,13 @@ def build_lite_router(
             )
         else:
             following = fragment("pager_off_next", label=next_label)
-        count = esc(t("lite.page_n", page, number=offset // PAGE + 1))
-        return (
-            f'<nav class="lite__pager" aria-label="{esc(t("lite.pages", page))}">'
-            f'<span class="lite__cell lite__cell--prev">{previous}</span>'
-            f'<span class="lite__cell lite__count">{count}</span>'
-            f'<span class="lite__cell lite__cell--next">{following}</span></nav>\n'
+        count = t("lite.page_n", page, number=offset // PAGE + 1)
+        return fragment(
+            "pager",
+            aria=t("lite.pages", page),
+            count=count,
+            html_previous=previous,
+            html_following=following,
         )
 
     def _listing(
@@ -247,7 +245,7 @@ def build_lite_router(
 
     @router.get("/style.css", include_in_schema=False)
     def stylesheet(request: Request) -> Response:
-        """The one style sheet of `/lite`: public (the sign-in page needs it), a file, never a page."""
+        """The one style sheet of `/lite`: public (the sign-in page needs it), a file."""
         return serve_asset(request, lite_style(), "text/css")
 
     @router.get("", response_class=HTMLResponse)
@@ -460,7 +458,9 @@ def build_lite_router(
             block = fragment("heading", text=heading) if heading else ""
             if digest:
                 block += fragment(
-                    "cover", src=paths.cover(digest, COVER), alt=t("lite.cover_of", page, title=title)
+                    "cover",
+                    src=paths.cover(digest, COVER),
+                    alt=t("lite.cover_of", page, title=title),
                 )
             for offer in offers:  # a block over the cap is several: "(1 sur 3)", ...
                 offered = True

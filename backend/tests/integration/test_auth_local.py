@@ -1,6 +1,5 @@
 """L05: local admin, server sessions, CSRF, attempt limiting, neutral login page (EF-USR-021)."""
 
-import base64
 import hashlib
 import re
 from datetime import timedelta
@@ -378,7 +377,9 @@ def test_page_style_is_public_cached_by_etag_and_names_no_remote_host(
 ) -> None:
     with auth_env(monkeypatch, settings) as env:
         first = env.client.get("/pages/paper-ink.css")
-        again = env.client.get("/pages/paper-ink.css", headers={"If-None-Match": first.headers["etag"]})
+        again = env.client.get(
+            "/pages/paper-ink.css", headers={"If-None-Match": first.headers["etag"]}
+        )
     assert first.status_code == 200 and first.headers["cache-control"] == "no-cache"
     assert again.status_code == 304
     css = first.text

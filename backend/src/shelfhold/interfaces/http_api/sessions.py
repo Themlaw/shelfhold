@@ -26,8 +26,8 @@ from shelfhold.identity.public import (
     UnknownSessionError,
     render_recovery_kit,
 )
+from shelfhold.infrastructure.http_headers import page_csp
 from shelfhold.interfaces.http_api.auth import gate_of, require_session, reserved_action
-from shelfhold.interfaces.http_api.page_assets import page_csp
 from shelfhold.interfaces.http_api.problems import ProblemError, language_from_headers
 
 SESSIONS_PATH = "/api/v1/auth/sessions"

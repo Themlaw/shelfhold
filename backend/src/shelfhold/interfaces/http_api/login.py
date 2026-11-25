@@ -27,6 +27,7 @@ from shelfhold.identity.public import (
     ThrottledError,
     UnknownReauthMethodError,
 )
+from shelfhold.infrastructure.http_headers import page_csp
 from shelfhold.interfaces.http_api.auth import (
     LOGIN_PAGE,
     LOGIN_PATH,
@@ -44,7 +45,6 @@ from shelfhold.interfaces.http_api.page_assets import (
     APPEARANCE_PATH,
     LOGIN_SCRIPT_PATH,
     STYLE_PATH,
-    page_csp,
 )
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.ratelimit import client_ip_of
@@ -75,6 +75,7 @@ LITE_SIGN_IN = "/lite/sign-in"  # the e-readers' own door (no script there)
 _BUTTON = _fragment("passkey_button.html")
 _OIDC_BUTTON = _fragment("oidc_button.html")
 _SCRIPT_TAG = _fragment("passkey_script.html")
+_ALTERNATIVES = _fragment("alternatives.html")
 # The page loads its style and its scripts from its own origin, and nothing inline.
 LOGIN_CSP = page_csp(scripts=True)
 PASSKEY_LOGIN_CSP = LOGIN_CSP  # the passkey script is one more file of the same origin
@@ -133,8 +134,13 @@ def login_page_html(
     )
     notice = escape(t_lang("login.oidc_error", language=language)) if oidc_failed else ""
     alternatives = (
-        f'<div class="alt"><p class="or"><span>{escape(t_lang("login.or", language=language))}'
-        f"</span></p>{button}{oidc_button}</div>\n"
+        _ALTERNATIVES.substitute(
+            {
+                "or": escape(t_lang("login.or", language=language)),
+                "passkey": button,
+                "oidc": oidc_button,
+            }
+        )
         if button or oidc_button
         else ""
     )
@@ -144,7 +150,7 @@ def login_page_html(
             "alternatives": alternatives,
             "passkey_script": script,
             "notice": notice,
-            "message_state": "" if notice else " hidden",
+            "message_state": "" if notice else "hidden",
         }
     )
 

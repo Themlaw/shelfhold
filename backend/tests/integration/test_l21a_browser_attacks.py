@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 
 from shelfhold.infrastructure.db import write_transaction
-from shelfhold.interfaces.http_api.page_assets import page_csp
+from shelfhold.infrastructure.http_headers import page_csp
 from shelfhold.infrastructure.secrets import registry
 from shelfhold.infrastructure.secrets.keyring import Keyring
 from shelfhold.infrastructure.secrets.provider_keys import ProviderKey, store_provider_key

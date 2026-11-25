@@ -115,14 +115,18 @@ def message(
 ) -> Response:
     """A page that says one thing and gives the way out. A refusal (`error`) is framed twice;
     `retry_after_s`, when the door says how long to wait, is told in the page too."""
-    if retry_after_s:
-        text = f"{text} {t('lite.retry_after', page, seconds=retry_after_s)}"
+    wait = (
+        render_fragment("wait", text=t("lite.retry_after", page, seconds=retry_after_s))
+        if retry_after_s
+        else ""
+    )
     body = render_fragment(
         "message",
         message=text,
         href=href,
         label=label,
-        html_kind=" lite__note--error" if error else "",
+        kind="lite__note--error" if error else "",
+        html_wait=wait,
     )
     return page_response(page, title=title, body=body, status=status, headers=headers)
 
