@@ -1,9 +1,9 @@
 """Neutral login page and the session routes (EF-USR-021, ENF-PRIV-002, ENF-LEG-012).
 
 The page names no tool, carries no Open Graph or Twitter tag, no image, and offers the source
-code of the running version (AGPL section 13). Its only script and style are inline, allowed by
-their hash: the CSP has no `unsafe-inline`. Without JavaScript the form posts to `/login`, which
-refuses it: the password never travels in a URL.
+code of the running version (AGPL section 13). Its style and its scripts are files of this origin
+(`page_assets`): the CSP has no `unsafe-inline`. Without JavaScript the form posts to `/login`,
+which refuses it: the password never travels in a URL.
 """
 
 from datetime import datetime
@@ -27,7 +27,7 @@ from shelfhold.identity.public import (
     ThrottledError,
     UnknownReauthMethodError,
 )
-from shelfhold.infrastructure.http_headers import allow_own_scripts, hash_csp
+from shelfhold.infrastructure.http_headers import page_csp
 from shelfhold.interfaces.http_api.auth import (
     LOGIN_PAGE,
     LOGIN_PATH,
@@ -40,6 +40,11 @@ from shelfhold.interfaces.http_api.auth import (
     require_principal,
     require_session,
     set_session_cookies,
+)
+from shelfhold.interfaces.http_api.page_assets import (
+    APPEARANCE_PATH,
+    LOGIN_SCRIPT_PATH,
+    STYLE_PATH,
 )
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.ratelimit import client_ip_of
@@ -66,13 +71,14 @@ def _fragment(name: str) -> Template:
     )
 
 
+LITE_SIGN_IN = "/lite/sign-in"  # the e-readers' own door (no script there)
 _BUTTON = _fragment("passkey_button.html")
 _OIDC_BUTTON = _fragment("oidc_button.html")
 _SCRIPT_TAG = _fragment("passkey_script.html")
-LOGIN_CSP = hash_csp(_TEMPLATE.template)
-# With passkeys the page loads one more script, from its own origin: `'self'` joins the hashes in
-# `script-src`, nothing else changes (no `unsafe-inline`, no other origin).
-PASSKEY_LOGIN_CSP = allow_own_scripts(LOGIN_CSP)
+_ALTERNATIVES = _fragment("alternatives.html")
+# The page loads its style and its scripts from its own origin, and nothing inline.
+LOGIN_CSP = page_csp(scripts=True)
+PASSKEY_LOGIN_CSP = LOGIN_CSP  # the passkey script is one more file of the same origin
 
 
 def login_page_html(
@@ -83,8 +89,7 @@ def login_page_html(
     oidc: bool = False,
     oidc_failed: bool = False,
 ) -> str:
-    """Only `$` placeholders outside the script and the style: their hashes never change.
-    `passkeys`: the button and the same-origin script are there only in a secure context.
+    """`passkeys`: the button and the same-origin script are there only in a secure context.
     `language`: the language of the request (ENF-I18N-001); the page is anonymous, so the
     `Accept-Language` of the browser picks it.
     `oidc`: the sign-in link of the identity provider (M5 L03), there only when it is configured;
@@ -99,10 +104,19 @@ def login_page_html(
         )
         script = _SCRIPT_TAG.substitute(src=PASSKEY_SCRIPT_PATH)
     values = {
+        "lang": language,
         "title": t_lang("login.title", language=language),
+        "lede": t_lang("login.lede", language=language),
         "username": t_lang("login.username", language=language),
         "password": t_lang("login.password", language=language),
         "remember": t_lang("login.remember", language=language),
+        "remember_hint": t_lang("login.remember_hint", language=language),
+        "help": t_lang("login.help", language=language),
+        "lite": t_lang("login.lite", language=language),
+        "lite_href": LITE_SIGN_IN,
+        "style": STYLE_PATH,
+        "appearance": APPEARANCE_PATH,
+        "login_script": LOGIN_SCRIPT_PATH,
         "submit": t_lang("login.submit", language=language),
         "error": t_lang("login.error", language=language),
         "source": t_lang("login.source", language=language),
@@ -119,13 +133,24 @@ def login_page_html(
         else ""
     )
     notice = escape(t_lang("login.oidc_error", language=language)) if oidc_failed else ""
+    alternatives = (
+        _ALTERNATIVES.substitute(
+            {
+                "or": escape(t_lang("login.or", language=language)),
+                "passkey": button,
+                "oidc": oidc_button,
+            }
+        )
+        if button or oidc_button
+        else ""
+    )
     return _TEMPLATE.substitute(
         {
             **escaped,
-            "passkey_button": button,
+            "alternatives": alternatives,
             "passkey_script": script,
-            "oidc_button": oidc_button,
             "notice": notice,
+            "message_state": "" if notice else "hidden",
         }
     )
 

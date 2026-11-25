@@ -5,11 +5,21 @@ n'exécute pas le JavaScript moderne : le navigateur natif d'une **Kobo** (WebKi
 **Kindle** jusqu'à la version 5.12.4. Elle sert à **parcourir et télécharger** ; elle ne lit pas un
 livre à l'écran (voir [clients.md](clients.md) pour savoir avec quoi lire).
 
-Elle ne partage rien avec l'application web : ni ses feuilles de style, ni son thème, ni son
-script. Chaque page est du HTML écrit par le serveur, avec **aucun `<script>`** — un contrôle de CI
-le vérifie — et une politique de sécurité qui n'autorise que la feuille de style de la page, nommée
-par son empreinte (`default-src 'none'`, `img-src 'self'`, `form-action 'self'`, `base-uri 'none'`).
-Une page qui contiendrait malgré tout une balise ne lancerait donc rien.
+Elle ne partage avec l'application web **que ses polices** (Alegreya, servies par l'instance sous
+`/fonts/`) : ni son thème, ni son script. Chaque page est du HTML écrit par le serveur, avec **aucun
+`<script>`** — un contrôle de CI le vérifie — et aucun style en ligne : la mise en page vient d'une
+seule feuille, `/lite/style.css`, publique (elle ne contient rien d'un profil) et servie par le
+serveur lui-même. La politique de sécurité n'autorise que ce qui vient de l'instance
+(`default-src 'none'`, `style-src 'self'`, `font-src 'self'`, `img-src 'self'`, `form-action 'self'`,
+`base-uri 'none'`) et aucun script : une page qui contiendrait malgré tout une balise ne lancerait
+donc rien.
+
+La page est faite pour l'encre électronique : **noir et blanc stricts** (21:1) quel que soit le thème
+de l'application, texte de 20 px, **cibles de 56 px**, filets de 2 à 3 px. L'élément courant du menu
+est plein ; une erreur se distingue d'une note par un double filet, pas par une couleur. La
+pagination tient sur **une seule ligne** : « Précédente · Page n · Suivante », le côté absent étant
+dessiné en pointillés. La feuille n'utilise ni variables CSS ni grille : les navigateurs de ces
+liseuses ne les connaissent pas.
 
 ## Couvertures en niveaux de gris et redirection
 
@@ -55,6 +65,7 @@ jeton révoqué ou un appareil retiré jouent donc dès la page suivante.
 | `/lite/editions/{id}/complete` | le bloc d'une série en un fichier (le même que l'OPDS) |
 | `/lite/kepub/{id}` | le KEPUB d'un tome EPUB, pour une Kobo |
 | `/lite/sign-in`, `/lite/sign-out` | les deux seuls formulaires |
+| `/lite/style.css` | la feuille de style (publique) |
 
 25 entrées par page, avec « page précédente » et « page suivante ». Le filtre du contrôle parental
 est une condition de **chaque** requête : une page, un compteur, un résultat de recherche, une

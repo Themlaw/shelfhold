@@ -1,1 +1,0 @@
-default-src 'none'; style-src $style_hash; img-src 'self'; form-action 'self'; base-uri 'none'

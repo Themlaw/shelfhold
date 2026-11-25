@@ -1,5 +1,5 @@
-// Passkey sign-in of the login page. Served from the same origin (`script-src 'self'`): the page
-// has no other script than its hashed one. The server draws the challenge and checks everything;
+// Passkey sign-in of the login page. Served from the same origin (`script-src 'self'`), like the
+// other script of the page: nothing is inline. The server draws the challenge and checks everything;
 // this file only moves bytes between the server and `navigator.credentials`.
 (() => {
   "use strict";
@@ -7,9 +7,13 @@
   if (!button) return;
   if (!window.PublicKeyCredential || !navigator.credentials || !window.isSecureContext) {
     button.hidden = true;
+    const alternatives = button.closest(".alt");
+    if (alternatives && !alternatives.querySelector(".btn:not([hidden])")) alternatives.hidden = true;
     return;
   }
-  const message = document.getElementById("message");
+  // the refusals are said by the page's own script (`login.js`), in the same place as the others
+  const problem = (title, action) =>
+    document.dispatchEvent(new CustomEvent("login:problem", { detail: { title, action } }));
   const toBytes = (text) => {
     const padded = text.replace(/-/g, "+").replace(/_/g, "/");
     const raw = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
@@ -29,10 +33,14 @@
     });
 
   button.addEventListener("click", async () => {
-    button.disabled = true;
-    message.textContent = "";
-    let text = button.dataset.error;
+    if (button.getAttribute("aria-disabled") === "true") return;
+    button.setAttribute("aria-disabled", "true");
+    button.setAttribute("aria-busy", "true");
+    document.dispatchEvent(new CustomEvent("login:clear"));
+    let title = button.dataset.error;
+    let action = "";
     try {
+      const remember = document.querySelector("input[name=remember]").checked;
       const started = await post(button.dataset.options, {});
       if (!started.ok) throw new Error("options");
       const { flow, options } = await started.json();
@@ -48,7 +56,8 @@
       const answer = credential.response;
       const response = await post(button.dataset.login, {
         flow,
-        remember: document.querySelector("input[name=remember]").checked,
+        remember: remember,
+        confirm_remember: remember, // the ticked box is the explicit request (see `login.js`)
         credential: {
           id: credential.id,
           rawId: toText(credential.rawId),
@@ -66,12 +75,14 @@
         window.location.assign("/");
         return;
       }
-      const problem = await response.json();
-      if (problem && problem.title) text = problem.title;
+      const refusal = await response.json();
+      if (refusal && refusal.title) title = refusal.title;
+      if (refusal && refusal.action) action = refusal.action;
     } catch (error) {
       // cancelled gesture or network failure: the generic message stays
     }
-    message.textContent = text;
-    button.disabled = false;
+    problem(title, action);
+    button.removeAttribute("aria-disabled");
+    button.removeAttribute("aria-busy");
   });
 })();

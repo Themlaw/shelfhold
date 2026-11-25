@@ -12,6 +12,7 @@
   },
   "scripts": {
     "tokens": "node scripts/build-tokens.ts",
+    "pages:css": "node scripts/build-server-pages.ts",
     "api:generate": "svelte-kit sync && openapi-ts",
     "dev": "npm run tokens && vite dev",
     "build": "npm run tokens && vite build && vite build --config vite.reader.config.ts",

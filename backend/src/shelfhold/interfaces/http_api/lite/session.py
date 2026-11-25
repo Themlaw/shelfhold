@@ -110,8 +110,24 @@ def message(
     href: str,
     label: str,
     headers: dict[str, str] | None = None,
+    retry_after_s: int | None = None,
+    error: bool = False,
 ) -> Response:
-    body = render_fragment("message", message=text, href=href, label=label)
+    """A page that says one thing and gives the way out. A refusal (`error`) is framed twice;
+    `retry_after_s`, when the door says how long to wait, is told in the page too."""
+    wait = (
+        render_fragment("wait", text=t("lite.retry_after", page, seconds=retry_after_s))
+        if retry_after_s
+        else ""
+    )
+    body = render_fragment(
+        "message",
+        message=text,
+        href=href,
+        label=label,
+        kind="lite__note--error" if error else "",
+        html_wait=wait,
+    )
     return page_response(page, title=title, body=body, status=status, headers=headers)
 
 
@@ -146,6 +162,7 @@ def require_tls(request: Request) -> None:
             status=403,
             href=page.paths.sign_in(),
             label=t("lite.retry", page),
+            error=True,
         )
     )
 
@@ -179,6 +196,7 @@ def csrf_refused(request: Request) -> LiteStop:
             status=403,
             href=page.paths.sign_in(),
             label=t("lite.retry", page),
+            error=True,
         )
     )
 
@@ -201,7 +219,7 @@ def reader_of(request: Request) -> Reader:
     if principal is None or value is None:
         raise LiteStop(redirect(request, paths.sign_in(), clear=(name,) if value else ()))
     lang = language_from_headers(request.headers, principal)
-    return Reader(principal, value, Page(lang, paths, auth.lite_csrf(value)))
+    return Reader(principal, value, Page(lang, paths, auth.lite_csrf(value), principal.username))
 
 
 class LiteRoute(APIRoute):

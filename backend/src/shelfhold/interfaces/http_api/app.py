@@ -43,6 +43,7 @@ from shelfhold.interfaces.http_api.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
+from shelfhold.interfaces.http_api.page_assets import build_page_assets_router
 from shelfhold.interfaces.http_api.passkeys import build_passkeys_router
 from shelfhold.interfaces.http_api.problems import (
     default_problem_responses,
@@ -175,6 +176,7 @@ def create_http_app(
     include(build_health_router(health, version=version))
     resolved_source = require_web_url(source_url or build_source_url(version))
     include(build_login_router(resolved_source))
+    include(build_page_assets_router())  # the style and scripts of the pages the server writes
     include(build_passkeys_router())
     include(build_oidc_router())
     include(build_sessions_router())
