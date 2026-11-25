@@ -50,7 +50,7 @@ Next steps:
 | [`compose.simple.yaml`](compose.simple.yaml) | A first try on a trusted home network: the image, two folders, one port. |
 | [`compose.yaml`](compose.yaml) | The hardened reference, and the tested one: read-only root filesystem, all capabilities dropped, `no-new-privileges`, memory and process limits, log rotation, no core dumps, port bound to `127.0.0.1` for a reverse proxy. Optional hardened authentication profile ([`docs/admin/durcir.md`](docs/admin/durcir.md)). |
 
-Both pin `ghcr.io/themlaw/shelfhold:1.0`, which follows the 1.0.x patch releases. Tags: `X.Y.Z`, `X.Y` and `latest` for releases, `edge` for the development image (not for a library you care about). Upgrades: [`docs/admin/mise-a-niveau.md`](docs/admin/mise-a-niveau.md).
+Both pin `ghcr.io/themlaw/shelfhold:1.3`, which follows the 1.3.x patch releases. Tags: `X.Y.Z`, `X.Y` and `latest` for releases, `edge` for the development image (not for a library you care about). Upgrades: [`docs/admin/mise-a-niveau.md`](docs/admin/mise-a-niveau.md).
 
 The image is multi-stage (Python 3.13 slim, base images pinned by digest), runs as uid 1000, has a health check, and weighs about 96 MB compressed.
 
