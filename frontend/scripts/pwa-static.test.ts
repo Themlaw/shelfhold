@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { bootScript, inlineScripts, kitCsp, readerCsp } from './csp.ts';
+import tokens from '../src/lib/themes/bibliotheque/tokens.json';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
@@ -48,6 +49,31 @@ describe('the manifest', () => {
     expect(html).toMatch(/<link rel="manifest" href="\/manifest\.webmanifest"\s*\/?>/);
     expect(inlineScripts(html)).toHaveLength(1);
     expect(() => bootScript(html)).not.toThrow();
+  });
+});
+
+describe('the colours of the installed app', () => {
+  const manifest = JSON.parse(read('static/manifest.webmanifest')) as Record<string, string>;
+  const paper = tokens.light.color.bg.$value.toLowerCase();
+  const html = read('src/app.html');
+
+  // req: EF-LEC-012
+  it('the manifest and the bar of the browser take the paper of the default theme, light and dark', () => {
+    expect(manifest.background_color?.toLowerCase()).toBe(paper);
+    expect(manifest.theme_color?.toLowerCase()).toBe(paper);
+    const bars = [...html.matchAll(/<meta name="theme-color" content="(#[0-9A-Fa-f]{6})" media="\(prefers-color-scheme: (light|dark)\)"/g)];
+    const byScheme = Object.fromEntries(bars.map((m) => [m[2] ?? '', m[1]?.toLowerCase()]));
+    expect(byScheme).toEqual({
+      light: tokens.light.color.bg.$value.toLowerCase(),
+      dark: tokens.dark.color.bg.$value.toLowerCase()
+    });
+  });
+
+  // req: EF-LEC-012
+  it('names an icon of its own origin for the home screen of a phone', () => {
+    const icon = html.match(/<link rel="apple-touch-icon" href="(\/[^"]+)"/);
+    expect(icon).not.toBeNull();
+    expect(statSync(join(root, 'static', icon![1] ?? '')).isFile()).toBe(true);
   });
 });
 

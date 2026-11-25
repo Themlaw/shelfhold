@@ -1,0 +1,411 @@
+/* The pages the server writes itself, in the direction « Papier et encre » (docs/design/papier-et-encre.md):
+   sign-in, confirmation of a link with an identity provider, recovery kit. Served after
+   paper-ink.tokens.css (same variables as the app): no colour and no length of its own here.
+   No image: the marks are drawn with borders and text. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  color-scheme: light dark;
+  -webkit-text-size-adjust: 100%;
+}
+:root[data-color-scheme='light'] {
+  color-scheme: light;
+}
+:root[data-color-scheme='dark'] {
+  color-scheme: dark;
+}
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font: var(--step-0) / var(--leading-ui) var(--font-ui);
+  font-kerning: normal;
+}
+/* the double rule of a title page, above everything */
+body::before {
+  content: '';
+  display: block;
+  height: var(--space-2);
+  border-block: var(--rule-hair) solid var(--color-ink);
+}
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+[hidden] {
+  display: none !important;
+}
+a {
+  color: var(--color-accent-text);
+  text-decoration-thickness: var(--rule-hair);
+  text-underline-offset: 0.18em;
+}
+a:hover {
+  text-decoration-thickness: var(--rule-mid);
+}
+
+/* -- the sheet ------------------------------------------------------------------------------ */
+.sheet {
+  width: min(28rem, calc(100% - 2 * var(--space-4)));
+  margin: var(--space-7) auto var(--space-6);
+}
+.sheet--confirm {
+  width: min(32rem, calc(100% - 2 * var(--space-4)));
+}
+h1 {
+  margin: 0;
+  font: 600 var(--step-3) / var(--leading-tight) var(--font-text);
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+.lede {
+  margin: var(--space-3) 0 0;
+  font: var(--step-1) / var(--leading-read) var(--font-text);
+  color: var(--color-muted);
+}
+.hint {
+  display: block;
+  color: var(--color-subtle);
+  font-size: var(--step--1);
+}
+
+/* -- a message that belongs to the page: an icon, a title, the way out ------------------------ */
+.alert {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  align-items: start;
+  margin-top: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: var(--rule-hair) solid var(--color-rule-strong);
+  border-left-width: var(--rule-thick);
+  background: var(--color-surface);
+}
+.alert::before {
+  content: '!';
+  grid-row: 1 / span 2;
+  display: grid;
+  place-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.1rem;
+  border: var(--rule-mid) solid currentColor;
+  border-radius: var(--radius-pill);
+  font: 700 var(--step--1) / 1 var(--font-ui);
+}
+.alert--danger {
+  border-color: var(--color-err);
+  background: var(--color-err-soft);
+  color: var(--color-ink);
+}
+.alert--danger::before {
+  color: var(--color-err);
+}
+.alert__title {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.alert--danger .alert__title {
+  color: var(--color-err);
+}
+.alert__body {
+  margin: 0;
+  grid-column: 2;
+}
+.alert__body:empty {
+  display: none;
+}
+
+/* -- fields ----------------------------------------------------------------------------------- */
+.field {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-4);
+}
+.field label {
+  font-weight: 700;
+}
+.input {
+  display: block;
+  width: 100%;
+  min-height: var(--target);
+  padding: var(--space-2) var(--space-3);
+  font: var(--step-0) / var(--leading-ui) var(--font-ui);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: var(--rule-hair) solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+}
+.input:hover {
+  border-color: var(--color-ink);
+}
+.input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 0;
+  border-color: var(--color-focus);
+}
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: var(--target);
+  margin-top: var(--space-3);
+  padding-block: var(--space-2);
+  cursor: pointer;
+}
+.choice__text {
+  display: grid;
+  gap: var(--space-1);
+}
+.check {
+  appearance: none;
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0.1rem 0 0;
+  display: inline-grid;
+  place-content: center;
+  background: var(--color-surface);
+  border: var(--rule-mid) solid var(--color-rule-strong);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+.check::before {
+  content: '';
+  width: 0.7rem;
+  height: 0.4rem;
+  border: solid var(--color-on-accent);
+  border-width: 0 0 var(--rule-mid) var(--rule-mid);
+  transform: translateY(-15%) rotate(-45deg) scale(0);
+}
+.check:checked {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.check:checked::before {
+  transform: translateY(-15%) rotate(-45deg) scale(1);
+}
+.check:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* -- buttons ---------------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--target);
+  min-width: var(--target);
+  padding: var(--space-2) var(--space-4);
+  font: 500 var(--step-0) / 1.1 var(--font-ui);
+  text-align: center;
+  text-decoration: none;
+  border: var(--rule-hair) solid var(--color-rule-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  cursor: pointer;
+}
+.btn:hover {
+  background: var(--color-surface-2);
+  text-decoration: none;
+}
+.btn--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.btn--primary:hover {
+  background: var(--color-accent-strong);
+  border-color: var(--color-accent-strong);
+}
+.btn--secondary {
+  background: transparent;
+  border-color: var(--color-ink);
+}
+.btn--secondary:hover {
+  background: var(--color-surface);
+}
+.btn--lg {
+  min-height: 3.25rem;
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--step-1);
+}
+.btn--block {
+  display: flex;
+  width: 100%;
+}
+.btn[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn[aria-busy='true'] {
+  cursor: progress;
+}
+#login .btn--primary {
+  margin-top: var(--space-4);
+}
+/* « or »: the other ways in, below the one the page is for */
+.alt {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+.or {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--color-muted);
+  font: italic var(--step-0) / 1 var(--font-text);
+}
+.or::before,
+.or::after {
+  content: '';
+  flex: 1;
+  border-top: var(--rule-hair) solid var(--color-rule-strong);
+}
+.help {
+  margin: var(--space-5) 0 0;
+  color: var(--color-muted);
+  font-size: var(--step--1);
+}
+.colophon {
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: var(--rule-hair) solid var(--color-rule);
+  text-align: center;
+  color: var(--color-muted);
+  font: italic var(--step--1) / var(--leading-ui) var(--font-text);
+}
+.colophon p {
+  margin: 0;
+}
+.colophon a {
+  display: inline-block;
+  padding-block: var(--space-2);
+}
+
+/* -- confirmation of a link ------------------------------------------------------------------ */
+.facts {
+  margin: var(--space-5) 0 0;
+  border-top: var(--rule-mid) solid var(--color-ink);
+}
+.facts > div {
+  padding: var(--space-3) 0;
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+}
+.facts dt {
+  color: var(--color-muted);
+  font: italic var(--step--1) / var(--leading-ui) var(--font-text);
+}
+.facts dd {
+  margin: var(--space-1) 0 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+.actions .btn {
+  flex: 1 1 10rem;
+}
+#confirm .alert {
+  margin-top: var(--space-4);
+}
+
+/* -- the recovery kit: a sheet to print and keep ---------------------------------------------- */
+.kit {
+  width: min(46rem, calc(100% - 2 * var(--space-4)));
+  margin: var(--space-6) auto var(--space-7);
+}
+.kit h1 {
+  font-size: var(--step-3);
+}
+.kit__intro {
+  margin: var(--space-3) 0 0;
+  font: var(--step-1) / var(--leading-read) var(--font-text);
+  color: var(--color-muted);
+}
+.kit section {
+  margin-top: var(--space-5);
+  padding-top: var(--space-3);
+  border-top: var(--rule-mid) solid var(--color-ink);
+  break-inside: avoid;
+}
+.kit h2 {
+  margin: 0;
+  font: 600 var(--step-2) / var(--leading-tight) var(--font-text);
+}
+.kit p {
+  margin: var(--space-2) 0 0;
+  max-width: var(--measure);
+  line-height: var(--leading-read);
+}
+.kit .cmd {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  background: var(--color-surface-2);
+  border: var(--rule-hair) solid var(--color-rule-strong);
+  font: var(--step--1) / var(--leading-ui) var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.kit .fill {
+  height: 2.25rem;
+  margin: 0;
+  border-bottom: var(--rule-hair) solid var(--color-ink);
+}
+.kit .fill:first-of-type {
+  margin-top: var(--space-2);
+}
+.kit__close {
+  margin-top: var(--space-6);
+  padding-top: var(--space-3);
+  border-top: var(--rule-hair) solid var(--color-rule);
+}
+.kit__close em {
+  font-family: var(--font-text);
+}
+.kit__tools {
+  margin: 0 0 var(--space-4);
+}
+
+@media (max-width: 30rem) {
+  .sheet {
+    margin-top: var(--space-5);
+  }
+}
+@media print {
+  /* paper is paper: ink on white, no tint, nothing that is not a rule */
+  html {
+    color-scheme: light;
+  }
+  body,
+  .kit .cmd {
+    background: Canvas;
+    color: CanvasText;
+  }
+  body::before,
+  .kit__tools {
+    display: none;
+  }
+  .kit {
+    width: auto;
+    margin: 0;
+  }
+  .kit .cmd {
+    border-color: CanvasText;
+  }
+}

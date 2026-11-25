@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- The bar of the browser takes the paper of the theme « Bibliothèque », light or dark as the system is
+         (src/lib/themes/bibliotheque/tokens.json: color.bg); the manifest holds the light one. -->
+    <meta name="theme-color" content="#F1ECE1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#191714" media="(prefers-color-scheme: dark)" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <script>(function(){try{var d=document.documentElement,a=JSON.parse(localStorage.getItem('shelfhold.appearance')||'null');if(a&&['bibliotheque','console','galerie','calme'].indexOf(a.theme)>=0)d.dataset.theme=a.theme;if(a&&(a.colorScheme==='light'||a.colorScheme==='dark'))d.dataset.colorScheme=a.colorScheme}catch(e){}})();</script>
     <!-- Capability, never the browser's name (EF-LEC-010): a browser that does not know module scripts
          runs this file (a file of the origin, so `'self'` allows it under every level of CSP, the

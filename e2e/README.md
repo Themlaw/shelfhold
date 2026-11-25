@@ -23,6 +23,8 @@ SHELFHOLD_IMAGE=shelfhold:ci E2E_UPDATE_REFERENCE=1 \
 git diff tests/references/key-screens.json   # relire chaque écart, puis le commiter avec sa raison
 ```
 
+Sans machine pour construire l'image : chaque passage de la CI dépose ce qu'il a vu dans l'artefact `e2e-browser-amd64-m3-themes` (`key-screens.json`, à côté des captures). Le copier dans `tests/references/`, relire chaque écart avec `git diff`, puis le commiter avec sa raison, comme ci-dessus.
+
 ## Navigation fencing (ENF-PRIV-001)
 
 Every Playwright context is fenced by `context.route('**/*')`: any request whose origin

@@ -10,6 +10,7 @@
 """
 
 from datetime import datetime
+from functools import cache
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
@@ -25,9 +26,9 @@ from shelfhold.identity.public import (
     UnknownSessionError,
     render_recovery_kit,
 )
-from shelfhold.infrastructure.http_headers import hash_csp
+from shelfhold.infrastructure.http_headers import page_csp
 from shelfhold.interfaces.http_api.auth import gate_of, require_session, reserved_action
-from shelfhold.interfaces.http_api.problems import ProblemError
+from shelfhold.interfaces.http_api.problems import ProblemError, language_from_headers
 
 SESSIONS_PATH = "/api/v1/auth/sessions"
 ADMIN_SESSIONS_PATH = "/api/v1/admin/sessions"
@@ -43,8 +44,12 @@ _REVOKE_OTHERS = reserved_action(
 )
 _KIT = reserved_action(RESERVED_ACTIONS["recovery_kit.read"])
 
-KIT_PAGE = render_recovery_kit()  # static: the same bytes every time
-KIT_CSP = hash_csp(KIT_PAGE)  # its one inline style by hash, nothing else (ENF-SEC-004)
+KIT_CSP = page_csp()  # its style sheet and fonts from this origin, nothing inline (ENF-SEC-004)
+
+
+@cache
+def kit_page(language: str) -> str:
+    return render_recovery_kit(language=language)  # static: the same bytes for one language
 
 
 class SessionBase(BaseModel):
@@ -166,9 +171,11 @@ def build_sessions_router() -> APIRouter:
         return Response(status_code=204)
 
     @router.get(RECOVERY_KIT_PATH, response_class=HTMLResponse)
-    def recovery_kit(_principal: Annotated[Principal, Depends(_KIT)]) -> HTMLResponse:
+    def recovery_kit(
+        request: Request, principal: Annotated[Principal, Depends(_KIT)]
+    ) -> HTMLResponse:
         return HTMLResponse(
-            KIT_PAGE,
+            kit_page(language_from_headers(request.headers, principal)),
             headers={"Content-Security-Policy": KIT_CSP, "Cache-Control": "no-store"},
         )
 

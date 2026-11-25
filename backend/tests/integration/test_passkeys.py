@@ -673,7 +673,7 @@ def test_passkey_requires_secure_context(
             "<button" in page.text and page.text.count("<button") == 1
         )  # the password button only
         assert anon.get("/login/passkey.js").status_code == 404
-        assert "script-src 'self'" not in page.headers["content-security-policy"]
+        assert "/login/passkey.js" not in PageParts.of(page.text).script_sources
         assert api.post(
             REAUTH, json={"method": "passkey", "flow": "x", "credential": {}}
         ).status_code in (
@@ -716,17 +716,19 @@ def test_login_page_csp_still_has_no_unsafe_inline(api: AuthEnv) -> None:
     csp = page.headers["content-security-policy"]
     assert "unsafe-inline" not in csp and "unsafe-eval" not in csp
     directives = dict(d.strip().split(" ", 1) for d in csp.split(";") if " " in d.strip())
-    scripts = directives["script-src"].split()
-    assert "'self'" in scripts
-    assert all(s == "'self'" or s.startswith("'sha256-") for s in scripts)
+    assert directives["script-src"] == "'self'"  # files of this origin, no hash, nothing inline
+    assert directives["style-src"] == "'self'"
     assert directives["default-src"] == "'none'"
     assert directives["connect-src"] == "'self'"
     assert directives["frame-ancestors"] == "'none'"
-    # the only inline script is the unchanged one; the passkey code is a same-origin file
+    # no inline script at all; the sign-in code and the passkey code are same-origin files
     page_parts = PageParts.of(page.text)
-    assert len(page_parts.inline_scripts) == 1
-    assert "navigator.credentials" not in page_parts.inline_scripts[0]
-    assert page_parts.script_sources == ["/login/passkey.js"]
+    assert page_parts.inline_scripts == []
+    assert page_parts.script_sources == [
+        "/pages/appearance.js",
+        "/pages/login.js",
+        "/login/passkey.js",
+    ]
     assert page_parts.event_attributes == []  # no `onclick=` and the like
     assert not [v for v in page_parts.attribute_values if v.lower().startswith("javascript:")]
     assert "<img" not in page.text.lower() and page_parts.tags.isdisjoint({"img", "iframe"})

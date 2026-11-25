@@ -368,6 +368,11 @@
   oidc_error = "Sign-in through the identity provider did not work."
   error = "Unable to connect."
   source = "Source code"
+  lede = "Sign in with your username and password."
+  remember_hint = "Keeps the session open on this device. Avoid it on a shared computer."
+  or = "or"
+  help = "No profile yet, or a lost password? The person who runs the library creates profiles and resets passwords."
+  lite = "E-reader version"
 
 [oidc_confirm]
   title = "Link an identity to this account?"
@@ -3178,6 +3183,20 @@
   download = "Download"
   kepub = "KEPUB for Kobo: {number}"
   no_download = "No file to download for this work."
+  nav_label = "Navigation"
+  search_placeholder = "A title to look for"
+  search_none = "No result for “{query}”."
+  search_prompt = "Type a title to look for."
+  prev_button = "Previous"
+  next_button = "Next"
+  page_n = "Page {number}"
+  pages = "Pages"
+  foot = "Page without JavaScript, for e-ink readers."
+  full_site = "Full version"
+  identifier_hint = "The 8 characters shown when the reader was paired."
+  secret_hint = "The 26 characters of the secret, typed as they are."
+  retry_after = "Try again in {seconds, plural, one {# second} other {# seconds}}."
+  cover_of = "Cover: {title}"
 
   [errors."source_migration.collision"]
     title = "Two numbers of the new source would land on the same place."

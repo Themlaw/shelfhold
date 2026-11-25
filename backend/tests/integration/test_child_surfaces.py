@@ -64,6 +64,12 @@ PUBLIC = (
     "GET /robots.txt",
     "GET /login",
     "GET /login/passkey.js",
+    # the files the pages written by the server link: a style sheet and scripts, no data
+    "GET /pages/paper-ink.css",
+    "GET /pages/appearance.js",
+    "GET /pages/login.js",
+    "GET /pages/confirm.js",
+    "GET /lite/style.css",
     "POST /api/v1/auth/login",
     "GET /api/v1/setup/status",  # ENF-UX-001: a new instance says it waits for its first account
     "POST /api/v1/setup/admin",  # ...and makes it, behind the secret of the compose
