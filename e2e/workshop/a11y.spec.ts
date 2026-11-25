@@ -228,7 +228,8 @@ test('test_main_action_stays_in_reach_on_a_long_form', async ({ page }) => {
     pad.style.height = '3000px';
     form?.insertBefore(pad, form.querySelector('button[type="submit"]'));
   });
-  await page.evaluate(() => window.scrollTo(0, 0));
+  // the form's top at the top of the screen: the action cannot leave its form, so this is where it must stay in reach
+  await page.evaluate(() => document.querySelector('form')?.scrollIntoView({ block: 'start' }));
   const box = await create.boundingBox();
   const height = page.viewportSize()?.height ?? 780;
   expect(box && box.y + box.height <= height, 'the main action is inside the first screen').toBe(true);
