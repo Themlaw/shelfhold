@@ -105,11 +105,12 @@ describe('Même œuvre ?', () => {
     expect(screen.getByRole('heading', { level: 1, name: /Même œuvre/ })).toBeInTheDocument();
     // open it, then ask for the plan: the M3 door, without a confirmation
     await user.click(screen.getByRole('button', { name: 'Voir le plan' }));
-    await user.click(screen.getByRole('button', { name: 'Voir le plan' }));
+    await user.click(screen.getByRole('button', { name: 'Calculer le plan' }));
     expect(await screen.findByText('1 édition déplacée')).toBeInTheDocument();
     expect(seen[0]).toEqual({ keep_id: 'WA', drop_id: 'WB' });
     // apply: the fingerprint of the plan that was shown goes back
     await user.click(screen.getByRole('button', { name: 'Appliquer la fusion' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirmer la fusion' }));
     expect(await screen.findByRole('status')).toHaveTextContent('Fusion appliquée');
     expect(seen[1]).toEqual({ keep_id: 'WA', drop_id: 'WB', confirm: 'fp1234567890abcd' });
   });
