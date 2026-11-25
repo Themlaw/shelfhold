@@ -13717,6 +13717,17 @@
       },
       "WorkItemOut": {
         "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author"
+          },
           "cover_hash": {
             "anyOf": [
               {

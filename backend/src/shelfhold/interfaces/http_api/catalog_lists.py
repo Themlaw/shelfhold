@@ -58,6 +58,7 @@ class WorkItemOut(BaseModel):
     kind: str
     edition_id: str | None = None  # the first Edition she may see
     cover_hash: str | None = None  # the address of its thumbnail (`/thumbnails/{hash}/{size}`)
+    author: str | None = None  # the first of its contributors, when the metadata names one
 
 
 class SeriesChoiceOut(BaseModel):
@@ -160,6 +161,7 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
                 WorkItemOut(
                     work_id=w.work_id, title=w.title, kind=w.kind, edition_id=w.edition_id,
                     cover_hash=cover_hash(w.cover_ref) if w.cover_ref else None,
+                    author=w.author,
                 )
                 for w in page
             ],
