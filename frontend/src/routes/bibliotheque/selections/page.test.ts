@@ -57,7 +57,8 @@ describe('Saved selections screen', () => {
     render(Page);
     await user.click(await screen.findByRole('button', { name: 'À lire' }));
     expect(await screen.findByText(/1 (Work|Œuvre)/)).toBeTruthy();
-    expect(screen.getByText('Titre 1')).toBeTruthy();
+    // the composed cover is decorative: the title is read once, from the caption
+    expect(screen.getAllByText('Titre 1').some((node) => node.classList.contains('label'))).toBe(true);
   });
 
   // req: EF-BIB-017

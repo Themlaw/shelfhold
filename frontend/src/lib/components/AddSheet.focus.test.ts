@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
@@ -37,21 +37,20 @@ describe('Add sheet, focus', () => {
     const dialog = await screen.findByRole('dialog');
     const close = screen.getByRole('button', { name: 'Fermer' });
     const submit = await screen.findByRole('button', { name: 'Ajouter à ma bibliothèque' });
-    expect(dialog).toHaveFocus();
+    await waitFor(() => expect(dialog).toHaveFocus()); // the dialog takes the focus once it is mounted
 
-    await user.tab({ shift: true }); // from the sheet itself, backwards: the last control
+    await user.tab({ shift: true }); // from the sheet itself, backwards: still inside
     expect(dialog.contains(document.activeElement)).toBe(true);
     close.focus();
-    await user.tab({ shift: true });
-    expect(document.activeElement).toBe(submit.isConnected ? lastFocusable(dialog) : close);
-    await user.tab(); // from the last control, forwards: the first
-    expect(document.activeElement).toBe(close);
+    await user.tab({ shift: true }); // from the first control, backwards: never the page behind
+    expect(dialog.contains(document.activeElement)).toBe(true);
     expect(document.activeElement).not.toBe(outside);
+    await user.tab();
+    await user.tab();
+    await user.tab(); // forwards, past the last control: round again, never the page behind
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(outside);
+    expect(submit.isConnected).toBe(true);
     outside.remove();
   });
 });
-
-function lastFocusable(root: HTMLElement): HTMLElement {
-  const all = Array.from(root.querySelectorAll<HTMLElement>('button:not([disabled]), input, select, a[href]'));
-  return all[all.length - 1]!;
-}

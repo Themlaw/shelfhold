@@ -7,12 +7,21 @@
   import { client } from '#lib/api/client.gen.ts';
   import { emptyTrash as emptyTrashApi, follow, shelves as loadShelves, spaceCheck } from '#lib/api/index.ts';
   import type { EstimateOut, ShelfItemOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { t, formatNumber } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Checkbox from '#lib/ui/atoms/Checkbox.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Radio from '#lib/ui/atoms/Radio.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Spinner from '#lib/ui/atoms/Spinner.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Dialog from '#lib/ui/molecules/Dialog.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
 
   type Mode = 'all' | 'from_number' | 'new_only';
 
@@ -28,9 +37,10 @@
     onadded: (state: string) => void;
   } = $props();
 
-  let dialogEl: HTMLDivElement | undefined = $state();
-
-  let mode = $state<Mode>('all');
+  let open = $state(true);
+  // the radio group holds a string; the mode is one of the three the server knows
+  let choice = $state<string | null>('all');
+  const mode = $derived<Mode>(choice === 'from_number' || choice === 'new_only' ? choice : 'all');
   let fromNumber = $state('');
   let shelves = $state<ShelfItemOut[]>([]);
   let shelvesProblem = $state<ProblemView | null>(null);
@@ -60,7 +70,6 @@
   );
 
   onMount(async () => {
-    dialogEl?.focus();
     const { data, error } = await loadShelves({ throwOnError: false });
     if (error !== undefined) {
       shelvesProblem = problemView(error);
@@ -104,42 +113,6 @@
     void fromNumber;
     void fetchEstimate();
   });
-
-  const FOCUSABLE =
-    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-  // The sheet is modal: Tab and Shift+Tab go round inside it, never to the page behind.
-  function trapFocus(event: KeyboardEvent) {
-    if (!dialogEl) return;
-    const inside = Array.from(dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE));
-    if (inside.length === 0) {
-      event.preventDefault();
-      dialogEl.focus();
-      return;
-    }
-    const first = inside[0]!;
-    const last = inside[inside.length - 1]!;
-    const active = document.activeElement;
-    if (event.shiftKey && (active === first || active === dialogEl)) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && active === last) {
-      event.preventDefault();
-      first.focus();
-    } else if (!dialogEl.contains(active)) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
-  function onKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onclose();
-    } else if (event.key === 'Tab') {
-      trapFocus(event);
-    }
-  }
 
   function refusalOf(problem: unknown, fallbackEstimate: number) {
     const figures = problem as { estimated_bytes?: unknown; free_bytes?: unknown; reserve_bytes?: unknown };
@@ -251,30 +224,29 @@
   }
 </script>
 
-<div
-  class="add-sheet"
-  role="dialog"
-  aria-modal="true"
-  aria-label={t('add.title')}
-  tabindex="-1"
-  bind:this={dialogEl}
-  onkeydown={onKeydown}
+<!-- the screen that opened the sheet is the one that closes it: the sheet stays open until it is removed -->
+<Dialog
+  bind:open
+  title={t('add.title')}
+  dismissible={!busy}
+  onclose={() => {
+    open = true;
+    onclose();
+  }}
 >
-  <header>
-    <h2>{edition.title}</h2>
-    <p class="source">{sourceName}</p>
-    <button type="button" class="close" onclick={() => onclose()}>{t('add.close')}</button>
-  </header>
+  <div class="who">
+    <p class="who__title">{edition.title}</p>
+    <p class="who__source">{sourceName}</p>
+  </div>
 
   {#if shelvesProblem}
-    <ProblemCard problem={shelvesProblem} level={2} />
+    <ProblemAlert problem={shelvesProblem} />
   {/if}
 
   {#if estimateLoading}
-    <p role="status">{t('add.counting')}</p>
+    <p class="counting" role="status"><Spinner size="sm" /> {t('add.counting')}</p>
   {:else if estimateProblem}
-    <ProblemCard problem={estimateProblem} level={2} />
-    <button type="button" onclick={fetchEstimate}>{t('add.retry')}</button>
+    <ProblemAlert problem={estimateProblem} onretry={fetchEstimate} />
   {:else if estimate}
     <p class="summary" data-testid="add-summary">
       {t('add.summary', { units: formatNumber(estimate.units), bytes: formatNumber(estimate.size_bytes) })}
@@ -282,144 +254,128 @@
   {/if}
 
   {#if shelves.length > 0}
-    <label class="shelf">
-      {t('add.shelf')}
-      <select aria-label={t('add.shelf')} bind:value={selectedShelf}>
-        {#each shelves as shelf (shelf.id)}
-          <option value={shelf.id}>{shelf.name}</option>
-        {/each}
-      </select>
-    </label>
+    <Field label={t('add.shelf')}>
+      {#snippet children(control)}
+        <Select {...control} bind:value={selectedShelf}>
+          {#each shelves as shelf (shelf.id)}
+            <option value={shelf.id}>{shelf.name}</option>
+          {/each}
+        </Select>
+      {/snippet}
+    </Field>
   {:else if !shelvesProblem}
     <p class="unshelved">{t('add.unshelved')}</p>
   {/if}
 
   <fieldset class="modes">
     <legend>{t('add.mode_group')}</legend>
-    <label><input type="radio" name="mode" value="all" bind:group={mode} /> {t('add.mode.all')}</label>
-    <label><input type="radio" name="mode" value="from_number" bind:group={mode} /> {t('add.mode.from_number')}</label>
-    <label><input type="radio" name="mode" value="new_only" bind:group={mode} /> {t('add.mode.new_only')}</label>
+    <Radio name="mode" value="all" bind:group={choice} label={t('add.mode.all')} />
+    <Radio name="mode" value="from_number" bind:group={choice} label={t('add.mode.from_number')} />
+    <Radio name="mode" value="new_only" bind:group={choice} label={t('add.mode.new_only')} />
   </fieldset>
 
   {#if mode === 'from_number'}
-    <label class="number">
-      {t('add.from_number')}
-      <input type="text" aria-label={t('add.from_number')} bind:value={fromNumber} />
-    </label>
+    <Field label={t('add.from_number')}>
+      {#snippet children(control)}
+        <Input {...control} type="text" width="short" bind:value={fromNumber} />
+      {/snippet}
+    </Field>
   {/if}
 
   {#if estimate && estimate.needs_confirmation}
-    <label class="confirm">
-      <input type="checkbox" bind:checked={confirmed} />
-      {t('add.confirm_size')}
-    </label>
+    <Checkbox bind:checked={confirmed} label={t('add.confirm_size')} />
   {/if}
 
   {#if spaceRefusal}
-    <section role="alert" class="refusal">
+    <Alert tone="warning" title={t('add.refusal.title')} live="assertive">
       <p>{t('add.refusal.estimated', { bytes: formatNumber(spaceRefusal.estimated) })}</p>
       <p>{t('add.refusal.free', { bytes: formatNumber(spaceRefusal.free) })}</p>
       <p>{t('add.refusal.reserve', { bytes: formatNumber(spaceRefusal.reserve) })}</p>
-      <button type="button" onclick={() => (trashConfirmOpen = true)}>{t('add.empty_trash')}</button>
-      {#if trashConfirmOpen}
-        <label>
-          {t('add.empty_trash_prompt')}
-          <input type="text" aria-label={t('add.empty_trash_input')} bind:value={trashWord} />
-        </label>
-        <button type="button" disabled={trashWord !== 'empty-trash' || busy} onclick={emptyTrash}>
-          {t('add.empty_trash_now')}
-        </button>
-        {#if reauthMethods}
-          <ReauthPrompt methods={reauthMethods} ondone={emptyTrash} oncancel={() => (reauthMethods = null)} />
+      {#snippet actions()}
+        <Button onclick={() => (trashConfirmOpen = true)}>{t('add.empty_trash')}</Button>
+        {#if trashConfirmOpen}
+          <div class="trash">
+            <Field label={t('add.empty_trash_prompt')}>
+              {#snippet children(control)}
+                <Input {...control} type="text" mono bind:value={trashWord} />
+              {/snippet}
+            </Field>
+            <Button variant="danger" disabled={trashWord !== 'empty-trash' || busy} onclick={emptyTrash}>
+              {t('add.empty_trash_now')}
+            </Button>
+            {#if reauthMethods}
+              <ReauthPrompt methods={reauthMethods} ondone={emptyTrash} oncancel={() => (reauthMethods = null)} />
+            {/if}
+          </div>
         {/if}
-      {/if}
-    </section>
+      {/snippet}
+    </Alert>
   {/if}
 
   {#if actionProblem}
-    <ProblemCard problem={actionProblem} level={2} />
+    <ProblemAlert problem={actionProblem} />
   {/if}
 
   {#if statusMessage}
-    <p role="status">{statusMessage}</p>
+    <Alert tone="success" title={statusMessage} live="polite" />
   {/if}
 
-  <footer class="actions">
-    <button type="button" disabled={!canAdd || busy} onclick={add}>{t('add.submit')}</button>
-  </footer>
-</div>
+  {#snippet footer()}
+    <Button variant="primary" loading={busy} disabled={!canAdd || busy} onclick={add}>{t('add.submit')}</Button>
+  {/snippet}
+</Dialog>
 
 <style>
-  .add-sheet {
+  .who {
     display: grid;
-    gap: 0.75rem;
-    padding: 1rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
-    background: var(--color-surface);
-    max-width: 32rem;
+    gap: var(--space-1);
+    min-width: 0;
   }
-  header {
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-  h2 {
+  .who__title {
     margin: 0;
-    font-size: 1.125rem;
+    font: 600 var(--step-1) / 1.25 var(--font-text);
+    overflow-wrap: anywhere;
   }
-  .source {
+  .who__source {
+    margin: 0;
     color: var(--color-muted);
-    margin: 0;
+    font-style: italic;
+    overflow-wrap: anywhere;
   }
-  .close {
-    margin-left: auto;
+  .counting {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--color-muted);
   }
   .summary {
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface);
+    border-left: var(--rule-thick) solid var(--color-shelf);
+    font-variant-numeric: tabular-nums;
+  }
+  .unshelved {
     margin: 0;
     color: var(--color-muted);
   }
   .modes {
-    border: none;
-    padding: 0;
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
     margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .modes legend {
+    padding: 0;
+    margin-bottom: var(--space-2);
+    font-weight: 700;
+  }
+  .trash {
     display: grid;
-    gap: 0.25rem;
-  }
-  .modes label {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-  }
-  .shelf select,
-  .number input {
-    min-height: 2.75rem;
-  }
-  .confirm {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-  }
-  .refusal {
-    display: grid;
-    gap: 0.5rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
-    padding: 1rem;
-  }
-  .actions button {
-    min-height: 2.75rem;
-    min-width: 2.75rem;
-    padding: 0 1rem;
-    border-radius: 0.5rem;
-    border: 1px solid currentColor;
-    background: var(--color-accent);
-    color: var(--color-on-accent);
-    cursor: pointer;
-  }
-  .actions button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    gap: var(--space-3);
+    width: 100%;
   }
 </style>

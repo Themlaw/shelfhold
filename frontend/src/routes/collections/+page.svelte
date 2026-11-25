@@ -8,14 +8,23 @@
   import { createCollection, importCbl, listCollections } from '#lib/api/index.ts';
   import type { CollectionOut, UnresolvedOut } from '#lib/api/types.gen.ts';
   import { client } from '#lib/api/client.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import ProblemAlert, { blockKind, type BlockKind } from '#lib/ui/molecules/ProblemAlert.svelte';
 
   let items = $state<CollectionOut[]>([]);
   let loaded = $state(false);
   let problem = $state<ProblemView | null>(null);
+  let blocked = $state<BlockKind | null>(null);
   let actionProblem = $state<ProblemView | null>(null);
   let isAdmin = $state(false);
   let busy = $state(false);
@@ -31,8 +40,10 @@
     const { data, error } = await listCollections();
     if (error !== undefined || !data) {
       problem = problemView(error);
+      blocked = blockKind(error);
     } else {
       problem = null;
+      blocked = null;
       items = data.items;
     }
     loaded = true;
@@ -97,91 +108,173 @@
   <title>{t('collections.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('collections.title')}</h1>
-  <p>{t('collections.intro')}</p>
+<main class="page">
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('collections.title')}</h1>
+      <p class="lede">{t('collections.intro')}</p>
+    </div>
+  </div>
 
   {#if !loaded}
-    <p>{t('collections.loading')}</p>
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('collections.loading')}</p>
+      <div class="skeleton-rows"><Skeleton /><Skeleton /><Skeleton /><Skeleton short /></div>
+    </div>
   {:else if problem}
-    <ProblemCard {problem} />
+    <ProblemAlert {problem} kind={blocked} onretry={load} />
   {:else}
-    {#if items.length === 0}
-      <p>{t('collections.empty')}</p>
-    {:else}
-      <ul class="lists" aria-label={t('collections.title')}>
-        {#each items as item (item.id)}
-          <li>
-            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-            <a href={`/collections/${item.id}`}>{item.name ?? t('collections.unnamed')}</a>
-            <span class="meta">
-              {t(`collections.kind.${item.kind}`)} · {t(`collections.scope.${item.scope}`)} ·
-              {t('collections.count', { count: item.count })}
-            </span>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-
-    <section aria-labelledby="new-list">
-      <h2 id="new-list">{t('collections.new')}</h2>
-      <form onsubmit={create}>
-        <label>
-          {t('collections.name')}
-          <input type="text" bind:value={name} required maxlength="200" autocomplete="off" />
-        </label>
-        <label>
-          {t('collections.kind')}
-          <select bind:value={kind}>
-            <option value="reading_list">{t('collections.kind.reading_list')}</option>
-            <option value="collection">{t('collections.kind.collection')}</option>
-          </select>
-        </label>
-        {#if isAdmin}
-          <label>
-            {t('collections.scopeLabel')}
-            <select bind:value={scope}>
-              <option value="profile">{t('collections.scope.profile')}</option>
-              <option value="shared">{t('collections.scope.shared')}</option>
-            </select>
-          </label>
-        {/if}
-        <button type="submit" disabled={busy || name.trim() === ''}>{t('collections.create')}</button>
-      </form>
-      <label class="file">
-        {t('collections.import')}
-        <input type="file" accept=".cbl,.xml,text/xml,application/xml" onchange={importFile} disabled={busy} />
-      </label>
-    </section>
-
-    {#if actionProblem}
-      <ProblemCard problem={actionProblem} />
-    {/if}
-    {#if imported !== null}
-      <p role="status">{t('collections.import_done', { count: imported })}</p>
-      {#if unresolved.length > 0}
-        <p>{t('collections.unresolved_intro')}</p>
-        <ul aria-label={t('collections.unresolved')}>
-          {#each unresolved as line (line.index)}
-            <li>
-              {t('collections.unresolved_line', { line: line.index + 1, series: line.series, number: line.number })}
-              — {t(`collections.unresolved.${line.reason}`)}
+    <section class="section" aria-labelledby="lists-title">
+      <!-- the page title already says it: the heading stays for the outline, not for the eye -->
+      <h2 id="lists-title" class="visually-hidden">{t('collections.title')}</h2>
+      {#if items.length === 0}
+        <EmptyState title={t('collections.empty_title')} headingLevel={3}>
+          <p>{t('collections.empty_body')}</p>
+        </EmptyState>
+      {:else}
+        <ul class="entries" role="list" aria-label={t('collections.title')}>
+          {#each items as item (item.id)}
+            <li class="entry">
+              <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+              <a class="entry__name standalone" href={`/collections/${item.id}`}>{item.name ?? t('collections.unnamed')}</a>
+              <p class="entry__meta">
+                <Badge>{t(`collections.kind.${item.kind}`)}</Badge>
+                <Badge tone={item.scope === 'shared' ? 'accent' : 'neutral'}>{t(`collections.scope.${item.scope}`)}</Badge>
+                <span class="folio">{t('collections.count', { count: item.count })}</span>
+              </p>
             </li>
           {/each}
         </ul>
       {/if}
+    </section>
+
+    <div class="cols section">
+      <section class="panel" aria-labelledby="new-list">
+        <h2 id="new-list">{t('collections.new')}</h2>
+        <form class="form" onsubmit={create}>
+          <Field label={t('collections.name')}>
+            {#snippet children(control)}
+              <Input {...control} type="text" bind:value={name} required maxlength={200} autocomplete="off" />
+            {/snippet}
+          </Field>
+          <Field label={t('collections.kind')}>
+            {#snippet children(control)}
+              <Select {...control} bind:value={kind}>
+                <option value="reading_list">{t('collections.kind.reading_list')}</option>
+                <option value="collection">{t('collections.kind.collection')}</option>
+              </Select>
+            {/snippet}
+          </Field>
+          {#if isAdmin}
+            <Field label={t('collections.scopeLabel')}>
+              {#snippet children(control)}
+                <Select {...control} bind:value={scope}>
+                  <option value="profile">{t('collections.scope.profile')}</option>
+                  <option value="shared">{t('collections.scope.shared')}</option>
+                </Select>
+              {/snippet}
+            </Field>
+          {/if}
+          <div class="btn-row">
+            <Button type="submit" variant="primary" icon="plus" loading={busy} disabled={busy || name.trim() === ''}>{t('collections.create')}</Button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>{t('collections.import')}</h2>
+        <div class="form">
+          <Field label={t('collections.import')} hint={t('collections.import_hint')}>
+            {#snippet children(control)}
+              <input {...control} class="file" type="file" accept=".cbl,.xml,text/xml,application/xml" onchange={importFile} disabled={busy} />
+            {/snippet}
+          </Field>
+        </div>
+      </section>
+    </div>
+
+    {#if actionProblem}
+      <div class="section"><ProblemAlert problem={actionProblem} /></div>
+    {/if}
+    {#if imported !== null}
+      <div class="section">
+        <Alert tone="success" title={t('collections.import_done', { count: imported })} live="polite" />
+        {#if unresolved.length > 0}
+          <Alert tone="warning" title={t('collections.unresolved')}>
+            <p>{t('collections.unresolved_intro')}</p>
+            <ul class="unresolved" aria-label={t('collections.unresolved')}>
+              {#each unresolved as line (line.index)}
+                <li>
+                  {t('collections.unresolved_line', { line: line.index + 1, series: line.series, number: line.number })}
+                  — {t(`collections.unresolved.${line.reason}`)}
+                </li>
+              {/each}
+            </ul>
+          </Alert>
+        {/if}
+      </div>
     {/if}
   {/if}
 </main>
 
 <style>
-  main { max-width: 42rem; margin: 0 auto; padding: 1rem; }
-  ul { list-style: none; padding: 0; margin: 0 0 1rem; }
-  .lists li { display: grid; gap: 0.125rem; padding: 0.5rem 0; border-bottom: 1px solid var(--color-rule); }
-  .lists a { display: inline-block; min-height: 44px; line-height: 44px; }
-  .meta { font-size: 0.875rem; }
-  section { margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--color-rule); }
-  form { display: grid; gap: 0.5rem; max-width: 30rem; }
-  label { display: grid; gap: 0.25rem; }
-  .file { margin-top: 1rem; }
+  .skeleton-rows {
+    display: grid;
+    gap: var(--space-3);
+    max-width: 28rem;
+  }
+  .entry {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-5);
+    padding: var(--space-2) 0;
+  }
+  .entry__name {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target);
+    font: 600 var(--step-1) / 1.25 var(--font-text);
+    overflow-wrap: anywhere;
+  }
+  .entry__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+  }
+  .panel h2 {
+    margin-top: 0;
+  }
+  .form {
+    display: grid;
+    gap: var(--space-5);
+  }
+  .form :global(.field + .field) {
+    margin-top: 0;
+  }
+  .file {
+    max-width: 100%;
+    min-height: var(--target);
+    font: var(--step-0) / var(--leading-ui) var(--font-ui);
+    color: var(--color-ink);
+  }
+  .file::file-selector-button {
+    min-height: var(--target);
+    margin-right: var(--space-3);
+    padding: 0 var(--space-4);
+    font: 500 var(--step-0) / 1 var(--font-ui);
+    color: var(--color-ink);
+    background: var(--color-surface);
+    border: var(--rule-hair) solid var(--color-rule-strong);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .unresolved {
+    margin: var(--space-2) 0 0;
+    padding-left: var(--space-5);
+    overflow-wrap: anywhere;
+  }
 </style>

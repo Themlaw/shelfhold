@@ -28,15 +28,17 @@ describe('CoverGrid', () => {
   });
 
   // req: EF-BIB-020
-  it('shows an empty slot, never an image, for a missing or malformed cover address', () => {
+  it('shows a composed cover, never an image, for a missing or malformed cover address', () => {
     const items = [
       { id: 'A', title: 'Sans couverture', coverHash: null },
       { id: 'B', title: 'Lien suspect', coverHash: '../../covers/original.webp' }
     ];
     const { container } = render(CoverGrid, { items, label: 'Couvertures' });
     expect(container.querySelectorAll('img')).toHaveLength(0);
-    expect(screen.getByText('Sans couverture')).toBeInTheDocument();
-    expect(screen.getByText('Lien suspect')).toBeInTheDocument();
+    // the composed cover is decorative: each title is read once, from the caption
+    expect(container.querySelectorAll('.composed > [aria-hidden="true"]')).toHaveLength(2);
+    expect(screen.getAllByText('Sans couverture').some((node) => node.classList.contains('label'))).toBe(true);
+    expect(screen.getAllByText('Lien suspect').some((node) => node.classList.contains('label'))).toBe(true);
   });
 
   // req: EF-UX-012

@@ -191,7 +191,7 @@ describe('AddSheet', () => {
     // the number is asked only for its own mode, and the sheet waits for it
     await user.click(screen.getByRole('radio', { name: 'À partir du numéro' }));
     const number = await screen.findByRole('textbox', { name: 'Numéro de départ' });
-    expect(addButton()).toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true');
     const before = estimates.length;
     await user.type(number, '12');
     await waitFor(() => expect(summary()).toHaveTextContent(/38\sunités,\s7\s340\s032\soctets/));
@@ -313,7 +313,7 @@ describe('AddSheet', () => {
     open();
     const user = userEvent.setup();
     await waitFor(() => expect(summary()).toHaveTextContent(/120\sunités/));
-    expect(addButton()).toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true');
     await user.click(screen.getByRole('checkbox', { name: 'Je confirme la taille' }));
     expect(addButton()).toBeEnabled();
     await user.click(addButton());
@@ -392,9 +392,9 @@ describe('AddSheet', () => {
     // a reserved action: the word is typed, and anything else sends nothing
     const word = screen.getByRole('textbox', { name: /empty-trash/ });
     const confirm = screen.getByRole('button', { name: 'Vider maintenant' });
-    expect(confirm).toBeDisabled();
+    expect(confirm).toHaveAttribute('aria-disabled', 'true');
     await user.type(word, 'empty-tras');
-    expect(confirm).toBeDisabled();
+    expect(confirm).toHaveAttribute('aria-disabled', 'true');
     await user.click(confirm);
     expect(trashes).toEqual([]);
     await user.type(word, 'h');
@@ -498,7 +498,7 @@ describe('AddSheet', () => {
     });
     open();
     expect(await screen.findByRole('status')).toHaveTextContent('Calcul de la taille');
-    expect(addButton()).toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true');
     expect(screen.queryByTestId('add-summary')).toBeNull();
     release();
     await waitFor(() => expect(summary()).toHaveTextContent(/1\s000\sunités/));
@@ -518,7 +518,7 @@ describe('AddSheet', () => {
     open();
     const user = userEvent.setup();
     expect(await screen.findByRole('alert')).toHaveTextContent('Titre source.unavailable');
-    expect(addButton()).toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true');
     expect(screen.queryByTestId('add-summary')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Réessayer' }));
     await waitFor(() => expect(summary()).toHaveTextContent(/1\s000\sunités/));
@@ -531,7 +531,7 @@ describe('AddSheet', () => {
     serve({ shelves: () => problem(500, 'internal') });
     open();
     expect(await screen.findByRole('alert')).toHaveTextContent('Titre internal');
-    expect(addButton()).toBeDisabled();
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true');
     expect(follows).toEqual([]);
   });
 
@@ -542,7 +542,7 @@ describe('AddSheet', () => {
     const dialog = await sheet();
     await waitFor(() => expect(summary()).toHaveTextContent(/unités/));
     expect(dialog).toHaveAttribute('aria-modal', 'true');
-    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
     for (const control of within(dialog).getAllByRole('radio')) {
       expect(control).toHaveAccessibleName();
     }
