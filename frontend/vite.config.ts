@@ -30,7 +30,12 @@ export default defineConfig({
         injectRegister: false,
         buildSW: {
           swSrc: 'src/service-worker.ts',
-          globPatterns: ['client/_app/immutable/**/*.{js,css}', 'client/*.webmanifest', 'client/icons/*.png'],
+          globPatterns: [
+            'client/_app/immutable/**/*.{js,css}',
+            'client/*.webmanifest',
+            'client/icons/*.png',
+            'client/fonts/*.woff2' // the fonts of the interface: the shell reads the same offline
+          ],
           globStrict: false // the plugin adds `prerendered/**`, which a SPA has none of
         },
         kit: { adapterFallback: 'index.html', spa: true }

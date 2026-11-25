@@ -129,11 +129,11 @@ describe('theme B "Console"', () => {
   });
 
   // req: EF-UX-012
-  it('compiles to its own block, in light and in dark, with the dense variants', () => {
+  it('compiles to its own block, in light and in dark, with its list layout', () => {
     const css = readFileSync(join(here, 'themes.css'), 'utf8');
     const block = css.match(/:root\[data-theme="console"\] \{[^}]*\}/s)?.[0] ?? '';
     expect(block).toContain('--color-accent:');
-    expect(block).toContain('--variant-density: compact;');
+    expect(block).toContain('--variant-cover-layout: list;');
     expect(css).toMatch(/:root\[data-theme="console"\]\[data-color-scheme="dark"\] \{/);
     expect(css).toMatch(/\(prefers-color-scheme: dark\)[^@]*:root\[data-theme="console"\]:not/s);
   });
@@ -147,12 +147,9 @@ describe('theme B "Console"', () => {
 
 describe('theme variants', () => {
   // req: EF-UX-012
-  it('is a closed list of four points, read as CSS properties', () => {
-    expect(Object.keys(VARIANT_POINTS).sort()).toEqual(
-      ['cover_layout', 'density', 'nav_width', 'series_header'].sort()
-    );
+  it('is a closed list of the points a component reads, as CSS properties', () => {
+    expect(Object.keys(VARIANT_POINTS)).toEqual(['cover_layout']);
     expect(variantProperty('cover_layout')).toBe('--variant-cover-layout');
-    expect(variantProperty('nav_width')).toBe('--variant-nav-width');
   });
 
   // req: EF-UX-012
@@ -175,7 +172,7 @@ describe('theme variants', () => {
   // req: EF-UX-012
   it('compiles the variants to custom properties under the theme', () => {
     const css = readFileSync(join(here, 'themes.css'), 'utf8');
-    expect(css).toMatch(/:root\[data-theme="bibliotheque"\] \{[^}]*--variant-density:/s);
-    expect(css).toContain('--variant-nav-width:');
+    expect(css).toMatch(/:root\[data-theme="bibliotheque"\] \{[^}]*--variant-cover-layout:/s);
+    expect(css).not.toContain('--variant-nav-width:');
   });
 });

@@ -8294,6 +8294,10 @@ export type WizardWriteProbeOut = {
  */
 export type WorkItemOut = {
     /**
+     * Author
+     */
+    author?: string | null;
+    /**
      * Cover Hash
      */
     cover_hash?: string | null;

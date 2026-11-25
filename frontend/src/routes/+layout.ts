@@ -2,6 +2,7 @@
 import { redirect } from '@sveltejs/kit';
 import { rememberAppearance, sanitize, type Appearance } from '#lib/themes/index.ts';
 import { detectLanguage, setUiLanguage, type Language } from '#lib/i18n/index.ts';
+import { roleOf } from '#lib/nav.ts';
 
 export const ssr = false;
 export const prerender = false;
@@ -79,6 +80,9 @@ export async function load({
   // The tabs the server offers to the signed-in role (EF-UX-005); nobody signed in: none.
   const nav = Array.isArray(me?.nav) ? me.nav.filter((id): id is string => typeof id === 'string') : [];
   const profileId = typeof me?.id === 'string' ? me.id : null; // the owner of the offline copies on this browser (L16b)
+  // who is signed in, for the masthead and the place of each entry of the table of contents
+  const role = roleOf(me?.role);
+  const user = role && typeof me?.username === 'string' ? { name: me.username, role } : null;
   // Detect language before any render (ENF-I18N-001): profile preference first, else browser languages.
   // navigator.languages is only available in the browser; in a pure SPA (ssr=false) this is always the case.
   const browserLangs = typeof navigator !== 'undefined' ? navigator.languages : undefined;
@@ -91,6 +95,7 @@ export async function load({
     nav,
     language: uiLanguage,
     profileId,
+    user,
     sessionLost: meRead.refused
   };
 }

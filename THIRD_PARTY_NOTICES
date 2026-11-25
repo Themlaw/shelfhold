@@ -153,3 +153,9 @@ Not loaded by Shelfhold in M5 and not part of the image. Companion data under ve
                       License 1.1, copyright Google Corporation 2010 and Red Hat 2012,
                       standard_fonts/LICENSE_LIBERATION)
 These licence texts are shipped in the submodule next to the files they cover.
+
+Alegreya and Alegreya Sans (frontend/static/fonts/), https://github.com/huertatipografica
+------------------------------------------------------------------------------------------
+Licence: SIL Open Font License 1.1. Copyright 2011 The Alegreya Project Authors, copyright 2013
+The Alegreya Sans Project Authors. Latin subsets in WOFF2, served by Shelfhold itself (no font
+host). The full licence text is frontend/static/fonts/OFL.txt, next to the files it covers.

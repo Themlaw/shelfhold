@@ -1,0 +1,209 @@
+/* ==========================================================================
+   Foundation tokens of the visual direction « Papier et encre »
+   (docs/design/papier-et-encre.md).
+   The colours are per theme (src/lib/themes/<theme>/tokens.json, compiled to
+   `--color-*`); everything that is not a colour lives here, shared by every
+   theme: type scale, spacing, radii, rules, shadows, motion, layers, layout,
+   and the cover papers (objects: identical in light and in dark).
+   A component reads these variables only: no hex, no magic length.
+   ========================================================================== */
+
+/* Fonts served by the instance (ENF-PRIV-001): Latin subsets, OFL (static/fonts/OFL.txt).
+   Only the weights the interface draws: Alegreya variable (400 to 900, roman and italic),
+   Alegreya Sans 400, 400 italic, 500 and 700. */
+@font-face {
+  font-family: 'Alegreya';
+  src: url('/fonts/alegreya-latin-wght-normal.woff2') format('woff2');
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Alegreya';
+  src: url('/fonts/alegreya-latin-wght-italic.woff2') format('woff2');
+  font-weight: 400 900;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Alegreya Sans';
+  src: url('/fonts/alegreya-sans-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Alegreya Sans';
+  src: url('/fonts/alegreya-sans-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Alegreya Sans';
+  src: url('/fonts/alegreya-sans-latin-500-normal.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Alegreya Sans';
+  src: url('/fonts/alegreya-sans-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* -- Type scale: Alegreya Sans has a small eye, the interface is at 16 px -- */
+  --step--2: 0.75rem; /* 12 px: labels of the mobile tab bar */
+  --step--1: 0.875rem; /* 14 px: meta, captions, folios */
+  --step-0: 1rem; /* 16 px: interface */
+  --step-05: 1.0625rem; /* 17 px: volume titles */
+  --step-1: 1.1875rem; /* 19 px: reading text */
+  --step-2: 1.5rem; /* 24 px: section title */
+  --step-3: clamp(1.75rem, 1.5rem + 0.9vw, 2rem); /* 28 to 32 px: page title */
+  --step-4: clamp(2.125rem, 1.6rem + 2.8vw, 3.75rem); /* title of a work */
+  --leading-tight: 1.1;
+  --leading-ui: 1.4;
+  --leading-read: 1.6;
+  --measure: 66ch;
+
+  /* -- Spacing: base 4 ------------------------------------------------------ */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+
+  /* -- Radii: a book has sharp corners, the interface is barely softened ---- */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+  /* --radius-cover is per theme (tokens.json) */
+
+  /* -- Rules (thicknesses) --------------------------------------------------- */
+  --rule-hair: 1px;
+  --rule-mid: 2px;
+  --rule-thick: 3px;
+
+  /* -- Shadows: tinted by the ink of the theme, never a flat grey ------------- */
+  --shadow-1: 0 1px 0 color-mix(in srgb, var(--color-ink) 6%, transparent);
+  --shadow-2: 0 6px 16px -6px color-mix(in srgb, var(--color-ink) 22%, transparent),
+    0 1px 2px color-mix(in srgb, var(--color-ink) 8%, transparent);
+  --shadow-3: 0 22px 44px -14px color-mix(in srgb, var(--color-ink) 35%, transparent),
+    0 2px 6px color-mix(in srgb, var(--color-ink) 8%, transparent);
+  --shadow-cover: 0 1px 0 color-mix(in srgb, var(--color-ink) 25%, transparent),
+    3px 6px 10px -6px color-mix(in srgb, var(--color-ink) 45%, transparent);
+
+  /* -- Motion ------------------------------------------------------------------ */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-1: 120ms; /* feedback */
+  --dur-2: 200ms; /* menus, switches */
+  --dur-3: 320ms; /* panels */
+
+  /* -- Layers -------------------------------------------------------------------- */
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-overlay: 30;
+  --z-dialog: 40;
+  --z-toast: 50;
+
+  /* -- Layout ------------------------------------------------------------------- */
+  --sidebar: 15.5rem;
+  --content-max: 78rem;
+  --form-max: 56rem;
+  --read-max: 52rem;
+  --header-h: 4rem;
+  --tabbar-h: 4.25rem;
+  --notice-h: 4.5rem; /* height kept for a notice docked on the tab bar (mobile) */
+  --cover-min: 8.5rem;
+  --cover-min-kid: 11rem;
+  --target: 2.75rem; /* 44 px: the smallest touch target */
+
+  /* -- Cover papers: objects, identical in light and in dark ------------------- */
+  --cover-1: #2c3e5c; /* Prussian blue */
+  --cover-ink-1: #f4ead3;
+  --cover-2: #7c2d22; /* oxblood */
+  --cover-ink-2: #f6e9d6;
+  --cover-3: #33533e; /* binding green */
+  --cover-ink-3: #efe7cf;
+  --cover-4: #d9c9a3; /* chamois */
+  --cover-ink-4: #2a2218;
+  --cover-5: #e9e2d0; /* laid ivory */
+  --cover-ink-5: #23324a;
+  --cover-6: #5a3d5c; /* aubergine */
+  --cover-ink-6: #f3e6dc;
+  --cover-7: #b8792b; /* ochre */
+  --cover-ink-7: #1f1710;
+  --cover-8: #1f2328; /* printer's black */
+  --cover-ink-8: #e7d9b6;
+  /* printing inks and papers of the cover families */
+  --cv-ink: #15120e;
+  --cv-paper: #f3efe5;
+  --cv-cream: #f6eedb;
+  --cv-blanche: #f4efe2;
+  --cv-light: #fff8ea;
+  --cv-red: #b8281d;
+  --cv-blue: #1f4f9c;
+  --cv-green: #2f6b3a;
+  --cv-vermilion: #c8321f;
+  --cv-teal: #0e6b74;
+  --cv-plum: #3b2150;
+  --cv-amber: #f0a73a;
+  --cv-cobalt: #2446a0;
+  --cv-lime: #d9c21c;
+  --cv-night: #1b2a5c;
+  --cv-sun: #f2c230;
+  --cv-sky: #9cc8de;
+  --cv-ochre: #d49a35;
+  --cv-coral: #ec6a55;
+  --cv-sand: #f6d4a2;
+  --cv-deep: #0d3242;
+  --cv-sea: #11576a;
+  --cv-brick: #c4462f;
+}
+
+/* -- « Bedside lamp »: depth comes from luminance, the shadows from below ------ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-color-scheme='light']) {
+    --shadow-1: inset 0 1px 0 rgb(255 248 235 / 0.05), 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-2: inset 0 1px 0 rgb(255 248 235 / 0.08), 0 0 0 1px rgb(255 248 235 / 0.05),
+      0 12px 24px -10px rgb(0 0 0 / 0.7);
+    --shadow-3: inset 0 1px 0 rgb(255 248 235 / 0.09), 0 0 0 1px rgb(255 248 235 / 0.07),
+      0 26px 50px -14px rgb(0 0 0 / 0.8);
+    --shadow-cover: 0 1px 0 rgb(0 0 0 / 0.5), 3px 6px 12px -6px rgb(0 0 0 / 0.8);
+  }
+}
+:root[data-color-scheme='dark'] {
+  --shadow-1: inset 0 1px 0 rgb(255 248 235 / 0.05), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: inset 0 1px 0 rgb(255 248 235 / 0.08), 0 0 0 1px rgb(255 248 235 / 0.05),
+    0 12px 24px -10px rgb(0 0 0 / 0.7);
+  --shadow-3: inset 0 1px 0 rgb(255 248 235 / 0.09), 0 0 0 1px rgb(255 248 235 / 0.07),
+    0 26px 50px -14px rgb(0 0 0 / 0.8);
+  --shadow-cover: 0 1px 0 rgb(0 0 0 / 0.5), 3px 6px 12px -6px rgb(0 0 0 / 0.8);
+}
+
+/* ENF-A11Y-003: nothing moves for someone who asked the system for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 0ms;
+    --dur-2: 0ms;
+    --dur-3: 0ms;
+  }
+}
+
+/* Small screens: smaller covers, two to a row */
+@media (max-width: 40rem) {
+  :root {
+    --cover-min: 6.75rem;
+    --cover-min-kid: 9rem;
+  }
+}

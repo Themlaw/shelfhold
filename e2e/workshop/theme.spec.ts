@@ -115,7 +115,7 @@ test('test_theme_attribute_is_set_before_the_first_render', async ({ page, conte
   expect((await patch('dark')).status()).toBe(200);
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-color-scheme', 'dark'); // the layout applies it
-  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(26, 23, 20)');
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(25, 23, 20)');
   await page.addInitScript(RECORDER);
   await page.reload(); // second visit: the boot script knows it before the body exists
   const sets = await page.evaluate(
@@ -132,7 +132,7 @@ test('test_theme_attribute_is_set_before_the_first_render', async ({ page, conte
   expect((await patch('light')).status()).toBe(200);
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-color-scheme', 'light');
-  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(246, 241, 231)');
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(241, 236, 225)');
   expect((await patch('auto')).status()).toBe(200);
 });
 

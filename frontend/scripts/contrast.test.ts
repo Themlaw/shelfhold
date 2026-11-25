@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { AA_TEXT, checkAll, contrastRatio, failingPairs, pairsOf, themesDir } from './contrast.ts';
+import { AA_NON_TEXT, AA_TEXT, checkAll, contrastRatio, failingPairs, pairsOf, themesDir } from './contrast.ts';
 
 // req-file: ENF-A11Y-001
 describe('contrast', () => {
@@ -51,19 +51,35 @@ describe('contrast', () => {
     expect(tokens.dark.color.accent.$value).toBe('#58A6FF');
     expect(tokens.dark.color.bg.$value).toBe('#0E1116');
     for (const scheme of ['light', 'dark'] as const) {
-      expect(pairsOf(tokens[scheme]).length, scheme).toBe(13);
+      expect(pairsOf(tokens[scheme]).length, scheme).toBe(54);
     }
     expect(failingPairs(tokens)).toEqual([]);
   });
 
-  it('holds the ochre and the grey of the light theme to AA', () => {
+  // req: ENF-A11Y-001
+  it('holds the blue ink and the greys of « Papier et encre » to AA, in light and in dark', () => {
     const tokens = JSON.parse(
       readFileSync(join(themesDir, 'bibliotheque', 'tokens.json'), 'utf8')
     );
-    expect(tokens.light.color.accent.$value).toBe('#A3471F');
-    expect(tokens.light.color.muted.$value).toBe('#6E6357');
-    expect(contrastRatio('#A3471F', tokens.light.color.bg.$value)).toBeGreaterThanOrEqual(AA_TEXT);
-    expect(contrastRatio('#6E6357', tokens.light.color.bg.$value)).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(tokens.light.color.accent.$value).toBe('#1F4A80');
+    expect(tokens.dark.color.accent.$value).toBe('#396DB8');
+    for (const scheme of ['light', 'dark'] as const) {
+      const c = tokens[scheme].color;
+      for (const text of ['ink', 'muted', 'subtle', 'accent-text']) {
+        expect(contrastRatio(c[text].$value, c.bg.$value), `${scheme} ${text}`).toBeGreaterThanOrEqual(AA_TEXT);
+      }
+      // the filled button keeps a light label on a true blue ink, in dark too
+      expect(contrastRatio(c['on-accent'].$value, c.accent.$value)).toBeGreaterThanOrEqual(AA_TEXT);
+    }
+  });
+
+  // req: ENF-A11Y-001
+  it('holds a field border and the focus ring to 3:1 (non-text contrast)', () => {
+    const tokens = JSON.parse(readFileSync(join(themesDir, 'bibliotheque', 'tokens.json'), 'utf8'));
+    const marks = pairsOf(tokens.light).filter((p) => p.min === AA_NON_TEXT).map((p) => p.names);
+    expect(marks).toEqual(
+      expect.arrayContaining(['rule-strong/bg', 'rule-strong/surface', 'focus/bg', 'shelf/bg'])
+    );
   });
 
   it('flags a pair under AA, in either scheme', () => {

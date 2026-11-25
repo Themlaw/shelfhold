@@ -88,6 +88,7 @@ class VisibleWork:
     kind: str
     edition_id: str | None = None  # the first Edition she may see
     cover_ref: str | None = None  # the cover of that Edition, or of the next one that has one
+    author: str | None = None  # the first of its contributors, as the metadata names them
 
 
 def _age_within(
@@ -520,7 +521,62 @@ def list_visible_works(
         .offset(offset)
     ).all()
     covers = _first_covers(connection, scope, [str(r.id) for r in rows]) if rows else {}
-    return [VisibleWork(r.id, r.title, r.kind, *covers.get(str(r.id), (None, None))) for r in rows]
+    authors = _first_authors(connection, covers) if rows else {}
+    found: list[VisibleWork] = []
+    for r in rows:
+        edition_id, cover_ref = covers.get(str(r.id), (None, None))
+        found.append(
+            VisibleWork(
+                r.id, r.title, r.kind, edition_id=edition_id, cover_ref=cover_ref,
+                author=authors.get(str(r.id)),
+            )
+        )  # fmt: skip
+    return found
+
+
+CONTRIBUTORS_FIELD: Final = "contributors"
+
+
+def _first_name(raw: str) -> str | None:
+    """The first name of a `contributors` value: a list of names, or of `{"name": ...}`."""
+    try:
+        decoded = json.loads(raw)
+    except ValueError:
+        return None
+    first = decoded[0] if isinstance(decoded, list) and decoded else decoded
+    if isinstance(first, dict):
+        first = first.get("name")
+    return (first.strip() or None) if isinstance(first, str) else None
+
+
+def _first_authors(
+    connection: sa.Connection, covers: dict[str, tuple[str, str | None]]
+) -> dict[str, str]:
+    """For each Work of a page: the first contributor named on the Work, else on the Edition
+    she may see (`covers` holds it: an Edition she may not see lends nothing)."""
+    field = catalog.metadata_field.c
+    owners = {work_id: (work_id, edition_id) for work_id, (edition_id, _) in covers.items()}
+    ids = [i for pair in owners.values() for i in pair]
+    rows = connection.execute(
+        sa.select(field.entity_type, field.entity_id, field.value)
+        .where(
+            field.field == CONTRIBUTORS_FIELD,
+            field.entity_type.in_(("work", "edition")),
+            field.entity_id.in_(ids),
+        )
+        .order_by(field.entity_type, field.entity_id, field.lang)
+    ).all()
+    names: dict[tuple[str, str], str] = {}
+    for row in rows:
+        name = _first_name(row.value)
+        if name is not None:
+            names.setdefault((str(row.entity_type), str(row.entity_id)), name)
+    found: dict[str, str] = {}
+    for work_id, (_, edition_id) in owners.items():
+        name = names.get(("work", work_id)) or names.get(("edition", edition_id))
+        if name is not None:
+            found[work_id] = name
+    return found
 
 
 @dataclass(frozen=True)

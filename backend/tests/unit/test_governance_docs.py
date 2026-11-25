@@ -152,16 +152,24 @@ def test_coverage_gates_are_configured() -> None:
 
 @pytest.mark.req("ENF-PRIV-001")
 def test_frontend_sources_load_no_web_font_or_remote_resource() -> None:
-    remote = re.compile(
-        r"@font-face|@import|url\(\s*['\"]?https?:|\b(?:src|href)\s*=\s*['\"]https?:"
-    )
+    # the fonts are self-hosted (ENF-PRIV-001): an @font-face reads `/fonts/*.woff2` of the
+    # instance and nothing else, and nothing is imported from another origin
+    remote = re.compile(r"@import|url\(\s*['\"]?(?:https?:)?//|\b(?:src|href)\s*=\s*['\"]https?:")
+    font_face = re.compile(r"@font-face\s*\{([^}]*)\}")
+    own_font = re.compile(r"^url\('/fonts/[a-z0-9-]+\.woff2'\) format\('woff2'\)$")
     offenders = []
     for f in (ROOT / "frontend" / "src").rglob("*"):
         if f.suffix not in {".css", ".html", ".svelte", ".json"} or ".test." in f.name:
             continue
-        if remote.search(f.read_text(encoding="utf-8")):
+        text = f.read_text(encoding="utf-8")
+        if remote.search(text):
             offenders.append(str(f.relative_to(ROOT)))
+        for block in font_face.findall(text):
+            sources = re.findall(r"src:\s*([^;]+);", block)
+            if not sources or not all(own_font.match(source.strip()) for source in sources):
+                offenders.append(f"{f.relative_to(ROOT)}: @font-face {block.strip()[:60]}")
     assert not offenders, offenders
+    assert (ROOT / "frontend" / "static" / "fonts" / "OFL.txt").is_file()
 
 
 @pytest.mark.req("ENF-SEC-007")

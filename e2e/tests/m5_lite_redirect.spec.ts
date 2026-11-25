@@ -25,7 +25,7 @@ test('a browser that runs modules stays on the SPA, whatever its User-Agent', as
     const context = await browser.newContext({ userAgent });
     const page = await context.newPage();
     await page.goto('/');
-    await expect(page.getByRole('heading', { level: 1, name: 'Shelfhold — pré-alpha' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Bonjour.' })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe('/');
     await context.close();
   }

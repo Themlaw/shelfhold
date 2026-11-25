@@ -66,9 +66,19 @@ export default ts.config(
     ],
     rules: { 'no-restricted-syntax': 'off' }
   },
-  // M5: foliate-js is imported by the reader engine alone (ENF-SEC-004 volet lecteur).
+  // M5: foliate-js is imported by the reader engine alone (ENF-SEC-004 volet lecteur); bits-ui by
+  // the three components that wrap it (ENF-GOV-002, docs/dependencies.md).
   {
     files: ['src/**/*.{ts,svelte}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: ['foliate-js', 'foliate-js/*', '**/foliate-js', '**/foliate-js/**', 'bits-ui', 'bits-ui/*'] }
+      ]
+    }
+  },
+  {
+    files: ['src/lib/ui/molecules/{Dialog,Menu,Tabs}.svelte'],
     rules: {
       'no-restricted-imports': ['error', { patterns: ['foliate-js', 'foliate-js/*', '**/foliate-js', '**/foliate-js/**'] }]
     }
