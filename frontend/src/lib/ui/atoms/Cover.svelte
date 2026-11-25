@@ -1,0 +1,517 @@
+<script lang="ts">
+  // A cover is an object, not a thumbnail (the signature of « Papier et encre »). With an image,
+  // the image, cut to 2:3. Without one, or when it fails to load, a cover composed in type from
+  // the title: never a grey square. Five families: bound novel (three compositions and the
+  // « collection blanche »), manga, webtoon, comic album. Below 6.5 rem wide the cover is only a
+  // picture (the title is printed next to it); below 9 rem the author leaves it.
+  // Decorative by default: the card that holds it says the title. `label` makes it an image.
+  // A locked work keeps its place, without title or author.
+  import { t } from '#lib/i18n/index.ts';
+  import Icon from './Icon.svelte';
+  import { MOTIFS } from './icons.ts';
+  import ProgressRibbon from './ProgressRibbon.svelte';
+  import Shapes from './Shapes.svelte';
+  import { coverPlan, type CoverKind } from './cover.ts';
+
+  let {
+    title,
+    author = null,
+    src = null,
+    kind = 'book',
+    number = null,
+    size = 'fill',
+    progress = null,
+    done = false,
+    locked = false,
+    label
+  }: {
+    title: string;
+    author?: string | null;
+    src?: string | null;
+    kind?: CoverKind;
+    number?: string | number | null;
+    size?: 'sm' | 'md' | 'lg' | 'fill';
+    progress?: number | null;
+    done?: boolean;
+    locked?: boolean;
+    label?: string;
+  } = $props();
+
+  let failed = $state(false);
+  // a new address is a new chance for the image
+  $effect(() => {
+    void src;
+    failed = false;
+  });
+
+  const plan = $derived(coverPlan(title, kind));
+  const image = $derived(!locked && !!src && !failed);
+  const generated = $derived(locked ? 'locked' : plan.family === 'book' && plan.layout === 'blanche' ? 'blanche' : plan.family);
+  const ribbon = $derived(!locked && (done || (progress !== null && progress > 0)));
+</script>
+
+<div
+  class="cover cover--{size} cover--{image ? 'image' : generated} paper-{plan.paper} ink-{plan.ink} layout-{plan.layout}"
+  role={label ? 'img' : undefined}
+  aria-label={label}
+  aria-hidden={label ? undefined : 'true'}
+  data-family={image ? 'image' : generated}
+>
+  {#if image}
+    <img class="cover__img" src={src} alt="" loading="lazy" decoding="async" onerror={() => (failed = true)} />
+  {:else if generated === 'locked'}
+    <span class="cover__frame"></span>
+    <span class="cover__lock"><Icon name="lock" size="lg" /></span>
+    <span class="cover__title">{t('ui.cover.locked')}</span>
+  {:else if generated === 'manga'}
+    {#if author}<span class="cover__author">{author}</span>{/if}
+    <svg class="cover__art" viewBox="0 0 40 40" aria-hidden="true"><Shapes shapes={MOTIFS[plan.motif]} /></svg>
+    <span class="cover__title">{title}</span>
+    {#if number !== null}<span class="cover__tome">{number}</span>{/if}
+  {:else if generated === 'webtoon'}
+    {#if number !== null}<span class="cover__tag">{t('ui.cover.episode', { number: String(number) })}</span>{/if}
+    <svg class="cover__art" viewBox="0 0 40 40" aria-hidden="true"><Shapes shapes={MOTIFS[plan.motif]} /></svg>
+    <span class="cover__title">{title}</span>
+    {#if author}<span class="cover__author">{author}</span>{/if}
+  {:else if generated === 'comic'}
+    {#if author}<span class="cover__author">{author}</span>{/if}
+    <span class="cover__title">{title}</span>
+    <span class="cover__panel">
+      <svg class="cover__art" viewBox="0 0 40 40" aria-hidden="true"><Shapes shapes={MOTIFS[plan.motif]} /></svg>
+    </span>
+  {:else if generated === 'blanche'}
+    {#if author}<span class="cover__author">{author}</span>{/if}
+    <span class="cover__title">{title}</span>
+    <span class="cover__foot">
+      <svg class="cover__motif" viewBox="0 0 40 40" aria-hidden="true"><Shapes shapes={MOTIFS.fleuron} /></svg>
+      {#if number !== null}<span class="cover__tome">{number}</span>{/if}
+    </span>
+  {:else}
+    <span class="cover__frame"></span>
+    <span class="cover__author">{author ?? t('ui.cover.unknown_author')}</span>
+    <span class="cover__title">{title}</span>
+    <span class="cover__foot">
+      <svg class="cover__motif" viewBox="0 0 40 40" aria-hidden="true"><Shapes shapes={MOTIFS[plan.motif]} /></svg>
+      {#if number !== null}<span class="cover__tome">{number}</span>{/if}
+    </span>
+  {/if}
+  {#if ribbon}<ProgressRibbon value={progress ?? 1} {done} side={generated === 'manga' && !image ? 'left' : 'right'} />{/if}
+</div>
+
+<style>
+  .cover {
+    --cv: var(--cover-1);
+    --cvi: var(--cover-ink-1);
+    position: relative;
+    display: grid;
+    container: cover / inline-size;
+    aspect-ratio: 2 / 3;
+    width: 100%;
+    overflow: hidden;
+    background: var(--cv);
+    color: var(--cvi);
+    border-radius: var(--radius-cover) var(--radius-xs) var(--radius-xs) var(--radius-cover);
+    box-shadow: var(--shadow-cover);
+    font-family: var(--font-text);
+  }
+  .cover > * {
+    position: relative;
+    min-width: 0;
+  }
+  .cover--sm {
+    width: 3rem;
+    flex: none;
+  }
+  .cover--md {
+    width: 7.5rem;
+    flex: none;
+  }
+  .cover--lg {
+    max-width: 17rem;
+  }
+  .paper-1 { --cv: var(--cover-1); --cvi: var(--cover-ink-1); }
+  .paper-2 { --cv: var(--cover-2); --cvi: var(--cover-ink-2); }
+  .paper-3 { --cv: var(--cover-3); --cvi: var(--cover-ink-3); }
+  .paper-4 { --cv: var(--cover-4); --cvi: var(--cover-ink-4); }
+  .paper-5 { --cv: var(--cover-5); --cvi: var(--cover-ink-5); }
+  .paper-6 { --cv: var(--cover-6); --cvi: var(--cover-ink-6); }
+  .paper-7 { --cv: var(--cover-7); --cvi: var(--cover-ink-7); }
+  .paper-8 { --cv: var(--cover-8); --cvi: var(--cover-ink-8); }
+  .ink-red { --bl: var(--cv-red); }
+  .ink-blue { --bl: var(--cv-blue); }
+  .ink-green { --bl: var(--cv-green); }
+  .ink-vermilion { --bl: var(--cv-vermilion); }
+  .ink-teal { --bl: var(--cv-teal); }
+  .ink-plum { --bl: var(--cv-plum); }
+
+  .cover__img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .cover__title {
+    overflow-wrap: break-word;
+    hyphens: manual;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .cover__frame {
+    position: absolute;
+    inset: 5% 5% 5% 12%;
+    border: var(--rule-hair) solid currentColor;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .cover__motif,
+  .cover__art {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .cover__tome {
+    font-weight: 600;
+    font-variant-numeric: oldstyle-nums;
+  }
+
+  /* -- Bound novel: cloth, hinge, ruled frame, engraved motif ----------------- */
+  .cover--book {
+    grid-template-rows: auto 1fr auto;
+  }
+  .cover--book::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 7%;
+    background: color-mix(in oklab, var(--cv), black 22%);
+  }
+  .cover--book::after {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 8.5%;
+    width: var(--rule-hair);
+    background: color-mix(in oklab, var(--cv), white 18%);
+  }
+  .cover--book .cover__author {
+    grid-row: 1;
+    margin: 12cqw 9cqw 0 15cqw;
+    font-size: 7.5cqw;
+    font-style: italic;
+    line-height: 1.2;
+  }
+  .cover--book .cover__title {
+    grid-row: 2;
+    align-self: center;
+    margin: 0 10cqw 0 15cqw;
+    font-size: 13cqw;
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    -webkit-line-clamp: 5;
+    line-clamp: 5;
+  }
+  .cover__foot {
+    grid-row: 3;
+    margin: 0 9cqw 9cqw 15cqw;
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 4cqw;
+  }
+  .cover--book .cover__motif {
+    width: 30cqw;
+    height: 30cqw;
+  }
+  .cover--book .cover__tome {
+    font-size: 9cqw;
+  }
+  /* b: a light leather title piece, a large gilt motif */
+  .cover--book.layout-b {
+    grid-template-rows: auto auto 1fr;
+  }
+  .layout-b .cover__frame {
+    border-width: var(--rule-mid);
+    border-style: double;
+    opacity: 0.7;
+    inset: 4% 4% 4% 11%;
+  }
+  .cover--book.layout-b .cover__title {
+    grid-row: 1;
+    align-self: start;
+    margin: 14cqw 10cqw 0 16cqw;
+    padding: 4cqw 4cqw 5cqw;
+    text-align: center;
+    background: var(--cvi);
+    color: var(--cv);
+    font-size: 12cqw;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+  }
+  .cover--book.layout-b .cover__author {
+    grid-row: 2;
+    margin: 3cqw 10cqw 0 16cqw;
+    text-align: center;
+  }
+  .cover--book.layout-b .cover__foot {
+    align-self: center;
+    justify-content: center;
+    margin: 0 8cqw 6cqw 15cqw;
+  }
+  .cover--book.layout-b .cover__motif {
+    width: 44cqw;
+    height: 44cqw;
+    stroke-width: 1.1;
+  }
+  /* c: an oval medallion, centred italic title */
+  .layout-c .cover__frame {
+    inset: 14% 12% 18% 19%;
+    border-radius: 50%;
+    border-width: var(--rule-mid);
+    opacity: 0.8;
+  }
+  .cover--book.layout-c .cover__author {
+    margin: 8cqw 6cqw 0 12cqw;
+    text-align: center;
+    font-size: 7cqw;
+  }
+  .cover--book.layout-c .cover__title {
+    margin: 0 16cqw 0 22cqw;
+    text-align: center;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 12.5cqw;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+  }
+  .cover--book.layout-c .cover__foot {
+    justify-content: center;
+    margin: 0 6cqw 6cqw 12cqw;
+  }
+  .cover--book.layout-c .cover__motif {
+    width: 18cqw;
+    height: 18cqw;
+  }
+
+  /* -- « Collection blanche »: paper, double rule, coloured italic title ------ */
+  .cover--blanche {
+    --cv: var(--cv-blanche);
+    --cvi: var(--cv-ink);
+    grid-template-rows: auto auto 1fr auto;
+    box-shadow:
+      var(--shadow-cover),
+      inset 0 0 0 var(--rule-hair) color-mix(in oklab, var(--cv), black 14%);
+  }
+  .cover--blanche::before {
+    content: '';
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    top: 4.6%;
+    height: 2%;
+    border-top: 1.2cqw solid var(--bl);
+    border-bottom: 0.5cqw solid var(--bl);
+  }
+  .cover--blanche .cover__author {
+    grid-row: 1;
+    margin: 14cqw 10cqw 0;
+    font: 500 7cqw / 1.2 var(--font-ui);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .cover--blanche .cover__title {
+    grid-row: 2;
+    margin: 4cqw 10cqw 0;
+    color: var(--bl);
+    font: italic 600 15cqw / 1 var(--font-text);
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    -webkit-line-clamp: 5;
+    line-clamp: 5;
+  }
+  .cover--blanche .cover__foot {
+    grid-row: 4;
+    margin: 0 10cqw 9cqw;
+    display: grid;
+    justify-items: center;
+    gap: 2cqw;
+    color: var(--bl);
+  }
+  .cover--blanche .cover__motif {
+    width: 18cqw;
+    height: 18cqw;
+  }
+  .cover--blanche .cover__tome {
+    font-size: 8cqw;
+    color: var(--cv-ink);
+  }
+
+  /* -- Manga: black ink on paper, one colour, vertical title band, big number - */
+  .cover--manga {
+    --cv: var(--cv-paper);
+    --cvi: var(--cv-ink);
+    grid-template: 'author band' auto 'art band' 1fr 'tome band' auto / minmax(0, 1fr) auto;
+  }
+  .cover--manga .cover__title {
+    grid-area: band;
+    writing-mode: vertical-rl;
+    max-height: 100%;
+    padding: 6cqw 3.5cqw;
+    background: var(--bl);
+    color: var(--cv-paper);
+    font: 700 12.5cqw / 1.05 var(--font-ui);
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+  .cover--manga .cover__author {
+    grid-area: author;
+    justify-self: start;
+    margin: 5cqw 0 0 5cqw;
+    padding: 1cqw 2cqw;
+    font: 500 6.5cqw / 1.2 var(--font-ui);
+  }
+  .cover--manga .cover__art {
+    grid-area: art;
+    align-self: center;
+    justify-self: center;
+    width: 70%;
+    height: auto;
+    stroke-width: 2.2;
+  }
+  .cover--manga .cover__tome {
+    grid-area: tome;
+    justify-self: start;
+    margin: 0 0 3cqw 5cqw;
+    font: italic 900 24cqw / 1 var(--font-text);
+    font-variant-numeric: lining-nums;
+  }
+
+  /* -- Webtoon: full colour, the title in a band at the bottom --------------- */
+  .cover--webtoon {
+    grid-template-rows: auto 1fr auto auto;
+  }
+  .cover--webtoon .cover__tag {
+    grid-row: 1;
+    justify-self: start;
+    margin: 5cqw;
+    padding: 1cqw 3cqw;
+    background: var(--cv-ink);
+    color: var(--cv-light);
+    font: 700 7cqw / 1.3 var(--font-ui);
+    border-radius: var(--radius-xs);
+  }
+  .cover--webtoon .cover__art {
+    grid-row: 2;
+    align-self: center;
+    justify-self: center;
+    width: 64%;
+    height: auto;
+    stroke-width: 2;
+  }
+  .cover--webtoon .cover__title {
+    grid-row: 3;
+    padding: 5cqw 7cqw 3cqw;
+    background: var(--cv-amber);
+    color: var(--cv-ink);
+    font: 700 14cqw / 0.98 var(--font-ui);
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+  .cover--webtoon .cover__author {
+    grid-row: 4;
+    padding: 0 7cqw 6cqw;
+    background: var(--cv-amber);
+    color: var(--cv-ink);
+    font: italic 7cqw / 1.2 var(--font-text);
+  }
+  .cover--webtoon .cover__title:last-child {
+    padding-bottom: 7cqw;
+  }
+
+  /* -- Comic album: a title band in heavy type, an inked panel --------------- */
+  .cover--comic {
+    --cv: var(--cv-cream);
+    --cvi: var(--cv-ink);
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  .cover--comic .cover__author {
+    grid-row: 1;
+    margin: 6cqw 7cqw 0;
+    font: 700 6.5cqw / 1.2 var(--font-ui);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .cover--comic .cover__title {
+    grid-row: 2;
+    margin: 1cqw 7cqw 4cqw;
+    color: var(--bl);
+    font: 800 15cqw / 0.92 var(--font-text);
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+  .cover__panel {
+    grid-row: 3;
+    margin: 0 6cqw 6cqw;
+    display: grid;
+    place-items: center;
+    border: 1.2cqw solid var(--cv-ink);
+    background: var(--cv);
+    min-height: 0;
+    overflow: hidden;
+  }
+  .cover--comic .cover__art {
+    width: 70%;
+    height: auto;
+    color: var(--bl);
+    stroke-width: 2;
+  }
+
+  /* -- Locked: the place stays, the content does not --------------------------- */
+  .cover--locked {
+    --cv: var(--color-surface-2);
+    --cvi: var(--color-muted);
+    border: var(--rule-hair) solid var(--color-rule-strong);
+    grid-template-rows: 1fr auto 1fr;
+    justify-items: center;
+  }
+  .cover--locked .cover__frame {
+    border-style: dashed;
+    inset: 5%;
+  }
+  .cover--locked .cover__lock {
+    grid-row: 1;
+    align-self: end;
+  }
+  .cover--locked .cover__title {
+    grid-row: 2;
+    margin: 4cqw 10cqw;
+    text-align: center;
+    font-style: italic;
+    font-size: 10cqw;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+
+  /* The rule of sizes: below 6.5 rem only a picture, below 9 rem the author leaves */
+  @container cover (width < 6.5rem) {
+    .cover__title,
+    .cover__author,
+    .cover__tag,
+    .cover__tome {
+      display: none !important;
+    }
+  }
+  @container cover (width < 9rem) {
+    .cover__author {
+      display: none !important;
+    }
+  }
+</style>
