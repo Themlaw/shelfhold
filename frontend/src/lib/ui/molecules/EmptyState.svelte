@@ -28,7 +28,7 @@
   {#if art}
     <div class="empty__art"><Illustration name={variant === 'filtered' ? 'nothing-found' : 'empty'} /></div>
   {/if}
-  <svelte:element this={`h${headingLevel}`} class="empty__title">{title}</svelte:element>
+  <svelte:element this={`h${headingLevel}`} class="empty__title" class:empty__title--small={headingLevel === 3}>{title}</svelte:element>
   {#if children}<div class="empty__body">{@render children()}</div>{/if}
   {#if actions}<div class="empty__actions">{@render actions()}</div>{/if}
 </div>
@@ -54,6 +54,9 @@
     margin: 0;
     font-size: var(--step-2);
     font-weight: 500;
+  }
+  .empty__title--small {
+    font-size: var(--step-1);
   }
   .empty__body {
     color: var(--color-muted);

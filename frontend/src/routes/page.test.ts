@@ -92,16 +92,61 @@ afterEach(() => {
 afterAll(() => server.close());
 
 describe('home page', () => {
-  it('has the pre-alpha title as level-one heading', async () => {
-    render(Page);
-    expect(screen.getByRole('heading', { level: 1, name: 'Shelfhold — pré-alpha' })).toBeInTheDocument();
-    await screen.findByText(/Le serveur répond/);
+  // req: EF-UX-005
+  it('greets the person signed in with one level-one heading, and says nothing of a pre-alpha', async () => {
+    render(Page, { data: { user: { name: 'Antoine', role: 'member' } } });
+    expect(screen.getByRole('heading', { level: 1, name: /^Bon(jour|soir), Antoine\.$/ })).toBeInTheDocument();
+    await screen.findByRole('link', { name: 'Ajouter un premier livre' });
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(document.body.textContent).not.toMatch(/pré-alpha|pre-alpha/);
   });
 
   // req: ENF-OPS-003
-  it('calls /healthz through the generated client', async () => {
-    render(Page);
+  it('calls /healthz through the generated client (the instance panel of an administrator)', async () => {
+    server.use(http.get(`${BASE}/api/v1/requests/queue`, () => HttpResponse.json({ items: [] })));
+    render(Page, { data: { user: { name: 'Claire', role: 'admin' } } });
     expect(await screen.findByText('Le serveur répond.')).toBeInTheDocument();
+  });
+
+  // req: EF-UX-010
+  it('an administrator sees what waits for approval, the count said in words', async () => {
+    server.use(
+      http.get(`${BASE}/api/v1/requests/queue`, () =>
+        HttpResponse.json({
+          items: [
+            { id: 'q1', title: 'Le Jardin des lucioles', requester_role: 'child', requester_id: 'p', created_at: '2026-11-25T09:00:00Z', needs_age: true, target_kind: 'work', visibility: 'household' },
+            { id: 'q2', title: null, requester_role: 'member', requester_id: 'p2', created_at: '2026-11-24T09:00:00Z', needs_age: false, target_kind: 'work', visibility: 'private' }
+          ]
+        })
+      )
+    );
+    render(Page, { data: { user: { name: 'Claire', role: 'admin' } } });
+    const section = await screen.findByRole('region', { name: /À approuver/ });
+    const rows = within(section).getAllByRole('listitem');
+    expect(rows.map((r) => r.querySelector('.entry__title')?.textContent)).toEqual(['Le Jardin des lucioles', 'Titre masqué']);
+    expect(within(section).getByText('2', { selector: '.badge *, .badge' })).toBeInTheDocument();
+    expect(screen.getByText('2 demandes attendent votre accord.')).toBeInTheDocument();
+  });
+
+  // req: EF-UX-010
+  it('a member is never asked for the approval queue', async () => {
+    let asked = false;
+    server.use(http.get(`${BASE}/api/v1/requests/queue`, () => ((asked = true), HttpResponse.json({ items: [] }))));
+    render(Page, { data: { user: { name: 'Antoine', role: 'member' } } });
+    await screen.findByRole('link', { name: 'Ajouter un premier livre' });
+    expect(asked).toBe(false);
+    expect(screen.queryByRole('region', { name: /À approuver/ })).toBeNull();
+  });
+
+  // req: EF-UX-003
+  it('a list the server could not give is said in its block; the rest of the page stands', async () => {
+    server.use(http.get(`${BASE}/api/v1/works`, () => HttpResponse.json({ title: 'x', status: 500 }, { status: 500 })));
+    requests = [request('b', 'approved', 'preparing')];
+    render(Page);
+    const recent = await screen.findByRole('region', { name: 'Arrivé récemment' });
+    expect(await within(recent).findByText(/n’a pas pu être lue/)).toBeInTheDocument();
+    expect(within(recent).getByRole('button', { name: 'Réessayer' })).toBeInTheDocument();
+    expect(await screen.findByText('En préparation')).toBeInTheDocument();
   });
 
   // req: EF-UX-008
@@ -138,7 +183,7 @@ describe('home page', () => {
     ];
     render(Page);
     const section = await screen.findByRole('region', { name: 'Arrivé récemment' });
-    const titles = (await within(section).findAllByRole('listitem')).map((li) => li.textContent);
+    const titles = (await within(section).findAllByRole('listitem')).map((li) => within(li).getByRole('heading').textContent?.trim());
     expect(titles).toEqual(['Plus récent', 'Plus ancien']);
     expect(worksQuery?.get('sort')).toBe('recent');
     expect(screen.queryByRole('link', { name: 'Ajouter un premier livre' })).toBeNull();
@@ -151,14 +196,17 @@ describe('home page', () => {
       { work_id: 'w2', title: 'Série B', unit_id: 'u9', number: '9', unit_title: null, state: 'in_progress', target: 'kavita', approximate: false, carrier_type: null, carrier_id: null, open_url: KAVITA }
     ];
     render(Page);
-    const section = await screen.findByRole('region', { name: 'Reprendre la lecture' });
-    const rows = within(section).getAllByRole('listitem');
-    expect(rows.map((r) => r.textContent?.split(/\s+/).join(' ').trim())).toEqual([
-      'Série A N° 2 · prochaine à lire · environ Lire',
+    // the first entry is the one the reader left last: « Vous en étiez là », the others under it
+    const hero = await screen.findByRole('region', { name: 'Vous en étiez là' });
+    expect(hero).toHaveTextContent('Série A');
+    expect(hero).toHaveTextContent('N° 2 · prochaine à lire · environ');
+    expect(within(hero).getByRole('link', { name: 'Lire, Série A, n° 2' })).toHaveAttribute('href', '/lire/content/c2');
+    const also = screen.getByRole('region', { name: 'Aussi en cours' });
+    const rows = within(also).getAllByRole('listitem');
+    expect(rows.map((r) => r.querySelector('.resume__text')?.textContent?.split(/\s+/).join(' ').trim())).toEqual([
       'Série B N° 9 · en cours Ouvrir dans Kavita'
     ]);
-    expect(within(rows[0]!).getByRole('link', { name: 'Lire, Série A, n° 2' })).toHaveAttribute('href', '/lire/content/c2');
-    expect(within(rows[1]!).getByRole('link', { name: 'Ouvrir dans Kavita, Série B, n° 9' })).toHaveAttribute('href', KAVITA);
+    expect(within(rows[0]!).getByRole('link', { name: 'Ouvrir dans Kavita, Série B, n° 9' })).toHaveAttribute('href', KAVITA);
     expect(resumeQuery?.get('limit')).toBe('6'); // a bounded list asked for
   });
 
@@ -176,10 +224,11 @@ describe('home page', () => {
       )
     );
     render(Page);
-    const section = await screen.findByRole('region', { name: 'Reprendre la lecture' });
-    const row = within(section).getByRole('listitem');
-    expect(row.textContent?.split(/\s+/).join(' ').trim()).toBe('Série C N° 3 · en cours Ouvrir dans Komga');
-    expect(within(row).getByRole('link', { name: 'Ouvrir dans Komga, Série C, n° 3' })).toHaveAttribute('href', KOMGA);
+    const hero = await screen.findByRole('region', { name: 'Vous en étiez là' });
+    expect(hero).toHaveTextContent('N° 3 · en cours');
+    const link = within(hero).getByRole('link', { name: 'Ouvrir dans Komga, Série C, n° 3' });
+    expect(link).toHaveAttribute('href', KOMGA);
+    expect(link).toHaveTextContent('Ouvrir dans Komga');
   });
 
   // req: EF-LEC-008
@@ -198,13 +247,13 @@ describe('home page', () => {
       )
     );
     render(Page);
-    const section = await screen.findByRole('region', { name: 'Reprendre la lecture' });
-    const rows = within(section).getAllByRole('listitem');
-    expect(within(rows[0]!).getByRole('link', { name: 'Ouvrir dans Kavita, Série D, n° 4' })).toHaveAttribute(
+    const hero = await screen.findByRole('region', { name: 'Vous en étiez là' });
+    expect(within(hero).getByRole('link', { name: 'Ouvrir dans Kavita, Série D, n° 4' })).toHaveAttribute(
       'href',
       'http://kavita-un.test:5000'
     );
-    expect(within(rows[1]!).getByRole('link', { name: 'Ouvrir dans Kavita, Série E, n° 5' })).toHaveAttribute(
+    const also = screen.getByRole('region', { name: 'Aussi en cours' });
+    expect(within(also).getByRole('link', { name: 'Ouvrir dans Kavita, Série E, n° 5' })).toHaveAttribute(
       'href',
       'http://kavita-deux.test:5000'
     );
@@ -215,8 +264,9 @@ describe('home page', () => {
     // nothing under way, or a child with everything hidden: no section, no word, no empty state
     render(Page);
     await screen.findByRole('link', { name: 'Ajouter un premier livre' });
-    expect(screen.queryByRole('region', { name: 'Reprendre la lecture' })).toBeNull();
-    expect(document.body.textContent ?? '').not.toMatch(/Reprendre|Continue reading/);
+    expect(screen.queryByRole('region', { name: 'Vous en étiez là' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Aussi en cours' })).toBeNull();
+    expect(document.body.textContent ?? '').not.toMatch(/en étiez là|Reprendre|Continue reading/);
   });
 
   // req: EF-LEC-008
@@ -230,8 +280,8 @@ describe('home page', () => {
       )
     );
     render(Page);
-    const section = await screen.findByRole('region', { name: 'Reprendre la lecture' });
-    expect(within(section).queryByRole('link')).toBeNull();
+    const hero = await screen.findByRole('region', { name: 'Vous en étiez là' });
+    expect(within(hero).queryByRole('link')).toBeNull();
   });
 
   // req: EF-UX-010
