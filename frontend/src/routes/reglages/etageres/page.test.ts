@@ -203,9 +203,9 @@ describe('Étagères', () => {
     render(Page);
     const user = userEvent.setup();
     const li = await row();
-    expect(within(li).getByRole('button', { name: 'Renommer' })).toBeDisabled();
+    expect(within(li).getByRole('button', { name: 'Renommer' })).toHaveAttribute('aria-disabled', 'true');
     await user.type(within(li).getByLabelText('Segment'), '!');
-    expect(within(li).getByRole('button', { name: 'Renommer' })).toBeEnabled();
+    expect(within(li).getByRole('button', { name: 'Renommer' })).not.toHaveAttribute('aria-disabled');
   });
 
   // req: EF-EXP-030
@@ -226,7 +226,7 @@ describe('Étagères', () => {
     await user.click(within(li).getByRole('button', { name: 'Renommer' }));
     expect(await screen.findByText('La progression Kavita de 7 lecteurs sera perdue.')).toBeTruthy();
     expect(body).toEqual({ shelf_destination_id: DEST, template: { ...TEMPLATE, special_dir: 'Specials2' } });
-    expect(screen.getByRole('button', { name: 'Appliquer le plan' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Appliquer le plan' })).toHaveAttribute('aria-disabled', 'true');
   });
 
   // req: EF-USR-022

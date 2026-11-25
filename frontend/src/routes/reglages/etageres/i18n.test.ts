@@ -121,7 +121,7 @@ describe('the shelves and destinations screens speak through the catalogs', () =
     setUiLanguage('en');
     render(TypedConfirm, { phrase: 'REMOVE manga/', onconfirm: () => {}, oncancel: () => {} } as never);
     expect(screen.getByLabelText('Type the phrase to confirm')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Confirm' })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
   });
 
@@ -137,6 +137,6 @@ describe('the shelves and destinations screens speak through the catalogs', () =
     expect(screen.getByRole('alert')).toHaveTextContent('The Kavita progress of 7 readers will be lost.');
     expect(screen.getByRole('list', { name: 'Renames' })).toBeTruthy();
     expect(screen.getByText('LOSE THE PROGRESS')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Apply the plan' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Apply the plan' })).toHaveAttribute('aria-disabled', 'true');
   });
 });

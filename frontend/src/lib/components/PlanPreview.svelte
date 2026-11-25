@@ -3,6 +3,8 @@
   // blocked, and, before Kavita readers lose their progress, the figure and a phrase to type.
   import TypedConfirm from './TypedConfirm.svelte';
   import { t } from '#lib/i18n/index.ts';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
 
   type Step = { kind: string; src: string; dst: string };
   type Warning = {
@@ -42,24 +44,23 @@
 </script>
 
 {#if !plan.plan_id && plan.steps.length === 0}
-  <p>{t('plan.nothing')}</p>
+  <p class="muted">{t('plan.nothing')}</p>
 {:else}
-  <ul role="list" aria-label={t('plan.renames')}>
+  <ul role="list" aria-label={t('plan.renames')} class="steps">
     {#each plan.steps as step (`${step.src}\u0000${step.dst}`)}
       <li>{step.src} → {step.dst}</li>
     {/each}
   </ul>
-  <p>{t('plan.batches', { count: plan.steps.length, batches: plan.batches })}</p>
+  <p class="num">{t('plan.batches', { count: plan.steps.length, batches: plan.batches })}</p>
   {#if plan.blocked.length > 0}
-    <p>{t('plan.blocked', { count: plan.blocked.length })}</p>
+    <p class="num">{t('plan.blocked', { count: plan.blocked.length })}</p>
   {/if}
   {#if progressWarning}
-    <div role="alert">
-      {warningText(progressWarning)}
+    <Alert tone="warning" live="assertive" title={warningText(progressWarning)}>
       {#if progressWarning.members && progressWarning.members.length > 0}
         {t('plan.warning_members', { members: progressWarning.members.join(', ') })}
       {/if}
-    </div>
+    </Alert>
   {/if}
   {#if hasProgressLoss}
     <TypedConfirm
@@ -68,16 +69,28 @@
       onconfirm={() => onapply({ confirmProgressLoss: true })}
     />
   {:else}
-    <button type="button" onclick={() => onapply({ confirmProgressLoss: false })}>{t('plan.apply')}</button>
+    <div><Button variant="primary" onclick={() => onapply({ confirmProgressLoss: false })}>{t('plan.apply')}</Button></div>
   {/if}
 {/if}
 {#if oncancel}
-  <button type="button" onclick={oncancel}>{t('plan.cancel')}</button>
+  <div><Button variant="ghost" onclick={oncancel}>{t('plan.cancel')}</Button></div>
 {/if}
 
 <style>
-  ul {
+  .steps {
     list-style: none;
+    margin: 0;
     padding: 0;
+    border-top: var(--rule-hair) solid var(--color-ink);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--step--1);
+  }
+  .steps li {
+    padding: var(--space-2) 0;
+    border-bottom: var(--rule-hair) solid var(--color-rule);
+    overflow-wrap: anywhere;
+  }
+  p {
+    margin: 0;
   }
 </style>

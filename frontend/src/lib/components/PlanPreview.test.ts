@@ -68,17 +68,17 @@ describe('PlanPreview', () => {
   // req: EF-EXP-037
   it('keeps the button disabled until the phrase is typed exactly, then applies with the confirmation', async () => {
     const { onapply, user } = setup();
-    expect(apply()).toBeDisabled();
+    expect(apply()).toHaveAttribute('aria-disabled', 'true');
     const field = screen.getByLabelText('Recopiez la phrase pour confirmer');
     expect(screen.getByText(PHRASE)).toBeTruthy();
     for (const wrong of ['perdre la progression', `${PHRASE} `, ` ${PHRASE}`, 'PERDRE  LA PROGRESSION']) {
       await user.clear(field);
       await user.type(field, wrong);
-      expect(apply(), wrong).toBeDisabled();
+      expect(apply(), wrong).toHaveAttribute('aria-disabled', 'true');
     }
     await user.clear(field);
     await user.type(field, PHRASE);
-    expect(apply()).toBeEnabled();
+    expect(apply()).not.toHaveAttribute('aria-disabled');
     await user.click(apply());
     expect(onapply).toHaveBeenCalledTimes(1);
     expect(onapply).toHaveBeenCalledWith({ confirmProgressLoss: true });
@@ -96,7 +96,7 @@ describe('PlanPreview', () => {
     const { onapply, user } = setup({ warnings: [] });
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByLabelText('Recopiez la phrase pour confirmer')).toBeNull();
-    expect(apply()).toBeEnabled();
+    expect(apply()).not.toHaveAttribute('aria-disabled');
     await user.click(apply());
     expect(onapply).toHaveBeenCalledWith({ confirmProgressLoss: false });
   });
