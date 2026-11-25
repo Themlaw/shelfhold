@@ -10,8 +10,25 @@
   import { formatDate, formatNumber } from '#lib/i18n/format.ts';
   import { t } from '#lib/i18n/index.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import DataTable from '#lib/ui/organisms/DataTable.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   const WINDOWS = [7, 30, 90];
+  const SPACE_COLUMNS = [
+    { key: 'name', label: t('storage.shelf'), primary: true },
+    { key: 'bytes', label: t('storage.size'), num: true },
+    { key: 'copies', label: t('storage.copies'), num: true },
+    { key: 'store', label: t('storage.in_store'), num: true },
+    { key: 'library', label: t('storage.in_library'), num: true }
+  ] as const;
+  const DAY_COLUMNS = [
+    { key: 'day', label: t('storage.day'), primary: true },
+    { key: 'requests', label: t('storage.requests'), num: true },
+    { key: 'bytes_in', label: t('storage.received'), num: true }
+  ] as const;
 
   let board = $state<StorageOut | null>(null);
   let problem = $state<ProblemView | null>(null);
@@ -35,81 +52,85 @@
   <title>{t('storage.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('storage.title')}</h1>
+<main class="page">
+  <PageHead
+    title={t('storage.title')}
+    crumbs={[
+      { label: t('health_page.crumb'), href: '/reglages' },
+      { label: t('health_page.title'), href: '/sante' },
+      { label: t('storage.title') }
+    ]}
+  />
   {#if problem}
     <ProblemCard {problem} />
-  {:else if board}
-    <section aria-labelledby="h-space">
-      <h2 id="h-space">{t('storage.space')}</h2>
-      <div class="scroll">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">{t('storage.shelf')}</th>
-              <th scope="col" class="num">{t('storage.size')}</th>
-              <th scope="col" class="num">{t('storage.copies')}</th>
-              <th scope="col" class="num">{t('storage.in_store')}</th>
-              <th scope="col" class="num">{t('storage.in_library')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each board.shelves as shelf (shelf.shelf_id ?? 'none')}
-              <tr>
-                <th scope="row">{shelf.name ?? t('storage.unshelved')}</th>
-                <td class="num">{formatBytes(shelf.bytes)}</td>
-                <td class="num">{formatNumber(shelf.copies)}</td>
-                <td class="num">{formatBytes(shelf.by_location.store ?? 0)}</td>
-                <td class="num">{formatBytes(shelf.by_location.library ?? 0)}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+  {:else if !board}
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('storage.loading')}</p>
+      <Skeleton shape="block" /><Skeleton /><Skeleton short />
+    </div>
+  {:else}
+    <section class="section" aria-labelledby="h-space">
+      <div class="section-head"><h2 id="h-space">{t('storage.space')}</h2></div>
+      <DataTable
+        caption={t('storage.space')}
+        captionHidden
+        columns={SPACE_COLUMNS}
+        rows={board.shelves.map((shelf) => ({
+          id: shelf.shelf_id ?? 'none',
+          name: shelf.name ?? t('storage.unshelved'),
+          bytes: formatBytes(shelf.bytes),
+          copies: formatNumber(shelf.copies),
+          store: formatBytes(shelf.by_location.store ?? 0),
+          library: formatBytes(shelf.by_location.library ?? 0)
+        }))}
+        key={(row) => String(row.id)}
+      />
     </section>
 
-    <section aria-labelledby="h-traffic">
-      <h2 id="h-traffic">{t('storage.traffic')}</h2>
-      <p class="note">{t('storage.traffic_note')}</p>
-      <p>
-        <label for="window">{t('storage.window')}</label>
-        <select id="window" bind:value={days} onchange={load}>
-          {#each WINDOWS as value (value)}
-            <option {value}>{t('storage.window_days', { count: value })}</option>
-          {/each}
-        </select>
-      </p>
+    <section class="section" aria-labelledby="h-traffic">
+      <div class="section-head">
+        <h2 id="h-traffic">{t('storage.traffic')}</h2>
+      </div>
+      <p class="muted note">{t('storage.traffic_note')}</p>
+      <div class="window">
+        <Field label={t('storage.window')}>
+          {#snippet children(control)}
+            <Select
+              {...control}
+              inline
+              value={String(days)}
+              onchange={(event: Event) => {
+                days = Number((event.currentTarget as HTMLSelectElement).value);
+                void load();
+              }}
+              options={WINDOWS.map((value) => ({ value: String(value), label: t('storage.window_days', { count: value }) }))}
+            />
+          {/snippet}
+        </Field>
+      </div>
       {#if board.traffic.sources.length === 0}
-        <p>{t('storage.traffic_none')}</p>
+        <p class="muted">{t('storage.traffic_none')}</p>
       {:else}
         {#each board.traffic.sources as source (source.source_key)}
-          <h3>{source.source_key}</h3>
-          <p>
+          <h3 class="source">{source.source_key}</h3>
+          <p class="num">
             {t('storage.source_total', {
               requests: source.requests,
               size: formatBytes(source.bytes_in)
             })}
           </p>
-          <div class="scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">{t('storage.day')}</th>
-                  <th scope="col" class="num">{t('storage.requests')}</th>
-                  <th scope="col" class="num">{t('storage.received')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each source.by_day as day (day.day)}
-                  <tr>
-                    <th scope="row">{formatDate(day.day)}</th>
-                    <td class="num">{formatNumber(day.requests)}</td>
-                    <td class="num">{formatBytes(day.bytes_in)}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            caption={source.source_key}
+            captionHidden
+            compact
+            columns={DAY_COLUMNS}
+            rows={source.by_day.map((day) => ({
+              day: formatDate(day.day),
+              requests: formatNumber(day.requests),
+              bytes_in: formatBytes(day.bytes_in)
+            }))}
+            key={(row) => String(row.day)}
+          />
         {/each}
       {/if}
     </section>
@@ -117,29 +138,15 @@
 </main>
 
 <style>
-  main {
-    max-width: 56rem;
-    margin: 0 auto;
-    padding: 1rem;
-  }
-  .scroll {
-    overflow-x: auto;
-  }
-  table {
-    border-collapse: collapse;
-    width: 100%;
-  }
-  th,
-  td {
-    padding: 0.4rem 0.6rem;
-    border-bottom: 1px solid var(--color-rule);
-    text-align: start;
-  }
-  .num {
-    text-align: end;
-    font-variant-numeric: tabular-nums;
-  }
   .note {
-    color: var(--color-muted);
+    max-width: var(--measure);
+  }
+  .window {
+    margin: var(--space-4) 0;
+  }
+  .source {
+    margin: var(--space-6) 0 var(--space-1);
+    font-size: var(--step-1);
+    overflow-wrap: anywhere;
   }
 </style>

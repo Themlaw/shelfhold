@@ -3,6 +3,7 @@
   // command is shown to be run (a reserved one asks a fresh session or the local command line).
   import type { HealthAction } from '#lib/healthPage.ts';
   import { t } from '#lib/i18n/index.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
 
   let {
     label,
@@ -12,39 +13,54 @@
 </script>
 
 <li class="entry">
-  <span class="label">{label}</span>
-  {#if code}<code class="code">{code}</code>{/if}
+  <div class="entry__head">
+    {#if label}<span class="entry__label">{label}</span>{/if}
+    {#if code}<code class="entry__code">{code}</code>{/if}
+  </div>
   {#if action}
-    <p class="action">
+    <p class="entry__action">
       {#if action.text}{action.text}{/if}
-      <span class="command">{t('health_page.run')} <code>{action.command}</code></span>
-      {#if action.reserved}<strong class="reserved">{t('health_page.reserved')}</strong>{/if}
+      <span class="entry__command">{t('health_page.run')} <code>{action.command}</code></span>
+      {#if action.reserved}<Badge tone="warning" icon="lock">{t('health_page.reserved')}</Badge>{/if}
     </p>
   {/if}
 </li>
 
 <style>
   .entry {
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--color-rule);
+    padding: var(--space-3) 0;
+    border-bottom: var(--rule-hair) solid var(--color-rule);
   }
-  .label {
+  .entry__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+  }
+  .entry__label {
     font-weight: 600;
-    margin-inline-end: 0.5rem;
-  }
-  .code,
-  .command code {
-    font-family: monospace;
     overflow-wrap: anywhere;
   }
-  .action {
-    margin: 0.25rem 0 0;
+  .entry__code,
+  .entry__command code {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--step--1);
+    overflow-wrap: anywhere;
+  }
+  .entry__code {
     color: var(--color-muted);
   }
-  .command {
+  .entry__action {
+    margin: var(--space-1) 0 0;
+    color: var(--color-muted);
+  }
+  .entry__command {
     display: block;
   }
-  .reserved {
-    color: var(--color-err);
+  .entry__command code {
+    padding: var(--space-1) var(--space-2);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-sm);
+    color: var(--color-ink);
   }
 </style>
