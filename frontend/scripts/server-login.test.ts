@@ -11,10 +11,9 @@ const read = (name: string) => readFileSync(join(pages, name), 'utf8');
 
 type Sent = { url: string; body: Record<string, unknown> };
 
-/** The page as the server fills it (every placeholder with a neutral word), its script loaded. */
+/** The page as the server fills it (every placeholder with a neutral word), its script loaded by hand (the file links of the page are not fetched). */
 function loginPage(answer: { ok: boolean; body?: unknown } = { ok: true }) {
   const html = read('login.html')
-    .replace(/<script src[^>]*><\/script>/g, '')
     .replace(/\$max_password/g, '1024')
     .replace(/\$endpoint/g, '/api/v1/auth/login')
     .replace(/\$[a-z_]+/g, '');
