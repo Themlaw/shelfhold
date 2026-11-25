@@ -98,7 +98,6 @@
     <form class="reauth__form" onsubmit={withPassword}>
       <Field label={t('reauth.password')} id="reauth-password">
         {#snippet children(control)}
-          <!-- svelte-ignore a11y_autofocus -->
           <Input
             {...control}
             type="password"

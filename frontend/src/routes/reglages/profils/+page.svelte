@@ -36,7 +36,6 @@
 
   const ROLES = ['admin', 'member', 'child'] as const;
   const VISIBILITIES = ['private', 'household'] as const;
-  const POLICIES = ['add_directly', 'request', 'forbidden'] as const;
 
   let profiles = $state<ProfileOut[]>([]);
   let policies = $state<Record<string, PolicyOut[]>>({});
@@ -260,15 +259,13 @@
               <div class="settings">
                 {#if profile.role === 'child'}
                   <SettingRow label={t('profiles.age')} help={t('profiles.age_help')}>
-                    {#snippet children()}
-                      <AgeScale
-                        name={`age-${profile.id}`}
-                        legend={t('profiles.age')}
-                        steps={steps(profile.max_age_rating)}
-                        value={profile.max_age_rating}
-                        onchange={(age) => update(profile, { max_age_rating: age })}
-                      />
-                    {/snippet}
+                    <AgeScale
+                      name={`age-${profile.id}`}
+                      legend={t('profiles.age')}
+                      steps={steps(profile.max_age_rating)}
+                      value={profile.max_age_rating}
+                      onchange={(age) => update(profile, { max_age_rating: age })}
+                    />
                   </SettingRow>
                 {:else}
                   <div class="settings__row">
@@ -293,31 +290,29 @@
                 </SettingRow>
 
                 <SettingRow label={t('profiles.policy_title', { name: profile.username })} help={t('profiles.policy_help')}>
-                  {#snippet children()}
-                    {#if (policies[profile.id] ?? []).length === 0}
-                      <p class="hint">{t('profiles.policy_none')}</p>
-                    {:else}
-                      <ul class="policies" role="list">
-                        {#each policies[profile.id] ?? [] as policy (policy.source_key)}
-                          <li class="policy">
-                            <span class="policy__source" aria-hidden="true">{policy.source_key}</span>
-                            <Segmented
-                              name={`policy-${profile.id}-${policy.source_key}`}
-                              legend={t('profiles.policy', { source: policy.source_key })}
-                              hideLegend
-                              value={policy.policy}
-                              options={[
-                                { value: 'add_directly', label: t('profiles.policy.add_directly'), icon: 'plus' },
-                                { value: 'request', label: t('profiles.policy.request'), icon: 'inbox' },
-                                { value: 'forbidden', label: t('profiles.policy.forbidden'), icon: 'x' }
-                              ]}
-                              onchange={(value) => choosePolicy(profile, policy.source_key, value)}
-                            />
-                          </li>
-                        {/each}
-                      </ul>
-                    {/if}
-                  {/snippet}
+                  {#if (policies[profile.id] ?? []).length === 0}
+                    <p class="hint">{t('profiles.policy_none')}</p>
+                  {:else}
+                    <ul class="policies" role="list">
+                      {#each policies[profile.id] ?? [] as policy (policy.source_key)}
+                        <li class="policy">
+                          <span class="policy__source" aria-hidden="true">{policy.source_key}</span>
+                          <Segmented
+                            name={`policy-${profile.id}-${policy.source_key}`}
+                            legend={t('profiles.policy', { source: policy.source_key })}
+                            hideLegend
+                            value={policy.policy}
+                            options={[
+                              { value: 'add_directly', label: t('profiles.policy.add_directly'), icon: 'plus' },
+                              { value: 'request', label: t('profiles.policy.request'), icon: 'inbox' },
+                              { value: 'forbidden', label: t('profiles.policy.forbidden'), icon: 'x' }
+                            ]}
+                            onchange={(value) => choosePolicy(profile, policy.source_key, value)}
+                          />
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
                 </SettingRow>
               </div>
 

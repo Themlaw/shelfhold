@@ -12,6 +12,9 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
 
+  let { data }: { data?: { user?: { role?: string } | null } } = $props();
+  const child = $derived(data?.user?.role === 'child');
+
   let items = $state<RequestOut[]>([]);
   let loaded = $state(false);
   let problem = $state<ProblemView | null>(null);
@@ -65,6 +68,7 @@
   <div class="page-head">
     <div class="page-head__text">
       <h1 class="page-title">{t('nav.requests')}</h1>
+      <p class="lede">{child ? t('requests.lede_child') : t('requests.lede')}</p>
     </div>
   </div>
 
@@ -76,7 +80,8 @@
   {:else if problem}
     <ProblemCard {problem} />
   {:else if items.length === 0}
-    <EmptyState title={t('home.requests_empty')}>
+    <EmptyState title={child ? t('requests.empty_child') : t('home.requests_empty')}>
+      {#if child}{t('requests.empty_child_help')}{/if}
       {#snippet actions()}<Button href="/chercher" variant="primary">{t('home.search_book')}</Button>{/snippet}
     </EmptyState>
   {:else}

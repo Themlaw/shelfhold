@@ -37,11 +37,11 @@ Dans `frontend/src/lib/ui/`, par niveau ; chacun a ses tests de comportement et 
 - **Atomes** (`atoms/`) : `Button` (primary, secondary, ghost, danger, danger-ghost ; sm, md,
   lg ; `loading`, `disabled` par `aria-disabled`, `href` pour un lien), `IconButton` (nom
   obligatoire), `Input`, `Textarea`, `Select` (natif), `Checkbox`, `Radio`, `Switch`, `Badge`,
-  `Avatar` (ex-libris), `Link`, `Icon` (jeu maison `icons.ts`), `Spinner`, `Skeleton`, `Cover`,
+  `Avatar` (ex-libris), `Segmented` (un choix parmi trois ou quatre, tous visibles : vrais boutons radio dessinés en segments, encre pleine pour le choix ; la politique d'une source, « Ajouter directement / Demander / Interdit »), `Link`, `Icon` (jeu maison `icons.ts`), `Spinner`, `Skeleton`, `Cover`,
   `Progress`, `ProgressRibbon` (le signet), `Illustration`.
 - **Molécules** (`molecules/`) : `Field`, `SettingRow`, `SeriesCard`, `ChapterRow`, `TableRow`,
   `Alert`, `Toast`, `Dialog`, `ConfirmDialog`, `Menu`, `Tabs`, `SearchBar`, `Pagination`,
-  `EmptyState`, `ErrorState`.
+  `EmptyState`, `ErrorState`, `AgeScale` (l'échelle d'âge à crans d'un enfant : une règle de marches en boutons radio, la part sous le plafond encrée, celle au-dessus en pointillé, le signet bleu sur la marche choisie ; un plafond hors des marches reçoit sa propre marche ; `counts` imprime le nombre d'œuvres visibles par marche quand l'API le donne, ce qu'elle ne fait pas encore), `SecretOnce` (un secret montré une seule fois : cadre à filet d'alerte, valeurs en monospace, bouton « Copier », un seul geste pour le refermer ; la page garde la valeur en mémoire seulement).
 - **Organismes** (`organisms/`) : `AppHeader`, `TableOfContents`, `MobileTabBar`, `Colophon`,
   `Shelf`, `DataTable`, `SettingsForm`, `ErrorScreen`.
 

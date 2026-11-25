@@ -148,7 +148,7 @@
   {/if}
 
   {#if problem}
-    <ProblemCard {problem} level={4} />
+    <ProblemCard {problem} level={3} />
   {/if}
 </section>
 

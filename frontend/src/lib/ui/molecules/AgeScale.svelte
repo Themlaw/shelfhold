@@ -47,7 +47,8 @@
         <span class="step__name">{step.label}</span>
         {#if step.hint}<span class="step__hint">{step.hint}</span>{/if}
         {#if counts && counts[key(step)] !== undefined}
-          <span class="step__count folio">{formatNumber(counts[key(step)])}</span>
+          {@const figure = counts[key(step)] ?? 0}
+          <span class="step__count folio">{formatNumber(figure)}</span>
         {/if}
         {#if index === chosen}<span class="step__mark" aria-hidden="true"></span>{/if}
       </label>

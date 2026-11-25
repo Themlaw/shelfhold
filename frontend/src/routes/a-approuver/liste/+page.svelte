@@ -106,6 +106,7 @@
 
 <main class="page page--form">
   <div class="running-head">
+    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
     <a href="/a-approuver">{t('approve.title')}</a>
   </div>
   <div class="page-head">
@@ -182,6 +183,7 @@
       <ul class="entries" role="list">
         {#each batches as batch (batch.id)}
           <li class="batch">
+            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
             <a class="standalone" href={`/a-approuver/liste/${batch.id}`}>{batch.name}</a>
             <span class="hint">{t('lists.counts', { in_library: batch.in_library, requested: batch.requested })}</span>
           </li>
@@ -189,6 +191,7 @@
       </ul>
     {/if}
   </section>
+  <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
   <p class="back"><a class="standalone" href="/a-approuver">{t('lists.back_queue')}</a></p>
 </main>
 

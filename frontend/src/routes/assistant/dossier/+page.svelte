@@ -256,6 +256,8 @@
             <Alert tone="danger" title={t('admin.wizard.dossier.kavita_failed')} live="assertive" />
           {/if}
           {#if probe.yaml_hint}
+            <!-- a block that scrolls sideways must take the keyboard focus -->
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
             <pre class="yaml" tabindex="0"><code>{probe.yaml_hint}</code></pre>
           {/if}
         {/if}
