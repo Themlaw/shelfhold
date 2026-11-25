@@ -169,6 +169,12 @@
 </main>
 
 <style>
+  /* a list's name is a link on its own: a target of 44 px (ENF-A11Y-004) */
+  li > a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
   main {
     max-width: 42rem;
     margin: 0 auto;

@@ -129,8 +129,11 @@
     {#snippet notice()}<Toast />{/snippet}
   </AppHeader>
   {#if toc.length > 0}
+    <!-- the column holds the rule over the whole height; the list inside stays in view -->
     <aside class="app__toc">
-      <TableOfContents groups={toc} {current} title={t('ui.toc.title')} label={t('nav.label')} />
+      <div class="app__toc-list">
+        <TableOfContents groups={toc} {current} title={t('ui.toc.title')} label={t('nav.label')} />
+      </div>
     </aside>
   {/if}
   <div class="app__screen" id="contenu" tabindex="-1">{@render children()}</div>
@@ -179,16 +182,21 @@
     grid-template:
       'head head' auto
       'side main' 1fr
-      'side foot' auto / var(--sidebar) minmax(0, 1fr);
+      'foot foot' auto / var(--sidebar) minmax(0, 1fr);
   }
   .app > :global(.masthead) {
     grid-area: head;
   }
+  /* the column stretches over the row (its rule runs the whole height, and the row grows to the
+     list: the list never runs into the colophon); the list sticks under the header */
   .app__toc {
     grid-area: side;
+    min-width: 0;
+    border-right: var(--rule-hair) solid var(--color-rule);
+  }
+  .app__toc-list {
     position: sticky;
     top: calc(var(--header-h) + var(--space-1));
-    align-self: start;
     max-height: calc(100dvh - var(--header-h) - var(--space-1));
     overflow-y: auto;
     padding: var(--space-6) var(--space-4) var(--space-5) var(--space-5);
@@ -201,11 +209,13 @@
   .app__screen:focus {
     outline: none;
   }
-  .app--toc .app__screen {
-    border-left: var(--rule-hair) solid var(--color-rule);
-  }
   .app > :global(.colophon) {
     grid-area: foot;
+  }
+  /* the rule of the column meets the rule over the colophon */
+  .app--toc > :global(.colophon) {
+    margin-top: 0;
+    border-top: var(--rule-hair) solid var(--color-rule);
   }
   @media (max-width: 75rem) {
     .app__screen {
@@ -221,9 +231,6 @@
     }
     .app__toc {
       display: none;
-    }
-    .app--toc .app__screen {
-      border-left: 0;
     }
     .app__screen {
       padding: var(--space-5) var(--space-4) var(--space-7);
