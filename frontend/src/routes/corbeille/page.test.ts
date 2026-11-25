@@ -55,12 +55,14 @@ describe('Corbeille', () => {
     expect(await screen.findByText(UNIT)).toBeInTheDocument();
     const user = userEvent.setup();
     const empty = screen.getByRole('region', { name: 'Vider la corbeille maintenant' });
-    const run = within(empty).getByRole('button', { name: 'Vider maintenant' });
-    expect(run).toBeDisabled();
-    await user.type(within(empty).getByLabelText('Mot de confirmation'), 'empty');
-    expect(run).toBeDisabled();
-    await user.type(within(empty).getByLabelText('Mot de confirmation'), '-trash');
-    expect(run).toBeEnabled();
+    await user.click(within(empty).getByRole('button', { name: 'Vider la corbeille…' }));
+    const dialog = await screen.findByRole('dialog');
+    const run = within(dialog).getByRole('button', { name: 'Vider maintenant' });
+    expect(run).toHaveAttribute('aria-disabled', 'true');
+    await user.type(within(dialog).getByLabelText('Recopiez la phrase pour confirmer'), 'empty');
+    expect(run).toHaveAttribute('aria-disabled', 'true');
+    await user.type(within(dialog).getByLabelText('Recopiez la phrase pour confirmer'), '-trash');
+    expect(run).not.toHaveAttribute('aria-disabled');
     await user.click(run);
     expect(await screen.findByText(/1 irremplaçable gardée|1 gardée/)).toBeInTheDocument();
     expect(sent).toEqual({ typed: 'empty-trash' });
@@ -88,14 +90,15 @@ describe('Corbeille', () => {
     render(Page);
     await screen.findByText(UNIT);
     const user = userEvent.setup();
-    const row = screen.getByRole('listitem', { name: new RegExp(UNIT) });
+    const row = screen.getByRole('row', { name: new RegExp(UNIT) });
     await user.click(within(row).getByRole('button', { name: 'Effacer maintenant' }));
-    const confirm = within(row).getByRole('button', { name: 'Effacer pour de bon' });
-    expect(confirm).toBeDisabled();
-    await user.type(within(row).getByLabelText(/Saisissez l'identifiant/), 'wrong');
-    expect(confirm).toBeDisabled();
-    await user.clear(within(row).getByLabelText(/Saisissez l'identifiant/));
-    await user.type(within(row).getByLabelText(/Saisissez l'identifiant/), UNIT);
+    const dialog = await screen.findByRole('dialog');
+    const confirm = within(dialog).getByRole('button', { name: 'Effacer pour de bon' });
+    expect(confirm).toHaveAttribute('aria-disabled', 'true');
+    await user.type(within(dialog).getByLabelText('Recopiez la phrase pour confirmer'), 'wrong');
+    expect(confirm).toHaveAttribute('aria-disabled', 'true');
+    await user.clear(within(dialog).getByLabelText('Recopiez la phrase pour confirmer'));
+    await user.type(within(dialog).getByLabelText('Recopiez la phrase pour confirmer'), UNIT);
     await user.click(confirm);
     await user.type(await screen.findByLabelText('Mot de passe'), 'pw');
     await user.click(screen.getByRole('button', { name: 'Confirmer' }));
@@ -109,7 +112,7 @@ describe('Corbeille', () => {
     server.use(listing());
     const { container } = render(Page);
     await screen.findByText(UNIT);
-    const rare = screen.getByRole('listitem', { name: new RegExp(RARE) });
+    const rare = screen.getByRole('row', { name: new RegExp(RARE) });
     expect(within(rare).getByText('Irremplaçable')).toBeInTheDocument();
     expect(within(rare).getByText(/10 déc|2026-12-10|10\/12\/2026/)).toBeInTheDocument();
     expect(container.innerHTML).not.toMatch(/recycle|\/library|\/store/);
@@ -129,9 +132,17 @@ describe('Corbeille', () => {
     render(Page);
     await screen.findByText(UNIT);
     const user = userEvent.setup();
-    const row = screen.getByRole('listitem', { name: new RegExp(UNIT) });
+    const row = screen.getByRole('row', { name: new RegExp(UNIT) });
     await user.click(within(row).getByRole('button', { name: 'Effacer maintenant' }));
-    const form = within(row).getByRole('button', { name: 'Effacer pour de bon' }).closest('form');
-    expect(form!.textContent).not.toMatch(/irremplaçable/i);
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).not.toMatch(/irremplaçable/i);
+  });
+
+  // req: EF-BIB-021
+  it('says so when the trash is empty, and offers no way to empty it', async () => {
+    server.use(http.get(`${BASE}/api/v1/trash`, () => HttpResponse.json({ entries: [], total_bytes: 0 })));
+    render(Page);
+    expect(await screen.findByText('La corbeille est vide.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Vider la corbeille…' })).toBeNull();
   });
 });

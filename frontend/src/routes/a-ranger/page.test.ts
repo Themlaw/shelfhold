@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/svelte';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { client } from '#lib/api/client.gen.ts';
@@ -49,5 +49,19 @@ describe('À ranger', () => {
     );
     render(Page);
     expect(await screen.findByRole('alert')).toHaveTextContent('Connexion requise');
+  });
+
+  // req: EF-EXP-046
+  it('shows a loading state while the list is being read', async () => {
+    server.use(
+      http.get(`${BASE}/api/v1/to-shelve`, async () => {
+        await delay(100);
+        return HttpResponse.json({ items: [] });
+      })
+    );
+    render(Page);
+    expect(screen.getByRole('status')).toHaveTextContent('Chargement des éditions à ranger');
+    expect(await screen.findByText('Aucune édition à ranger.')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });

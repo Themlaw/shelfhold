@@ -10,6 +10,9 @@
   import { SvelteSet } from 'svelte/reactivity';
   import { csrfToken } from '#lib/passkeys.ts';
   import { ageLabel, isForbidden, needsReauth, needsSession, problemOf, type Age } from '#lib/triage.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Checkbox from '#lib/ui/atoms/Checkbox.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
 
   let {
     items = [],
@@ -209,24 +212,21 @@
   }
 </script>
 
-<section class="bulk" aria-labelledby="bulk-title">
-  <h2 id="bulk-title">{t('toRate.bulk.title')}</h2>
+<section class="panel bulk" aria-labelledby="bulk-title">
+  <div class="section-head">
+    <h2 id="bulk-title">{t('toRate.bulk.title')}</h2>
+    <span class="folio" role="status">{t('toRate.bulk.selected_count', { count: selected.size })}</span>
+  </div>
 
-  <ul class="bulk-works">
+  <ul class="bulk-works" role="list">
     {#each items as item (item.work_id)}
       <li>
         {#if tickable(item)}
-          <label>
-            <input
-              type="checkbox"
-              checked={selected.has(item.work_id)}
-              onchange={() => toggle(item.work_id)}
-              aria-label={t('toRate.bulk.select_one', { title: item.title })}
-            />
-            {item.title}
-          </label>
+          <Checkbox checked={selected.has(item.work_id)} onchange={() => toggle(item.work_id)}>
+            <span class="long">{item.title}</span>
+          </Checkbox>
         {:else}
-          <span>
+          <span class="long untickable">
             {item.title}
             {#if item.rated && item.age !== null && item.age !== undefined}
               <span class="muted">{t('toRate.bulk.already_rated', { age: item.age_x ? 'X' : `${item.age}+` })}</span>
@@ -238,38 +238,50 @@
   </ul>
 
   <div class="controls">
-    <button type="button" onclick={selectAllDisplayed}>{t('toRate.bulk.select_all')}</button>
-    <button type="button" onclick={deselectAll}>{t('toRate.bulk.deselect_all')}</button>
-    <p role="status" class="counter">{t('toRate.bulk.selected_count', { count: selected.size })}</p>
-    <label class="filter-mode">
-      <input type="checkbox" bind:checked={filterMode} />
-      {t('toRate.bulk.filter_mode')}
-    </label>
+    <div class="btn-row">
+      <Button size="sm" onclick={selectAllDisplayed}>{t('toRate.bulk.select_all')}</Button>
+      <Button size="sm" variant="ghost" onclick={deselectAll}>{t('toRate.bulk.deselect_all')}</Button>
+    </div>
+    <Checkbox bind:checked={filterMode} label={t('toRate.bulk.filter_mode')} />
     <AgePicker name="age-bulk" legend={t('toRate.bulk.age')} bind:value={age} />
-    <button type="button" disabled={!canPreview || busy} onclick={doPreview}>
-      {t('toRate.bulk.preview')}
-    </button>
+    <div class="btn-row">
+      <Button variant="primary" disabled={!canPreview || busy} onclick={doPreview}>
+        {t('toRate.bulk.preview')}
+      </Button>
+    </div>
   </div>
 
   {#if preview}
     <div class="preview">
-      <p>{t('toRate.bulk.preview_summary', { count: preview.items.length, age: t(ageLabel(preview.age as Age)) })}</p>
-      <ul class="preview-titles">
-        {#each preview.items as item (item.work_id)}
-          <li>{item.title}</li>
-        {/each}
-      </ul>
-      {#if preview.skipped > 0}
-        <p>{t('toRate.bulk.skipped', { count: preview.skipped })}</p>
-      {/if}
-      <p>{t('toRate.bulk.expires_at', { value: preview.expires_at })}</p>
-      <button type="button" disabled={busy} onclick={applyPreview}>{t('toRate.bulk.apply')}</button>
-      <button type="button" disabled={busy} onclick={cancelPreview}>{t('toRate.bulk.cancel')}</button>
+      <Alert
+        tone="info"
+        title={t('toRate.bulk.preview_summary', { count: preview.items.length, age: t(ageLabel(preview.age as Age)) })}
+      >
+        <ul class="preview-titles">
+          {#each preview.items as item (item.work_id)}
+            <li class="long">{item.title}</li>
+          {/each}
+        </ul>
+        {#if preview.skipped > 0}
+          <p>{t('toRate.bulk.skipped', { count: preview.skipped })}</p>
+        {/if}
+        <p class="muted">{t('toRate.bulk.expires_at', { value: preview.expires_at })}</p>
+      </Alert>
+      <div class="btn-row">
+        <Button variant="primary" disabled={busy} loading={busy} onclick={applyPreview}>
+          {t('toRate.bulk.apply')}
+        </Button>
+        <Button variant="ghost" disabled={busy} onclick={cancelPreview}>{t('toRate.bulk.cancel')}</Button>
+      </div>
     </div>
   {/if}
 
   {#if message}
-    <p role={failed ? 'alert' : 'status'} class:err={failed}>{message}</p>
+    <Alert
+      tone={failed ? 'danger' : 'info'}
+      live={failed ? 'assertive' : 'polite'}
+      title={message}
+    />
   {/if}
 
   {#if reauthMethods}
@@ -280,40 +292,46 @@
 <style>
   .bulk {
     display: grid;
-    gap: 0.75rem;
-    margin-top: 1.5rem;
-    padding: 1rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
-    background: var(--color-surface);
+    gap: var(--space-4);
+    min-width: 0;
+  }
+  .bulk .section-head {
+    margin-bottom: 0;
   }
   .bulk-works {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
-  .counter {
-    margin: 0;
+  .untickable {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    min-height: var(--target);
+    align-items: center;
   }
-  .controls {
-    display: grid;
-    gap: 0.5rem;
-  }
+  .controls,
   .preview {
     display: grid;
-    gap: 0.5rem;
+    gap: var(--space-4);
+    justify-items: start;
+    min-width: 0;
+  }
+  .preview {
+    justify-items: stretch;
   }
   .preview-titles {
     list-style: none;
     margin: 0;
     padding: 0;
   }
-  .err {
-    color: var(--color-err);
+  .preview-titles + p,
+  .preview p {
+    margin: var(--space-2) 0 0;
   }
-  button {
-    min-height: 2.75rem;
+  .long {
+    overflow-wrap: anywhere;
   }
 </style>

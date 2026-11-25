@@ -21,6 +21,13 @@
     problemOf,
     type Age
   } from '#lib/triage.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
 
   let items = $state<ToRateItem[]>([]);
   let loaded = $state(false);
@@ -35,8 +42,6 @@
   let plan = $state<WithdrawalOut[]>([]);
   let reauthMethods = $state<string[] | null>(null);
   let retry: (() => Promise<void>) | null = null;
-
-
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
   const STATES: Record<string, MessageKey> = {
@@ -128,6 +133,11 @@
     });
   }
 
+  function resetFilters(): void {
+    stateFilter = '';
+    textFilter = '';
+  }
+
   const shown = $derived(
     items.filter(
       (item) =>
@@ -142,195 +152,210 @@
   <title>{t('toRate.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('toRate.title')}</h1>
+<main class="page">
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('toRate.title')}</h1>
+    </div>
+  </div>
 
   {#if signedOut}
-    <p role="alert" class="err">{t('toRate.signed_out')}</p>
+    <Alert tone="danger" live="assertive" title={t('toRate.signed_out')} />
   {:else if forbidden}
-    <p role="alert" class="err">{t('toRate.forbidden')}</p>
+    <Alert tone="danger" live="assertive" title={t('toRate.forbidden')} />
   {:else}
-    {#if reauthMethods}
-      <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
-    {/if}
+    <div class="stack-lg">
+      {#if reauthMethods}
+        <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
+      {/if}
 
-    {#if message}
-      <p role={failed ? 'alert' : 'status'} class:err={failed}>{message}</p>
-    {/if}
+      {#if message}
+        <Alert
+          tone={failed ? 'danger' : 'success'}
+          live={failed ? 'assertive' : 'polite'}
+          title={message}
+        />
+      {/if}
 
-    {#if plan.length > 0}
-      <section aria-labelledby="plan-title" class="plan">
-        <h2 id="plan-title">{t('toRate.plan_title', { count: plan.length })}</h2>
-        <p>{t('toRate.plan_note')}</p>
-        <ul>
-          {#each plan as step (step.edition_id + step.shelf_id)}
-            <li>{t('toRate.plan_line', { edition: step.edition_id, shelf: step.shelf_id, reason: step.reason })}</li>
+      {#if plan.length > 0}
+        <section aria-labelledby="plan-title" class="panel plan">
+          <h2 id="plan-title">{t('toRate.plan_title', { count: plan.length })}</h2>
+          <p>{t('toRate.plan_note')}</p>
+          <ul>
+            {#each plan as step (step.edition_id + step.shelf_id)}
+              <li>{t('toRate.plan_line', { edition: step.edition_id, shelf: step.shelf_id, reason: step.reason })}</li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
+
+      {#if !loaded && !failed}
+        <div aria-busy="true">
+          <p class="visually-hidden" role="status">{t('toRate.loading')}</p>
+          <div class="loading">
+            {#each { length: 3 }, index (index)}
+              <div class="skeleton-row"><Skeleton /><Skeleton short /><Skeleton /></div>
+            {/each}
+          </div>
+        </div>
+      {:else if loaded && items.length === 0}
+        <EmptyState title={t('toRate.none')} />
+      {:else if items.length > 0}
+        <div class="filters">
+          <Field label={t('toRate.filter_state')}>
+            {#snippet children(control)}
+              <Select {...control} bind:value={stateFilter}>
+                <option value="">{t('toRate.filter_state_all')}</option>
+                {#each Object.keys(STATES) as state (state)}
+                  <option value={state}>{stateLabel(state)}</option>
+                {/each}
+              </Select>
+            {/snippet}
+          </Field>
+          <Field label={t('toRate.filter_text')}>
+            {#snippet children(control)}
+              <Input
+                {...control}
+                type="search"
+                bind:value={textFilter}
+                autocomplete="off"
+                spellcheck="false"
+              />
+            {/snippet}
+          </Field>
+        </div>
+        {#if shown.length === 0}
+          <EmptyState variant="filtered" title={t('toRate.filter_none')}>
+            {#snippet actions()}
+              <Button onclick={resetFilters}>{t('toRate.filter_reset')}</Button>
+            {/snippet}
+          </EmptyState>
+        {/if}
+        <ul class="entries works" role="list">
+          {#each shown as item (item.work_id)}
+            <li>
+              <div class="head">
+                <strong class="title">{item.title}</strong>
+                <span class="muted">{stateLabel(item.state)}</span>
+              </div>
+              {#each item.suggestions ?? [] as suggestion (suggestion.edition_id + suggestion.provenance)}
+                <div class="rating">
+                  <p class="muted">
+                    {t('toRate.suggestion', {
+                      edition: suggestion.edition_id,
+                      age: suggestion.x ? 'X' : `${suggestion.age}+`,
+                      provenance: suggestion.provenance
+                    })}
+                  </p>
+                  <AgePicker
+                    name={`age-edition-${suggestion.edition_id}`}
+                    legend={t('toRate.edition_age', { edition: suggestion.edition_id })}
+                    bind:value={editionAge[suggestion.edition_id]}
+                  />
+                  <div class="btn-row">
+                    <Button
+                      size="sm"
+                      disabled={!editionAge[suggestion.edition_id]}
+                      onclick={() => rateOneEdition(suggestion.edition_id)}
+                    >
+                      {t('toRate.edition_rate')}
+                    </Button>
+                  </div>
+                </div>
+              {/each}
+              {#if item.state !== 'suggestion_above'}
+                <div class="rating">
+                  <AgePicker
+                    name={`age-${item.work_id}`}
+                    legend={t('toRate.age_for', { title: item.title })}
+                    bind:value={chosen[item.work_id]}
+                  />
+                  <div class="btn-row">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={!chosen[item.work_id]}
+                      onclick={() => rateOne(item)}
+                    >
+                      {t('toRate.rate')}
+                    </Button>
+                  </div>
+                </div>
+              {/if}
+            </li>
           {/each}
         </ul>
-      </section>
-    {/if}
 
-    {#if loaded && items.length === 0}
-      <p>{t('toRate.none')}</p>
-    {:else if items.length > 0}
-      <div class="filters">
-        <label>
-          {t('toRate.filter_state')}
-          <select bind:value={stateFilter}>
-            <option value="">{t('toRate.filter_state_all')}</option>
-            {#each Object.keys(STATES) as state (state)}
-              <option value={state}>{stateLabel(state)}</option>
-            {/each}
-          </select>
-        </label>
-        <label>
-          {t('toRate.filter_text')}
-          <input type="search" bind:value={textFilter} autocomplete="off" spellcheck="false" />
-        </label>
-      </div>
-      {#if shown.length === 0}
-        <p>{t('toRate.filter_none')}</p>
+        <BulkBar
+          items={shown}
+          stateFilter={stateFilter}
+          textFilter={textFilter}
+          onchanged={() => load()}
+        />
       {/if}
-      <ul class="works">
-        {#each shown as item (item.work_id)}
-          <li>
-            <div class="head">
-              <strong>{item.title}</strong>
-              <span class="muted">{stateLabel(item.state)}</span>
-            </div>
-            {#each item.suggestions ?? [] as suggestion (suggestion.edition_id + suggestion.provenance)}
-              <p class="muted">
-                {t('toRate.suggestion', {
-                  edition: suggestion.edition_id,
-                  age: suggestion.x ? 'X' : `${suggestion.age}+`,
-                  provenance: suggestion.provenance
-                })}
-              </p>
-              <AgePicker
-                name={`age-edition-${suggestion.edition_id}`}
-                legend={t('toRate.edition_age', { edition: suggestion.edition_id })}
-                bind:value={editionAge[suggestion.edition_id]}
-              />
-              <button
-                type="button"
-                disabled={!editionAge[suggestion.edition_id]}
-                onclick={() => rateOneEdition(suggestion.edition_id)}
-              >
-                {t('toRate.edition_rate')}
-              </button>
-            {/each}
-            {#if item.state !== 'suggestion_above'}
-            <AgePicker
-              name={`age-${item.work_id}`}
-              legend={t('toRate.age_for', { title: item.title })}
-              bind:value={chosen[item.work_id]}
-            />
-            <button type="button" disabled={!chosen[item.work_id]} onclick={() => rateOne(item)}>
-              {t('toRate.rate')}
-            </button>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-
-      <BulkBar
-        items={shown}
-        stateFilter={stateFilter}
-        textFilter={textFilter}
-        onchanged={() => load()}
-      />
-    {/if}
+    </div>
   {/if}
 </main>
 
 <style>
-  main {
-    max-width: 42rem;
-    margin: 0 auto;
-    padding: 3rem 1rem;
-  }
-  h1 {
-    font-family: var(--font-display);
-    font-weight: 400;
-    font-style: italic;
-    letter-spacing: -0.02em;
-  }
-  .works {
-    list-style: none;
-    margin: 1rem 0;
-    padding: 0;
+  .loading {
     display: grid;
-    gap: 1rem;
+    gap: var(--space-5);
   }
-  .works li {
+  .skeleton-row {
     display: grid;
-    gap: 0.5rem;
-    padding: 1rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
-    background: var(--color-surface);
+    gap: var(--space-2);
+  }
+  .plan {
+    display: grid;
+    gap: var(--space-3);
+  }
+  .plan > h2,
+  .plan > p,
+  .plan > ul {
+    margin: 0;
+  }
+  .plan li {
+    overflow-wrap: anywhere;
+  }
+  /* Under 600 px the filters stack: each field is as wide as the screen at most. */
+  .filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+    gap: var(--space-3) var(--space-5);
+    align-items: end;
+  }
+  /* side by side, the second field is not stacked under the first */
+  .filters :global(.field + .field) {
+    margin-top: 0;
+  }
+  .works > li {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-4) 0;
+    min-width: 0;
   }
   .head {
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
-    gap: 0.25rem 1rem;
+    gap: var(--space-1) var(--space-4);
     overflow-wrap: anywhere;
   }
   .head > * {
     min-width: 0;
   }
-  .works p,
-  .plan li {
+  .title {
+    font-size: var(--step-1);
+  }
+  .rating {
+    display: grid;
+    gap: var(--space-3);
+    justify-items: start;
+    min-width: 0;
+  }
+  .rating p {
+    margin: 0;
     overflow-wrap: anywhere;
-  }
-  .plan {
-    display: grid;
-    gap: 0.5rem;
-    margin-top: 1.5rem;
-  }
-  /* Under 600 px the filters stack, and nothing is wider than the screen: a select is as wide as
-     its longest option and a button as wide as its label unless told otherwise. */
-  .filters {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-    gap: 0.5rem 1rem;
-    margin-top: 1rem;
-  }
-  .filters label {
-    display: grid;
-    gap: 0.25rem;
-    min-width: 0;
-  }
-  main,
-  .works li,
-  .plan {
-    min-width: 0;
-  }
-  select,
-  input {
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-  }
-  select,
-  input,
-  button {
-    min-height: 2.75rem;
-  }
-  button {
-    max-width: 100%;
-    height: auto;
-    padding-block: 0.5rem;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    text-align: center;
-  }
-  .muted {
-    color: var(--color-muted);
-  }
-  .err {
-    color: var(--color-err);
   }
 </style>

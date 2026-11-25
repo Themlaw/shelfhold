@@ -10,6 +10,14 @@
   import { Guard } from '#lib/guard.svelte.ts';
   import { formatDate, formatNumber, t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import ConfirmDialog from '#lib/ui/molecules/ConfirmDialog.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import type { Column } from '#lib/ui/molecules/TableRow.svelte';
+  import DataTable from '#lib/ui/organisms/DataTable.svelte';
 
   /** The word the server expects (`EMPTY_TRASH_PHRASE`); it is only shown, the server compares. */
   const EMPTY_WORD = 'empty-trash';
@@ -19,9 +27,9 @@
   let totalBytes = $state(0);
   let loaded = $state(false);
   let message = $state('');
-  let emptyTyped = $state('');
+  let emptyOpen = $state(false);
+  let purgeOpen = $state(false);
   let purging = $state<string | null>(null);
-  let purgeTyped = $state('');
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
 
@@ -43,9 +51,8 @@
 
   onMount(load);
 
-  async function emptyNow(event: SubmitEvent): Promise<void> {
-    event.preventDefault();
-    const typed = emptyTyped.trim();
+  async function emptyNow(typedWord: string | undefined): Promise<void> {
+    const typed = (typedWord ?? '').trim();
     if (typed !== EMPTY_WORD) return;
     await guard.run(async () => {
       const { data } = await emptyTrash({ headers: headers(), body: { typed }, throwOnError: true });
@@ -54,19 +61,17 @@
         removed: report.removed ?? 0,
         held: report.held_irreplaceable ?? 0
       });
-      emptyTyped = '';
       await load();
     });
   }
 
   function startPurge(unit: string): void {
     purging = unit;
-    purgeTyped = '';
+    purgeOpen = true;
   }
 
-  async function purgeNow(event: SubmitEvent, unit: string): Promise<void> {
-    event.preventDefault();
-    const typed = purgeTyped.trim();
+  async function purgeNow(typedUnit: string | undefined, unit: string): Promise<void> {
+    const typed = (typedUnit ?? '').trim();
     if (typed !== unit) return;
     await guard.run(async () => {
       await purgeUnit({
@@ -77,10 +82,25 @@
       });
       message = t('trash.purged');
       purging = null;
-      purgeTyped = '';
       await load();
     });
   }
+
+  const columns: readonly Column[] = [
+    { key: 'unit', label: t('trash.col.unit'), primary: true },
+    { key: 'files', label: t('trash.col.files'), num: true },
+    { key: 'bytes', label: t('trash.col.size'), num: true },
+    { key: 'deleted_at', label: t('trash.col.deleted') },
+    { key: 'purge_after', label: t('trash.col.until') },
+    { key: 'actions', label: t('trash.col.actions'), actions: true, hideLabel: true }
+  ];
+
+  const purgeEntry = $derived(entries.find((entry) => entry.unit_id === purging) ?? null);
+  const purgeMessage = $derived(
+    purgeEntry?.irreplaceable
+      ? `${t('trash.purge_warning')} ${t('trash.purge_warning_irreplaceable')}`
+      : t('trash.purge_warning')
+  );
 
   const MESSAGES = {
     signed_out: 'trash.signed_out',
@@ -93,174 +113,133 @@
   <title>{t('trash.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('trash.title')}</h1>
+<main class="page">
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('trash.title')}</h1>
+      <p class="lede">{t('trash.intro')}</p>
+    </div>
+  </div>
 
   {#if guard.state === 'signed_out' || guard.state === 'forbidden'}
-    <p role="alert" class="err">{t(MESSAGES[guard.state])}</p>
+    <Alert tone="danger" live="assertive" title={t(MESSAGES[guard.state])} />
   {:else}
-    {#if guard.state === 'failed'}
-      <p role="alert" class="err">{t(MESSAGES.failed)}</p>
-    {/if}
-    {#if guard.reauthMethods}
-      <ReauthPrompt
-        methods={guard.reauthMethods}
-        ondone={() => guard.afterReauth()}
-        oncancel={() => guard.cancelReauth()}
-      />
-    {/if}
-    {#if message}
-      <p role="status">{message}</p>
-    {/if}
+    <div class="stack">
+      {#if guard.state === 'failed'}
+        <Alert tone="danger" live="assertive" title={t(MESSAGES.failed)} />
+      {/if}
+      {#if guard.reauthMethods}
+        <ReauthPrompt
+          methods={guard.reauthMethods}
+          ondone={() => guard.afterReauth()}
+          oncancel={() => guard.cancelReauth()}
+        />
+      {/if}
+      {#if message}
+        <Alert tone="success" live="polite" title={message} />
+      {/if}
 
-    <p>{t('trash.intro')}</p>
-
-    {#if loaded && entries.length === 0}
-      <p>{t('trash.none')}</p>
-    {:else if entries.length > 0}
-      <p class="muted">{t('trash.total', { size: size(totalBytes) })}</p>
-      <ul class="entries">
-        {#each entries as entry (entry.deletion_id + entry.unit_id)}
-          <li aria-label={t('trash.entry', { unit: entry.unit_id })}>
-            <div class="head">
-              <code>{entry.unit_id}</code>
-              {#if entry.irreplaceable}
-                <strong class="rare">{t('trash.irreplaceable')}</strong>
-              {/if}
-            </div>
-            <p class="muted">
-              {t('trash.line', {
-                files: entry.files,
-                size: size(entry.bytes),
-                deleted: formatDate(entry.deleted_at),
-                until: formatDate(entry.purge_after)
-              })}
-            </p>
-            {#if purging === entry.unit_id}
-              <form onsubmit={(event) => purgeNow(event, entry.unit_id)}>
-                <p class="err">{t('trash.purge_warning')}</p>
+      {#if !loaded && guard.state === 'ok'}
+        <div aria-busy="true">
+          <p class="visually-hidden" role="status">{t('trash.loading')}</p>
+          <div class="loading">
+            {#each { length: 4 }, index (index)}
+              <Skeleton />
+            {/each}
+          </div>
+        </div>
+      {:else if loaded && entries.length === 0}
+        <EmptyState title={t('trash.none')} />
+      {:else if entries.length > 0}
+        <p class="folio">{t('trash.total', { size: size(totalBytes) })}</p>
+        <DataTable
+          caption={t('trash.caption')}
+          captionHidden
+          {columns}
+          rows={entries}
+          key={(entry) => entry.deletion_id + entry.unit_id}
+          tone={(entry) => (entry.irreplaceable ? 'danger' : undefined)}
+          compact
+        >
+          {#snippet cell(column, entry)}
+            {#if column.key === 'unit'}
+              <span class="unit">
+                <code class="long">{entry.unit_id}</code>
                 {#if entry.irreplaceable}
-                  <p class="err"><strong>{t('trash.purge_warning_irreplaceable')}</strong></p>
+                  <Badge tone="danger">{t('trash.irreplaceable')}</Badge>
                 {/if}
-                <label for={`purge-${entry.unit_id}`}>{t('trash.purge_label', { unit: entry.unit_id })}</label>
-                <input
-                  id={`purge-${entry.unit_id}`}
-                  bind:value={purgeTyped}
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                <div class="row">
-                  <button type="submit" disabled={purgeTyped.trim() !== entry.unit_id}>
-                    {t('trash.purge_confirm')}
-                  </button>
-                  <button type="button" class="plain" onclick={() => (purging = null)}>
-                    {t('trash.purge_cancel')}
-                  </button>
-                </div>
-              </form>
+              </span>
+            {:else if column.key === 'files'}
+              {formatNumber(entry.files)}
+            {:else if column.key === 'bytes'}
+              {size(entry.bytes)}
+            {:else if column.key === 'deleted_at'}
+              {formatDate(entry.deleted_at)}
+            {:else if column.key === 'purge_after'}
+              {formatDate(entry.purge_after)}
             {:else}
-              <button type="button" class="plain" onclick={() => startPurge(entry.unit_id)}>
+              <Button variant="danger-ghost" size="sm" onclick={() => startPurge(entry.unit_id)}>
                 {t('trash.purge')}
-              </button>
+              </Button>
             {/if}
-          </li>
-        {/each}
-      </ul>
+          {/snippet}
+        </DataTable>
 
-      <section aria-labelledby="empty-title" class="empty">
-        <h2 id="empty-title">{t('trash.empty_title')}</h2>
-        <form onsubmit={emptyNow}>
-          <p>{t('trash.empty_hint', { word: EMPTY_WORD })}</p>
-          <label for="empty-word">{t('trash.empty_word')}</label>
-          <input id="empty-word" bind:value={emptyTyped} autocomplete="off" spellcheck="false" />
-          <button type="submit" disabled={emptyTyped.trim() !== EMPTY_WORD}>
-            {t('trash.empty_run')}
-          </button>
-        </form>
-      </section>
-    {/if}
+        <section aria-labelledby="empty-title" class="panel empty">
+          <h2 id="empty-title">{t('trash.empty_title')}</h2>
+          <p>{t('trash.empty_message')}</p>
+          <div class="btn-row">
+            <Button variant="danger" onclick={() => (emptyOpen = true)}>
+              {t('trash.empty_open')}
+            </Button>
+          </div>
+        </section>
+      {/if}
+    </div>
+
+    <ConfirmDialog
+      bind:open={purgeOpen}
+      title={t('trash.purge_title', { unit: purging ?? '' })}
+      message={purgeMessage}
+      confirmLabel={t('trash.purge_confirm')}
+      cancelLabel={t('trash.purge_cancel')}
+      phrase={purging ?? undefined}
+      onconfirm={(typed) => purgeNow(typed, purging ?? '')}
+      oncancel={() => (purging = null)}
+    />
+    <ConfirmDialog
+      bind:open={emptyOpen}
+      title={t('trash.empty_title')}
+      message={t('trash.empty_hint', { word: EMPTY_WORD })}
+      confirmLabel={t('trash.empty_run')}
+      phrase={EMPTY_WORD}
+      onconfirm={emptyNow}
+    />
   {/if}
 </main>
 
 <style>
-  main {
-    max-width: 42rem;
-    margin: 0 auto;
-    padding: 3rem 1rem;
-  }
-  h1 {
-    font-family: var(--font-display);
-    font-weight: 400;
-    font-style: italic;
-    letter-spacing: -0.02em;
-  }
-  .entries {
-    list-style: none;
-    margin: 1rem 0;
-    padding: 0;
+  .loading {
     display: grid;
-    gap: 1rem;
+    gap: var(--space-4);
   }
-  .entries li {
-    display: grid;
-    gap: 0.5rem;
-    padding: 1rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
-    background: var(--color-surface);
-  }
-  .head,
-  .row {
-    display: flex;
+  .unit {
+    display: inline-flex;
     flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 0.5rem 1rem;
-    overflow-wrap: anywhere;
-  }
-  .row {
-    justify-content: flex-start;
-  }
-  form,
-  .empty {
-    display: grid;
-    gap: 0.5rem;
-  }
-  .empty {
-    margin-top: 1.5rem;
-  }
-  .rare {
-    color: var(--color-err);
-  }
-  .muted {
-    color: var(--color-muted);
-  }
-  .err {
-    color: var(--color-err);
-  }
-  main,
-  .entries li,
-  form,
-  .empty {
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
     min-width: 0;
   }
-  button,
-  input {
-    min-height: 2.75rem;
-  }
-  input {
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 100%;
-  }
-  button {
-    max-width: 100%;
-    height: auto;
-    padding-block: 0.5rem;
-    white-space: normal;
+  .long {
     overflow-wrap: anywhere;
   }
-  .entries p,
-  label {
-    overflow-wrap: anywhere;
+  .empty {
+    display: grid;
+    gap: var(--space-3);
+    justify-items: start;
+  }
+  .empty > h2,
+  .empty > p {
+    margin: 0;
   }
 </style>

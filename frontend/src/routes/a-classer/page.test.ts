@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { client } from '#lib/api/client.gen.ts';
@@ -50,7 +50,7 @@ describe('À classer', () => {
     ]);
     for (const radio of radios) expect(radio).toHaveAccessibleName();
     const rate = screen.getByRole('button', { name: 'Classer' });
-    expect(rate).toBeDisabled();
+    expect(rate).toHaveAttribute('aria-disabled', 'true');
     // keyboard: Tab into the group, arrows move, nothing chosen until a key does it
     const user = userEvent.setup();
     await user.tab(); // the two filters come first: the state, then the search
@@ -59,7 +59,7 @@ describe('À classer', () => {
     expect(radios[0]).toHaveFocus();
     await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}');
     expect(radios[3]).toBeChecked();
-    expect(rate).toBeEnabled();
+    expect(rate).not.toHaveAttribute('aria-disabled');
   });
 
   // req: EF-USR-015
@@ -170,4 +170,29 @@ describe('À classer', () => {
     expect(screen.queryByRole('region', { name: 'Classement en masse' })).toBeNull();
   });
 
+  // req: EF-USR-015
+  it('says so when a filter matches nothing and clears the filters on request', async () => {
+    server.use(http.get(`${BASE}/api/v1/to-rate`, () => listing()));
+    render(Page);
+    await screen.findAllByText('<img src=x onerror=alert(1)> Titre');
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('searchbox', { name: 'Chercher dans la liste' }), 'zzz');
+    expect(screen.getByText('Aucune Œuvre ne correspond aux filtres.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Effacer les filtres' }));
+    expect(screen.queryByText('Aucune Œuvre ne correspond aux filtres.')).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Chercher dans la liste' })).toHaveValue('');
+  });
+
+  // req: EF-USR-015
+  it('shows a loading state while the list is being read', async () => {
+    server.use(
+      http.get(`${BASE}/api/v1/to-rate`, async () => {
+        await delay(100);
+        return listing();
+      })
+    );
+    render(Page);
+    expect(screen.getByRole('status')).toHaveTextContent('Chargement des Œuvres à classer');
+    await screen.findAllByText('<img src=x onerror=alert(1)> Titre');
+  });
 });

@@ -26,6 +26,12 @@
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { Reauth } from '#lib/guard.svelte.ts';
   import { isForbidden, needsSession } from '#lib/triage.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
 
   const REASONS: Record<string, MessageKey> = {
     suwayomi_migration: 'sameWork.reason.suwayomi_migration',
@@ -174,58 +180,79 @@
   <title>{t('sameWork.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('sameWork.title')}</h1>
-  <p class="muted">{t('sameWork.intro')}</p>
+<main class="page">
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('sameWork.title')}</h1>
+      <p class="lede">{t('sameWork.intro')}</p>
+    </div>
+    {#if !signedOut && !forbidden && !failed}
+      <div class="page-head__actions">
+        <Button icon="refresh" onclick={scan} disabled={busy}>{t('sameWork.scan')}</Button>
+      </div>
+    {/if}
+  </div>
 
   {#if signedOut}
-    <p role="alert" class="err">{t('toRate.signed_out')}</p>
+    <Alert tone="danger" live="assertive" title={t('toRate.signed_out')} />
   {:else if forbidden}
-    <p role="alert" class="err">{t('sameWork.forbidden')}</p>
+    <Alert tone="danger" live="assertive" title={t('sameWork.forbidden')} />
   {:else if failed}
-    <p role="alert" class="err">{t('sameWork.error')}</p>
-  {:else}
-    <p>
-      <button type="button" onclick={scan} disabled={busy}>{t('sameWork.scan')}</button>
-    </p>
-    {#if loaded && suggestions.length === 0}
-      <p>{t('sameWork.none')}</p>
-    {:else if suggestions.length > 0 && !selected}
-      <ul>
-        {#each suggestions as suggestion (suggestion.id)}
-          <li>
-            <span>
-              <strong>{t(REASONS[suggestion.reason] ?? 'sameWork.reason.same_title')}</strong>
-              <span class="muted">
-                « {titleOf(suggestion.a)} » / « {titleOf(suggestion.b)} »
-              </span>
-            </span>
-            <button type="button" onclick={() => open(suggestion)}>{t('sameWork.open')}</button>
-          </li>
+    <Alert tone="danger" live="assertive" title={t('sameWork.error')} />
+  {:else if !loaded}
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('sameWork.loading')}</p>
+      <div class="loading">
+        {#each { length: 4 }, index (index)}
+          <Skeleton />
         {/each}
-      </ul>
-    {:else if selected}
-      <p>
-        <button type="button" onclick={back}>{t('sameWork.back')}</button>
-      </p>
-      <h2>« {titleOf(selected.a)} » / « {titleOf(selected.b)} »</h2>
+      </div>
+    </div>
+  {:else if suggestions.length === 0}
+    <EmptyState title={t('sameWork.none')} />
+  {:else if !selected}
+    <ul class="entries" role="list">
+      {#each suggestions as suggestion (suggestion.id)}
+        <li class="proposal">
+          <span class="proposal__text">
+            <strong>{t(REASONS[suggestion.reason] ?? 'sameWork.reason.same_title')}</strong>
+            <span class="muted">
+              « {titleOf(suggestion.a)} » / « {titleOf(suggestion.b)} »
+            </span>
+          </span>
+          <Button size="sm" onclick={() => open(suggestion)}>{t('sameWork.open')}</Button>
+        </li>
+      {/each}
+    </ul>
+  {:else}
+    {@const pair = selected}
+    <div class="stack-lg">
+      <div class="btn-row">
+        <Button variant="ghost" icon="left" onclick={back}>{t('sameWork.back')}</Button>
+      </div>
+      <h2 class="pair">« {titleOf(pair.a)} » / « {titleOf(pair.b)} »</h2>
 
-      <section>
-        <h3>{t('sameWork.plan')}</h3>
-        <label>
-          {t('sameWork.keep')}
-          <select bind:value={keepId}>
-            <option value={selected.a}>« {titleOf(selected.a)} »</option>
-            <option value={selected.b}>« {titleOf(selected.b)} »</option>
-          </select>
-        </label>
-        <button type="button" onclick={planWork} disabled={busy}>{t('sameWork.open')}</button>
+      <section class="panel stack" aria-labelledby="work-plan-title">
+        <h3 id="work-plan-title">{t('sameWork.plan')}</h3>
+        <Field label={t('sameWork.keep')}>
+          {#snippet children(control)}
+            <Select {...control} bind:value={keepId}>
+              <option value={pair.a}>« {titleOf(pair.a)} »</option>
+              <option value={pair.b}>« {titleOf(pair.b)} »</option>
+            </Select>
+          {/snippet}
+        </Field>
+        <div class="btn-row">
+          <Button onclick={planWork} disabled={busy}>{t('sameWork.open')}</Button>
+        </div>
         {#if workPlan}
           <p>{t('sameWork.plan.editions', { count: workPlan.editions.length })}</p>
           {#if workPlan.blockers.length > 0}
-            <p role="alert" class="err">
-              {t('sameWork.plan.blockers', { reasons: workPlan.blockers.join(', ') })}
-            </p>
+            <Alert
+              tone="danger"
+              live="assertive"
+              title={t('sameWork.plan.blockers', { reasons: workPlan.blockers.join(', ') })}
+            />
           {/if}
           <p class="muted">
             {t('sameWork.plan.ages', {
@@ -243,36 +270,42 @@
             </p>
           {/if}
           {#if workPlan.applied}
-            <p role="status">{t('sameWork.applied')}</p>
+            <Alert tone="success" live="polite" title={t('sameWork.applied')} />
           {:else if workPlan.mergeable}
-            <button type="button" onclick={applyWork} disabled={busy}>
-              {t('sameWork.apply')}
-            </button>
+            <div class="btn-row">
+              <Button variant="primary" onclick={applyWork} disabled={busy}>
+                {t('sameWork.apply')}
+              </Button>
+            </div>
           {/if}
         {/if}
       </section>
 
-      <section>
-        <h3>{t('sameWork.editions.title')}</h3>
-        <label>
-          {t('sameWork.editions.keep')}
-          <select bind:value={editionKeep}>
-            {#each editionOptions as e (e.edition_id)}
-              <option value={e.edition_id}>{editionLabel(e)}</option>
-            {/each}
-          </select>
-        </label>
-        <label>
-          {t('sameWork.editions.drop')}
-          <select bind:value={editionDrop}>
-            {#each editionOptions as e (e.edition_id)}
-              <option value={e.edition_id}>{editionLabel(e)}</option>
-            {/each}
-          </select>
-        </label>
-        <button type="button" onclick={planEdition} disabled={busy || !editionKeep || !editionDrop}>
-          {t('sameWork.editions.plan')}
-        </button>
+      <section class="panel stack" aria-labelledby="edition-plan-title">
+        <h3 id="edition-plan-title">{t('sameWork.editions.title')}</h3>
+        <Field label={t('sameWork.editions.keep')}>
+          {#snippet children(control)}
+            <Select {...control} bind:value={editionKeep}>
+              {#each editionOptions as e (e.edition_id)}
+                <option value={e.edition_id}>{editionLabel(e)}</option>
+              {/each}
+            </Select>
+          {/snippet}
+        </Field>
+        <Field label={t('sameWork.editions.drop')}>
+          {#snippet children(control)}
+            <Select {...control} bind:value={editionDrop}>
+              {#each editionOptions as e (e.edition_id)}
+                <option value={e.edition_id}>{editionLabel(e)}</option>
+              {/each}
+            </Select>
+          {/snippet}
+        </Field>
+        <div class="btn-row">
+          <Button onclick={planEdition} disabled={busy || !editionKeep || !editionDrop}>
+            {t('sameWork.editions.plan')}
+          </Button>
+        </div>
         {#if editionPlan}
           <p>
             {t('sameWork.editions.moves', {
@@ -282,81 +315,85 @@
             })}
           </p>
           {#if editionPlan.blockers.length > 0}
-            <p role="alert" class="err">
-              {t('sameWork.plan.blockers', { reasons: editionPlan.blockers.join(', ') })}
-            </p>
+            <Alert
+              tone="danger"
+              live="assertive"
+              title={t('sameWork.plan.blockers', { reasons: editionPlan.blockers.join(', ') })}
+            />
           {/if}
           {#if editionPlan.tombstoned_units > 0}
-            <p role="alert" class="err">
-              {t('sameWork.editions.tombstoned_units', { count: editionPlan.tombstoned_units })}
-            </p>
+            <Alert
+              tone="warning"
+              live="assertive"
+              title={t('sameWork.editions.tombstoned_units', { count: editionPlan.tombstoned_units })}
+            />
           {/if}
           {#if editionPlan.tombstoned_ids > 0}
-            <p role="alert" class="err">
-              {t('sameWork.editions.tombstoned_ids', { count: editionPlan.tombstoned_ids })}
-            </p>
+            <Alert
+              tone="warning"
+              live="assertive"
+              title={t('sameWork.editions.tombstoned_ids', { count: editionPlan.tombstoned_ids })}
+            />
           {/if}
           {#if editionPlan.applied}
-            <p role="status">{t('sameWork.editions.applied')}</p>
+            <Alert tone="success" live="polite" title={t('sameWork.editions.applied')} />
           {:else if editionPlan.mergeable}
-            <button type="button" onclick={applyEdition} disabled={busy}>
-              {t('sameWork.editions.apply')}
-            </button>
+            <div class="btn-row">
+              <Button variant="primary" onclick={applyEdition} disabled={busy}>
+                {t('sameWork.editions.apply')}
+              </Button>
+            </div>
           {/if}
         {/if}
       </section>
-    {/if}
+    </div>
   {/if}
 
-  {#if problem}<ProblemCard {problem} level={2} />{/if}
+  {#if problem}
+    <div class="problem"><ProblemCard {problem} level={2} /></div>
+  {/if}
   {#if reauth.reauthMethods}
-    <ReauthPrompt methods={reauth.reauthMethods} ondone={() => reauth.afterReauth()} oncancel={() => reauth.cancelReauth()} />
+    <div class="problem">
+      <ReauthPrompt
+        methods={reauth.reauthMethods}
+        ondone={() => reauth.afterReauth()}
+        oncancel={() => reauth.cancelReauth()}
+      />
+    </div>
   {/if}
 </main>
 
 <style>
-  main {
-    max-width: 42rem;
-    margin: 0 auto;
-    padding: 3rem 1rem;
-  }
-  h1 {
-    font-family: var(--font-display);
-    font-weight: 400;
-    font-style: italic;
-    letter-spacing: -0.02em;
-  }
-  ul {
-    list-style: none;
-    padding: 0;
+  .loading {
     display: grid;
-    gap: 0.75rem;
+    gap: var(--space-4);
   }
-  li {
+  .proposal {
     display: flex;
-    justify-content: space-between;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
-    background: var(--color-surface);
+    justify-content: space-between;
+    gap: var(--space-3) var(--space-4);
+    padding: var(--space-3) 0;
+  }
+  .proposal__text {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
     overflow-wrap: anywhere;
   }
-  section {
-    margin-top: 1.5rem;
-    display: grid;
-    gap: 0.75rem;
-    justify-items: start;
+  .pair {
+    margin: 0;
+    overflow-wrap: anywhere;
   }
-  label {
-    display: grid;
-    gap: 0.25rem;
+  .panel :global(p) {
+    margin: 0;
+    overflow-wrap: anywhere;
   }
-  .muted {
-    color: var(--color-muted);
+  .panel > h3 {
+    margin: 0;
   }
-  .err {
-    color: var(--color-err);
+  .problem {
+    margin-top: var(--space-6);
   }
 </style>
