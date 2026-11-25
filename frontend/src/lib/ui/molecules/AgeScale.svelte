@@ -15,6 +15,7 @@
     steps,
     value = $bindable(null),
     counts,
+    hideLegend = false,
     onchange
   }: {
     name: string;
@@ -22,6 +23,7 @@
     steps: readonly AgeStep[];
     value?: number | null;
     counts?: Readonly<Record<string, number>>;
+    hideLegend?: boolean;
     onchange?: (value: number | null) => void;
   } = $props();
 
@@ -30,7 +32,7 @@
 </script>
 
 <fieldset class="scale">
-  <legend>{legend}</legend>
+  <legend class:visually-hidden={hideLegend}>{legend}</legend>
   <div class="scale__row">
     {#each steps as step, index (key(step))}
       <label class="step" class:step--under={chosen >= 0 && index <= chosen} class:step--on={index === chosen}>

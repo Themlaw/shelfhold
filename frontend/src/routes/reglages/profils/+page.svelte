@@ -208,7 +208,7 @@
 
 <main class="page">
   <div class="running-head">
-    <span>{t('nav.settings')}</span>
+    <span>{t('nav.group.family')}</span>
     {#if loaded && !adminOnly && !failed}<span class="running-head__folio">{t('profiles.count', { count: profiles.length })}</span>{/if}
   </div>
   <div class="page-head">
@@ -262,6 +262,7 @@
                     <AgeScale
                       name={`age-${profile.id}`}
                       legend={t('profiles.age')}
+                      hideLegend
                       steps={steps(profile.max_age_rating)}
                       value={profile.max_age_rating}
                       onchange={(age) => update(profile, { max_age_rating: age })}
@@ -345,7 +346,7 @@
         </Field>
         <Field label={t('profiles.role')}>
           {#snippet children(control)}
-            <Select {...control} bind:value={newRole} options={ROLES.map((value) => ({ value, label: value }))} />
+            <Select {...control} bind:value={newRole} options={ROLES.map((value) => ({ value, label: roleName(value) }))} />
           {/snippet}
         </Field>
         <Field label={t('profiles.age')}>

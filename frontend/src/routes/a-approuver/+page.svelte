@@ -83,7 +83,7 @@
 
 <main class="page">
   <div class="running-head">
-    <span>{t('nav.requests')}</span>
+    <span>{t('nav.group.family')}</span>
     {#if loaded && !problem}<span class="running-head__folio">{t('approve.count', { count: items.length })}</span>{/if}
   </div>
   <div class="page-head">
