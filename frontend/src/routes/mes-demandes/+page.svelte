@@ -2,10 +2,12 @@
   import { onMount } from 'svelte';
   import { cancel, mine } from '#lib/api/index.ts';
   import type { RequestOut } from '#lib/api/types.gen.ts';
-  import EmptyState from '#lib/components/EmptyState.svelte';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import RequestItem from '#lib/components/RequestItem.svelte';
-  import { t } from '#lib/i18n/index.ts';
+  import { formatNumber, t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
   import { reloadOnStream } from '#lib/live.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
@@ -55,59 +57,52 @@
   <title>{t('nav.requests')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('nav.requests')}</h1>
+<main class="page page--read">
+  <div class="running-head">
+    <span>{t('home.my_requests')}</span>
+    {#if loaded && !problem && items.length > 0}<span class="running-head__folio">{formatNumber(items.length)}</span>{/if}
+  </div>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('nav.requests')}</h1>
+    </div>
+  </div>
 
   {#if !loaded}
-    <p>{t('home.loading')}</p>
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('home.loading')}</p>
+      <Skeleton /><Skeleton /><Skeleton short />
+    </div>
   {:else if problem}
     <ProblemCard {problem} />
   {:else if items.length === 0}
-    <EmptyState
-      title={t('home.requests_empty')}
-      actionLabel={t('home.search_book')}
-      href="/chercher"
-    />
+    <EmptyState title={t('home.requests_empty')}>
+      {#snippet actions()}<Button href="/chercher" variant="primary">{t('home.search_book')}</Button>{/snippet}
+    </EmptyState>
   {:else}
     {#if cancelProblem}
       <ProblemCard problem={cancelProblem} />
     {/if}
-    <ul>
+    <ul class="entries" role="list">
       {#each items as request (request.id)}
-        <li class="request-row">
-          <RequestItem {request} />
-          {#if request.state === 'pending' || request.state === 'approved'}
-            <button
-              type="button"
-              disabled={cancelling === request.id}
-              onclick={() => cancelOne(request.id)}
-            >
-              {t('request.cancel')}
-            </button>
-          {/if}
+        <li>
+          <RequestItem {request}>
+            {#snippet actions()}
+              {#if request.state === 'pending' || request.state === 'approved'}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={cancelling === request.id}
+                  loading={cancelling === request.id}
+                  onclick={() => cancelOne(request.id)}
+                >
+                  {t('request.cancel')}
+                </Button>
+              {/if}
+            {/snippet}
+          </RequestItem>
         </li>
       {/each}
     </ul>
   {/if}
 </main>
-
-<style>
-  main {
-    max-width: 42rem;
-    margin: 0 auto;
-    padding: 1rem;
-  }
-  ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .request-row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    flex-wrap: wrap;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--color-rule, #eee);
-  }
-</style>

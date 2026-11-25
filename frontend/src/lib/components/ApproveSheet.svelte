@@ -10,6 +10,10 @@
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { formatNumber, t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Checkbox from '#lib/ui/atoms/Checkbox.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { AGES, needsReauth, problemOf, type Age } from '#lib/triage.ts';
@@ -99,10 +103,10 @@
 </script>
 
 <section class="approve-sheet" aria-label={t('approve.sheet')}>
-  <p class="title">{item.title ?? t('approve.masked')}</p>
+  <h3 class="approve-sheet__title">{item.title ?? t('approve.masked')}</h3>
 
   {#if preview}
-    <p class="summary">
+    <p class="approve-sheet__summary">
       {t('approve.size_summary', {
         volumes: preview.units,
         bytes: formatNumber(preview.size_bytes ?? 0)
@@ -116,19 +120,16 @@
         <p class="hint">{t('approve.choose_age')}</p>
       {/if}
       {#if above}
-        <p class="hint" role="status">{t('approve.above_ceiling')}</p>
+        <Alert tone="warning" title={t('approve.above_ceiling')} live="polite" />
       {/if}
     {/if}
 
     {#if preview.confirmation_required}
-      <label class="confirm">
-        <input type="checkbox" bind:checked={confirmed} />
-        {t('approve.confirm_size')}
-      </label>
+      <Checkbox bind:checked={confirmed} label={t('approve.confirm_size')} />
     {/if}
 
     {#if preview.non_family_source_into_family_shelf}
-      <p class="hint" role="status">{t('approve.non_family_source')}</p>
+      <Alert tone="warning" title={t('approve.non_family_source')} live="polite" />
     {/if}
 
     {#if reauthMethods}
@@ -139,54 +140,31 @@
       />
     {/if}
 
-    <div class="actions main-action">
-      <button type="button" disabled={!canApprove} onclick={send}>{t('approve.approve')}</button>
+    <div class="btn-row">
+      <Button variant="primary" icon="check" disabled={!canApprove} loading={busy} onclick={send}>{t('approve.approve')}</Button>
     </div>
+  {:else if !problem}
+    <div aria-busy="true"><Skeleton /><Skeleton short /></div>
   {/if}
 
   {#if problem}
-    <ProblemCard {problem} level={3} />
+    <ProblemCard {problem} level={4} />
   {/if}
 </section>
 
 <style>
   .approve-sheet {
     display: grid;
-    gap: 0.75rem;
-    padding: 1rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
-    background: var(--color-surface);
+    gap: var(--space-3);
   }
-  .title {
-    font-weight: 600;
+  .approve-sheet__title {
     margin: 0;
+    font-size: var(--step-1);
+    overflow-wrap: anywhere;
   }
-  .summary {
-    margin: 0;
-    color: var(--color-muted);
-  }
+  .approve-sheet__summary,
   .hint {
     margin: 0;
     color: var(--color-muted);
-  }
-  .confirm {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-  }
-  .actions button {
-    min-height: 2.75rem;
-    min-width: 2.75rem;
-    padding: 0 1rem;
-    border-radius: 0.5rem;
-    border: 1px solid currentColor;
-    background: var(--color-accent);
-    color: var(--color-on-accent);
-    cursor: pointer;
-  }
-  .actions button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 </style>

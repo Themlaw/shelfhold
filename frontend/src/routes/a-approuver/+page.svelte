@@ -7,7 +7,14 @@
   import type { QueueItemOut } from '#lib/api/types.gen.ts';
   import ApproveSheet from '#lib/components/ApproveSheet.svelte';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
-  import { t, type MessageKey } from '#lib/i18n/index.ts';
+  import DecisionPanel from '#lib/components/DecisionPanel.svelte';
+  import { formatDate, t, type MessageKey } from '#lib/i18n/index.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Cover from '#lib/ui/atoms/Cover.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Dialog from '#lib/ui/molecules/Dialog.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
 
@@ -74,84 +81,98 @@
   <title>{t('approve.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('approve.title')}</h1>
-  <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-  <p><a href="/a-approuver/liste">{t('approve.import_list')}</a></p>
+<main class="page">
+  <div class="running-head">
+    <span>{t('nav.requests')}</span>
+    {#if loaded && !problem}<span class="running-head__folio">{t('approve.count', { count: items.length })}</span>{/if}
+  </div>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('approve.title')}</h1>
+      <p class="lede">{t('approve.lede')}</p>
+    </div>
+    <div class="page-head__actions">
+      <Button href="/a-approuver/liste" icon="list">{t('approve.import_list')}</Button>
+    </div>
+  </div>
 
   {#if !loaded}
-    <p>{t('home.loading')}</p>
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('approve.loading')}</p>
+      <ul class="entries" role="list">
+        {#each { length: 4 }, index (index)}
+          <li class="entry"><Skeleton shape="cover" /><div class="entry__text"><Skeleton /><Skeleton short /></div></li>
+        {/each}
+      </ul>
+    </div>
   {:else if problem}
     <ProblemCard {problem} />
   {:else if items.length === 0}
-    <p class="empty">{t('approve.empty')}</p>
+    <EmptyState title={t('approve.empty')} />
   {:else}
-    <ul>
+    <ul class="entries" role="list">
       {#each items as item (item.id)}
-        <li>
-          <button type="button" onclick={() => (selected = item)}>
-            {item.title ?? t('approve.masked')}
-          </button>
-          <span class="who">{t(ROLES[item.requester_role] ?? 'approve.role.member')}</span>
-          {#if item.needs_age}<span class="badge">{t('approve.needs_age')}</span>{/if}
+        <li class="entry">
+          <Cover title={item.title ?? t('approve.masked')} seed={item.id} size="sm" />
+          <div class="entry__text">
+            <p class="entry__title">{item.title ?? t('approve.masked')}</p>
+            <p class="entry__meta">
+              {t('approve.requested_on', {
+                role: t(ROLES[item.requester_role] ?? 'approve.role.member'),
+                date: formatDate(item.created_at, { day: 'numeric', month: 'long' })
+              })}
+              {#if item.needs_age}<Badge tone="warning" icon={null}>{t('approve.needs_age')}</Badge>{/if}
+            </p>
+          </div>
+          <Button size="sm" aria-label={t('approve.review_title', { title: item.title ?? t('approve.masked') })} onclick={() => (selected = item)}>
+            {t('home.approve_review')}
+          </Button>
         </li>
       {/each}
     </ul>
   {/if}
+</main>
 
-  {#if selected}
+{#if selected}
+  <Dialog open={true} title={t('approve.title')} description={t('approve.dialog_help')} onclose={close}>
     {#key selected.id}
       <ApproveSheet item={selected} onapproved={decided} />
     {/key}
-    <div class="reject">
-      <label>
-        {t('approve.reason')}
-        <input bind:value={reason} />
-      </label>
-      <button type="button" disabled={reason.trim() === ''} onclick={doReject}>
-        {t('approve.reject')}
-      </button>
-      <button type="button" onclick={doNotFound}>{t('approve.not_found')}</button>
-      <button type="button" onclick={close}>{t('approve.close')}</button>
-    </div>
+    <DecisionPanel bind:reason onreject={doReject} onnotfound={doNotFound} onclose={close} />
     {#if decisionProblem}
       <ProblemCard problem={decisionProblem} level={3} />
     {/if}
-  {/if}
-</main>
+  </Dialog>
+{/if}
 
 <style>
-  main {
-    max-width: 42rem;
-    margin: 0 auto;
-    padding: 1rem;
-  }
-  ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  li {
-    display: flex;
-    gap: 0.5rem;
+  .entry {
+    display: grid;
+    grid-template-columns: 3.5rem minmax(0, 1fr) auto;
     align-items: center;
-    flex-wrap: wrap;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--color-rule);
+    gap: var(--space-4);
+    padding-block: var(--space-3);
   }
-  .who {
-    color: var(--color-muted);
+  .entry__title {
+    margin: 0;
+    font: 600 var(--step-1) / var(--leading-tight) var(--font-text);
+    overflow-wrap: anywhere;
   }
-  .badge {
-    padding: 0.125rem 0.5rem;
-    border-radius: 999px;
-    border: 1px solid var(--color-rule);
-  }
-  .reject {
+  .entry__meta {
     display: flex;
-    gap: 0.5rem;
     flex-wrap: wrap;
-    align-items: end;
-    margin-top: 1rem;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-1) 0 0;
+    color: var(--color-muted);
+    font-size: var(--step--1);
+  }
+  @media (max-width: 40rem) {
+    .entry {
+      grid-template-columns: 3rem minmax(0, 1fr);
+    }
+    .entry > :global(.btn) {
+      grid-column: 1 / -1;
+    }
   }
 </style>

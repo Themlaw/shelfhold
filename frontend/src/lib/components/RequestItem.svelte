@@ -2,11 +2,13 @@
   // "My requests" (EF-UX-010): one state per request, in the family's words, and the link that
   // opens Kavita when it is there. A request that was refused, not found or withdrawn says so, and
   // gives the reason the admin wrote.
+  import type { Snippet } from 'svelte';
   import type { RequestOut } from '#lib/api/types.gen.ts';
   import OpenInKavita from '#lib/components/OpenInKavita.svelte';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
+  import Badge, { type BadgeTone } from '#lib/ui/atoms/Badge.svelte';
 
-  let { request }: { request: RequestOut } = $props();
+  let { request, actions }: { request: RequestOut; actions?: Snippet } = $props();
 
   const WORDS: Record<string, MessageKey> = {
     preparing: 'activity.state.preparing',
@@ -16,43 +18,56 @@
     not_found: 'request.state.not_found',
     cancelled: 'request.state.cancelled'
   };
-  const word = $derived(WORDS[request.family_state ?? request.state]);
+  const TONES: Record<string, BadgeTone> = {
+    available: 'success',
+    preparing: 'accent',
+    waiting: 'neutral',
+    rejected: 'danger',
+    not_found: 'danger',
+    cancelled: 'neutral'
+  };
+  const state = $derived(request.family_state ?? request.state);
+  const word = $derived(WORDS[state]);
 </script>
 
 <article class="request-item">
-  {#if request.title}
-    <span class="title">{request.title}</span>
-  {/if}
+  <div class="request-item__text">
+    {#if request.title}
+      <p class="request-item__title">{request.title}</p>
+    {/if}
+    {#if request.reject_reason}
+      <p class="request-item__reason">{t('request.reason', { reason: request.reject_reason })}</p>
+    {/if}
+  </div>
   {#if word}
-    <span class="state">{t(word)}</span>
+    <Badge tone={TONES[state] ?? 'neutral'}>{t(word)}</Badge>
   {/if}
   {#if request.family_state === 'available'}
     <OpenInKavita url={request.open_url} />
   {/if}
-  {#if request.reject_reason}
-    <span class="reason">{t('request.reason', { reason: request.reject_reason })}</span>
-  {/if}
+  {#if actions}{@render actions()}{/if}
 </article>
 
 <style>
   .request-item {
     display: flex;
-    gap: 0.5rem;
-    align-items: center;
     flex-wrap: wrap;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--color-rule, #eee);
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    padding-block: var(--space-3);
   }
-  .title {
-    font-weight: 600;
+  .request-item__text {
+    flex: 1 1 14rem;
+    min-width: 0;
   }
-  .state {
-    padding: 0.125rem 0.5rem;
-    border-radius: 999px;
-    border: 1px solid var(--color-rule, #ccc);
+  .request-item__title {
+    margin: 0;
+    font: 600 var(--step-1) / var(--leading-tight) var(--font-text);
+    overflow-wrap: anywhere;
   }
-  .reason {
-    font-size: 0.875rem;
+  .request-item__reason {
+    margin: var(--space-1) 0 0;
     color: var(--color-muted);
+    font-size: var(--step--1);
   }
 </style>
