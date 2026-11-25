@@ -42,6 +42,7 @@ from shelfhold.interfaces.http_api.kepub_download import kepub_response
 from shelfhold.interfaces.http_api.lite.render import (
     HEADERS,
     Page,
+    esc,
     fragment,
     page_response,
     render_fragment,
@@ -61,6 +62,7 @@ from shelfhold.interfaces.http_api.lite.session import (
     same_origin,
     set_cookie,
 )
+from shelfhold.interfaces.http_api.page_assets import lite_style, serve_asset
 from shelfhold.interfaces.http_api.path_safety import safe_filename
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.ratelimit import client_ip_of
@@ -137,14 +139,37 @@ def build_lite_router(
 
     def _pager(
         page: Page, make: Callable[[int], str], offset: int, *, has_next: bool
-    ) -> dict[str, str]:
-        previous = next_ = ""
+    ) -> str:
+        """One line, always: « previous · page n · next », the absent side drawn dashed so that
+        the line keeps its shape. Nothing at all on a list that fits one page."""
+        if offset == 0 and not has_next:
+            return ""
+        previous_label, next_label = t("lite.prev_button", page), t("lite.next_button", page)
         if offset > 0:
-            href = make(max(0, offset - PAGE))
-            previous = fragment("link", href=href, label=t("lite.previous", page))
+            previous = fragment(
+                "pager_link_previous",
+                href=make(max(0, offset - PAGE)),
+                aria=t("lite.previous", page),
+                label=previous_label,
+            )
+        else:
+            previous = fragment("pager_off_previous", label=previous_label)
         if has_next:
-            next_ = fragment("link", href=make(offset + PAGE), label=t("lite.next", page))
-        return {"html_previous": previous, "html_next": next_}
+            following = fragment(
+                "pager_link_next",
+                href=make(offset + PAGE),
+                aria=t("lite.next", page),
+                label=next_label,
+            )
+        else:
+            following = fragment("pager_off_next", label=next_label)
+        count = esc(t("lite.page_n", page, number=offset // PAGE + 1))
+        return (
+            f'<nav class="lite__pager" aria-label="{esc(t("lite.pages", page))}">'
+            f'<span class="lite__cell lite__cell--prev">{previous}</span>'
+            f'<span class="lite__cell lite__count">{count}</span>'
+            f'<span class="lite__cell lite__cell--next">{following}</span></nav>\n'
+        )
 
     def _listing(
         who: Reader,
@@ -156,17 +181,25 @@ def build_lite_router(
         has_next: bool = False,
         lead: str = "",
         query: str = "",
+        current: str = "",
+        none: str = "",
     ) -> Response:
+        """`none`: what a list with nothing in it says (the generic sentence when blank); the way
+        out is the home page, so a reader is never left on a dead end."""
         page = who.page
-        empty = "" if rows else fragment("paragraph", text=t("lite.empty", page))
-        pager = _pager(page, make, offset, has_next=has_next) if make else {
-            "html_previous": "", "html_next": "",
-        }  # fmt: skip
-        body = render_fragment(
-            "list",
-            html_lead=lead, html_rows="".join(rows), html_empty=empty, **pager,
+        empty = (
+            ""
+            if rows
+            else fragment(
+                "empty", text=none or t("lite.empty", page), href=page.paths.home(),
+                label=t("lite.home", page),
+            )
         )  # fmt: skip
-        return page_response(page, title=title, body=body, query=query)
+        pager = _pager(page, make, offset, has_next=has_next) if make else ""
+        body = render_fragment(
+            "list", html_lead=lead, html_rows="".join(rows), html_empty=empty, html_pager=pager
+        )
+        return page_response(page, title=title, body=body, query=query, current=current)
 
     def _work_rows(who: Reader, works: list[VisibleWork]) -> list[str]:
         paths, rows = who.page.paths, []
@@ -190,6 +223,7 @@ def build_lite_router(
         recent: bool = False,
         shelf_id: str | None = None,
         series_id: str | None = None,
+        current: str = "",
     ) -> Response:
         with get_engine().connect() as connection:
             found = list_visible_works(
@@ -208,7 +242,13 @@ def build_lite_router(
             make=make,
             offset=offset,
             has_next=len(found) > PAGE,
+            current=current,
         )
+
+    @router.get("/style.css", include_in_schema=False)
+    def stylesheet(request: Request) -> Response:
+        """The one style sheet of `/lite`: public (the sign-in page needs it), a file, never a page."""
+        return serve_asset(request, lite_style(), "text/css")
 
     @router.get("", response_class=HTMLResponse)
     def home(who: Who) -> Response:
@@ -220,7 +260,10 @@ def build_lite_router(
             (paths.recent(), t("lite.recent", page)),
         )
         return _listing(
-            who, title=t("lite.root_title", page), rows=[_row(h, label) for h, label in doors]
+            who,
+            title=t("lite.root_title", page),
+            rows=[_row(h, label) for h, label in doors],
+            current="home",
         )
 
     # -- signing in and out ------------------------------------------------------------------
@@ -234,7 +277,9 @@ def build_lite_router(
             action=page.paths.sign_in(),
             csrf=csrf,
             identifier=t("lite.identifier", page),
+            identifier_hint=t("lite.identifier_hint", page),
             secret=t("lite.secret", page),
+            secret_hint=t("lite.secret_hint", page),
             submit=t("lite.sign_in_submit", page),
         )
         return page_response(page, title=t("lite.sign_in_title", page), body=body, status=status)
@@ -270,6 +315,8 @@ def build_lite_router(
                 href=page.paths.sign_in(),
                 label=t("lite.retry", page),
                 headers={"Retry-After": str(throttled.retry_after_s)},
+                retry_after_s=throttled.retry_after_s,
+                error=True,
             )
         if cookie is None:  # one answer for every failure; the form comes back with its own token
             return _form(request, csrf=csrf, error=True, status=401)
@@ -305,7 +352,7 @@ def build_lite_router(
             listed = _listed_shelves(connection, _scope(connection, who), who.principal.user_id)
         paths = who.page.paths
         rows = [_row(paths.shelf(shelf_id), name) for shelf_id, name in listed]
-        return _listing(who, title=t("lite.shelves", who.page), rows=rows)
+        return _listing(who, title=t("lite.shelves", who.page), rows=rows, current="shelves")
 
     @router.get("/shelves/{shelf_id}", response_class=HTMLResponse)
     def shelf(shelf_id: str, who: Who, offset: Offset = 0) -> Response:
@@ -317,7 +364,7 @@ def build_lite_router(
             raise absent(who)
         return _works(
             who, title=name, make=lambda o: who.page.paths.shelf(shelf_id, o), offset=offset,
-            shelf_id=shelf_id,
+            shelf_id=shelf_id, current="shelves",
         )  # fmt: skip
 
     @router.get("/series", response_class=HTMLResponse)
@@ -331,7 +378,7 @@ def build_lite_router(
         ]
         return _listing(
             who, title=t("lite.series", who.page), rows=rows, make=paths.series_list, offset=offset,
-            has_next=offset + PAGE < len(every),
+            has_next=offset + PAGE < len(every), current="series",
         )  # fmt: skip
 
     @router.get("/series/{series_id}", response_class=HTMLResponse)
@@ -343,7 +390,7 @@ def build_lite_router(
             raise absent(who)
         return _works(
             who, title=title, make=lambda o: who.page.paths.series(series_id, o), offset=offset,
-            series_id=series_id,
+            series_id=series_id, current="series",
         )  # fmt: skip
 
     @router.get("/works", response_class=HTMLResponse)
@@ -360,6 +407,7 @@ def build_lite_router(
             make=who.page.paths.recent,
             offset=offset,
             recent=True,
+            current="recent",
         )
 
     @router.get("/search", response_class=HTMLResponse)
@@ -376,10 +424,13 @@ def build_lite_router(
                 )
             works_found = [VisibleWork(h.work_id, h.title, h.kind) for h in found.hits]
             total = found.total
+        page = who.page
+        # an empty box and a search that found nothing are two different sentences
+        none = t("lite.search_none", page, query=words) if words else t("lite.search_prompt", page)
         return _listing(
-            who, title=t("lite.results", who.page), rows=_work_rows(who, works_found),
-            make=lambda o: who.page.paths.search(words, o), offset=offset,
-            has_next=offset + PAGE < total, query=words,
+            who, title=t("lite.results", page), rows=_work_rows(who, works_found),
+            make=lambda o: page.paths.search(words, o), offset=offset,
+            has_next=offset + PAGE < total, query=words, none=none,
         )  # fmt: skip
 
     @router.get("/works/{work_id}", response_class=HTMLResponse)
@@ -408,7 +459,9 @@ def build_lite_router(
             heading = t("lite.edition_in", page, lang=edition.lang) if len(editions) > 1 else ""
             block = fragment("heading", text=heading) if heading else ""
             if digest:
-                block += fragment("cover", src=paths.cover(digest, COVER))
+                block += fragment(
+                    "cover", src=paths.cover(digest, COVER), alt=t("lite.cover_of", page, title=title)
+                )
             for offer in offers:  # a block over the cap is several: "(1 sur 3)", ...
                 offered = True
                 notice = offer.notice or (
@@ -505,6 +558,7 @@ def build_lite_router(
                 status=410,
                 href=page.paths.home(),
                 label=t("lite.home", page),
+                error=True,
             )
         except BundleBusyError as busy:
             return message(
@@ -515,6 +569,8 @@ def build_lite_router(
                 href=page.paths.home(),
                 label=t("lite.home", page),
                 headers={"Retry-After": str(busy.retry_after_s)},
+                retry_after_s=busy.retry_after_s,
+                error=True,
             )
 
     @router.get("/kepub/{item_id}")
@@ -538,6 +594,8 @@ def build_lite_router(
                 href=page.paths.home(),
                 label=t("lite.home", page),
                 headers={"Retry-After": str(busy.retry_after_s)},
+                retry_after_s=busy.retry_after_s,
+                error=True,
             )
         return kepub_response(found, HEADERS)
 

@@ -1,0 +1,337 @@
+/* /lite: the pages for e-ink readers (docs/design/papier-et-encre.md, « Mode liseuse »).
+   Strict black on white (21:1), no shadow, no animation, no script. Targets of 56 px, text of 20 px,
+   rules of 2 to 3 px; the current door is filled, an error is told from a note by a double rule
+   (not by a colour).
+   Served after paper-ink.tokens.css, of which it takes the fonts only: the browsers of these
+   readers (WebKit 538 and older) know neither custom properties nor grid, so every value here is
+   literal and the layout is blocks, floats and table cells. Where the font file is not read
+   (they do not read woff2), the serif of the device stands in. */
+
+* {
+  box-sizing: border-box;
+}
+body.lite {
+  margin: 0;
+  background: #fff;
+  color: #000;
+  font-family: Alegreya, Georgia, 'Times New Roman', serif;
+  font-size: 1.25rem;
+  line-height: 1.5;
+}
+.lite a {
+  color: #000;
+  text-decoration: underline;
+  -webkit-text-decoration-thickness: 2px;
+  text-decoration-thickness: 2px;
+}
+.lite a:focus,
+.lite button:focus,
+.lite input:focus {
+  outline: 4px solid #000;
+  outline-offset: 3px;
+}
+.lite h1 {
+  margin: 1rem 0;
+  font-size: 2rem;
+  line-height: 1.2;
+  -ms-word-wrap: break-word;
+  word-wrap: break-word;
+}
+.lite h2 {
+  margin: 1.5rem 0 0.75rem;
+  font-size: 1.5rem;
+  line-height: 1.2;
+  -ms-word-wrap: break-word;
+  word-wrap: break-word;
+}
+.lite main {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 0.5rem 1rem 1rem;
+}
+.lite p {
+  margin: 0.75rem 0;
+}
+
+/* header: the name, the four doors (the current one filled), the search */
+.lite__head {
+  padding: 0.75rem 1rem 1rem;
+  border-bottom: 3px solid #000;
+}
+.lite .lite__head > * {
+  max-width: 40rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+.lite .lite__brand {
+  margin: 0 auto 0.75rem;
+  font-size: 1.5rem;
+}
+.lite__brand span {
+  font-style: italic;
+}
+.lite .lite__doors {
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+  font-size: 0;
+}
+.lite__doors li {
+  display: inline-block;
+  width: 50%;
+  margin: 0;
+  padding: 0 0.25rem 0.5rem;
+  vertical-align: top;
+  font-size: 1.25rem;
+}
+.lite__doors li:nth-child(odd) {
+  padding-left: 0;
+}
+.lite__doors li:nth-child(even) {
+  padding-right: 0;
+}
+.lite__doors .lite__button {
+  width: 100%;
+}
+.lite .lite__search {
+  display: table;
+  width: 100%;
+  margin: 0.25rem auto 0;
+}
+.lite__search .lite__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+}
+.lite__field {
+  display: table-cell;
+  width: 100%;
+  vertical-align: middle;
+}
+.lite__search button {
+  display: table-cell;
+  vertical-align: middle;
+}
+.lite__search .lite__button {
+  margin-left: 0.5rem;
+}
+
+/* the buttons: thick frames; the filled one is the current or the main action */
+.lite__button,
+.lite button {
+  display: inline-block;
+  min-height: 3.5rem;
+  margin: 0;
+  padding: 0.7rem 1rem;
+  border: 3px solid #000;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+  font-family: inherit;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.5rem;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.lite a.lite__button {
+  text-decoration: none;
+}
+.lite__button--fill,
+.lite a.lite__button--fill,
+.lite button.lite__button--fill {
+  background: #000;
+  color: #fff;
+}
+.lite .lite__button--wide {
+  display: block;
+  width: 100%;
+}
+.lite__button[aria-disabled='true'] {
+  border-style: dashed;
+  cursor: default;
+}
+
+/* forms */
+.lite input[type='text'],
+.lite input[type='password'],
+.lite input[type='search'] {
+  display: block;
+  width: 100%;
+  min-height: 3.5rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 3px solid #000;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+  font-family: inherit;
+  font-size: 1.25rem;
+  line-height: 1.5rem;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.lite input::-webkit-input-placeholder {
+  color: #000;
+  font-style: italic;
+  opacity: 1;
+}
+.lite input::placeholder {
+  color: #000;
+  font-style: italic;
+  opacity: 1;
+}
+.lite__label {
+  display: block;
+  font-weight: 700;
+}
+.lite__ask {
+  margin: 1.25rem 0;
+}
+.lite__hint {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-style: italic;
+  font-size: 1.0625rem;
+}
+
+/* lists: one row per work, a thumbnail at the left, a chevron at the right */
+.lite__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 3px solid #000;
+}
+.lite__rows li {
+  margin: 0;
+  border-bottom: 2px solid #000;
+}
+.lite__rows a {
+  display: block;
+  position: relative;
+  min-height: 3.5rem;
+  padding: 1rem 2.25rem 1rem 0.25rem;
+  overflow: hidden;
+  text-decoration: none;
+}
+.lite__row-title {
+  display: block;
+  overflow: hidden; /* a long title stays in its column, beside the cover */
+  font-weight: 700;
+  -ms-word-wrap: break-word;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.lite__chev {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  margin-top: -0.85rem;
+  font-size: 1.75rem;
+  line-height: 1.5rem;
+}
+/* a cover drawn in line: a black spine, a white board */
+.lite__thumb {
+  float: left;
+  width: 3.5rem;
+  height: auto;
+  margin: 0 0.75rem 0 0;
+  border: 2px solid #000;
+  border-left-width: 6px;
+}
+.lite__cover img {
+  display: block;
+  max-width: 10rem;
+  height: auto;
+  border: 2px solid #000;
+  border-left-width: 8px;
+}
+
+/* a note: framed; an error: framed twice */
+.lite__note {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 3px solid #000;
+  -ms-word-wrap: break-word;
+  word-wrap: break-word;
+}
+.lite__note--error {
+  border-style: double;
+  border-width: 6px;
+}
+
+/* the pager holds on one line, whatever the width: a table of one row, three cells */
+.lite__pager {
+  display: table;
+  width: 100%;
+  margin: 1.5rem 0;
+  table-layout: fixed;
+}
+.lite__cell {
+  display: table-cell;
+  vertical-align: middle;
+  text-align: center;
+}
+.lite__cell--prev {
+  width: 36%;
+  padding-right: 0.5rem;
+}
+.lite__cell--next {
+  width: 36%;
+  padding-left: 0.5rem;
+}
+.lite__cell .lite__button {
+  display: block;
+  width: 100%;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.lite__count {
+  font-style: italic;
+  font-size: 1.125rem;
+  white-space: nowrap;
+}
+
+/* footer */
+.lite__foot {
+  width: -webkit-calc(100% - 2rem);
+  width: calc(100% - 2rem);
+  max-width: 40rem;
+  margin: 2rem auto 0;
+  padding: 1rem 0;
+  border-top: 3px solid #000;
+  text-align: center;
+  font-size: 1.0625rem;
+  font-style: italic;
+}
+.lite__foot form {
+  margin: 0 0 1rem;
+  text-align: left;
+}
+
+@media (max-width: 24rem) {
+  .lite__button,
+  .lite button {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    font-size: 1.125rem;
+  }
+  .lite__count {
+    font-size: 1rem;
+  }
+}
+@media print {
+  .lite__head,
+  .lite__foot form {
+    display: none;
+  }
+}

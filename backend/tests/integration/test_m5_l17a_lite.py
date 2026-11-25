@@ -654,9 +654,48 @@ def test_lite_pages_escape_what_they_show(world: World) -> None:
 
 
 def test_lite_is_outside_the_themes_of_the_front(world: World) -> None:
-    """02 §11 bis: `/lite` has one plain stylesheet of its own and loads nothing from the front."""
+    """02 §11 bis: `/lite` has one plain stylesheet of its own, served by itself, and takes
+    nothing of the front but its fonts: black on white, whatever the app is set to."""
     client = signed_in(world, world.kid, "10.0.1.31")
     body = client.get("/lite").text
     page = Links(body)
-    assert "link" not in page.tags and "script" not in page.tags
+    assert "script" not in page.tags and "style" not in page.tags
+    assert re.findall(r"<link[^>]*>", body) == ['<link rel="stylesheet" href="/lite/style.css">']
     assert "/_app/" not in body and "theme" not in body.lower()
+    assert " style=" not in body
+
+
+def test_lite_stylesheet_is_public_strictly_black_and_white_and_literal(world: World) -> None:
+    """The sign-in page needs it before anyone is in; the browsers of e-readers know no custom
+    property, so none is read; no colour but black and white; nothing leaves the origin."""
+    client = browser(world, "10.0.1.32")
+    answer = client.get("/lite/style.css")
+    assert answer.status_code == 200 and answer.headers["content-type"].startswith("text/css")
+    assert "frame-ancestors 'none'" in answer.headers["content-security-policy"]
+    again = client.get("/lite/style.css", headers={"If-None-Match": answer.headers["etag"]})
+    assert again.status_code == 304
+    sheet = (
+        Path(__file__).parents[2] / "src/shelfhold/interfaces/http_api/pages/lite.css"
+    ).read_text("utf-8")
+    assert answer.text.endswith(sheet)
+    assert "var(" not in sheet and "@import" not in sheet and "url(" not in sheet
+    assert not re.search(r"https?:|//", re.sub(r"/\*.*?\*/", "", sheet, flags=re.DOTALL))
+    colours = {c.lower() for c in re.findall(r"#[0-9a-fA-F]{3,8}\b", sheet)}
+    assert colours <= {"#000", "#fff"}
+    assert "rgb" not in sheet and "hsl" not in sheet
+
+
+def test_lite_pager_is_one_line_and_says_the_page(world: World) -> None:
+    """Previous, the page, next: one nav, three cells of one table row. The missing side is drawn
+    (dashed, `aria-disabled`), not left out, so the line keeps its shape on the last page; a list
+    that fits one page has no pager."""
+    client = signed_in(world, world.kid, "10.0.1.33")
+    assert "lite__pager" not in client.get("/lite/works").text
+    end = client.get("/lite/works", params={"offset": "100000"}).text
+    nav = re.search(r'<nav class="lite__pager"[^>]*>(.*?)</nav>', end, flags=re.DOTALL)
+    assert nav is not None
+    cells = re.findall(r'class="(lite__cell[^"]*)"', nav[1])
+    assert cells == ["lite__cell lite__cell--prev", "lite__cell lite__count", "lite__cell lite__cell--next"]
+    assert 'href="/lite/works?offset=99975"' in nav[1]  # the way back is a link
+    assert 'aria-disabled="true"' in nav[1]  # the way on is drawn, not a link
+    assert "Page 4001" in nav[1]

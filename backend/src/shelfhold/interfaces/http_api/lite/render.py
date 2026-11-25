@@ -2,10 +2,11 @@
 
 Every value that reaches a template is escaped here (`esc`), except a fragment this package built
 itself (a placeholder named `html_…`); a template holds no logic and a title is never a link, an
-attribute name or a class. The stylesheet is the page's only inline code: the CSP of every answer
-names it by hash (`default-src 'none'`, no `'unsafe-inline'`, no `script-src`), so even a page
-that were made to hold a tag would run nothing. `/lite` loads nothing from the front and takes no
-theme (02 §11 bis).
+attribute name or a class. The stylesheet is a file served by this package (`/lite/style.css`,
+public: it holds nothing of a profile); no page holds a line of code of its own, and the CSP of
+every answer (`default-src 'none'`, styles and fonts of this origin, no `script-src`) lets a page
+that were made to hold a tag run nothing. `/lite` takes no theme (02 §11 bis): black on white,
+whatever the app is set to; of the front it uses the fonts only.
 """
 
 import re
@@ -17,15 +18,12 @@ from urllib.parse import urlencode
 from fastapi.responses import HTMLResponse
 
 from shelfhold.i18n import t_lang
-from shelfhold.infrastructure.http_headers import source_hash
+from shelfhold.interfaces.http_api.page_assets import page_csp
 
 __all__ = ["HEADERS", "Page", "Paths", "esc", "fragment", "page_response", "render_fragment", "t"]
 
 _TEMPLATES = Path(__file__).parent / "templates"
-STYLE = (_TEMPLATES / "style.css").read_text("utf-8")
-CSP = Template((_TEMPLATES / "csp.txt").read_text("utf-8")).substitute(
-    style_hash=source_hash(STYLE)
-)
+CSP = page_csp(images=True)  # covers are of this origin too (`img-src 'self'`)
 # What depends on the profile is never kept (a cache, a back button on a shared e-reader, a proxy)
 HEADERS = {
     "Cache-Control": "no-store",
@@ -85,6 +83,12 @@ class Paths:
     def home(self) -> str:
         return self.base
 
+    def style(self) -> str:
+        return f"{self.base}/style.css"
+
+    def full_site(self) -> str:
+        return f"{self.base.removesuffix('/lite')}/"
+
     def sign_in(self) -> str:
         return self._with("/sign-in")
 
@@ -129,23 +133,54 @@ class Page:
     """What a page needs to put itself together: the language, the paths, and (signed in) the
     token of its forms."""
 
-    def __init__(self, lang: str, paths: Paths, csrf: str | None = None) -> None:
-        self.lang, self.paths, self.csrf = lang, paths, csrf
+    def __init__(
+        self, lang: str, paths: Paths, csrf: str | None = None, name: str = ""
+    ) -> None:
+        self.lang, self.paths, self.csrf, self.name = lang, paths, csrf, name
 
-    def header(self, query: str = "") -> str:
+    def header(self, query: str = "", current: str = "") -> str:
+        """Who is here, the four doors (the current one filled), the search; without a person,
+        only the name of the place."""
         if self.csrf is None:
-            return ""
+            return fragment("brand", brand=t("lite.root_title", self))
+        paths = self.paths
+        doors = (
+            ("home", paths.home(), "lite.home"),
+            ("shelves", paths.shelves(), "lite.shelves"),
+            ("series", paths.series_list(), "lite.series"),
+            ("recent", paths.recent(), "lite.recent"),
+        )
+        listed = "".join(
+            fragment(
+                "door_current" if key == current else "door", href=href, label=t(label, self)
+            )
+            + "\n"
+            for key, href, label in doors
+        )
         return fragment(
             "header",
-            home=self.paths.home(),
-            home_label=t("lite.home", self),
-            search_action=self.paths.search(),
+            brand=t("lite.root_title", self),
+            profile=self.name,
+            nav_label=t("lite.nav_label", self),
+            html_doors=listed,
+            search_action=paths.search(),
             search_label=t("lite.search_label", self),
             query=query,
+            search_placeholder=t("lite.search_placeholder", self),
             search_button=t("lite.search_button", self),
+        )
+
+    def footer(self) -> str:
+        if self.csrf is None:
+            return fragment("foot_bare", foot=t("lite.foot", self))
+        return fragment(
+            "footer",
             sign_out_action=self.paths.sign_out(),
             csrf=self.csrf,
             sign_out_label=t("lite.sign_out", self),
+            foot=t("lite.foot", self),
+            full_href=self.paths.full_site(),
+            full_label=t("lite.full_site", self),
         )
 
 
@@ -156,9 +191,15 @@ def page_response(
     body: str,
     status: int = 200,
     query: str = "",
+    current: str = "",
     headers: dict[str, str] | None = None,
 ) -> HTMLResponse:
     html = _template("page").substitute(
-        lang=esc(page.lang), title=esc(title), style=STYLE, header=page.header(query), body=body
+        lang=esc(page.lang),
+        title=esc(title),
+        style=esc(page.paths.style()),
+        header=page.header(query, current),
+        body=body,
+        footer=page.footer(),
     )
     return HTMLResponse(html, status_code=status, headers={**HEADERS, **(headers or {})})

@@ -1,9 +1,11 @@
 <p>$lead</p>
-$html_error<form method="post" action="$action">
+$html_error<form class="lite__form" method="post" action="$action">
 <input type="hidden" name="csrf" value="$csrf">
-<label for="identifier">$identifier</label>
-<input id="identifier" name="identifier" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="64" required>
-<label for="secret">$secret</label>
-<input id="secret" name="secret" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="256" required>
-<p><button type="submit">$submit</button></p>
+<p class="lite__ask"><label class="lite__label" for="identifier">$identifier</label>
+<span class="lite__hint" id="identifier-hint">$identifier_hint</span>
+<input id="identifier" name="identifier" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="64" required aria-describedby="identifier-hint"></p>
+<p class="lite__ask"><label class="lite__label" for="secret">$secret</label>
+<span class="lite__hint" id="secret-hint">$secret_hint</span>
+<input id="secret" name="secret" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="256" required aria-describedby="secret-hint"></p>
+<p><button class="lite__button lite__button--fill lite__button--wide" type="submit">$submit</button></p>
 </form>
