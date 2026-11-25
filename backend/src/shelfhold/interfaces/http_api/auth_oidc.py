@@ -38,7 +38,6 @@ from shelfhold.identity.public import (
     Principal,
     ThrottledError,
 )
-from shelfhold.infrastructure.http_headers import hash_csp
 from shelfhold.interfaces.http_api.auth import (
     LOGIN_PAGE,
     OIDC_LOGIN_PATH,
@@ -50,6 +49,12 @@ from shelfhold.interfaces.http_api.auth import (
     set_session_cookies,
 )
 from shelfhold.interfaces.http_api.login import _client_ip, _fragment, _throttled
+from shelfhold.interfaces.http_api.page_assets import (
+    APPEARANCE_PATH,
+    CONFIRM_SCRIPT_PATH,
+    STYLE_PATH,
+    page_csp,
+)
 from shelfhold.interfaces.http_api.problems import ProblemError
 
 OIDC_PATH = "/api/v1/auth/oidc"
@@ -114,18 +119,21 @@ class OidcIdentityList(BaseModel):
 
 
 _CONFIRM = _fragment("oidc_confirm.html")
-CONFIRM_CSP = hash_csp(_CONFIRM.template)
+CONFIRM_CSP = page_csp(scripts=True)  # its style and its script are files of this origin
 
 
 def confirm_page_html(
     *, language: str, issuer: str, sub: str, account: str, csrf_cookie: str
 ) -> str:
-    """Every value is escaped; the page's script and style are inline and fixed (their hashes are
-    in the CSP, which has no `unsafe-inline`)."""
+    """Every value is escaped; the page links its style and its script (files of this origin,
+    `page_assets`): the CSP has no `unsafe-inline`."""
 
     host = urlsplit(issuer).netloc or issuer
     return _CONFIRM.substitute(
         lang=escape(language),
+        style=STYLE_PATH,
+        appearance=APPEARANCE_PATH,
+        script=CONFIRM_SCRIPT_PATH,
         title=escape(t_lang("oidc_confirm.title", language=language)),
         question=escape(t_lang("oidc_confirm.question", language=language)),
         identity_label=escape(t_lang("oidc_confirm.identity", language=language)),

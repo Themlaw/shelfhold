@@ -1,76 +1,34 @@
 <!doctype html>
-<html lang="fr">
+<html lang="$lang">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
 <title>$title</title>
-<style>
-body { font-family: system-ui, sans-serif; margin: 0; min-height: 100vh; display: grid;
-  place-items: center; background: #f4f4f2; color: #1d1d1b; }
-@media (prefers-color-scheme: dark) { body { background: #1d1d1b; color: #ececea; } }
-main { width: min(22rem, calc(100vw - 2rem)); }
-label { display: block; margin-top: 1rem; }
-input[type=text], input[type=password] { width: 100%; box-sizing: border-box; padding: .5rem;
-  font: inherit; }
-.remember { display: flex; gap: .5rem; align-items: center; }
-button { margin-top: 1.25rem; width: 100%; padding: .6rem; font: inherit; }
-#message { min-height: 1.5rem; margin-top: 1rem; }
-.oidc { margin-top: 1.25rem; }
-.oidc a { display: block; padding: .6rem; text-align: center; border: 1px solid currentColor;
-  color: inherit; }
-footer { margin-top: 2rem; font-size: .875rem; }
-</style>
+<link rel="stylesheet" href="$style">
+<script src="$appearance"></script>
 </head>
 <body>
-<main>
+<main class="sheet">
 <h1>$title</h1>
+<p class="lede">$lede</p>
+<div id="message" class="alert alert--danger" role="alert"$message_state><p class="alert__title">$notice</p><p class="alert__body"></p></div>
 <form id="login" method="post" data-endpoint="$endpoint" data-error="$error">
-<label for="username">$username</label>
-<input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="128" required>
-<label for="password">$password</label>
-<input id="password" name="password" type="password" autocomplete="current-password" maxlength="$max_password" required>
-<label class="remember"><input name="remember" type="checkbox" checked> $remember</label>
-<button type="submit">$submit</button>
-<p id="message" role="alert">$notice</p>
+<div class="field"><label for="username">$username</label>
+<input id="username" class="input" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="128" required autofocus></div>
+<div class="field"><label for="password">$password</label>
+<input id="password" class="input" name="password" type="password" autocomplete="current-password" maxlength="$max_password" required></div>
+<label class="choice"><input class="check" name="remember" type="checkbox" checked aria-describedby="remember-hint"><span class="choice__text">$remember<span id="remember-hint" class="hint">$remember_hint</span></span></label>
+<button class="btn btn--primary btn--lg btn--block" type="submit">$submit</button>
 </form>
-$passkey_button
-$oidc_button
-<footer><a href="$source_url" rel="noopener noreferrer">$source</a></footer>
+$alternatives<p class="help">$help</p>
+<footer class="colophon">
+<p><a href="$lite_href">$lite</a> · <a href="$source_url" rel="noopener noreferrer">$source</a></p>
+</footer>
 </main>
-<script>
-const form = document.getElementById("login");
-const message = document.getElementById("message");
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  message.textContent = "";
-  const data = new FormData(form);
-  const body = {
-    username: data.get("username"),
-    password: data.get("password"),
-    remember: data.get("remember") === "on",
-  };
-  let text = form.dataset.error;
-  try {
-    const response = await fetch(form.dataset.endpoint, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (response.ok) {
-      window.location.assign("/");
-      return;
-    }
-    const problem = await response.json();
-    if (problem && problem.title) text = problem.title;
-  } catch (error) {
-    // network failure: the generic message stays
-  }
-  message.textContent = text;
-});
-</script>
+<script src="$login_script"></script>
 $passkey_script
 </body>
 </html>
