@@ -97,11 +97,8 @@
   const hero = $derived(resume[0] ?? null);
   const also = $derived(resume.slice(1));
 
-  const greeting = $derived.by(() => {
-    const evening = new Date().getHours() >= 18;
-    if (!user) return evening ? t('home.greeting_evening_anonymous') : t('home.greeting_anonymous');
-    return evening ? t('home.greeting_evening', { name: user.name }) : t('home.greeting', { name: user.name });
-  });
+  // one greeting whatever the hour: the screen reads the same at any time (its reference too)
+  const greeting = $derived(user ? t('home.greeting', { name: user.name }) : t('home.greeting_anonymous'));
   const today = formatDate(new Date(), { weekday: 'long', day: 'numeric', month: 'long' });
   const thumb = (hash: string | null | undefined) => (hash ? `/api/v1/thumbnails/${hash}/320` : null);
 </script>

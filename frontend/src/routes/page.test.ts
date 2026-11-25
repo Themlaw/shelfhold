@@ -95,7 +95,7 @@ describe('home page', () => {
   // req: EF-UX-005
   it('greets the person signed in with one level-one heading, and says nothing of a pre-alpha', async () => {
     render(Page, { data: { user: { name: 'Antoine', role: 'member' } } });
-    expect(screen.getByRole('heading', { level: 1, name: /^Bon(jour|soir), Antoine\.$/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Bonjour, Antoine.' })).toBeInTheDocument();
     await screen.findByRole('link', { name: 'Ajouter un premier livre' });
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(document.body.textContent).not.toMatch(/pré-alpha|pre-alpha/);
