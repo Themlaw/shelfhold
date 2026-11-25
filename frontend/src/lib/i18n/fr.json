@@ -1314,6 +1314,7 @@
   "home.greeting_anonymous": "Bonjour.",
   "home.lede_pending": "{count, plural, one {Une demande attend votre accord.} other {# demandes attendent votre accord.}}",
   "home.hero": "Vous en étiez là",
+  "home.tagline_child": "Les livres de la maison, rangés pour toi.",
   "home.hero_child": "Tu en étais là",
   "home.resume": "Reprendre la lecture",
   "home.also_reading": "Aussi en cours",

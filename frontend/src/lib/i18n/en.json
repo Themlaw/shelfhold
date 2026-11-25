@@ -1314,6 +1314,7 @@
   "home.greeting_anonymous": "Hello.",
   "home.lede_pending": "{count, plural, one {One request waits for your approval.} other {# requests wait for your approval.}}",
   "home.hero": "Where you left off",
+  "home.tagline_child": "The books of your home, shelved for you.",
   "home.hero_child": "Where you left off",
   "home.resume": "Continue reading",
   "home.also_reading": "Also reading",

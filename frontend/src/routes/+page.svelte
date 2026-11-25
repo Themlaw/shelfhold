@@ -121,7 +121,7 @@
         {#if admin && pending.length > 0}
           {t('home.lede_pending', { count: pending.length })}
         {:else}
-          {t('home.tagline')}
+          {child ? t('home.tagline_child') : t('home.tagline')}
         {/if}
       </p>
     </div>

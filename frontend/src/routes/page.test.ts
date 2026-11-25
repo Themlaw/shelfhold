@@ -101,6 +101,15 @@ describe('home page', () => {
     expect(document.body.textContent).not.toMatch(/pré-alpha|pre-alpha/);
   });
 
+  // req: EF-UX-005
+  it('speaks to a child as « tu », and to an adult as « vous »', async () => {
+    const child = render(Page, { data: { user: { name: 'Léa', role: 'child' } } });
+    expect(await screen.findByText('Les livres de la maison, rangés pour toi.')).toBeInTheDocument();
+    child.unmount();
+    render(Page, { data: { user: { name: 'Antoine', role: 'member' } } });
+    expect(await screen.findByText(/de votre foyer/)).toBeInTheDocument();
+  });
+
   // req: ENF-OPS-003
   it('calls /healthz through the generated client (the instance panel of an administrator)', async () => {
     server.use(http.get(`${BASE}/api/v1/requests/queue`, () => HttpResponse.json({ items: [] })));
