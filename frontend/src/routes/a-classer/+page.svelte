@@ -312,6 +312,11 @@
     padding: var(--space-3);
     background: var(--color-surface-2);
     border-radius: var(--radius-sm);
+    inline-size: 100%;
+    box-sizing: border-box;
+  }
+  .head :global(.badge) {
+    white-space: normal;
     max-inline-size: 100%;
   }
   .suggestion p {

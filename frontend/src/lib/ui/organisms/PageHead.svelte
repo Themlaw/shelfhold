@@ -29,7 +29,7 @@
     {#if crumbs.length > 0}
       <nav aria-label={crumbs[0]?.label}>
         {#each crumbs as crumb, index (index)}
-          {#if index > 0}<span aria-hidden="true"> › </span>{/if}
+          {#if index > 0}<span class="crumb-sep" aria-hidden="true">›</span>{/if}
           {#if crumb.href}<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
             <a href={crumb.href}>{crumb.label}</a>{:else}<span aria-current="page">{crumb.label}</span>{/if}
         {/each}
@@ -45,3 +45,9 @@
   </div>
   {#if actions}<div class="page-head__actions">{@render actions()}</div>{/if}
 </div>
+
+<style>
+  .crumb-sep {
+    margin-inline: var(--space-2);
+  }
+</style>

@@ -309,7 +309,8 @@
           {:else if shown.deliveries.length === 0}
             <p class="muted">{t('webhooks.deliveries.empty')}</p>
           {:else}
-            <DataTable caption={t('webhooks.deliveries')} compact columns={DELIVERY_COLUMNS} rows={deliveryRows(shown)} key={(row) => String(row.id)}>
+            <h3 class="deliveries-title">{t('webhooks.deliveries')}</h3>
+            <DataTable caption={t('webhooks.deliveries')} captionHidden compact columns={DELIVERY_COLUMNS} rows={deliveryRows(shown)} key={(row) => String(row.id)}>
               {#snippet cell(column, row)}
                 {#if column.key === 'state'}
                   <Badge tone={STATE_TONE[String(row.state)] ?? 'neutral'}>{stateText(String(row.state))}</Badge>
@@ -381,6 +382,11 @@
     gap: var(--space-3);
     padding-bottom: var(--space-2);
     border-bottom: var(--rule-hair) solid var(--color-ink);
+  }
+  .deliveries-title {
+    margin: var(--space-2) 0 0;
+    font: italic var(--step-0) / var(--leading-ui) var(--font-text);
+    color: var(--color-muted);
   }
   .hook__id {
     display: grid;

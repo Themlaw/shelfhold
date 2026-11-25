@@ -359,6 +359,9 @@
   .frozen {
     font-weight: 600;
   }
+  .sources .entries {
+    border-top: 0;
+  }
   .sources h3 {
     margin: 0;
     font-size: var(--step-1);
