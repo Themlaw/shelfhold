@@ -4,6 +4,10 @@
   import { oidcReauth, passkeyReauthOptions, reauth } from '#lib/api/index.ts';
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken, getPasskey, passkeysSupported } from '#lib/passkeys.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
 
   let {
     methods = ['password'],
@@ -83,56 +87,59 @@
 
 <section class="reauth" aria-labelledby="reauth-title">
   <h2 id="reauth-title">{t('reauth.title')}</h2>
-  <p>{t('reauth.explain')}</p>
+  <p class="muted">{t('reauth.explain')}</p>
   {#if canProvider && providerFirst}
-    <button type="button" disabled={busy} onclick={withProvider}>{t('reauth.provider')}</button>
+    <Button loading={busy} onclick={withProvider}>{t('reauth.provider')}</Button>
   {/if}
   {#if canPassword}
     <form onsubmit={withPassword}>
-      <label for="reauth-password">{t('reauth.password')}</label>
-      <!-- svelte-ignore a11y_autofocus -->
-      <input
-        id="reauth-password"
-        type="password"
-        autocomplete="current-password"
-        bind:value={password}
-        required
-        autofocus
-      />
-      <button type="submit" disabled={busy}>{t('reauth.confirm')}</button>
+      <Field label={t('reauth.password')} id="reauth-password">
+        {#snippet children(control)}
+          <!-- svelte-ignore a11y_autofocus -->
+          <Input {...control} type="password" autocomplete="current-password" bind:value={password} required autofocus />
+        {/snippet}
+      </Field>
+      <Button type="submit" variant="primary" loading={busy}>{t('reauth.confirm')}</Button>
     </form>
   {/if}
   {#if canPasskey}
-    <button type="button" disabled={busy} onclick={withPasskey}>{t('reauth.passkey')}</button>
+    <Button icon="key" loading={busy} onclick={withPasskey}>{t('reauth.passkey')}</Button>
   {/if}
   {#if canProvider && !providerFirst}
-    <button type="button" disabled={busy} onclick={withProvider}>{t('reauth.provider')}</button>
+    <Button loading={busy} onclick={withProvider}>{t('reauth.provider')}</Button>
   {/if}
-  <button type="button" class="plain" onclick={oncancel}>{t('reauth.cancel')}</button>
+  <div><Button variant="ghost" onclick={oncancel}>{t('reauth.cancel')}</Button></div>
   {#if failed}
-    <p role="alert" class="err">{t('reauth.failed')}</p>
+    <Alert tone="danger" title={t('reauth.failed')} live="assertive" />
   {/if}
 </section>
 
 <style>
   .reauth {
     display: grid;
-    gap: 0.5rem;
-    margin: 1rem 0;
-    padding: 1rem;
-    border: 1px solid var(--color-warn);
-    border-radius: var(--radius-cover);
+    gap: var(--space-3);
+    justify-items: start;
+    margin: var(--space-4) 0;
+    padding: var(--space-5);
+    border: var(--rule-hair) solid var(--color-warn);
+    border-left-width: var(--rule-thick);
+    border-radius: var(--radius-md);
     background: var(--color-surface);
+  }
+  .reauth > :global(*) {
+    max-width: 100%;
   }
   h2 {
     margin: 0;
-    font-size: 1.125rem;
+    font-size: var(--step-1);
+  }
+  p {
+    margin: 0;
   }
   form {
     display: grid;
-    gap: 0.5rem;
-  }
-  .err {
-    color: var(--color-err);
+    gap: var(--space-3);
+    justify-items: start;
+    inline-size: min(100%, 24rem);
   }
 </style>

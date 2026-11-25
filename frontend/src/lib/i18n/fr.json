@@ -972,6 +972,8 @@
   "history.unblock": "Débloquer",
   "history.unblock_question": "Ce chapitre sera de nouveau accepté dès que la source le proposera.",
   "history.unblock_confirm": "Confirmer le déblocage",
+  "history.unblock_title": "Débloquer « {chapter} » ?",
+  "history.loading": "Chargement de l’historique…",
   "history.cancel": "Annuler",
   "history.unblocked": "Chapitre débloqué",
   "storage.title": "Stockage et réseau",

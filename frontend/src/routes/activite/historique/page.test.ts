@@ -124,11 +124,11 @@ describe('Activity history', () => {
     render(Page);
     await userEvent.click(await screen.findByRole('button', { name: 'Débloquer' }));
     expect(removed).toEqual([]); // asked, not done
-    expect(screen.getByText(/de nouveau accepté/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Annuler' }));
+    expect(await screen.findByText(/de nouveau accepté/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Annuler' }));
     expect(removed).toEqual([]);
     await userEvent.click(screen.getByRole('button', { name: 'Débloquer' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Confirmer le déblocage' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirmer le déblocage' }));
     await waitFor(() => expect(removed).toEqual(['B1']));
     expect(await screen.findByRole('status')).toHaveTextContent('Chapitre débloqué');
     expect(await screen.findByText('Aucun chapitre bloqué.')).toBeInTheDocument();

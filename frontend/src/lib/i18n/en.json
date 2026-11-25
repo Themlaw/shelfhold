@@ -972,6 +972,8 @@
   "history.unblock": "Unblock",
   "history.unblock_question": "This chapter will be accepted again as soon as its source offers it.",
   "history.unblock_confirm": "Confirm unblocking",
+  "history.unblock_title": "Unblock “{chapter}”?",
+  "history.loading": "Loading the history…",
   "history.cancel": "Cancel",
   "history.unblocked": "Chapter unblocked",
   "storage.title": "Storage and network",

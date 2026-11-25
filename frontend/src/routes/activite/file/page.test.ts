@@ -151,8 +151,8 @@ describe('Activité : file et maintenance', () => {
     expect(await screen.findByText('Mode maintenance actif')).toBeInTheDocument();
     expect(screen.getByText('Gelé')).toBeInTheDocument();
     // the screen offers nothing but the exit: the writes are shown off and none reaches the server
-    expect(screen.getByRole('button', { name: 'Reprendre toute la file' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Annuler la tâche fetch.chapter' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reprendre toute la file' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Annuler la tâche fetch.chapter' })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('combobox', { name: 'Priorité de fetch.chapter' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Reprendre toute la file' }));
     await user.click(screen.getByRole('button', { name: 'Annuler la tâche fetch.chapter' }));

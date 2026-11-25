@@ -22,6 +22,12 @@
   import { reloadOnStream } from '#lib/live.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { isForbidden, needsReauth, needsSession, problemOf } from '#lib/triage.ts';
+  import Badge, { type BadgeTone } from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
 
   const PRIORITIES = ['new', 'request', 'backfill'] as const;
   const PRIORITY_LABEL: Record<(typeof PRIORITIES)[number], MessageKey> = {
@@ -188,66 +194,80 @@
   const statusLabel = (value: string): string =>
     STATUS_LABEL[value] ? t(STATUS_LABEL[value]) : value;
   const shortId = (id: string): string => id.slice(-8);
+  const STATUS_TONE: Record<string, BadgeTone> = {
+    running: 'accent',
+    succeeded: 'success',
+    failed: 'danger',
+    dead_letter: 'danger',
+    paused: 'warning',
+    cancelled: 'neutral',
+    queued: 'neutral'
+  };
 </script>
 
-<section class="queue-controls" aria-label={t('queue.title')}>
+<section class="queue-controls stack-lg" aria-label={t('queue.title')}>
   {#if forbidden}
-    <p role="alert">{t('queue.admin_only')}</p>
+    <Alert tone="danger" title={t('queue.admin_only')} live="assertive" />
   {:else if signedOut}
-    <p role="alert">{t('queue.signed_out')}</p>
+    <Alert tone="warning" title={t('queue.signed_out')} live="assertive" />
   {:else if !loaded}
-    <p>{t('queue.loading')}</p>
+    <div aria-busy="true">
+      <p role="status">{t('queue.loading')}</p>
+      <Skeleton shape="block" /><Skeleton /><Skeleton short />
+    </div>
   {:else}
-    <div class="maintenance" data-testid="maintenance-toggle">
-      <h3>{t('maintenance.title')}</h3>
-      <p role="status" class={maintenanceActive ? 'frozen' : ''}>
-        {maintenanceActive ? t('maintenance.active') : t('maintenance.inactive')}
+    <div class="panel maintenance" data-testid="maintenance-toggle">
+      <div class="maintenance__text">
+        <h3>{t('maintenance.title')}</h3>
+        <p role="status" class="maintenance__state" class:frozen={maintenanceActive}>
+          {maintenanceActive ? t('maintenance.active') : t('maintenance.inactive')}
+          {#if maintenanceActive}
+            <Badge tone="warning" icon="pause">{t('maintenance.frozen')}</Badge>
+          {/if}
+        </p>
         {#if maintenanceActive}
-          <span class="frozen-badge">{t('maintenance.frozen')}</span>
+          <p class="muted">{t('queue.frozen_notice')}</p>
+          {#if (status?.maintenance.running_jobs ?? 0) > 0}
+            <p class="muted">{t('maintenance.running', { count: status?.maintenance.running_jobs ?? 0 })}</p>
+          {/if}
         {/if}
-      </p>
-      {#if maintenanceActive}
-        <p>{t('queue.frozen_notice')}</p>
-        {#if (status?.maintenance.running_jobs ?? 0) > 0}
-          <p>{t('maintenance.running', { count: status?.maintenance.running_jobs ?? 0 })}</p>
-        {/if}
-      {/if}
-      <button type="button" onclick={toggleMaintenance}>
+      </div>
+      <Button variant={maintenanceActive ? 'primary' : 'secondary'} onclick={toggleMaintenance}>
         {maintenanceActive ? t('maintenance.exit') : t('maintenance.enter')}
-      </button>
+      </Button>
     </div>
 
-    <div class="global" data-testid="queue-global">
+    <div class="global btn-row" data-testid="queue-global">
       {#if globalPaused}
-        <button type="button" disabled={maintenanceActive} onclick={() => resume(null)}>
+        <Button variant="primary" icon="play" disabled={maintenanceActive} onclick={() => resume(null)}>
           {t('queue.global_resume')}
-        </button>
+        </Button>
       {:else}
-        <button type="button" disabled={maintenanceActive} onclick={() => pause(null)}>
+        <Button icon="pause" disabled={maintenanceActive} onclick={() => pause(null)}>
           {t('queue.global_pause')}
-        </button>
+        </Button>
       {/if}
       {#if (status?.queue.parked_jobs ?? 0) > 0}
-        <span>{t('queue.paused_jobs', { count: status?.queue.parked_jobs ?? 0 })}</span>
+        <span class="muted num">{t('queue.paused_jobs', { count: status?.queue.parked_jobs ?? 0 })}</span>
       {/if}
     </div>
 
     {#if sources.length > 0}
       <div class="sources" data-testid="queue-sources">
-        <h3>{t('queue.sources')}</h3>
-        <ul>
+        <div class="section-head"><h3>{t('queue.sources')}</h3></div>
+        <ul class="entries">
           {#each sources as source (source)}
-            <li>
-              <span>{source}</span>
+            <li class="row">
+              <span class="row__name">{source}</span>
               {#if pausedScopes.includes(`${SOURCE_PREFIX}${source}`)}
-                <span>({t('queue.source_paused')})</span>
-                <button type="button" disabled={maintenanceActive} onclick={() => resume(source)}>
+                <Badge tone="warning" icon="pause">{t('queue.source_paused')}</Badge>
+                <Button size="sm" disabled={maintenanceActive} onclick={() => resume(source)}>
                   {t('queue.resume_source', { source })}
-                </button>
+                </Button>
               {:else}
-                <button type="button" disabled={maintenanceActive} onclick={() => pause(source)}>
+                <Button size="sm" variant="ghost" disabled={maintenanceActive} onclick={() => pause(source)}>
                   {t('queue.pause_source', { source })}
-                </button>
+                </Button>
               {/if}
             </li>
           {/each}
@@ -256,55 +276,57 @@
     {/if}
 
     {#if jobs.length === 0}
-      <p>{t('queue.empty')}</p>
+      <EmptyState title={t('queue.empty')} art={false} />
     {:else}
-      <ul class="jobs" data-testid="queue-jobs">
+      <ul class="entries jobs" data-testid="queue-jobs">
         {#each jobs as job (job.id)}
-          <li class:preempted={isPreempted(job)} data-testid="queue-job">
-            <span class="kind">{job.kind}</span>
-            <span class="status">{statusLabel(job.status)}</span>
+          <li class="row" class:preempted={isPreempted(job)} data-testid="queue-job">
+            <span class="row__name kind">{job.kind}</span>
+            <Badge tone={STATUS_TONE[job.status] ?? 'neutral'}>{statusLabel(job.status)}</Badge>
             {#if job.request_id}
-              <span class="for-whom">{t('queue.for_whom', { request: shortId(job.request_id) })}</span>
+              <span class="muted">{t('queue.for_whom', { request: shortId(job.request_id) })}</span>
             {/if}
             {#if isPreempted(job)}
-              <span class="preempted-note">{t('queue.preempted')}</span>
+              <span class="preempted-note muted">{t('queue.preempted')}</span>
             {/if}
-            {#if job.status === 'queued'}
-              <select
-                aria-label={t('queue.priority', { kind: job.kind })}
-                value={job.priority_class}
-                disabled={maintenanceActive}
-                onchange={(e) => setPriority(job, (e.target as HTMLSelectElement).value)}
-              >
-                {#each PRIORITIES as choice (choice)}
-                  <option value={choice}>{t(PRIORITY_LABEL[choice])}</option>
-                {/each}
-              </select>
-            {/if}
-            {#if canCancel(job)}
-              <button
-                type="button"
-                disabled={maintenanceActive}
-                aria-label={t('queue.cancel_job', { kind: job.kind })}
-                onclick={() => cancel(job)}>{t('queue.cancel')}</button
-              >
-            {/if}
-            {#if canReplay(job)}
-              <button
-                type="button"
-                disabled={maintenanceActive}
-                aria-label={t('queue.replay_job', { kind: job.kind })}
-                onclick={() => replay(job)}
-                >{job.status === 'dead_letter' ? t('queue.replay_verify') : t('queue.replay')}</button
-              >
-            {/if}
+            <span class="row__actions">
+              {#if job.status === 'queued'}
+                <Select
+                  inline
+                  aria-label={t('queue.priority', { kind: job.kind })}
+                  value={job.priority_class}
+                  disabled={maintenanceActive}
+                  onchange={(e: Event) => setPriority(job, (e.target as HTMLSelectElement).value)}
+                  options={PRIORITIES.map((choice) => ({ value: choice, label: t(PRIORITY_LABEL[choice]) }))}
+                />
+              {/if}
+              {#if canCancel(job)}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={maintenanceActive}
+                  aria-label={t('queue.cancel_job', { kind: job.kind })}
+                  onclick={() => cancel(job)}>{t('queue.cancel')}</Button
+                >
+              {/if}
+              {#if canReplay(job)}
+                <Button
+                  size="sm"
+                  icon="refresh"
+                  disabled={maintenanceActive}
+                  aria-label={t('queue.replay_job', { kind: job.kind })}
+                  onclick={() => replay(job)}
+                  >{job.status === 'dead_letter' ? t('queue.replay_verify') : t('queue.replay')}</Button
+                >
+              {/if}
+            </span>
           </li>
         {/each}
       </ul>
     {/if}
 
     {#if message}
-      <p role="status" class:failed>{message}</p>
+      <Alert tone={failed ? 'danger' : 'success'} title={message} live={failed ? 'assertive' : 'polite'} />
     {/if}
   {/if}
 
@@ -314,44 +336,57 @@
 </section>
 
 <style>
-  .queue-controls {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: 1rem;
+  .maintenance {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
   }
-  .maintenance,
-  .global,
-  .sources,
-  .jobs {
-    margin: 1rem 0;
+  .maintenance h3 {
+    margin: 0 0 var(--space-1);
+    font-size: var(--step-1);
+  }
+  .maintenance p {
+    margin: 0;
+  }
+  .maintenance__state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
   }
   .frozen {
-    color: var(--color-err, #c00);
     font-weight: 600;
   }
-  .frozen-badge {
-    padding: 0.125rem 0.5rem;
-    border-radius: 999px;
-    border: 1px solid var(--color-err, #c00);
+  .sources h3 {
+    margin: 0;
+    font-size: var(--step-1);
   }
-  .jobs,
-  .sources ul {
-    list-style: none;
-    padding: 0;
-  }
-  .jobs li,
-  .sources li {
+  .row {
     display: flex;
-    gap: 0.5rem;
-    align-items: center;
     flex-wrap: wrap;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--color-rule, #eee);
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-3) 0;
+  }
+  .row__name {
+    flex: 1 1 10rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .kind {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--step--1);
+  }
+  .row__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-inline-start: auto;
   }
   .preempted-note {
     font-style: italic;
-  }
-  .failed {
-    color: var(--color-err, #c00);
   }
 </style>
