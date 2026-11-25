@@ -314,7 +314,7 @@
                 {#if column.key === 'state'}
                   <Badge tone={STATE_TONE[String(row.state)] ?? 'neutral'}>{stateText(String(row.state))}</Badge>
                 {:else}
-                  {String(row[column.key] ?? '')}
+                  {String((row as Record<string, unknown>)[column.key] ?? '')}
                 {/if}
               {/snippet}
             </DataTable>

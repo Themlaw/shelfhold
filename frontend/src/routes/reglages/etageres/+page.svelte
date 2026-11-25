@@ -12,7 +12,6 @@
   import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
   import Button from '#lib/ui/atoms/Button.svelte';
   import Input from '#lib/ui/atoms/Input.svelte';
-  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
   import Alert from '#lib/ui/molecules/Alert.svelte';
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';

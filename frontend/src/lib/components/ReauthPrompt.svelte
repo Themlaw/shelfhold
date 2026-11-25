@@ -95,8 +95,7 @@
     <form onsubmit={withPassword}>
       <Field label={t('reauth.password')} id="reauth-password">
         {#snippet children(control)}
-          <!-- svelte-ignore a11y_autofocus -->
-          <Input {...control} type="password" autocomplete="current-password" bind:value={password} required autofocus />
+                    <Input {...control} type="password" autocomplete="current-password" bind:value={password} required autofocus />
         {/snippet}
       </Field>
       <Button type="submit" variant="primary" loading={busy}>{t('reauth.confirm')}</Button>

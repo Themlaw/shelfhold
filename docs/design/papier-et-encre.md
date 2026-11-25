@@ -43,7 +43,7 @@ Dans `frontend/src/lib/ui/`, par niveau ; chacun a ses tests de comportement et 
   `Alert`, `Toast`, `Dialog`, `ConfirmDialog`, `Menu`, `Tabs`, `SearchBar`, `Pagination`,
   `EmptyState`, `ErrorState`.
 - **Organismes** (`organisms/`) : `AppHeader`, `TableOfContents`, `MobileTabBar`, `Colophon`,
-  `Shelf`, `DataTable`, `SettingsForm`, `ErrorScreen`.
+  `Shelf`, `DataTable`, `SettingsForm`, `ErrorScreen`, `PageHead` (le fil d'Ariane, le `h1`, le chapeau et les actions d'un écran d'exploitation) et `StatBar` (la bande de chiffres clés en tête d'un registre : étiquette, grand chiffre tabulaire, ligne de contexte ; un ton se dit par une icône et des mots).
 
 `bits-ui` fournit le focus, le clavier et l'ARIA de `Dialog`, `Menu` et `Tabs`, et n'est importé
 que par eux (ESLint). Ni thème de bibliothèque, ni Tailwind.
@@ -84,3 +84,14 @@ que par eux (ESLint). Ni thème de bibliothèque, ni Tailwind.
 3. Rien en dur : libellés dans les catalogues FR et EN, valeurs dans les jetons.
 4. Contraste AA mesuré, focus visible, cibles de 44 px, pas de défilement horizontal à 360 px.
 5. Captures regardées à 1440 et 390 px, en clair et en sombre.
+
+## Écrans d'administration
+
+Santé, sources, activité, réglages et modules sont des écrans *opérer* : `PageHead`, puis les sections
+(`.section`, `.section-head`), des registres `DataTable` (chiffres tabulaires, fiches sous 600 px)
+ou des listes `.entries`, et `Alert` pour tout message de la page. `ProblemCard`, `HealthEntry`,
+`ReauthPrompt` et `TypedConfirm` ne sont plus que des habillages de ces composants. Ce qui ne se défait
+pas (retrait d'un index ou d'un webhook, retour arrière d'un module, fusion d'œuvres ou d'éditions)
+passe toujours par `ConfirmDialog` ; la confirmation par phrase recopiée d'une destination reste en
+ligne (`TypedConfirm`), parce que le serveur donne la phrase après un aperçu. Un bouton qui n'est pas
+encore permis est `aria-disabled` (jamais `disabled`) : il garde le focus et dit pourquoi.

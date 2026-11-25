@@ -295,7 +295,6 @@
   }
 
   const jobFailed = (j: Job): boolean => j.status === 'failed' || j.status === 'dead_letter';
-  const jobRunning = (j: Job): boolean => ['queued', 'running'].includes(j.status);
 
   onMount(load);
 </script>

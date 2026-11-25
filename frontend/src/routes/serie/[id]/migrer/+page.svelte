@@ -22,7 +22,6 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
-  import Badge from '#lib/ui/atoms/Badge.svelte';
   import Button from '#lib/ui/atoms/Button.svelte';
   import Input from '#lib/ui/atoms/Input.svelte';
   import Select from '#lib/ui/atoms/Select.svelte';
