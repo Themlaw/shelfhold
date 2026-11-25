@@ -213,6 +213,33 @@ describe('Cover', () => {
   });
 
   // req: EF-UX-008
+  it('picks a scene of its family from the identifier of the series, the same one every time', () => {
+    const ids = ['01JA0000000000000000000001', '01JA0000000000000000000002', '01JA0000000000000000000003'];
+    for (const kind of ['manga', 'webtoon', 'comic'] as const) {
+      const scenes = new Set(ids.map((id) => coverPlan(id, kind).scene?.name));
+      expect(scenes.has(undefined)).toBe(false); // a drawn family always has its scene
+      expect(coverPlan(ids[0]!, kind)).toEqual(coverPlan(ids[0]!, kind));
+    }
+    expect(coverPlan(ids[0]!, 'book').scene).toBeNull(); // a bound novel has its motif instead
+    // the identifier decides, not the title: two volumes of one title can differ
+    const { container } = render(Cover, { title: 'Little Nemo', seed: ids[0], kind: 'comic', author: 'Winsor McCay' });
+    const cover = container.querySelector('.cover')!;
+    expect(cover.className).toContain(`scene-${coverPlan(ids[0]!, 'comic').scene!.name}`);
+    expect(cover.querySelector('.cover__panel svg path, .cover__panel svg rect')).not.toBeNull();
+    expect(cover.querySelector('.cover__title')).toHaveTextContent('Little Nemo');
+    expect(cover.querySelector('[style]')).toBeNull(); // no inline style (CSP)
+  });
+
+  // req: EF-UX-008
+  it('a real image always takes the place of the drawn cover', () => {
+    const { container } = render(Cover, { title: 'Hokusai Manga', seed: '01JA0000000000000000000001', kind: 'manga', src: '/api/v1/thumbnails/abc/320' });
+    const cover = container.querySelector('.cover')!;
+    expect(cover.querySelector('img')).toHaveAttribute('src', '/api/v1/thumbnails/abc/320');
+    expect(cover.querySelector('.cover__art')).toBeNull();
+    expect(cover.querySelector('.cover__title')).toBeNull();
+  });
+
+  // req: EF-UX-008
   it('shows the real image, and falls back to the drawn cover when it fails', async () => {
     const { container } = render(Cover, { title: 'Nemo', src: '/api/v1/thumbnails/abc/320' });
     const img = container.querySelector('img')!;

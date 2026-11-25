@@ -158,6 +158,17 @@
   --cv-teal: #0e6b74;
   --cv-plum: #3b2150;
   --cv-amber: #f0a73a;
+  --cv-cobalt: #2446a0;
+  --cv-lime: #d9c21c;
+  --cv-night: #1b2a5c;
+  --cv-sun: #f2c230;
+  --cv-sky: #9cc8de;
+  --cv-ochre: #d49a35;
+  --cv-coral: #ec6a55;
+  --cv-sand: #f6d4a2;
+  --cv-deep: #0d3242;
+  --cv-sea: #11576a;
+  --cv-brick: #c4462f;
 }
 
 /* -- « Bedside lamp »: depth comes from luminance, the shadows from below ------ */

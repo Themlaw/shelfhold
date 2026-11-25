@@ -12,6 +12,7 @@
 
   let {
     title,
+    seed = null,
     href = null,
     author = null,
     src = null,
@@ -24,6 +25,8 @@
     meta
   }: {
     title: string;
+    /** the identifier of the series: it picks the generated cover */
+    seed?: string | null;
     href?: string | null;
     author?: string | null;
     src?: string | null;
@@ -45,7 +48,7 @@
     <a class="volume__link" {href} aria-label={shown}></a>
   {/if}
   <div class="volume__stand">
-    <Cover {title} {author} {src} {kind} {number} {progress} {done} {locked} />
+    <Cover {title} {seed} {author} {src} {kind} {number} {progress} {done} {locked} />
   </div>
   <div class="volume__body">
     <svelte:element this={`h${headingLevel}`} class="volume__title">

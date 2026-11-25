@@ -56,10 +56,17 @@ que par eux (ESLint). Ni thème de bibliothèque, ni Tailwind.
   (6 s) ; un danger reste et s'annonce tout de suite (`role="alert"`).
 - **Sombre** : conçu, pas inversé (« lampe de chevet ») ; choix clair, sombre ou système dans
   l'en-tête, gardé sur l'appareil et sur le profil.
-- **Couvertures** : même ratio 2:3 partout. L'image réelle (vignette du serveur) quand elle
-  existe ; sinon une couverture dessinée à partir du titre (famille selon le type : roman,
-  manga, webtoon, BD), stable d'une visite à l'autre. Une œuvre réservée n'affiche jamais son
-  titre.
+- **Couvertures** : même ratio 2:3 partout. L'image réelle (vignette du serveur) remplace
+  toujours la couverture composée. Sans image, la famille suit le type de l'œuvre donné par l'API
+  (`kind`) : roman relié (toile, trois compositions et un motif gravé), collection blanche (double
+  filet, titre en italique de couleur), manga (encre noire, bande de titre verticale, grand
+  numéro), webtoon (couleurs pleines, titre dans une bande du bas), album BD (bandeau de titre,
+  vignette « ligne claire » cernée). Les manga, webtoons et albums reçoivent une scène dessinée
+  (`cover-art.ts`, tracée par `CoverArt.svelte`, jamais du HTML en chaîne) avec sa palette
+  `--cv-*`. Composition, motif et scène sont tirés de l'identifiant de la série (`seed`), à
+  défaut du titre : la même œuvre a toujours la même couverture. Sous 6,5 rem de large, la
+  couverture n'est plus qu'une image et le titre est écrit dessous ou à côté ; sous 9 rem,
+  l'auteur la quitte. Une œuvre réservée n'affiche jamais son titre.
 - **CSP** : pas d'attribut `style=""` dans le balisage ; une valeur calculée passe par une
   directive `style:` de Svelte (appliquée par le DOM, autorisée par `style-src 'self'`).
 - **Accessibilité** : cibles de 44 px, focus visible partout, un seul `h1` par écran, le statut

@@ -95,6 +95,8 @@
     ].join(' · ');
 
   const hero = $derived(resume[0] ?? null);
+  // the continue entry names no author nor kind: the list of works does, when it holds the work
+  const heroWork = $derived(hero ? (works.find((work) => work.work_id === hero.work_id) ?? null) : null);
   const also = $derived(resume.slice(1));
 
   // one greeting whatever the hour: the screen reads the same at any time (its reference too)
@@ -146,7 +148,9 @@
       {@const open = opening(hero)}
       <section class="hero" aria-labelledby="continue-title">
         <div class="hero__object">
-          <div class="hero__stand"><Cover title={hero.title} size="fill" /></div>
+          <div class="hero__stand">
+            <Cover title={hero.title} seed={hero.work_id} author={heroWork?.author ?? null} kind={coverKind(heroWork?.kind)} size="fill" />
+          </div>
         </div>
         <div class="hero__text">
           <h2 class="hero__kicker" id="continue-title">{child ? t('home.hero_child') : t('home.hero')}</h2>
@@ -181,7 +185,7 @@
           {#each also as item (item.work_id)}
             {@const open = opening(item)}
             <li class="resume">
-              <Cover title={item.title} size="sm" />
+              <Cover title={item.title} seed={item.work_id} size="sm" />
               <div class="resume__text">
                 <p class="resume__title">{item.title}</p>
                 <p class="resume__where">{where(item)}</p>
@@ -244,6 +248,8 @@
             <div role="listitem">
               <SeriesCard
                 title={work.title}
+                seed={work.work_id}
+                author={work.author ?? null}
                 src={thumb(work.cover_hash)}
                 kind={coverKind(work.kind)}
                 href={admin && work.edition_id ? `/serie/${work.edition_id}` : null}
