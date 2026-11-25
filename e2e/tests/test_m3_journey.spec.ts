@@ -308,6 +308,9 @@ test('test_key_screens_snapshot_per_theme', async ({ browser }, info) => {
       }
     }
   }
+  // what this run saw, kept with the screenshots: a reference made again on purpose can start
+  // from the artifact of the run, read difference by difference before it is committed
+  writeFileSync(join(info.outputPath(), 'key-screens.json'), `${JSON.stringify(captured, null, 2)}\n`);
   if (UPDATING) {
     mkdirSync(dirname(REFERENCE), { recursive: true });
     writeFileSync(REFERENCE, `${JSON.stringify(captured, null, 2)}\n`);
