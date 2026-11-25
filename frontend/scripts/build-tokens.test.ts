@@ -21,4 +21,14 @@ describe('design tokens', () => {
     expect(tokens.shared.font.text.$value).toMatch(/^Alegreya,/);
     expect(JSON.stringify(tokens)).not.toMatch(/https?:|url\(/);
   });
+
+  // req: EF-UX-012
+  it('no colour of a theme is one the CSS minifier shortens (#000000 is shipped as #000)', () => {
+    // the image journey compares the colours the browser applied with tokens.json, as written
+    const themes = import.meta.glob('../src/lib/themes/*/tokens.json', { eager: true, import: 'default' });
+    const shortenable = /#([0-9a-f])\1([0-9a-f])\2([0-9a-f])\3\b/i;
+    for (const [path, theme] of Object.entries(themes)) {
+      expect(JSON.stringify(theme), path).not.toMatch(shortenable);
+    }
+  });
 });
