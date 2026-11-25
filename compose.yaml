@@ -18,7 +18,7 @@ services:
     #   image: codeberg.org/<owner>/shelfhold:1.0
     # <owner> is the account of the second registry; verify either name before using it
     # (docs/admin/verifier-les-images.md). The continuity steps are in GOVERNANCE.md.
-    image: ghcr.io/themlaw/shelfhold:1.1
+    image: ghcr.io/themlaw/shelfhold:1.3
     container_name: shelfhold
     # Migrations first (backup named by revision, ENF-OPS-002), then the server; a failed migration
     # exits non-zero and serves nothing. Written out because the 1.0 images predate the image's own
@@ -102,7 +102,7 @@ services:
   # lists it) and refuses to start without it, whatever the rest.
   # >>> plugin-runner service
   # plugin-runner:
-  #   image: ghcr.io/themlaw/shelfhold:1.1   # the same image as the core: always the same tag
+  #   image: ghcr.io/themlaw/shelfhold:1.3   # the same image as the core: always the same tag
   #   container_name: shelfhold-plugin-runner
   #   command: ["shelfhold", "plugin-runner"]
   #   user: "1001:1001"                      # another uid than the core's (1000)
