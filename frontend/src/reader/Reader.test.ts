@@ -237,6 +237,23 @@ describe('the reader of images', () => {
     expect(screen.queryByRole('img')).toBeNull();
   });
 
+  // req: EF-LEC-001, ENF-SEC-010
+  it.each([
+    [401, 'Se connecter', 'Erreur 401'],
+    [403, 'Revenir à l’accueil', 'Erreur 403']
+  ])('offers the way out of a %s, in the words of the library', async (status, action, code) => {
+    server.use(
+      http.get(`${BASE}/api/reader/unit/U1/publication`, () =>
+        HttpResponse.json({ type: '/api/v1/problems/x', title: 'Refusé', status, code: 'refused' }, { status })
+      )
+    );
+    render(Page, { props });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Refusé');
+    expect(screen.getByRole('heading', { level: 1, name: 'Refusé' })).toBeInTheDocument();
+    expect(screen.getByText(code)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: action })).toBeInTheDocument();
+  });
+
   // req: EF-LEC-001
   it('tells a hidden book from a missing one in no way at all', async () => {
     server.use(
@@ -431,6 +448,36 @@ describe('the reader of images', () => {
     expect(await screen.findByAltText('Page 1 sur 3')).toBeInTheDocument();
     await user.keyboard('{End}');
     expect(await screen.findByAltText('Page 3 sur 3')).toBeInTheDocument();
+  });
+
+  // req: EF-LEC-002
+  it('says the first and the last page, and how far the reading went', async () => {
+    server.use(...serve(publication()));
+    const user = userEvent.setup();
+    render(Page, { props });
+    await screen.findByAltText('Page 1 sur 3');
+    expect(screen.getByText('Première page')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Progression de la lecture' })).toHaveAttribute('aria-valuenow', '33');
+    await user.keyboard('{End}');
+    await screen.findByAltText('Page 3 sur 3');
+    expect(screen.getByText('Dernière page')).toBeInTheDocument();
+    expect(screen.queryByText('Première page')).toBeNull();
+    expect(screen.getByRole('progressbar', { name: 'Progression de la lecture' })).toHaveAttribute('aria-valuenow', '100');
+  });
+
+  // req: EF-LEC-006
+  it('closes the settings with their own button, and the scope question can be left unanswered', async () => {
+    server.use(...serve(publication()));
+    const user = userEvent.setup();
+    render(Page, { props });
+    await screen.findByAltText('Page 1 sur 3');
+    await user.click(screen.getByRole('button', { name: 'Réglages de lecture' }));
+    expect(screen.getByRole('button', { name: 'Réglages de lecture' })).toHaveAttribute('aria-expanded', 'true');
+    await user.click(screen.getByRole('radio', { name: 'Pleine largeur' }));
+    await user.click(screen.getByRole('button', { name: 'Annuler' }));
+    expect(settingsPuts).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: 'Fermer les réglages' }));
+    expect(screen.queryByRole('radio', { name: 'Pleine largeur' })).toBeNull();
   });
 
   // req: EF-LEC-011
