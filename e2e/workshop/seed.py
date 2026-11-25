@@ -1,5 +1,7 @@
 """Synthetic base of the workshop harness: three profiles (admin, member, a child of 8) and a
-few Works that wait in "À classer". Everything is invented here; nothing reaches the network.
+library of public domain works of every kind (novels, a manga, comic albums), with their authors,
+a reading under way for each profile and requests waiting for the administrator. The one webtoon
+is invented (none is in the public domain yet). Nothing reaches the network.
 
 Run after `shelfhold migrate` and `shelfhold admin create`, before `shelfhold serve`:
     python seed.py <data-dir>
@@ -19,7 +21,8 @@ from shelfhold.identity.adapters.passwords import Argon2Hasher
 from shelfhold.infrastructure.cover_store import CoverStore
 from shelfhold.infrastructure.db import create_db_engine
 from shelfhold.infrastructure.ids import new_ulid
-from shelfhold.infrastructure.schema import catalog, export, identity
+from shelfhold.infrastructure.schema import catalog, export, identity, storage
+from shelfhold.reading.application.progress import insert_position
 
 PASSWORD = "synthetic-profile-password-1"  # noqa: S105 (invented, for the synthetic base)
 COVERS = 60  # a library screen (ENF-PERF-010); the digests are written for `weight.spec.ts`
@@ -32,7 +35,43 @@ TEMPLATE = json.dumps(
         "segment": "{series} - Part {n}",
     }
 )  # fmt: skip
-TITLES = ("Le Jardin des brumes", "Chroniques du phare", "Atlas des marées")
+# The works of the household collection: unrated, so the child reads none of them (and the
+# household collection does not exist for her).
+TITLES = (
+    ("Michel Strogoff", "Jules Verne", "novel"),
+    ("Les Voyages de Gulliver", "Jonathan Swift", "novel"),
+    ("L'Île mystérieuse", "Jules Verne", "novel"),
+)
+# The volumes of the covered library (a stored cover each): (series, author, kind).
+VOLUMES = (
+    ("Hokusai Manga", "Katsushika Hokusai", "manga"),
+    ("Little Nemo in Slumberland", "Winsor McCay", "comic"),
+    ("Les Misérables", "Victor Hugo", "novel"),
+    ("Le Comte de Monte-Cristo", "Alexandre Dumas", "novel"),
+    ("Les Trois Mousquetaires", "Alexandre Dumas", "novel"),
+    ("Contes", "Hans Christian Andersen", "novel"),
+)
+# The newest arrivals (the home shows them first), rated for every age unless said: no stored
+# cover, so each gets the cover composed for its kind. (title, author, kind, age rating)
+LIBRARY = (
+    ("Le Phare des brumes", "Yun-seo Park", "webtoon", 10),
+    ("Histoire de M. Vieux Bois", "Rodolphe Töpffer", "bd", 0),
+    ("Max et Moritz", "Wilhelm Busch", "bd", 0),
+    ("Contes de ma mère l'Oye", "Charles Perrault", "novel", 0),
+    ("Fables", "Jean de La Fontaine", "novel", 0),
+    ("Contes de l'enfance et du foyer", "Jacob et Wilhelm Grimm", "novel", 0),
+    ("Alice au pays des merveilles", "Lewis Carroll", "novel", 0),
+    ("Le Tour du monde en quatre-vingts jours", "Jules Verne", "novel", 0),
+    ("Vingt mille lieues sous les mers", "Jules Verne", "novel", 0),
+    ("Hokusai Manga, choix de planches", "Katsushika Hokusai", "manga", 0),
+    ("Little Nemo, les rêves", "Winsor McCay", "comic", 0),
+)
+# What each profile is reading: the title of a work of LIBRARY, the chapter under way and how far.
+READING = {"admin": ("Vingt mille lieues sous les mers", 2, 0.4),
+           "membre": ("Hokusai Manga, choix de planches", 3, 0.6),
+           "enfant8": ("Little Nemo, les rêves", 1, 0.3)}  # fmt: skip
+SEEDED = datetime(2026, 11, 1, 10, 0, tzinfo=UTC)
+CONTENT_HASH = "sha256:" + "5e" * 32  # the copies of a reading under way (no file behind them)
 
 
 def synthetic_cover(rng: random.Random) -> bytes:
@@ -60,6 +99,41 @@ def synthetic_cover(rng: random.Random) -> bytes:
     return out.getvalue()
 
 
+def credit(db: sa.Connection, work_id: str, author: str) -> None:
+    """The author of a Work, as a metadata provider names it (`contributors`)."""
+    db.execute(
+        sa.insert(catalog.metadata_field).values(
+            entity_type="work", entity_id=work_id, field="contributors", lang="und",
+            value=json.dumps([author], ensure_ascii=False), provider="source-a",
+            provenance="provider", fetched_at=SEEDED,
+        )
+    )  # fmt: skip
+
+
+def add_work(
+    db: sa.Connection, shelf_id: str, title: str, author: str, kind: str, age: int | None = None
+) -> tuple[str, str]:
+    """A Work, its author and one Edition on the shelf; rated when `age` is given. Returns the
+    ids of the Work and of its Edition."""
+    work_id, edition_id = new_ulid(), new_ulid()
+    rated = SEEDED if age is not None else None
+    db.execute(
+        sa.insert(catalog.work).values(
+            id=work_id, kind=kind, title=title, sort_title=title.casefold(), age_rating=age,
+            rated_at=rated,
+        )
+    )  # fmt: skip
+    db.execute(
+        sa.insert(catalog.edition).values(
+            id=edition_id, work_id=work_id, lang="fr", translation_type="official",
+            media="text" if kind == "novel" else "images", shelf_id=shelf_id, age_rating=age,
+            rated_at=rated,
+        )
+    )  # fmt: skip
+    credit(db, work_id, author)
+    return work_id, edition_id
+
+
 def seed_covered_library(data_dir: Path, db: sa.Connection, shelf_id: str) -> None:
     """`COVERS` Works on the shelf, each with a stored cover (a real file under `/data/covers`,
     pointed at by its Edition's `cover` field); the digests go to `covers.json` beside the data."""
@@ -67,19 +141,10 @@ def seed_covered_library(data_dir: Path, db: sa.Connection, shelf_id: str) -> No
     store = CoverStore(data_dir)
     digests: list[str] = []
     for n in range(COVERS):
-        title = f"Couverture {n:02d}"
-        work_id, edition_id = new_ulid(), new_ulid()
-        db.execute(
-            sa.insert(catalog.work).values(
-                id=work_id, kind="manga", title=title, sort_title=title.casefold()
-            )
+        series, author, kind = VOLUMES[n % len(VOLUMES)]
+        _, edition_id = add_work(
+            db, shelf_id, f"{series}, tome {n // len(VOLUMES) + 1}", author, kind
         )
-        db.execute(
-            sa.insert(catalog.edition).values(
-                id=edition_id, work_id=work_id, lang="fr", translation_type="official",
-                media="images", shelf_id=shelf_id,
-            )
-        )  # fmt: skip
         ref = store.put(synthetic_cover(rng))
         db.execute(
             sa.insert(catalog.metadata_field).values(
@@ -139,6 +204,67 @@ def seed_collections(db: sa.Connection, member_id: str, work_ids: list[str]) -> 
     make("À lire ensuite", "reading_list", member_id, work_ids[:1])
 
 
+def seed_reading(
+    db: sa.Connection, user_id: str, edition_id: str, chapter: int, percent: float
+) -> None:
+    """A reading under way: five chapters, each with a kept copy (adopted in place: the home only
+    needs to know there is one), and a position in `chapter`, as the reader would have sent it."""
+    text = (
+        db.execute(
+            sa.select(catalog.edition.c.media).where(catalog.edition.c.id == edition_id)
+        ).scalar_one()
+        == "text"
+    )
+    under_way = ""
+    for number in range(1, 6):
+        unit_id, content_id = new_ulid(), new_ulid()
+        db.execute(
+            sa.insert(catalog.unit).values(
+                id=unit_id, edition_id=edition_id, number_raw=str(number), number_norm=str(number),
+                number_sort=float(number), track="main", kind="chapter",
+            )
+        )  # fmt: skip
+        db.execute(
+            sa.insert(storage.content).values(
+                id=content_id, unit_id=unit_id, variant_id=None,
+                kind="text" if text else "images",
+                media_type="application/epub+zip" if text else "application/vnd.comicbook+zip",
+                format="epub" if text else "cbz", retention="adopted_ref", path=None,
+                original_sha256="sha256:" + f"{number:x}" * 64, store_provenance="received",
+                size=1, content_hash=CONTENT_HASH, content_hash_by="norm@1",
+            )
+        )  # fmt: skip
+        db.execute(
+            sa.insert(export.unit_coverage).values(
+                carrier_type="content", carrier_id=content_id, unit_id=unit_id, position=1,
+                origin="manual",
+            )
+        )  # fmt: skip
+        if number == chapter:
+            under_way = content_id
+    insert_position(
+        db, user_id=user_id, carrier_type="content", carrier_id=under_way,
+        content_hash=CONTENT_HASH, locator={"v": 1, "type": "page", "index": 12, "count": 30},
+        percent=percent, client_ts=SEEDED, device_id="liseuse", source="device", now=SEEDED,
+        traverse=False,
+    )  # fmt: skip
+
+
+def seed_requests(db: sa.Connection, users: dict[str, str]) -> None:
+    """What waits for the administrator: a request of the child (it needs an age) and one of the
+    member; both are free text, so nothing is searched in a source."""
+    for name, wanted in (
+        ("enfant8", "Les Contes du chat perché"),
+        ("membre", "Le Grand Meaulnes"),
+    ):
+        db.execute(
+            sa.insert(identity.request).values(
+                id=new_ulid(), requester_user_id=users[name], target_kind="free_text",
+                target_value=wanted, state="pending", shown_title=wanted,
+            )
+        )  # fmt: skip
+
+
 def main(data_dir: Path) -> None:
     engine = create_db_engine(data_dir / "shelfhold.db")
     digest = Argon2Hasher().hash(PASSWORD)
@@ -163,27 +289,20 @@ def main(data_dir: Path) -> None:
             )
         )
         seed_destinations(db)
-        work_ids: list[str] = []
-        for title in TITLES:
-            work_id = new_ulid()
-            work_ids.append(work_id)
-            db.execute(
-                sa.insert(catalog.work).values(
-                    id=work_id, kind="manga", title=title, sort_title=title.casefold()
-                )
-            )
-            db.execute(
-                sa.insert(catalog.edition).values(
-                    id=new_ulid(),
-                    work_id=work_id,
-                    lang="fr",
-                    translation_type="official",
-                    media="images",
-                    shelf_id=shelf_id,
-                )
-            )
+        work_ids = [add_work(db, shelf_id, *work)[0] for work in TITLES]
         seed_covered_library(data_dir, db, shelf_id)
+        editions = {
+            title: add_work(db, shelf_id, title, author, kind, age)[1]
+            for title, author, kind, age in LIBRARY
+        }
         seed_collections(db, member_id, work_ids)
+        users = {
+            str(r.username): str(r.id)
+            for r in db.execute(sa.select(identity.user.c.id, identity.user.c.username))
+        }
+        for name, (title, chapter, percent) in READING.items():
+            seed_reading(db, users[name], editions[title], chapter, percent)
+        seed_requests(db, users)
 
 
 if __name__ == "__main__":
