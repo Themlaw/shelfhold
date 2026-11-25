@@ -26,7 +26,7 @@
   "passkeys.last_used": "Utilisée {date}",
   "passkeys.never_used": "Jamais utilisée",
   "passkeys.new": "Ajouter une clé",
-  "passkeys.name_help": "Un nom qui permet de la reconnaître : « Portable du salon », « Téléphone de Claire ».",
+  "passkeys.name_help": "Un nom qui permet de la reconnaître : « Ordinateur du salon », « Téléphone de Claire ».",
   "passkeys.revoke_title": "Révoquer « {name} » ?",
   "passkeys.revoke_message": "Cet appareil ne pourra plus se connecter avec cette clé. Vous pourrez en ajouter une autre à tout moment.",
   "passkeys.unavailable_title": "Les clés d’accès ne sont pas disponibles",
