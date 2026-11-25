@@ -153,7 +153,7 @@ describe('Series sheet', () => {
     current = sheet({ can: { ...CAN, check: false } });
     server.use(serve());
     render(Page);
-    await screen.findByText('Une série', { selector: 'h2' });
+    await screen.findByRole('heading', { level: 1, name: 'Une série' });
     expect(screen.queryByRole('button', { name: t('sheet.check') })).toBeNull();
   });
 

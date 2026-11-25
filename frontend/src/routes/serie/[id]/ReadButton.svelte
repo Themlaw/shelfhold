@@ -5,6 +5,7 @@
   // tells it, and writes nothing.
   import { readerPublication } from '#lib/api/index.ts';
   import { t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
 
   let { unitId, scope = $bindable(null) }: { unitId: string | null; scope?: 'full' | 'excerpt' | null } = $props();
 
@@ -27,19 +28,13 @@
 
 {#if unitId && scope}
   <!-- the reader is a page of its own, under its own policy (ADR-0055): a full navigation, never the client router -->
-  <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-  <a class="read" data-sveltekit-reload href={scope === 'excerpt' ? `/lire/unit/${unitId}?scope=excerpt` : `/lire/unit/${unitId}`}>
+  <Button
+    variant="primary"
+    size="lg"
+    icon="read"
+    data-sveltekit-reload
+    href={scope === 'excerpt' ? `/lire/unit/${unitId}?scope=excerpt` : `/lire/unit/${unitId}`}
+  >
     {scope === 'excerpt' ? t('reader.read_excerpt') : t('reader.read')}
-  </a>
+  </Button>
 {/if}
-
-<style>
-  .read {
-    display: inline-flex;
-    align-items: center;
-    min-height: 2.75rem;
-    min-width: 2.75rem;
-    color: var(--color-accent);
-    text-decoration: underline;
-  }
-</style>

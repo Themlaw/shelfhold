@@ -30,6 +30,14 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Cover from '#lib/ui/atoms/Cover.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
   import BundleSlices from './BundleSlices.svelte';
   import OfflineButton from './OfflineButton.svelte';
   import ReadButton from './ReadButton.svelte';
@@ -210,40 +218,59 @@
 </script>
 
 <svelte:head>
-  <title>{t('sheet.title')}</title>
+  <title>{sheet ? `${sheet.title} · ${t('sheet.title')}` : t('sheet.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('sheet.title')}</h1>
+<main class="page sheet">
+  <div class="running-head">
+    <span>{t('sheet.title')}</span>
+  </div>
 
   {#if problem}
+    <h1 class="visually-hidden">{t('sheet.title')}</h1>
     <ProblemCard {problem} />
   {:else if !sheet}
-    <p>{t('sheet.loading')}</p>
+    <h1 class="visually-hidden">{t('sheet.title')}</h1>
+    <div class="page-head" role="status" aria-busy="true">
+      <span class="visually-hidden">{t('sheet.loading')}</span>
+      <div class="sheet__cover"><Skeleton shape="cover" /></div>
+      <div class="page-head__text sheet__skeleton">
+        <Skeleton />
+        <Skeleton short />
+        <Skeleton shape="block" />
+      </div>
+    </div>
   {:else}
-    <header>
-      {#if sheet.cover_hash}
-        <img
-          src={`/api/v1/thumbnails/${sheet.cover_hash}/320`}
-          width="160"
-          height="240"
-          alt={sheet.title}
+    <div class="page-head sheet__head">
+      <div class="sheet__cover">
+        <Cover
+          title={sheet.title}
+          seed={sheet.work_id}
+          src={sheet.cover_hash ? `/api/v1/thumbnails/${sheet.cover_hash}/320` : null}
+          size="fill"
         />
+      </div>
+      <div class="page-head__text">
+        <h1 class="page-title page-title--work sheet__title">{sheet.title}</h1>
+        <div class="btn-row sheet__actions">
+          <ReadButton unitId={sheet.first_unit_id} bind:scope={readScope} />
+          {#if sheet.can.check}
+            <Button variant="secondary" size="lg" onclick={checkNow}>{t('sheet.check')}</Button>
+          {/if}
+        </div>
+        {#if readScope === 'full'}
+          <div class="sheet__offline"><OfflineButton unitId={sheet.first_unit_id} /></div>
+        {/if}
+      </div>
+    </div>
+
+    <div class="stack">
+      {#if message}<Alert tone="success" title={message} live="polite" />{/if}
+      {#if actionProblem}<ProblemCard problem={actionProblem} level={3} />{/if}
+      {#if reauthMethods}
+        <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
       {/if}
-      <h2>{sheet.title}</h2>
-      <ReadButton unitId={sheet.first_unit_id} bind:scope={readScope} />
-      {#if readScope === 'full'}<OfflineButton unitId={sheet.first_unit_id} />{/if}
-    </header>
-
-    {#if message}<p role="status">{message}</p>{/if}
-    {#if actionProblem}<ProblemCard problem={actionProblem} level={3} />{/if}
-    {#if reauthMethods}
-      <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
-    {/if}
-
-    {#if sheet.can.check}
-      <button type="button" onclick={checkNow}>{t('sheet.check')}</button>
-    {/if}
+    </div>
 
     <Bindings
       bindings={sheet.bindings}
@@ -252,9 +279,8 @@
       onreload={load}
     />
     {#if sheet.bindings.some((b) => !b.active)}
-      <p>
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <a href={`/serie/${sheet.edition_id}/migrer`}>{t('migrate.title')}</a>
+      <p class="section">
+        <Button href={`/serie/${sheet.edition_id}/migrer`} variant="secondary">{t('migrate.title')}</Button>
       </p>
     {/if}
 
@@ -268,111 +294,119 @@
     {/if}
 
     {#if sheet.can.set_upstream_status}
-      <section aria-labelledby="status-title">
-        <h2 id="status-title">{t('sheet.status.title')}</h2>
-        <select bind:value={status} aria-label={t('sheet.status.title')}>
-          {#each STATUSES as value (value)}
-            <option {value}>{t(STATUS_LABELS[value])}</option>
-          {/each}
-        </select>
-        <button type="button" onclick={saveStatus}>{t('sheet.status.save')}</button>
-        {#if sheet.upstream_status_by === 'manual'}
-          <span class="muted">{t('sheet.status.manual')}</span>
-        {/if}
+      <section class="section" aria-labelledby="status-title">
+        <div class="section-head"><h2 id="status-title">{t('sheet.status.title')}</h2></div>
+        <div class="btn-row">
+          <Select
+            bind:value={status}
+            aria-label={t('sheet.status.title')}
+            inline
+            options={STATUSES.map((value) => ({ value, label: t(STATUS_LABELS[value]) }))}
+          />
+          <Button variant="secondary" onclick={saveStatus}>{t('sheet.status.save')}</Button>
+          {#if sheet.upstream_status_by === 'manual'}
+            <Badge>{t('sheet.status.manual')}</Badge>
+          {/if}
+        </div>
       </section>
     {/if}
 
     {#if sheet.can.prefer_team}
-      <section aria-labelledby="teams-title">
-        <h2 id="teams-title">{t('sheet.teams.title')}</h2>
-        <ul>
+      <section class="section" aria-labelledby="teams-title">
+        <div class="section-head"><h2 id="teams-title">{t('sheet.teams.title')}</h2></div>
+        <ul class="entries">
           {#each sheet.teams as team (team.id)}
-            <li>
-              <span>{team.label}</span>
+            <li class="sheet__row">
+              <span class="sheet__row-text">{team.label}</span>
               {#if team.preferred}
-                <span class="badge">{t('sheet.teams.preferred')}</span>
+                <Badge tone="accent">{t('sheet.teams.preferred')}</Badge>
               {:else}
-                <button type="button" onclick={() => prefer(team.id)}
-                  >{t('sheet.teams.prefer', { team: team.label })}</button
+                <Button variant="secondary" size="sm" onclick={() => prefer(team.id)}
+                  >{t('sheet.teams.prefer', { team: team.label })}</Button
                 >
               {/if}
             </li>
           {/each}
         </ul>
-        <p class="muted">{t('sheet.teams.note')}</p>
+        <p class="hint">{t('sheet.teams.note')}</p>
       </section>
       <!-- the second step: replace what is already served (a reserved action, a fresh session) -->
       <SwitchReport {editionId} />
     {/if}
 
     {#if sheet.can.edit_field && edits.length > 0}
-      <section aria-labelledby="fields-title">
-        <h2 id="fields-title">{t('sheet.fields.title')}</h2>
-        <label>
-          {t('sheet.fields.field')}
-          <select
-            bind:value={fieldKey}
-            onchange={() => (fieldValue = selected?.value ?? '')}
-          >
-            {#each edits as f (`${f.on}|${f.field}|${f.lang}`)}
-              <option value={`${f.on}|${f.field}|${f.lang}`}>
-                {f.field} ({f.lang}, {t(f.on === 'work' ? 'sheet.fields.on_work' : 'sheet.fields.on_edition')})
-              </option>
-            {/each}
-          </select>
-        </label>
-        {#if selected?.locked}
-          <span class="badge">{selected.manual ? t('sheet.fields.locked') : ''}</span>
-        {/if}
-        <label>
-          {t('sheet.fields.value')}
-          <input bind:value={fieldValue} />
-        </label>
-        <button type="button" disabled={!selected} onclick={lockField}>{t('sheet.fields.lock')}</button>
+      <section class="section" aria-labelledby="fields-title">
+        <div class="section-head"><h2 id="fields-title">{t('sheet.fields.title')}</h2></div>
+        <div class="stack sheet__form">
+          <Field label={t('sheet.fields.field')}>
+            {#snippet children(control)}
+              <Select
+                {...control}
+                bind:value={fieldKey}
+                onchange={() => (fieldValue = selected?.value ?? '')}
+                options={edits.map((f) => ({
+                  value: `${f.on}|${f.field}|${f.lang}`,
+                  label: `${f.field} (${f.lang}, ${t(f.on === 'work' ? 'sheet.fields.on_work' : 'sheet.fields.on_edition')})`
+                }))}
+              />
+            {/snippet}
+          </Field>
+          {#if selected?.locked && selected.manual}
+            <Badge icon="lock">{t('sheet.fields.locked')}</Badge>
+          {/if}
+          <Field label={t('sheet.fields.value')}>
+            {#snippet children(control)}
+              <Input {...control} bind:value={fieldValue} />
+            {/snippet}
+          </Field>
+          <Button variant="primary" disabled={!selected} onclick={lockField}>{t('sheet.fields.lock')}</Button>
+        </div>
       </section>
     {/if}
 
     {#if sheet.can.separate && merge}
-      <section aria-labelledby="separate-title">
-        <h2 id="separate-title">{t('sheet.separate.title')}</h2>
+      <section class="section" aria-labelledby="separate-title">
+        <div class="section-head"><h2 id="separate-title">{t('sheet.separate.title')}</h2></div>
         <p>{t('sheet.separate.explain')}</p>
-        <p class="muted">
+        <p class="hint">
           {t('sheet.separate.until', { date: formatDateTime(merge.undoable_until) })}
         </p>
-        {#if confirmingSeparate}
-          <button type="button" onclick={() => separate(merge.merge_id)}
-            >{t('sheet.separate.confirm')}</button
-          >
-          <button type="button" onclick={() => (confirmingSeparate = false)}
-            >{t('sheet.separate.cancel')}</button
-          >
-        {:else}
-          <button type="button" onclick={() => (confirmingSeparate = true)}
-            >{t('sheet.separate.ask')}</button
-          >
-        {/if}
+        <div class="btn-row">
+          {#if confirmingSeparate}
+            <Button variant="danger" onclick={() => separate(merge.merge_id)}
+              >{t('sheet.separate.confirm')}</Button
+            >
+            <Button variant="ghost" onclick={() => (confirmingSeparate = false)}
+              >{t('sheet.separate.cancel')}</Button
+            >
+          {:else}
+            <Button variant="secondary" onclick={() => (confirmingSeparate = true)}
+              >{t('sheet.separate.ask')}</Button
+            >
+          {/if}
+        </div>
       </section>
     {/if}
 
     {#if separated}
-      <section aria-labelledby="plan-title">
-        <h2 id="plan-title">{t('sheet.separate.plan')}</h2>
+      <section class="section" aria-labelledby="plan-title">
+        <div class="section-head"><h2 id="plan-title">{t('sheet.separate.plan')}</h2></div>
         <p>{t('sheet.separate.moves', { count: separated.series_plan.moves.length })}</p>
         <p>{t('sheet.separate.blockers', { count: separated.series_plan.blockers.length })}</p>
       </section>
     {/if}
 
     {#if sheet.can.confirm_attach && sheet.attach}
-      <section aria-labelledby="attach-title">
-        <h2 id="attach-title">{t('sheet.attach.title')}</h2>
+      <section class="section" aria-labelledby="attach-title">
+        <div class="section-head"><h2 id="attach-title">{t('sheet.attach.title')}</h2></div>
         {#if plan}
           <p>{t('sheet.attach.withdrawals', { count: plan.withdrawals.length })}</p>
-          <button type="button" onclick={() => confirmAttach(plan!.attach_id, plan!.token)}
-            >{t('sheet.attach.confirm')}</button
+          <Button variant="primary" onclick={() => confirmAttach(plan!.attach_id, plan!.token)}
+            >{t('sheet.attach.confirm')}</Button
           >
         {:else}
-          <button type="button" onclick={() => planAttach(sheet!.attach!.attach_id)}
-            >{t('sheet.attach.plan')}</button
+          <Button variant="secondary" onclick={() => planAttach(sheet!.attach!.attach_id)}
+            >{t('sheet.attach.plan')}</Button
           >
         {/if}
       </section>
@@ -381,40 +415,46 @@
 </main>
 
 <style>
-  main {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: 1rem;
+  .sheet__head,
+  .sheet__skeleton {
+    align-items: start;
   }
-  header {
+  .sheet__cover {
+    flex: 0 0 auto;
+    width: min(100%, 14rem);
+  }
+  .sheet__title {
+    overflow-wrap: anywhere;
+  }
+  .sheet__actions {
+    margin-top: var(--space-5);
+  }
+  .sheet__offline {
+    margin-top: var(--space-3);
+  }
+  .sheet__skeleton {
+    display: grid;
+    gap: var(--space-3);
+  }
+  .sheet__form {
+    max-width: var(--form-max);
+  }
+  .sheet__row {
     display: flex;
-    gap: 1rem;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: var(--target);
+    padding: var(--space-2) 0;
   }
-  img {
-    border-radius: var(--radius-cover);
+  .sheet__row-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
-  section {
-    margin-top: 1.5rem;
-  }
-  ul {
-    list-style: none;
-    padding: 0;
-  }
-  li {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-  }
-  button {
-    min-height: 2.75rem;
-  }
-  .muted {
-    color: var(--color-muted);
-  }
-  .badge {
-    padding: 0.125rem 0.5rem;
-    border-radius: 999px;
-    border: 1px solid var(--color-rule);
+  @media (max-width: 40rem) {
+    .sheet__cover {
+      width: min(60%, 11rem);
+    }
   }
 </style>

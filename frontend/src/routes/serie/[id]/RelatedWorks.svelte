@@ -10,6 +10,11 @@
   import { t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
 
   let { workId, canEdit = false }: { workId: string; canEdit?: boolean } = $props();
 
@@ -99,25 +104,28 @@
 </script>
 
 {#if items.length > 0 || canEdit}
-  <section aria-labelledby="related-works-title">
-    <h2 id="related-works-title">{t('related.title')}</h2>
+  <section class="section" aria-labelledby="related-works-title">
+    <div class="section-head"><h2 id="related-works-title">{t('related.title')}</h2></div>
     {#if items.length > 0}
-      <p>{t('related.intro')}</p>
-      <ul>
+      <p class="hint">{t('related.intro')}</p>
+      <ul class="entries related">
         {#each items as item (`${item.kind}|${item.outgoing}|${item.work_id}`)}
           <li>
-            <span>{label(item)}</span>
-            {#if item.edition_id}
-              <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- an internal route of the app -->
-              <a href={`/serie/${item.edition_id}`}>{item.title}</a>
-            {:else}
-              <strong>{item.title}</strong>
-            {/if}
+            <span class="folio">{label(item)}</span>
+            <span class="related__title">
+              {#if item.edition_id}
+                <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- an internal route of the app -->
+                <a href={`/serie/${item.edition_id}`}>{item.title}</a>
+              {:else}
+                <strong>{item.title}</strong>
+              {/if}
+            </span>
             {#if canEdit}
-              <button
-                type="button"
+              <Button
+                variant="danger-ghost"
+                size="sm"
                 aria-label={t('related.remove_label', { title: item.title })}
-                onclick={() => remove(item)}>{t('related.remove')}</button
+                onclick={() => remove(item)}>{t('related.remove')}</Button
               >
             {/if}
           </li>
@@ -125,35 +133,85 @@
       </ul>
     {/if}
     {#if canEdit}
-      <h3>{t('related.add.title')}</h3>
-      <label>
-        {t('related.add.search')}
-        <input type="search" bind:value={query} oninput={lookup} />
-      </label>
-      {#if found.length > 0 && !chosen}
-        <ul>
-          {#each found as hit (hit.work_id)}
-            <li>
-              <button type="button" onclick={() => (chosen = hit)}>{hit.title}</button>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-      {#if chosen}
-        <p role="status">{t('related.add.chosen', { title: chosen.title })}</p>
-        <label>
-          {t('related.add.kind')}
-          <select bind:value={kind}>
-            {#each KINDS as k (k)}
-              <option value={k}>{t(LABELS[k].out)}</option>
+      <div class="add stack">
+        <h3>{t('related.add.title')}</h3>
+        <Field label={t('related.add.search')}>
+          {#snippet children(control)}
+            <Input {...control} type="search" bind:value={query} oninput={lookup} />
+          {/snippet}
+        </Field>
+        {#if found.length > 0 && !chosen}
+          <ul class="entries found">
+            {#each found as hit (hit.work_id)}
+              <li>
+                <button class="found__pick" type="button" onclick={() => (chosen = hit)}>{hit.title}</button>
+              </li>
             {/each}
-          </select>
-        </label>
-        <button type="button" onclick={add}>{t('related.add.action')}</button>
-      {/if}
+          </ul>
+        {/if}
+        {#if chosen}
+          <Alert tone="info" live="polite" title={t('related.add.chosen', { title: chosen.title })} />
+          <Field label={t('related.add.kind')}>
+            {#snippet children(control)}
+              <Select
+                {...control}
+                bind:value={kind}
+                options={KINDS.map((k) => ({ value: k, label: t(LABELS[k].out) }))}
+              />
+            {/snippet}
+          </Field>
+          <Button variant="primary" onclick={add}>{t('related.add.action')}</Button>
+        {/if}
+      </div>
     {/if}
     {#if problem}
       <ProblemCard {problem} />
     {/if}
   </section>
 {/if}
+
+<style>
+  .related > li {
+    display: grid;
+    grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: var(--target);
+    padding: var(--space-2) 0;
+  }
+  .related__title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .add {
+    margin-top: var(--space-6);
+    max-width: var(--form-max);
+  }
+  .add h3 {
+    margin: 0;
+  }
+  .found__pick {
+    display: block;
+    width: 100%;
+    min-height: var(--target);
+    padding: var(--space-2) var(--space-3);
+    background: none;
+    border: 0;
+    color: var(--color-accent-text);
+    font: inherit;
+    text-align: left;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  .found__pick:hover {
+    background: var(--color-surface);
+  }
+  @media (max-width: 40rem) {
+    .related > li {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .related > li > .folio {
+      grid-column: 1 / -1;
+    }
+  }
+</style>

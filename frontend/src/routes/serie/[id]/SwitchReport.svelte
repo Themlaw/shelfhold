@@ -11,6 +11,8 @@
   import { hasMessage, t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
 
   let { editionId }: { editionId: string } = $props();
 
@@ -94,58 +96,71 @@
   const count = (list: unknown[]) => ({ count: list.length });
 </script>
 
-<section aria-labelledby="switch-title">
-  <h2 id="switch-title">{t('switch.title')}</h2>
-  <p class="muted">{t('switch.intro')}</p>
+<section class="section" aria-labelledby="switch-title">
+  <div class="section-head"><h2 id="switch-title">{t('switch.title')}</h2></div>
+  <p class="hint">{t('switch.intro')}</p>
 
-  {#if problem}
-    <ProblemCard {problem} />
-  {/if}
+  <div class="stack">
+    {#if problem}
+      <ProblemCard {problem} />
+    {/if}
 
-  {#if view?.state === 'stale'}
-    <p role="status">{t('switch.stale')}</p>
-  {:else if ended && view}
-    {#if view.state === 'failed'}
-      <p role="status">{t('switch.failed')}</p>
-    {/if}
-    <h3>{t('switch.result')}</h3>
-    <ul>
-      <li>{t('switch.done_switched', count(view.switched))}</li>
-      <li>{t('switch.done_blocked', count(Object.keys(view.blocked)))}</li>
-      <li>{t('switch.done_pending', count(view.pending))}</li>
-    </ul>
-    {#if Object.keys(view.blocked).length > 0}
-      <ul>
-        {#each reasons(view.blocked) as reason (reason.word)}
-          <li>{reasonLabel(reason.word)} ({reason.count})</li>
-        {/each}
-      </ul>
-    {/if}
-  {:else if view}
-    {#if view.to_switch.length === 0 && Object.keys(view.blocked).length === 0 && view.pending.length === 0}
-      <p role="status">{t('switch.nothing')}</p>
-    {:else}
-      <ul>
-        <li>{t('switch.to_switch', count(view.to_switch))}</li>
-        <li>{t('switch.blocked', count(Object.keys(view.blocked)))}</li>
-        <li>{t('switch.pending', count(view.pending))}</li>
+    {#if view?.state === 'stale'}
+      <Alert tone="warning" live="polite" title={t('switch.stale')} />
+    {:else if ended && view}
+      {#if view.state === 'failed'}
+        <Alert tone="danger" live="polite" title={t('switch.failed')} />
+      {/if}
+      <h3>{t('switch.result')}</h3>
+      <ul class="entries counts">
+        <li>{t('switch.done_switched', count(view.switched))}</li>
+        <li>{t('switch.done_blocked', count(Object.keys(view.blocked)))}</li>
+        <li>{t('switch.done_pending', count(view.pending))}</li>
       </ul>
       {#if Object.keys(view.blocked).length > 0}
-        <ul>
+        <ul class="entries counts">
           {#each reasons(view.blocked) as reason (reason.word)}
             <li>{reasonLabel(reason.word)} ({reason.count})</li>
           {/each}
         </ul>
       {/if}
-      {#if view.to_switch.length > 0}
-        <button type="button" disabled={running} onclick={apply}>
-          {running ? t('switch.running') : t('switch.apply')}
-        </button>
+    {:else if view}
+      {#if view.to_switch.length === 0 && Object.keys(view.blocked).length === 0 && view.pending.length === 0}
+        <Alert tone="info" live="polite" title={t('switch.nothing')} />
+      {:else}
+        <ul class="entries counts">
+          <li>{t('switch.to_switch', count(view.to_switch))}</li>
+          <li>{t('switch.blocked', count(Object.keys(view.blocked)))}</li>
+          <li>{t('switch.pending', count(view.pending))}</li>
+        </ul>
+        {#if Object.keys(view.blocked).length > 0}
+          <ul class="entries counts">
+            {#each reasons(view.blocked) as reason (reason.word)}
+              <li>{reasonLabel(reason.word)} ({reason.count})</li>
+            {/each}
+          </ul>
+        {/if}
+        {#if view.to_switch.length > 0}
+          <div class="btn-row">
+            <Button variant="primary" loading={running} onclick={apply}>
+              {running ? t('switch.running') : t('switch.apply')}
+            </Button>
+          </div>
+        {/if}
       {/if}
     {/if}
-  {/if}
 
-  {#if !running}
-    <button type="button" onclick={preview}>{t('switch.preview')}</button>
-  {/if}
+    {#if !running}
+      <div class="btn-row">
+        <Button variant="secondary" onclick={preview}>{t('switch.preview')}</Button>
+      </div>
+    {/if}
+  </div>
 </section>
+
+<style>
+  .counts > li {
+    padding: var(--space-2) 0;
+    overflow-wrap: anywhere;
+  }
+</style>
