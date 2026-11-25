@@ -256,26 +256,3 @@
     {/if}
   {/if}
 </WizardPage>
-
-<style>
-  .step {
-    display: grid;
-    gap: var(--space-3);
-  }
-  .step h3 {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2) var(--space-3);
-    margin: 0;
-    font-size: var(--step-1);
-  }
-  .step p {
-    margin: 0;
-    max-width: var(--measure);
-  }
-  .finish {
-    padding-top: var(--space-4);
-    border-top: var(--rule-hair) solid var(--color-ink);
-  }
-</style>

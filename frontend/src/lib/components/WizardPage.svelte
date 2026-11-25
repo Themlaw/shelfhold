@@ -40,4 +40,57 @@
     display: grid;
     gap: var(--space-5);
   }
+  /* the steps' own parts (shelves, sources, jurisdiction, finish) are drawn here so the screens carry no style of their own */
+  .wizard__body :global(.intro) {
+    margin: 0;
+    max-width: var(--measure);
+  }
+  .wizard__body :global(.shelves) {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .wizard__body :global(.advanced) {
+    border: var(--rule-hair) solid var(--color-rule);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--space-4);
+  }
+  .wizard__body :global(.advanced summary) {
+    display: flex;
+    align-items: center;
+  }
+  .wizard__body :global(.advanced[open]) {
+    padding-bottom: var(--space-3);
+  }
+  .wizard__body :global(.sources) {
+    margin: 0;
+    padding: var(--space-4);
+    border: var(--rule-hair) solid var(--color-rule);
+    border-radius: var(--radius-sm);
+  }
+  .wizard__body :global(.sources .hint) {
+    margin-top: 0;
+  }
+  .wizard__body :global(.step) {
+    display: grid;
+    gap: var(--space-3);
+  }
+  .wizard__body :global(.step h3) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin: 0;
+    font-size: var(--step-1);
+  }
+  .wizard__body :global(.step p) {
+    margin: 0;
+    max-width: var(--measure);
+  }
+  .wizard__body :global(.finish) {
+    padding-top: var(--space-4);
+    border-top: var(--rule-hair) solid var(--color-ink);
+  }
 </style>

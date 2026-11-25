@@ -155,38 +155,3 @@
     {/if}
   {/if}
 </WizardPage>
-
-<style>
-  .intro {
-    margin: 0;
-    max-width: var(--measure);
-  }
-  .shelves {
-    display: grid;
-    gap: var(--space-2);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .advanced {
-    border: var(--rule-hair) solid var(--color-rule);
-    border-radius: var(--radius-sm);
-    padding: 0 var(--space-4);
-  }
-  .advanced summary {
-    display: flex;
-    align-items: center;
-  }
-  .advanced[open] {
-    padding-bottom: var(--space-3);
-  }
-  .sources {
-    margin: 0;
-    padding: var(--space-4);
-    border: var(--rule-hair) solid var(--color-rule);
-    border-radius: var(--radius-sm);
-  }
-  .sources .hint {
-    margin-top: 0;
-  }
-</style>
