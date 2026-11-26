@@ -324,10 +324,9 @@
             {#snippet children(control)}<Input {...control} type="number" min="0" bind:value={newAge} width="short" />{/snippet}
           </Field>
           <Checkbox bind:checked={newCanRate} label={t('profiles.can_rate')} />
-          <div class="new__actions">
-            <Button type="submit" variant="primary" icon="plus" class="main-action">{t('profiles.create')}</Button>
-            <Button variant="ghost" onclick={() => (creating = false)}>{t('profiles.cancel')}</Button>
-          </div>
+          <!-- direct children of the form: on a phone the main action of a long form stays in reach -->
+          <Button type="submit" variant="primary" icon="plus" class="main-action new__submit">{t('profiles.create')}</Button>
+          <Button variant="ghost" class="new__cancel" onclick={() => (creating = false)}>{t('profiles.cancel')}</Button>
         </form>
       </section>
     {:else if selected}
@@ -467,10 +466,9 @@
   .muted {
     color: var(--color-muted);
   }
-  .new__actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
+  .new :global(.new__submit),
+  .new :global(.new__cancel) {
+    align-self: flex-start;
   }
   .profile__head {
     display: flex;

@@ -219,6 +219,8 @@ test('test_main_action_stays_in_reach_on_a_long_form', async ({ page }) => {
   await signInAs(page, 'admin');
   await page.goto('/reglages/profils');
   await settle(page);
+  // one editor at a time: the creation form opens from the head of the page
+  await page.getByRole('button', { name: 'Nouveau profil' }).click();
   const create = page.locator('form > button[type="submit"]').first();
   await expect(create).toBeVisible();
   // pad the form that holds the button so it extends below the fold, then check the button is still on screen
