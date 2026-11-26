@@ -68,4 +68,21 @@ describe('the offline copies page', () => {
     held.listener!();
     expect(await screen.findByText('Aucune copie gardée sur cet appareil.')).toBeInTheDocument();
   });
+
+  // req: EF-LEC-012
+  it('says the size is unknown when the browser cannot measure it, and counts the copies', async () => {
+    await held.store.activate(ALICE);
+    await held.store.keep(ALICE, COPY, []);
+    render(Page);
+    expect(await screen.findByText('Taille inconnue')).toBeInTheDocument();
+    expect(screen.getByText('1 copie sur cet appareil')).toBeInTheDocument();
+  });
+
+  // req: EF-LEC-012
+  it('tells a storage that does not answer, and offers to try again', async () => {
+    held.store = { ...held.store, activeProfile: () => Promise.reject(new Error('closed')) };
+    render(Page);
+    expect(await screen.findByRole('alert')).toHaveTextContent('La liste n’a pas pu être lue');
+    expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument();
+  });
 });

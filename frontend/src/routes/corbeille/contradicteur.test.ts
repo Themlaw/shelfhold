@@ -45,10 +45,10 @@ describe('Corbeille, contradicteur L48', () => {
     render(Page);
     await screen.findByText(RARE);
     const user = userEvent.setup();
-    const row = screen.getByRole('listitem', { name: new RegExp(RARE) });
+    const row = screen.getByRole('row', { name: new RegExp(RARE) });
     await user.click(within(row).getByRole('button', { name: 'Effacer maintenant' }));
-    const form = within(row).getByRole('button', { name: 'Effacer pour de bon' }).closest('form');
-    expect(form).not.toBeNull();
-    expect(form!.textContent).toMatch(/irremplaçable/i);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: 'Effacer pour de bon' })).toBeInTheDocument();
+    expect(dialog.textContent).toMatch(/irremplaçable/i);
   });
 });

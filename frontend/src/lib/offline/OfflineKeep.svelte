@@ -8,8 +8,18 @@
   import { keepCopy, OfflineKeepError } from '#lib/offline/keep.ts';
   import { offlineApi, offlineStore } from '#lib/offline/runtime.ts';
   import { csrfToken } from '#lib/passkeys.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import IconButton from '#lib/ui/atoms/IconButton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
 
-  let { carrierType, carrierId }: { carrierType: string; carrierId: string | null } = $props();
+  // `compact`: icon buttons, for a toolbar (the reader); otherwise buttons with their words (the
+  // sheet of a series).
+  let {
+    carrierType,
+    carrierId,
+    compact = false
+  }: { carrierType: string; carrierId: string | null; compact?: boolean } = $props();
   let state = $state<'idle' | 'keeping' | 'kept' | 'failed' | 'excerpt' | 'not_readable' | 'no_profile'>('idle');
 
   async function current(): Promise<{ profile: string; kept: boolean } | null> {
@@ -62,28 +72,43 @@
 
 {#if carrierId}
   {#if state === 'kept'}
-    <p class="kept" role="status">{t('offline.kept')}</p>
-    <button type="button" onclick={remove}>{t('offline.remove')}</button>
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <a href="/hors-ligne">{t('offline.library')}</a>
+    <span class="kept" role="status"><Badge tone="success" icon="offline">{t('offline.kept')}</Badge></span>
+    {#if compact}
+      <IconButton icon="trash" label={t('offline.remove')} onclick={remove} />
+    {:else}
+      <Button variant="ghost" icon="trash" onclick={remove}>{t('offline.remove')}</Button>
+    {/if}
+    <Button href="/hors-ligne" variant="ghost" size="sm">{t('offline.library')}</Button>
+  {:else if compact}
+    <IconButton
+      icon="download"
+      label={state === 'keeping' ? t('offline.keeping') : t('offline.keep')}
+      disabled={state === 'keeping'}
+      onclick={keep}
+    />
   {:else}
-    <button type="button" disabled={state === 'keeping'} onclick={keep}>
+    <Button icon="download" loading={state === 'keeping'} disabled={state === 'keeping'} onclick={keep}>
       {state === 'keeping' ? t('offline.keeping') : t('offline.keep')}
-    </button>
+    </Button>
   {/if}
   {#if state === 'failed' || state === 'excerpt' || state === 'not_readable' || state === 'no_profile'}
-    <p role="alert" class="err">
-      {t(state === 'failed' ? 'offline.failed' : state === 'excerpt' ? 'offline.excerpt_only' : state === 'not_readable' ? 'offline.not_readable' : 'offline.no_profile')}
-    </p>
+    <div class="note">
+      <Alert
+        tone={state === 'failed' ? 'danger' : 'warning'}
+        live="assertive"
+        title={t(state === 'failed' ? 'offline.failed' : state === 'excerpt' ? 'offline.excerpt_only' : state === 'not_readable' ? 'offline.not_readable' : 'offline.no_profile')}
+      />
+    </div>
   {/if}
 {/if}
 
 <style>
   .kept {
-    margin: 0;
+    display: inline-flex;
   }
-  button {
-    min-height: 2.75rem;
-    min-width: 2.75rem;
+  /* in a bar that wraps, the message takes a row of its own */
+  .note {
+    flex: 1 1 100%;
+    min-width: 0;
   }
 </style>

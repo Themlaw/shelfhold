@@ -6,15 +6,24 @@
   import { create as createRequest, search as apiSearch } from '#lib/api/index.ts';
   import type { EditionOut, FamilyItemOut, FamilyOut, FederatedOut, RequestOut, SearchHitOut, SearchedInOut, WorkOut } from '#lib/api/types.gen.ts';
   import AddSheet from '#lib/components/AddSheet.svelte';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
   import SearchedIn from '#lib/components/SearchedIn.svelte';
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Icon from '#lib/ui/atoms/Icon.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Spinner from '#lib/ui/atoms/Spinner.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import ProblemAlert, { blockKind, type BlockKind } from '#lib/ui/molecules/ProblemAlert.svelte';
+  import SearchBar from '#lib/ui/molecules/SearchBar.svelte';
 
   let query = $state('');
   let loading = $state(false);
   let problem = $state<ProblemView | null>(null);
+  let blocked = $state<BlockKind | null>(null);
   let raw = $state<object | null>(null);
   let currentScope = $state<'all' | 'local'>('all');
   let groups = $state<WorkOut[]>([]);
@@ -34,6 +43,8 @@
 
   const isAdminView = $derived(raw !== null && 'searched_in' in raw);
   const isFamilyView = $derived(raw !== null && 'local' in raw);
+  // some sources did not answer while others did: the list is shown, said to be incomplete
+  const partial = $derived(status === 'results' && searchedIn.some((source) => source.status === 'error'));
 
   function sourceNameOf(key: string): string {
     return searchedIn.find((s) => s.source_key === key)?.name ?? key;
@@ -67,6 +78,7 @@
     }
     loading = true;
     problem = null;
+    blocked = null;
     let scope: 'all' | 'local' = append ? currentScope : 'all';
     let cursorParam = append ? nextCursor : null;
     let resp = await apiSearch({
@@ -87,6 +99,7 @@
       }
       if (resp.error !== undefined) {
         problem = problemView(resp.error);
+        blocked = blockKind(resp.error);
         loading = false;
         return;
       }
@@ -111,11 +124,6 @@
       nextCursor = null;
     }
     loading = false;
-  }
-
-  function onSubmit(event: SubmitEvent) {
-    event.preventDefault();
-    void doSearch(false);
   }
 
   async function requestFreeText() {
@@ -179,59 +187,79 @@
   <title>{t('search.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('search.title')}</h1>
+<main class="page">
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('search.title')}</h1>
+      <p class="lede">{t('search.lede')}</p>
+    </div>
+  </div>
 
-  <form role="search" onsubmit={onSubmit}>
-    <label>
-      {t('search.query_label')}
-      <input type="search" class="searchbox" aria-label={t('search.query_label')} bind:value={query} />
-    </label>
-    <button type="submit">{t('search.submit')}</button>
-  </form>
+  <div class="query">
+    <div class="query__bar">
+      <SearchBar bind:value={query} label={t('search.query_label')} size="lg" onsearch={() => void doSearch(false)} />
+    </div>
+    <Button variant="primary" size="lg" icon="search" onclick={() => void doSearch(false)}>{t('search.submit')}</Button>
+  </div>
 
   {#if loading}
-    <p role="status">{t('search.searching')}</p>
+    <p class="searching" role="status"><Spinner size="sm" /> {t('search.searching')}</p>
   {/if}
 
   {#if problem}
-    <ProblemCard problem={problem} level={2} />
+    <div class="section"><ProblemAlert {problem} kind={blocked} level={2} /></div>
   {/if}
 
-  <div data-testid="search-results" aria-busy={loading}>
+  <div class="results" data-testid="search-results" aria-busy={loading}>
+    {#if loading && groups.length === 0 && familyItems.length === 0 && hits.length === 0}
+      <div class="skeleton-rows">
+        <Skeleton /><Skeleton /><Skeleton short />
+      </div>
+    {/if}
+
+    {#if partial}
+      <Alert tone="warning" title={t('search.partial')}>
+        <p>{t('search.partial_body')}</p>
+      </Alert>
+    {/if}
+
     {#if isFamilyView}
       {#each familyItems as item (item.request_ref)}
-        <article data-testid="family-result">
-          <p>{item.title}</p>
+        <article class="entry" data-testid="family-result">
+          <p class="entry__title">{item.title}</p>
           {#if !familyStatus[item.request_ref]}
-            <button type="button" onclick={() => requestFamily(item)}>{t('search.request')}</button>
+            <Button size="sm" onclick={() => requestFamily(item)}>{t('search.request')}</Button>
           {:else}
-            <p role="status">{familyStatus[item.request_ref]}</p>
+            <p class="done" role="status"><Icon name="check" size="sm" /> {familyStatus[item.request_ref]}</p>
           {/if}
         </article>
       {/each}
+      {#if local.length > 0}
+        <h2 class="local-title">{t('search.local_title')}</h2>
+      {/if}
       {#each local as hit (hit.work_id)}
-        <div data-testid="local-result">{hit.title}</div>
+        <div class="entry entry--local" data-testid="local-result">{hit.title}</div>
       {/each}
     {:else if isAdminView}
       {#each groups as group (group.group_id)}
-        <section data-testid="search-result">
-          <h2>{group.title}</h2>
-          <ul>
+        <section class="group" data-testid="search-result">
+          <h2 class="group__title">{group.title}</h2>
+          <ul class="entries">
             {#each group.editions as edition (edition.source_key + edition.remote_id)}
-              <li>
-                <span>{sourceNameOf(edition.source_key)}</span>
-                <span>{formatLabel(edition.format)}</span>
+              <li class="edition">
+                <span class="edition__source">{sourceNameOf(edition.source_key)}</span>
+                <span class="edition__format"><Badge>{formatLabel(edition.format)}</Badge></span>
                 {#if added.has(editionKey(edition))}
-                  <span>{t('search.added')}</span>
+                  <span class="edition__done"><Badge tone="success">{t('search.added')}</Badge></span>
                 {:else}
-                  <button
-                    type="button"
+                  <Button
+                    size="sm"
+                    icon="plus"
                     aria-label={`${t('search.add')} — ${edition.title} (${sourceNameOf(edition.source_key)})`}
-                    onclick={(e) => openAdd(edition, e)}
+                    onclick={(e: Event) => openAdd(edition, e)}
                   >
                     {t('search.add')}
-                  </button>
+                  </Button>
                 {/if}
               </li>
             {/each}
@@ -240,46 +268,54 @@
       {/each}
       <SearchedIn sources={searchedIn} />
     {:else if hits.length > 0}
-      {#each hits as hit (hit.work_id)}
-        <p>{hit.title}</p>
-      {/each}
+      <ul class="entries">
+        {#each hits as hit (hit.work_id)}
+          <li class="entry">{hit.title}</li>
+        {/each}
+      </ul>
     {/if}
 
     {#if status === 'empty' && groups.length === 0 && !isFamilyView}
-      <p>{t('search.empty')}</p>
-      {#if action === 'request' && !requested}
-        <button type="button" onclick={requestFreeText}>{t('search.request')}</button>
-      {/if}
+      <EmptyState variant="filtered" title={t('search.empty')}>
+        {#snippet actions()}
+          {#if action === 'request' && !requested}
+            <Button variant="primary" onclick={requestFreeText}>{t('search.request')}</Button>
+          {/if}
+          {#if openUrl}
+            <Button href={openUrl} rel="noopener noreferrer" target="_blank" iconEnd="external">{t('search.open_kavita')}</Button>
+          {/if}
+        {/snippet}
+      </EmptyState>
       {#if requested}
-        <p role="status">{t('search.requested')}</p>
-      {/if}
-      {#if openUrl}
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- an address the server gave, already checked to be http(s) -->
-        <a href={openUrl} rel="noopener noreferrer" target="_blank">{t('search.open_kavita')}</a>
+        <Alert tone="success" title={t('search.requested')} live="polite" />
       {/if}
     {/if}
 
     {#if status === 'empty' && isFamilyView && familyItems.length === 0}
-      <p>{t('search.empty')}</p>
-      {#if !requested}
-        <button type="button" onclick={requestFreeText}>{t('search.request')}</button>
-      {:else}
-        <p role="status">{t('search.requested')}</p>
+      <EmptyState variant="filtered" title={t('search.empty')}>
+        {#snippet actions()}
+          {#if !requested}<Button variant="primary" onclick={requestFreeText}>{t('search.request')}</Button>{/if}
+        {/snippet}
+      </EmptyState>
+      {#if requested}
+        <Alert tone="success" title={t('search.requested')} live="polite" />
       {/if}
     {/if}
 
     {#if status === 'unavailable'}
-      <p>{t('search.unavailable')}</p>
+      <Alert tone="warning" title={t('search.unavailable')} />
     {/if}
 
     {#if status === 'no_sources'}
-      <p>{t('search.no_sources')}</p>
-      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-      <a href="/reglages">{t('search.open_settings')}</a>
+      <EmptyState title={t('search.no_sources')}>
+        {#snippet actions()}<Button href="/reglages" variant="primary">{t('search.open_settings')}</Button>{/snippet}
+      </EmptyState>
     {/if}
 
     {#if nextCursor}
-      <button type="button" onclick={() => doSearch(true)}>{t('search.more')}</button>
+      <div class="more">
+        <Button {loading} onclick={() => doSearch(true)}>{t('search.more')}</Button>
+      </div>
     {/if}
   </div>
 
@@ -294,20 +330,90 @@
 </main>
 
 <style>
-  main {
-    display: grid;
-    gap: 1rem;
-    padding: 1rem;
-  }
-  form {
+  .query {
     display: flex;
-    gap: 0.5rem;
+    flex-wrap: wrap;
     align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-6);
   }
-  .searchbox {
-    min-height: 2.75rem;
+  .query__bar {
+    flex: 1 1 18rem;
+    min-width: 0;
   }
-  [data-testid='search-result'] {
-    margin: 1rem 0;
+  .searching {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-4);
+    color: var(--color-muted);
+  }
+  .results {
+    display: grid;
+    gap: var(--space-6);
+  }
+  .skeleton-rows {
+    display: grid;
+    gap: var(--space-3);
+    max-width: 28rem;
+  }
+  .group__title {
+    margin: 0 0 var(--space-3);
+    font-size: var(--step-2);
+    overflow-wrap: anywhere;
+  }
+  .edition {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    padding: var(--space-3) 0;
+  }
+  .edition__source {
+    flex: 1 1 10rem;
+    min-width: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .edition > :global(.btn) {
+    margin-left: auto;
+  }
+  .entry {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2) var(--space-4);
+    padding: var(--space-3) 0;
+    overflow-wrap: anywhere;
+  }
+  article.entry,
+  div.entry {
+    border-bottom: var(--rule-hair) solid var(--color-rule);
+  }
+  .entry__title {
+    flex: 1 1 12rem;
+    min-width: 0;
+    margin: 0;
+    font-weight: 600;
+  }
+  .entry--local {
+    color: var(--color-muted);
+  }
+  .local-title {
+    margin: 0;
+    font-size: var(--step-1);
+  }
+  .done {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--color-ok);
+    font-weight: 500;
+  }
+  .more {
+    display: flex;
+    justify-content: center;
   }
 </style>

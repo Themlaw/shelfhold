@@ -5,10 +5,12 @@
   // refusal the problem is shown and the server's order is read again.
   import { bindingsOrder } from '#lib/api/index.ts';
   import type { SheetBindingOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
-  import { formatDateTime, t, type MessageKey } from '#lib/i18n/index.ts';
+    import { formatDateTime, t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import IconButton from '#lib/ui/atoms/IconButton.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
 
   let {
     bindings,
@@ -59,41 +61,55 @@
       : t('sheet.bindings.never');
 </script>
 
-<section aria-labelledby="bindings-title">
-  <h2 id="bindings-title">{t('sheet.bindings.title')}</h2>
-  <ol>
-    {#each order as binding, index (binding.id)}
-      <li>
-        <span class="rank">{t('sheet.bindings.rank', { rank: index + 1 })}</span>
-        <span class="name">{binding.source_key}</span>
-        <span class="muted">{checked(binding)}</span>
-        {#if canReorder}
-          <button
-            type="button"
-            disabled={index === 0}
-            aria-label={t('sheet.bindings.up', { source: binding.source_key })}
-            onclick={() => move(index, -1)}>↑</button
-          >
-          <button
-            type="button"
-            disabled={index === order.length - 1}
-            aria-label={t('sheet.bindings.down', { source: binding.source_key })}
-            onclick={() => move(index, 1)}>↓</button
-          >
-        {/if}
-      </li>
-    {/each}
-  </ol>
+<section class="section" aria-labelledby="bindings-title">
+  <div class="section-head"><h2 id="bindings-title">{t('sheet.bindings.title')}</h2></div>
+  {#if bindings.length === 0}
+    <p class="hint">{t('sheet.bindings.empty')}</p>
+  {/if}
+  {#if order.length > 0}
+    <ol class="entries">
+      {#each order as binding, index (binding.id)}
+        <li class="row">
+          <span class="folio row__rank">{t('sheet.bindings.rank', { rank: index + 1 })}</span>
+          <span class="row__text">
+            <span class="row__name">{binding.source_key}</span>
+            <span class="hint">{checked(binding)}</span>
+          </span>
+          {#if canReorder}
+            <span class="row__moves">
+              <IconButton
+                icon="down"
+                class="move-up"
+                label={t('sheet.bindings.up', { source: binding.source_key })}
+                aria-disabled={index === 0 || undefined}
+                onclick={() => index > 0 && move(index, -1)}
+              />
+              <IconButton
+                icon="down"
+                label={t('sheet.bindings.down', { source: binding.source_key })}
+                aria-disabled={index === order.length - 1 || undefined}
+                onclick={() => index < order.length - 1 && move(index, 1)}
+              />
+            </span>
+          {/if}
+        </li>
+      {/each}
+    </ol>
+  {/if}
   {#if problem}
-    <ProblemCard {problem} level={3} />
+    <ProblemAlert {problem} level={3} />
   {/if}
   {#if inactive.length > 0}
-    <h3>{t('sheet.bindings.inactive')}</h3>
-    <ul>
+    <h3 class="inactive-title">{t('sheet.bindings.inactive')}</h3>
+    <ul class="entries">
       {#each inactive as binding (binding.id)}
-        <li>
-          <span class="name">{binding.source_key}</span>
-          <span class="reason">{binding.disabled_reason ? t(REASONS[binding.disabled_reason]) : ''}</span>
+        <li class="row">
+          <span class="row__text">
+            <span class="row__name">{binding.source_key}</span>
+          </span>
+          {#if binding.disabled_reason}
+            <Badge tone="warning" icon="ban">{t(REASONS[binding.disabled_reason])}</Badge>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -101,26 +117,40 @@
 </section>
 
 <style>
-  ol,
-  ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  li {
+  .row {
     display: flex;
-    gap: 0.5rem;
-    align-items: center;
     flex-wrap: wrap;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--color-rule);
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    min-height: var(--target);
+    padding: var(--space-2) 0;
   }
-  button {
-    min-width: 2.75rem;
-    min-height: 2.75rem;
+  .row__rank {
+    flex: none;
+    min-width: 4.5rem;
   }
-  .muted,
-  .reason {
-    color: var(--color-muted);
+  .row__text {
+    display: flex;
+    flex: 1 1 12rem;
+    flex-direction: column;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .row__moves {
+    display: inline-flex;
+    flex: none;
+    gap: var(--space-1);
+    margin-left: auto;
+  }
+  .row :global(.move-up svg) {
+    transform: rotate(180deg);
+  }
+  .row :global(.icon-btn[aria-disabled='true']) {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .inactive-title {
+    margin: var(--space-6) 0 var(--space-3);
+    font-size: var(--step-1);
   }
 </style>

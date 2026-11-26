@@ -22,6 +22,11 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
 
   const GONE = ['not_loaded', 'removed_upstream'];
   const REASONS: Record<string, MessageKey> = {
@@ -155,86 +160,167 @@
     });
 </script>
 
-<main>
-  <p>
+<svelte:head>
+  <title>{t('migrate.title')}</title>
+</svelte:head>
+
+<main class="page">
+  <div class="running-head">
     <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
     <a href={`/serie/${editionId}`}>{t('migrate.back')}</a>
-  </p>
-  <h1>{t('migrate.title')}</h1>
-  <p>{t('migrate.intro')}</p>
+  </div>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('migrate.title')}</h1>
+      <p class="lede">{t('migrate.intro')}</p>
+    </div>
+  </div>
 
-  {#if problem}<ProblemCard {problem} level={2} />{/if}
-  {#if reauthMethods}
-    <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
-  {/if}
+  <div class="stack">
+    {#if problem}<ProblemCard {problem} level={2} />{/if}
+    {#if reauthMethods}
+      <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
+    {/if}
+  </div>
 
   {#if !migration}
-    <form onsubmit={propose}>
-      <label>
-        {t('migrate.source_key')}
-        <input bind:value={sourceKey} required maxlength="500" autocomplete="off" />
-      </label>
-      <label>
-        {t('migrate.remote_id')}
-        <input bind:value={remoteId} required maxlength="1000" autocomplete="off" />
-      </label>
-      <label>
-        {t('migrate.replaces')}
-        <select bind:value={replaces}>
-          <option value="">{t('migrate.replaces_none')}</option>
-          {#each bindings as binding (binding.id)}
-            <option value={binding.id}>{source(binding)}</option>
-          {/each}
-        </select>
-      </label>
-      <button type="submit" disabled={busy}>{t('migrate.propose')}</button>
+    <form class="stack page--form propose" onsubmit={propose}>
+      <Field label={t('migrate.source_key')} required>
+        {#snippet children(control)}
+          <Input {...control} bind:value={sourceKey} maxlength={500} autocomplete="off" />
+        {/snippet}
+      </Field>
+      <Field label={t('migrate.remote_id')} required>
+        {#snippet children(control)}
+          <Input {...control} bind:value={remoteId} maxlength={1000} autocomplete="off" />
+        {/snippet}
+      </Field>
+      <Field label={t('migrate.replaces')}>
+        {#snippet children(control)}
+          <Select
+            {...control}
+            bind:value={replaces}
+            options={[
+              { value: '', label: t('migrate.replaces_none') },
+              ...bindings.map((binding) => ({ value: binding.id, label: source(binding) }))
+            ]}
+          />
+        {/snippet}
+      </Field>
+      <div class="btn-row">
+        <Button type="submit" variant="primary" disabled={busy}>{t('migrate.propose')}</Button>
+      </div>
     </form>
   {:else}
-    {#if !applied}
-      <p>{t('migrate.summary', { held: migration.held_count, fetch: migration.to_fetch })}</p>
-      {#if migration.unmatched_units.length > 0}
-        <p>{t('migrate.unmatched', { count: migration.unmatched_units.length })}</p>
+    <div class="stack">
+      {#if !applied}
+        <p>{t('migrate.summary', { held: migration.held_count, fetch: migration.to_fetch })}</p>
+        {#if migration.unmatched_units.length > 0}
+          <p class="hint">{t('migrate.unmatched', { count: migration.unmatched_units.length })}</p>
+        {/if}
       {/if}
-    {/if}
-    <table>
-      <caption>{t('migrate.table')}</caption>
-      <thead>
-        <tr>
-          <th scope="col">{t('migrate.col.source')}</th>
-          <th scope="col">{t('migrate.col.library')}</th>
-          <th scope="col">{t('migrate.col.basis')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each migration.rows as row (row.place)}
+      <table class="mapping">
+        <caption class="section-head">{t('migrate.table')}</caption>
+        <thead>
           <tr>
-            <td>{row.number || t('migrate.unnumbered')}</td>
-            <td>
-              {#if row.number && migration.state === 'proposed'}
-                <input
-                  aria-label={t('migrate.row_target', { number: row.number })}
-                  value={edits[row.place] ?? row.target}
-                  oninput={(e) => (edits[row.place] = e.currentTarget.value)}
-                  inputmode="decimal"
-                  maxlength="64"
-                />
-              {:else}
-                {row.target || t('migrate.unnumbered')}
-              {/if}
-            </td>
-            <td>{why(row, migration.offset)}</td>
+            <th scope="col">{t('migrate.col.source')}</th>
+            <th scope="col">{t('migrate.col.library')}</th>
+            <th scope="col">{t('migrate.col.basis')}</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each migration.rows as row (row.place)}
+            <tr>
+              <td data-label={t('migrate.col.source')}>{row.number || t('migrate.unnumbered')}</td>
+              <td data-label={t('migrate.col.library')}>
+                {#if row.number && migration.state === 'proposed'}
+                  <Input
+                    aria-label={t('migrate.row_target', { number: row.number })}
+                    value={edits[row.place] ?? row.target}
+                    oninput={(e) => (edits[row.place] = e.currentTarget.value)}
+                    inputmode="decimal"
+                    maxlength={64}
+                    width="short"
+                  />
+                {:else}
+                  {row.target || t('migrate.unnumbered')}
+                {/if}
+              </td>
+              <td data-label={t('migrate.col.basis')}>{why(row, migration.offset)}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
 
-    {#if applied}
-      <p role="status">{t('migrate.done', { count: migration.to_fetch })}</p>
-    {:else if validated}
-      <p>{t('migrate.validated')}</p>
-      <button type="button" onclick={apply} disabled={busy}>{t('migrate.apply')}</button>
-    {:else}
-      <button type="button" onclick={validate} disabled={busy}>{t('migrate.validate')}</button>
-    {/if}
+      {#if applied}
+        <Alert tone="success" live="polite" title={t('migrate.done', { count: migration.to_fetch })} />
+      {:else if validated}
+        <p>{t('migrate.validated')}</p>
+        <div class="btn-row">
+          <Button variant="primary" onclick={apply} disabled={busy} loading={busy}>{t('migrate.apply')}</Button>
+        </div>
+      {:else}
+        <div class="btn-row">
+          <Button variant="primary" onclick={validate} disabled={busy} loading={busy}>{t('migrate.validate')}</Button>
+        </div>
+      {/if}
+    </div>
   {/if}
 </main>
+
+<style>
+  .propose {
+    margin-top: var(--space-4);
+  }
+  .mapping {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .mapping caption {
+    text-align: left;
+    font: 700 var(--step-1) / 1.2 var(--font-text);
+  }
+  .mapping th {
+    padding: var(--space-2) var(--space-3);
+    text-align: left;
+    font: 600 var(--step--1) / var(--leading-ui) var(--font-ui);
+    color: var(--color-muted);
+    border-bottom: var(--rule-hair) solid var(--color-ink);
+  }
+  .mapping td {
+    padding: var(--space-2) var(--space-3);
+    min-height: var(--target);
+    vertical-align: middle;
+    border-bottom: var(--rule-hair) solid var(--color-rule);
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 40rem) {
+    .mapping thead {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    .mapping tr,
+    .mapping td {
+      display: block;
+    }
+    .mapping tr {
+      padding: var(--space-2) 0;
+      border-bottom: var(--rule-hair) solid var(--color-rule-strong);
+    }
+    .mapping td {
+      display: grid;
+      grid-template-columns: minmax(7rem, 40%) minmax(0, 1fr);
+      align-items: center;
+      gap: var(--space-3);
+      border-bottom: 0;
+    }
+    .mapping td::before {
+      content: attr(data-label);
+      color: var(--color-muted);
+      font: 600 var(--step--1) / var(--leading-ui) var(--font-ui);
+    }
+  }
+</style>

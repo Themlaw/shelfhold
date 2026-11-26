@@ -9,6 +9,10 @@
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
 
   let { editionId }: { editionId: string } = $props();
 
@@ -66,10 +70,10 @@
 </script>
 
 {#if loaded !== null}
-  <section aria-labelledby="bundle-slices-title">
-    <h2 id="bundle-slices-title">{t('bundleSlices.title')}</h2>
-    <p>{t('bundleSlices.intro')}</p>
-    <ul>
+  <section class="section" aria-labelledby="bundle-slices-title">
+    <div class="section-head"><h2 id="bundle-slices-title">{t('bundleSlices.title')}</h2></div>
+    <p class="prose">{t('bundleSlices.intro')}</p>
+    <ol class="entries parts">
       {#each loaded.parts as part (part.index)}
         <li>
           {t(
@@ -86,37 +90,58 @@
           )}
         </li>
       {/each}
-    </ul>
+    </ol>
     {#if left > 0}
-      <p>{t('bundleSlices.excluded', { count: left })}</p>
+      <p class="hint">{t('bundleSlices.excluded', { count: left })}</p>
     {/if}
     {#if loaded.can.set_slice}
       <form
+        class="slice-form"
         onsubmit={(event) => {
           event.preventDefault();
           void save(value);
         }}
       >
-        <label>
-          {t('bundleSlices.field')}
-          <input type="number" inputmode="numeric" step="1" bind:value />
-        </label>
-        <button type="submit">{t('bundleSlices.save')}</button>
-        {#if loaded.slice_chapters !== null}
-          <button type="button" onclick={() => save(null)}>{t('bundleSlices.clear')}</button>
-        {/if}
+        <Field label={t('bundleSlices.field')}>
+          {#snippet children(control)}
+            <Input {...control} type="number" inputmode="numeric" step="1" width="short" bind:value />
+          {/snippet}
+        </Field>
+        <div class="btn-row">
+          <Button type="submit" variant="primary">{t('bundleSlices.save')}</Button>
+          {#if loaded.slice_chapters !== null}
+            <Button variant="ghost" onclick={() => save(null)}>{t('bundleSlices.clear')}</Button>
+          {/if}
+        </div>
       </form>
     {/if}
     {#if outOfRange}
-      <p role="alert">
-        {t('bundleSlices.range', { min: loaded.slice_min, max: loaded.slice_max })}
-      </p>
+      <Alert
+        tone="warning"
+        live="assertive"
+        title={t('bundleSlices.range', { min: loaded.slice_min, max: loaded.slice_max })}
+      />
     {/if}
     {#if saved}
-      <p role="status">{t('bundleSlices.saved')}</p>
+      <Alert tone="success" live="polite" title={t('bundleSlices.saved')} />
     {/if}
     {#if problem}
       <ProblemCard {problem} />
     {/if}
   </section>
 {/if}
+
+<style>
+  .parts {
+    margin-block: var(--space-4);
+  }
+  .parts > li {
+    padding: var(--space-2) 0;
+    overflow-wrap: anywhere;
+  }
+  .slice-form {
+    display: grid;
+    gap: var(--space-4);
+    margin-block: var(--space-4);
+  }
+</style>

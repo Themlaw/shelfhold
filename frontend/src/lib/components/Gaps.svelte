@@ -3,10 +3,11 @@
   // gap leaves the screen only once the server accepted it, and stays with its error otherwise.
   import { gapAck } from '#lib/api/index.ts';
   import type { SheetGapOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
-  import { t } from '#lib/i18n/index.ts';
+    import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
 
   let { gaps, editionId }: { gaps: SheetGapOut[]; editionId: string } = $props();
 
@@ -30,42 +31,43 @@
   }
 </script>
 
-<section aria-labelledby="gaps-title">
-  <h2 id="gaps-title">{t('sheet.gaps.title')}</h2>
+<section class="section" aria-labelledby="gaps-title">
+  <div class="section-head"><h2 id="gaps-title">{t('sheet.gaps.title')}</h2></div>
   {#if shown.length === 0}
-    <p>{t('sheet.gaps.none')}</p>
+    <p class="hint">{t('sheet.gaps.none')}</p>
   {:else}
-    <ul>
+    <ul class="entries">
       {#each shown as gap (key(gap))}
-        <li>
-          <span>{t('sheet.gaps.item', { track: gap.track, number: gap.number })}</span>
-          <button
-            type="button"
+        <li class="row">
+          <span class="row__text">{t('sheet.gaps.item', { track: gap.track, number: gap.number })}</span>
+          <Button
+            variant="secondary"
+            size="sm"
             aria-label={t('sheet.gaps.ack_label', { track: gap.track, number: gap.number })}
-            onclick={() => acknowledge(gap)}>{t('sheet.gaps.ack')}</button
+            onclick={() => acknowledge(gap)}>{t('sheet.gaps.ack')}</Button
           >
         </li>
       {/each}
     </ul>
   {/if}
   {#if problem}
-    <ProblemCard {problem} level={3} />
+    <ProblemAlert {problem} level={3} />
   {/if}
 </section>
 
 <style>
-  ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  li {
+  .row {
     display: flex;
-    gap: 0.5rem;
+    flex-wrap: wrap;
     align-items: center;
-    padding: 0.25rem 0;
+    justify-content: space-between;
+    gap: var(--space-2) var(--space-4);
+    min-height: var(--target);
+    padding: var(--space-2) 0;
   }
-  button {
-    min-height: 2.75rem;
+  .row__text {
+    flex: 1 1 10rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 </style>

@@ -6,11 +6,23 @@
   import type { ToShelveItem } from '#lib/api/types.gen.ts';
   import { t } from '#lib/i18n/index.ts';
   import { needsSession } from '#lib/triage.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import type { Column } from '#lib/ui/molecules/TableRow.svelte';
+  import DataTable from '#lib/ui/organisms/DataTable.svelte';
 
   let items = $state<ToShelveItem[]>([]);
   let loaded = $state(false);
   let signedOut = $state(false);
   let failed = $state(false);
+
+  const columns: readonly Column[] = [
+    { key: 'title', label: t('toShelve.col.title'), primary: true },
+    { key: 'lang', label: t('toShelve.col.lang') },
+    { key: 'media', label: t('toShelve.col.media') }
+  ];
 
   onMount(async () => {
     try {
@@ -28,64 +40,61 @@
   <title>{t('toShelve.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('toShelve.title')}</h1>
-  <p class="muted">{t('toShelve.explain')}</p>
-  <p>
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <a href="/a-ranger/meme-oeuvre">{t('toShelve.same_work')}</a>
-  </p>
+<main class="page">
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('toShelve.title')}</h1>
+      <p class="lede">{t('toShelve.explain')}</p>
+    </div>
+    <div class="page-head__actions">
+      <Button href="/a-ranger/meme-oeuvre">{t('toShelve.same_work')}</Button>
+    </div>
+  </div>
 
   {#if signedOut}
-    <p role="alert" class="err">{t('toRate.signed_out')}</p>
+    <Alert tone="danger" live="assertive" title={t('toRate.signed_out')} />
   {:else if failed}
-    <p role="alert" class="err">{t('toShelve.error')}</p>
-  {:else if loaded && items.length === 0}
-    <p>{t('toShelve.none')}</p>
-  {:else if items.length > 0}
-    <ul>
-      {#each items as item (item.edition_id)}
-        <li>
-          <strong>{item.title}</strong>
-          <span class="muted">{item.lang} · {item.media}</span>
-        </li>
-      {/each}
-    </ul>
+    <Alert tone="danger" live="assertive" title={t('toShelve.error')} />
+  {:else if !loaded}
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('toShelve.loading')}</p>
+      <div class="loading">
+        {#each { length: 5 }, index (index)}
+          <Skeleton />
+        {/each}
+      </div>
+    </div>
+  {:else}
+    <DataTable
+      caption={t('toShelve.caption')}
+      captionHidden
+      {columns}
+      rows={items}
+      key={(item) => item.edition_id}
+      compact
+    >
+      {#snippet cell(column, item)}
+        {#if column.key === 'title'}
+          <span class="long">{item.title}</span>
+        {:else if column.key === 'lang'}
+          {item.lang}
+        {:else}
+          {item.media}
+        {/if}
+      {/snippet}
+      {#snippet empty()}
+        <EmptyState title={t('toShelve.none')} />
+      {/snippet}
+    </DataTable>
   {/if}
 </main>
 
 <style>
-  main {
-    max-width: 42rem;
-    margin: 0 auto;
-    padding: 3rem 1rem;
-  }
-  h1 {
-    font-family: var(--font-display);
-    font-weight: 400;
-    font-style: italic;
-    letter-spacing: -0.02em;
-  }
-  ul {
-    list-style: none;
-    padding: 0;
+  .loading {
     display: grid;
-    gap: 0.75rem;
+    gap: var(--space-4);
   }
-  li {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
-    background: var(--color-surface);
+  .long {
     overflow-wrap: anywhere;
-  }
-  .muted {
-    color: var(--color-muted);
-  }
-  .err {
-    color: var(--color-err);
   }
 </style>

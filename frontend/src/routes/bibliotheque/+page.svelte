@@ -8,10 +8,15 @@
   import { listWorks, me as loadMe, shelves as loadShelves } from '#lib/api/index.ts';
   import type { SeriesChoiceOut, ShelfItemOut, WorkItemOut } from '#lib/api/types.gen.ts';
   import CoverGrid, { type CoverItem } from '#lib/components/CoverGrid.svelte';
-  import EmptyState from '#lib/components/EmptyState.svelte';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
   import { t } from '#lib/i18n/index.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import ProblemAlert, { blockKind, type BlockKind } from '#lib/ui/molecules/ProblemAlert.svelte';
+  import Shelf from '#lib/ui/organisms/Shelf.svelte';
 
   const PAGE = 60;
 
@@ -24,6 +29,8 @@
   let isAdmin = $state(false);
   let loaded = $state(false);
   let problem = $state<ProblemView | null>(null);
+  let blocked = $state<BlockKind | null>(null);
+  let loadingMore = $state(false);
   let facets = true;
 
   const items = $derived<CoverItem[]>(
@@ -48,14 +55,33 @@
     loaded = true;
     if (error !== undefined || !data) {
       problem = problemView(error);
+      blocked = blockKind(error);
       return;
     }
     problem = null;
+    blocked = null;
     works = append ? [...works, ...data.items] : data.items;
     total = data.total;
     if (data.series) series = data.series;
     facets = false;
   }
+
+  async function more(): Promise<void> {
+    loadingMore = true;
+    try {
+      await load(true);
+    } finally {
+      loadingMore = false;
+    }
+  }
+
+  function clearFilters(): void {
+    seriesId = '';
+    shelfId = '';
+    void load(false);
+  }
+
+  const filtered = $derived(seriesId !== '' || shelfId !== '');
 
   onMount(async () => {
     const [mine, shelves] = await Promise.all([loadMe(), loadShelves()]);
@@ -69,69 +95,118 @@
   <title>{t('library.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('library.title')}</h1>
-  <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-  <p><a href="{page.url.pathname}/selections">{t('library.selections')}</a></p>
-
-  <div class="filters">
-    {#if series.length > 0}
-      <label>
-        {t('library.filter_series')}
-        <select bind:value={seriesId} onchange={() => load(false)}>
-          <option value="">{t('library.filter_all')}</option>
-          {#each series as choice (choice.id)}
-            <option value={choice.id}>{choice.title}</option>
-          {/each}
-        </select>
-      </label>
-    {/if}
-    {#if shelfChoices && shelfChoices.length > 0}
-      <label>
-        {t('library.filter_shelf')}
-        <select bind:value={shelfId} onchange={() => load(false)}>
-          <option value="">{t('library.filter_all')}</option>
-          {#each shelfChoices as shelf (shelf.id)}
-            <option value={shelf.id}>{shelf.name}</option>
-          {/each}
-        </select>
-      </label>
-    {/if}
+<main class="page">
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('library.title')}</h1>
+      <p class="lede">{t('library.lede')}</p>
+    </div>
+    <div class="page-head__actions">
+      <Button href="{page.url.pathname}/selections" icon="bookmark">{t('library.selections')}</Button>
+    </div>
   </div>
 
+  {#if series.length > 0 || (shelfChoices && shelfChoices.length > 0)}
+    <div class="filters">
+      {#if series.length > 0}
+        <div class="filters__item">
+          <Field label={t('library.filter_series')}>
+            {#snippet children(control)}
+              <Select
+                {...control}
+                value={seriesId}
+                onchange={(event) => {
+                  seriesId = event.currentTarget.value;
+                  void load(false);
+                }}
+              >
+                <option value="">{t('library.filter_all')}</option>
+                {#each series as choice (choice.id)}
+                  <option value={choice.id}>{choice.title}</option>
+                {/each}
+              </Select>
+            {/snippet}
+          </Field>
+        </div>
+      {/if}
+      {#if shelfChoices && shelfChoices.length > 0}
+        <div class="filters__item">
+          <Field label={t('library.filter_shelf')}>
+            {#snippet children(control)}
+              <Select
+                {...control}
+                value={shelfId}
+                onchange={(event) => {
+                  shelfId = event.currentTarget.value;
+                  void load(false);
+                }}
+              >
+                <option value="">{t('library.filter_all')}</option>
+                {#each shelfChoices as shelf (shelf.id)}
+                  <option value={shelf.id}>{shelf.name}</option>
+                {/each}
+              </Select>
+            {/snippet}
+          </Field>
+        </div>
+      {/if}
+      {#if filtered}
+        <Button variant="ghost" icon="x" onclick={clearFilters}>{t('library.clear_filters')}</Button>
+      {/if}
+    </div>
+  {/if}
+
   {#if !loaded}
-    <p>{t('library.loading')}</p>
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('library.loading')}</p>
+      <Shelf label={t('library.loading')} busy>
+        {#each { length: 12 }, index (index)}
+          <div role="listitem"><Skeleton shape="cover" /></div>
+        {/each}
+      </Shelf>
+    </div>
   {:else if problem}
-    <ProblemCard {problem} />
+    <ProblemAlert {problem} kind={blocked} onretry={() => load(false)} />
+  {:else if works.length === 0 && filtered}
+    <EmptyState variant="filtered" title={t('library.filtered_title')}>
+      <p>{t('library.filtered_description')}</p>
+      {#snippet actions()}<Button onclick={clearFilters}>{t('library.clear_filters')}</Button>{/snippet}
+    </EmptyState>
   {:else if works.length === 0}
-    <EmptyState
-      title={t('library.empty_title')}
-      description={t('library.empty_description')}
-      actionLabel={t('library.empty_action')}
-      href="/chercher"
-    />
+    <EmptyState title={t('library.empty_title')}>
+      <p>{t('library.empty_description')}</p>
+      {#snippet actions()}<Button href="/chercher" variant="primary" icon="search">{t('library.empty_action')}</Button>{/snippet}
+    </EmptyState>
   {:else}
-    <p class="total" role="status">{t('library.total', { count: total })}</p>
+    <p class="folio total" role="status">{t('library.total', { count: total })}</p>
     <CoverGrid {items} label={t('library.covers')} />
     {#if works.length < total}
-      <button type="button" onclick={() => load(true)}>{t('library.more')}</button>
+      <div class="more">
+        <Button loading={loadingMore} onclick={more}>{t('library.more')}</Button>
+      </div>
     {/if}
   {/if}
 </main>
 
 <style>
-  main {
-    max-width: 60rem;
-    margin: 0 auto;
-    padding: 1rem;
-  }
   .filters {
     display: flex;
-    gap: 1rem;
     flex-wrap: wrap;
-    margin-bottom: 1rem;
+    align-items: end;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+  }
+  .filters__item {
+    flex: 1 1 12rem;
+    max-width: 20rem;
+    min-width: 0;
   }
   .total {
-    color: var(--color-muted);
+    margin: 0 0 var(--space-4);
+  }
+  .more {
+    display: flex;
+    justify-content: center;
+    margin-top: var(--space-7);
   }
 </style>
