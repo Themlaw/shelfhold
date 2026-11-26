@@ -57,6 +57,26 @@
     return format;
   }
 
+  function clear(): void {
+    query = '';
+    groups = [];
+    familyItems = [];
+    hits = [];
+    searchedIn = [];
+    local = [];
+    nextCursor = null;
+    currentScope = 'all';
+    status = '';
+    action = null;
+    problem = null;
+    blocked = null;
+    raw = null;
+    requested = false;
+    openUrl = null;
+    added = new Set();
+    familyStatus = {};
+  }
+
   async function doSearch(append: boolean) {
     const q = query.trim();
     if (!q) return;
@@ -272,7 +292,7 @@
     {/if}
 
     {#if status === 'empty' && groups.length === 0 && !isFamilyView}
-      <EmptyState variant="filtered" title={t('search.empty')}>
+      <EmptyState variant="filtered" title={t('search.empty')} query={query} onclear={clear}>
         {#snippet actions()}
           {#if action === 'request' && !requested}
             <Button variant="primary" onclick={requestFreeText}>{t('search.request')}</Button>
@@ -288,7 +308,7 @@
     {/if}
 
     {#if status === 'empty' && isFamilyView && familyItems.length === 0}
-      <EmptyState variant="filtered" title={t('search.empty')}>
+      <EmptyState variant="filtered" title={t('search.empty')} query={query} onclear={clear}>
         {#snippet actions()}
           {#if !requested}<Button variant="primary" onclick={requestFreeText}>{t('search.request')}</Button>{/if}
         {/snippet}

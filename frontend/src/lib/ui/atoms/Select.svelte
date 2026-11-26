@@ -49,6 +49,8 @@
   }
   .select-wrap--inline {
     display: inline-block;
+    inline-size: fit-content;
+    max-inline-size: 100%;
   }
   .select-wrap::after {
     content: '';
