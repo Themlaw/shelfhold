@@ -21,6 +21,7 @@
 //   --only a,b        only the screens whose id starts with one of these
 //   --sizes d1440,m390  --schemes light,dark
 //   --steps screens,themes,search,library,focus,reader,outside   only these parts (to run several at once)
+//   --full            every size and scheme for every screen (the default is shorter, for a slow machine)
 //   --list            print the screens and exit
 import { chromium } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -115,6 +116,7 @@ const report = { base: BASE, shots: [], problems: [] };
 const refused = [];
 // one sign-in per profile (the hashing of a password is slow): the cookies are handed to every context
 const states = {};
+let lastShot = Date.now();
 
 async function context({ size, scheme, theme = 'bibliotheque', role = 'admin', blockWorkers = false, extra = {} }) {
   const ctx = await browser.newContext({
@@ -141,6 +143,14 @@ async function context({ size, scheme, theme = 'bibliotheque', role = 'admin', b
     if (!answer.ok()) throw new Error(`sign in as ${role}: ${answer.status()}`);
     states[role] = await ctx.storageState();
   }
+  // the profile's own preference wins over the browser's storage (EF-UX-012): it is answered with
+  // the theme and the scheme of the capture, and nothing is written on the server
+  await ctx.route('**/api/v1/me/preferences', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const real = await route.fetch({ timeout: 60000 }).catch(() => null);
+    if (!real || !real.ok()) return route.fallback();
+    return route.fulfill({ response: real, json: { ...(await real.json()), theme, chosen_theme: theme, color_scheme: scheme } });
+  });
   await ctx.addInitScript(
     ([t, s]) => {
       try {
@@ -190,7 +200,18 @@ async function settle(page) {
     window.scrollTo(0, 0);
   });
   await page.waitForLoadState('networkidle', { timeout: 1500 }).catch(() => {});
-  await page.waitForTimeout(250);
+  await ready(page);
+}
+
+/** A screen is ready when no skeleton is left and its title is there (a title is waited for 10 s at
+ * most: some screens have none). A capture taken on a loaded machine is otherwise a page half drawn. */
+async function ready(page) {
+  await page.waitForFunction(() => !document.querySelector('.skeleton'), null, { timeout: 90000 }).catch(() => {});
+  await page.waitForFunction(() => document.querySelector('h1') !== null, null, { timeout: 10000 }).catch(() => {});
+  await page.waitForFunction(() => !document.querySelector('.skeleton'), null, { timeout: 5000 }).catch(() => {});
+  // the images of the page, covers first: a cover not yet drawn is a beige block
+  await page.waitForFunction(() => [...document.images].every((i) => i.complete), null, { timeout: 90000 }).catch(() => {});
+  await page.waitForTimeout(400);
 }
 
 /** Sticky bars at their place in the flow, fixed ones at the end they hold, so that a full-page
@@ -205,6 +226,10 @@ async function neutralise(page) {
       const box = el.getBoundingClientRect();
       if (style.position === 'sticky') {
         el.style.setProperty('position', 'static', 'important');
+        // a bar that scrolls inside itself (the table of contents) is shown whole
+        el.style.setProperty('height', 'auto', 'important');
+        el.style.setProperty('max-height', 'none', 'important');
+        el.style.setProperty('overflow', 'visible', 'important');
         continue;
       }
       if (box.width > innerWidth * 0.95 && box.height > innerHeight * 0.8) continue; // an overlay
@@ -252,7 +277,8 @@ async function shoot(page, name, { full = true } = {}) {
   report.shots.push({ name, ...info });
   if (info.overflow > 0) report.problems.push(`${name}: scrolls sideways by ${info.overflow}px ${JSON.stringify(info.bad)}`);
   if (full && info.h1 !== 1) report.problems.push(`${name}: ${info.h1} h1`);
-  console.log('ok', name);
+  console.log('ok', name, `+${Math.round((Date.now() - lastShot) / 1000)}s`);
+  lastShot = Date.now();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -321,10 +347,16 @@ async function force(page, state) {
 // Every screen, in its default state and in the forced ones
 // ---------------------------------------------------------------------------------------------
 const wanted = (id) => !ONLY?.length || ONLY.some((o) => id.startsWith(o));
-const cells = (states) => {
-  // the default state in every size and scheme; a forced state in the three cells that matter
-  if (!states) return SIZE_NAMES.flatMap((s) => SCHEMES.map((c) => [s, c]));
-  return [['d1440', 'light'], ['m390', 'light'], ['m390', 'dark']].filter(([s, c]) => SIZE_NAMES.includes(s) && SCHEMES.includes(c));
+// The matrix. Whole (`--full`): every size and scheme for the default state, three cells for a forced
+// one. Short, the default of a slow machine: every cell for the screens that carry the product
+// (KEY), two for the others (desktop light, mobile dark), two for a forced state.
+const FULL = args.includes('--full');
+const KEY = ['accueil', 'bibliotheque', 'serie', 'chercher', 'collections', 'a-approuver', 'sources', 'sante', 'reglages', 'activite', 'hors-ligne', '404'];
+const cells = (states, id = '') => {
+  const all = SIZE_NAMES.flatMap((s) => SCHEMES.map((c) => [s, c]));
+  const pick = (list) => list.filter(([s, c]) => SIZE_NAMES.includes(s) && SCHEMES.includes(c));
+  if (!states) return FULL || KEY.includes(id) ? all : pick([['d1440', 'light'], ['m390', 'dark']]);
+  return pick(FULL ? [['d1440', 'light'], ['m390', 'light'], ['m390', 'dark']] : [['d1440', 'light'], ['m390', 'light']]);
 };
 
 async function visit(page, path) {
@@ -346,7 +378,7 @@ async function captureScreens(ids) {
       continue;
     }
     for (const state of ['default', ...(screen.states ?? [])]) {
-      for (const [size, scheme] of cells(state === 'default' ? null : screen.states)) {
+      for (const [size, scheme] of cells(state === 'default' ? null : screen.states, screen.id)) {
         const ctx = await session(size, scheme, screen.role ?? 'admin', 'bibliotheque');
         const page = await ctx.newPage();
         const release = state === 'default' ? () => {} : await force(page, state);
@@ -378,6 +410,7 @@ async function captureThemes() {
   for (const theme of THEMES) {
     for (const size of SIZE_NAMES) {
       for (const scheme of SCHEMES) {
+        if (!FULL && size === 'm390' && scheme === 'dark') continue;
         const ctx = await context({ size, scheme, theme, blockWorkers: true });
         for (const [id, path] of [['accueil', '/'], ['bibliotheque', '/bibliotheque'], ['404', '/cette-page-n-existe-pas']]) {
           if (!wanted(`theme-${id}`)) continue;
@@ -437,7 +470,7 @@ async function captureSearch() {
       const page = await ctx.newPage();
       await page.route('**/api/v1/search*', (route) => route.fulfill({ json: FOUND }));
       await visit(page, '/chercher');
-      await page.getByRole('searchbox').or(page.locator('input[type=search], input[type=text]').first()).first().fill('fables');
+      await page.locator('main input').first().fill('fables');
       await page.keyboard.press('Enter');
       await page.waitForTimeout(800);
       await settle(page);
@@ -458,7 +491,7 @@ async function captureSearch() {
     const page = await ctx.newPage();
     await page.route('**/api/v1/search*', (route) => route.fulfill({ json: body }));
     await visit(page, '/chercher');
-    await page.locator('input[type=search], input[type=text]').first().fill('zzzz');
+    await page.locator('main input').first().fill('zzzz');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(600);
     await shoot(page, `chercher-${id}--d1440--light`);
@@ -521,7 +554,7 @@ async function plate(n, count, width, height) {
   const page = await browserPages.newPage();
   await page.setViewportSize({ width, height });
   await page.setContent(plateHtml(n, count, width, height));
-  const png = await page.screenshot({ type: 'png' });
+  const png = await page.screenshot({ type: 'png', timeout: 180000 });
   await page.close();
   return png;
 }
@@ -558,11 +591,12 @@ function publication(ids, kind, extra = {}) {
   };
 }
 const PAGES = 12;
+const PLATES = new Map(); // the plates drawn once, for every scene
 
 /** The routes that make a book of this kind readable. */
 async function serveBook(page, ids, kind, extra = {}, size = 'd1440') {
   const { width, height } = kind === 'webtoon' ? { width: 800, height: 2400 } : { width: 800, height: 1200 };
-  const cache = new Map();
+  const cache = PLATES;
   await page.route('**/api/reader/*/*/publication*', (route) =>
     route.fulfill({ json: publication(ids, kind === 'epub' ? 'epub' : 'pages', extra) })
   );
@@ -574,8 +608,9 @@ async function serveBook(page, ids, kind, extra = {}, size = 'd1440') {
     }
     const n = Number(/^p(\d+)\.png$/.exec(name)?.[1]);
     if (!n) return route.fulfill({ status: 404, body: '' });
-    if (!cache.has(n)) cache.set(n, await plate(n, PAGES, width, height));
-    return route.fulfill({ body: cache.get(n), contentType: 'image/png' });
+    const key = `${n}/${width}x${height}`;
+    if (!cache.has(key)) cache.set(key, await plate(n, PAGES, width, height));
+    return route.fulfill({ body: cache.get(key), contentType: 'image/png' });
   });
 }
 
@@ -585,11 +620,28 @@ async function openReader(page, ids, query = '') {
   await page.waitForTimeout(1200);
 }
 
+/** Waits until what the reader draws is drawn: every image of the page loaded (a book of pages) or
+ * the document of the chapter in its frame (an EPUB). A capture taken before is a blank page. */
+async function drawn(page) {
+  await page
+    .waitForFunction(
+      () => {
+        const imgs = [...document.querySelectorAll('.pages img')];
+        if (imgs.length) return imgs.every((i) => i.complete && i.naturalWidth > 0);
+        return document.querySelector('.pages foliate-view, .pages iframe') !== null || document.querySelector('.state, [role=alert]') !== null;
+      },
+      null,
+      { timeout: 45000 }
+    )
+    .catch(() => {});
+  await page.waitForTimeout(500);
+}
+
 const READER_SCENES = [
   { id: 'pages', run: async (page, ids) => { await serveBook(page, ids, 'pages'); await openReader(page, ids); } },
-  { id: 'pages-page-4', run: async (page, ids) => { await serveBook(page, ids, 'pages'); await openReader(page, ids); for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight'); await page.waitForTimeout(500); } },
+  { id: 'pages-page-4', run: async (page, ids) => { await serveBook(page, ids, 'pages'); await openReader(page, ids); for (let i = 0; i < 3; i++) { await drawn(page); await page.keyboard.press('ArrowRight'); await page.waitForTimeout(200); } } },
   { id: 'pages-rtl', run: async (page, ids) => { await serveBook(page, ids, 'pages', { reading_direction: 'rtl' }); await openReader(page, ids); } },
-  { id: 'pages-fin', run: async (page, ids) => { await serveBook(page, ids, 'pages'); await openReader(page, ids); for (let i = 0; i < PAGES + 1; i++) { await page.keyboard.press('ArrowRight'); await page.waitForTimeout(120); } await page.waitForTimeout(500); } },
+  { id: 'pages-fin', run: async (page, ids) => { await serveBook(page, ids, 'pages'); await openReader(page, ids); for (let i = 0; i < 40 && !(await page.locator('[data-reader-end]').count()); i++) { await drawn(page); await page.keyboard.press('ArrowRight'); await page.waitForTimeout(150); } } },
   { id: 'webtoon', run: async (page, ids) => { await serveBook(page, ids, 'webtoon', { reading_direction: 'webtoon' }); await openReader(page, ids); } },
   { id: 'epub', run: async (page, ids) => { await serveBook(page, ids, 'epub'); await openReader(page, ids); await page.waitForTimeout(1500); } },
   { id: 'extrait', run: async (page, ids) => { await serveBook(page, ids, 'pages', { scope: 'excerpt' }); await openReader(page, ids, '?scope=excerpt'); } },
@@ -631,6 +683,7 @@ async function captureReader(ids) {
         const page = await ctx.newPage();
         try {
           await scene.run(page, ids);
+          await drawn(page);
           await shoot(page, `lecteur-${scene.id}--${size}--${scheme}`, { full: false });
         } catch (error) {
           report.problems.push(`lecteur-${scene.id} ${size} ${scheme}: ${String(error).slice(0, 200)}`);
