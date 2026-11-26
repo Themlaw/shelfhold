@@ -107,7 +107,7 @@ describe('To approve screen', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /Titre A/ }));
     const refuse = await screen.findByRole('button', { name: 'Refuser' });
-    expect(refuse).toBeDisabled();
+    expect(refuse).toHaveAttribute('aria-disabled', 'true');
     await user.type(screen.getByLabelText('Motif du refus'), 'Déjà possédé');
     await user.click(refuse);
     await vi.waitFor(() => expect(sent).not.toBeNull());

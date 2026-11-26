@@ -6,6 +6,14 @@
   import { link, listLinks, me, setPush, unlink } from '#lib/api/index.ts';
   import type { LinkItem } from '#lib/api/types.gen.ts';
   import { t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Switch from '#lib/ui/atoms/Switch.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import ErrorState from '#lib/ui/molecules/ErrorState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
   import { formatDateTime } from '#lib/i18n/format.ts';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
@@ -19,6 +27,7 @@
   let failed = $state(false);
   let notice = $state<{ text: string; kind: 'status' | 'alert' } | null>(null);
   let busy = $state(false);
+  let loaded = $state(false);
   const reauth = new Reauth();
 
   let pluginKey = $state('');
@@ -31,6 +40,14 @@
   }
 
   async function load(): Promise<void> {
+    try {
+      await read();
+    } finally {
+      loaded = true;
+    }
+  }
+
+  async function read(): Promise<void> {
     failed = false;
     notice = null;
     try {
@@ -145,45 +162,71 @@
   <title>{t('trackers.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('trackers.title')}</h1>
+<main class="page page--form">
+  <div class="running-head"><span>{t('nav.settings')}</span></div>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('trackers.title')}</h1>
+      {#if !notAllowed}<p class="lede">{t('trackers.lede')}</p>{/if}
+    </div>
+  </div>
 
-  {#if notAllowed}
-    <p role="alert">{t('trackers.child_refused')}</p>
+  {#if !loaded}
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('trackers.loading')}</p>
+      <Skeleton /><Skeleton short />
+    </div>
+  {:else if notAllowed}
+    <div role="alert">
+      <ErrorState kind="forbidden" title={t('trackers.child_title')} headingLevel={2}>
+        {t('trackers.child_refused')}
+      </ErrorState>
+    </div>
   {:else if failed}
-    <p role="alert">{t('trackers.error')}</p>
+    <div role="alert">
+      <ErrorState kind="server" title={t('trackers.error_title')} headingLevel={2}>
+        {t('trackers.error')}
+        {#snippet actions()}<Button icon="refresh" onclick={() => void load()}>{t('error.retry')}</Button>{/snippet}
+      </ErrorState>
+    </div>
   {:else}
-    {#if links.length === 0}
-      <p>{t('trackers.none')}</p>
-    {:else}
-      <ul>
-        {#each links as l (l.plugin_key)}
-          <li>
-            <strong>{l.plugin_key}</strong>
-            <span>{t('trackers.linked_at')}: {formatDateTime(l.linked_at)}</span>
-            <label>
-              <input
-                type="checkbox"
+    <section class="section" aria-labelledby="linked">
+      <div class="section-head"><h2 id="linked">{t('trackers.linked_list')}</h2></div>
+      {#if links.length === 0}
+        <EmptyState title={t('trackers.none')} headingLevel={3} art={false} />
+      {:else}
+        <ul class="entries" role="list">
+          {#each links as l (l.plugin_key)}
+            <li class="tracker">
+              <div class="tracker__text">
+                <p class="tracker__name">{l.plugin_key}</p>
+                <p class="hint">{t('trackers.linked_at')} {formatDateTime(l.linked_at)}</p>
+              </div>
+              <Switch
+                label={t('trackers.push_opt_in')}
                 checked={l.push_enabled}
-                onchange={(e) => togglePush(l, (e.target as HTMLInputElement).checked)}
                 disabled={busy}
+                onchange={(e) => togglePush(l, (e.target as HTMLInputElement).checked)}
               />
-              {t('trackers.push_opt_in')}
-            </label>
-            <button type="button" onclick={() => doUnlink(l.plugin_key)} disabled={busy}>{t('trackers.unlink')}</button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
+              <Button size="sm" variant="danger-ghost" icon="x" disabled={busy} onclick={() => doUnlink(l.plugin_key)}>{t('trackers.unlink')}</Button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
 
-    <section aria-labelledby="link">
-      <h2 id="link">{t('trackers.link')}</h2>
-      <form onsubmit={(e) => { e.preventDefault(); void doLink(); }}>
-        <label for="plugin-key">{t('trackers.plugin_key')}</label>
-        <input id="plugin-key" bind:value={pluginKey} />
-        <label for="token">{t('trackers.token')}</label>
-        <input id="token" type="password" bind:value={token} />
-        <button type="submit" disabled={busy}>{t('trackers.link_action')}</button>
+    <section class="section" aria-labelledby="link">
+      <div class="section-head"><h2 id="link">{t('trackers.link')}</h2></div>
+      <form class="new" onsubmit={(e) => { e.preventDefault(); void doLink(); }}>
+        <Field label={t('trackers.plugin_key')}>
+          {#snippet children(control)}<Input {...control} bind:value={pluginKey} autocomplete="off" />{/snippet}
+        </Field>
+        <Field label={t('trackers.token')} hint={t('trackers.link_help')}>
+          {#snippet children(control)}<Input {...control} type="password" bind:value={token} autocomplete="off" />{/snippet}
+        </Field>
+        <div class="btn-row">
+          <Button type="submit" variant="primary" icon="plus" loading={busy}>{t('trackers.link_action')}</Button>
+        </div>
       </form>
     </section>
   {/if}
@@ -192,16 +235,43 @@
     <ReauthPrompt methods={reauth.reauthMethods} ondone={() => reauth.afterReauth()} oncancel={() => reauth.cancelReauth()} />
   {/if}
 
-  {#if notice}
-    <p role={notice.kind === 'alert' ? 'alert' : 'status'}>{notice.text}</p>
+  {#if notice && loaded && !failed && !notAllowed}
+    <div class="notice">
+      <Alert
+        tone={notice.kind === 'alert' ? 'danger' : 'success'}
+        title={notice.text}
+        live={notice.kind === 'alert' ? 'assertive' : 'polite'}
+      />
+    </div>
   {/if}
 </main>
 
 <style>
-  main { max-width: 48rem; margin: 0 auto; padding: 2rem 1rem; }
-  section { margin: 1.5rem 0; }
-  ul { list-style: none; padding: 0; }
-  li { margin: 0.75rem 0; padding: 0.5rem; border: 1px solid var(--color-muted, #ccc); border-radius: 0.5rem; }
-  form { display: grid; gap: 0.5rem; margin: 1rem 0; }
-  button { margin-right: 0.5rem; }
+  .tracker {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    padding-block: var(--space-3);
+  }
+  .tracker p {
+    margin: 0;
+  }
+  .tracker__name {
+    font: 600 var(--step-1) / var(--leading-tight) var(--font-text);
+    overflow-wrap: anywhere;
+  }
+  .new {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .notice {
+    margin-top: var(--space-5);
+  }
+  @media (max-width: 40rem) {
+    .tracker {
+      grid-template-columns: minmax(0, 1fr);
+      justify-items: start;
+    }
+  }
 </style>

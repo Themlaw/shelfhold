@@ -201,7 +201,7 @@ describe('Assistant : dossier partagé', () => {
     const user = userEvent.setup();
     const section = (await screen.findByRole('region', { name: 'Ou créer une bibliothèque neuve' }));
     const make = within(section).getByRole('button', { name: 'Créer la bibliothèque' });
-    expect(make).toBeDisabled();
+    expect(make).toHaveAttribute('aria-disabled', 'true');
     await user.type(within(section).getByLabelText('Nom de la bibliothèque'), ' Mangas ');
     await user.click(make);
     expect(await screen.findByText('Bibliothèque créée et liée.')).toBeInTheDocument();

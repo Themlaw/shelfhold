@@ -193,6 +193,7 @@ describe('Connecter une liseuse', () => {
     );
     const { container } = render(Page);
     await userEvent.click(await screen.findByRole('button', { name: /Nouveau secret/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Créer un nouveau secret' }));
     await waitFor(() => expect(rotated).toBe('d1'));
     expect((await screen.findByTestId('secret')).textContent).toBe(SECRET);
     expect(screen.getByTestId('public-id').textContent).toBe('abcd2345');
@@ -216,6 +217,8 @@ describe('Connecter une liseuse', () => {
     );
     render(Page);
     await userEvent.click(await screen.findByRole('button', { name: 'Retirer' }));
+    const confirm = await screen.findAllByRole('button', { name: 'Retirer' });
+    await userEvent.click(confirm[confirm.length - 1]!);
     await waitFor(() => expect(removed).toBe(true));
     expect(await screen.findByText(/Aucune liseuse n'est connectée/)).toBeInTheDocument();
   });

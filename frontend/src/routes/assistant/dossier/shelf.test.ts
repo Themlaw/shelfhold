@@ -53,7 +53,7 @@ describe('Assistant : dossier partagé, l\'étagère liée à Kavita', () => {
     expect([...age.options].map((o) => o.value)).toEqual(['18+', '13+']);
     // the audit of who may read the library is said before the button is pressed
     expect(form.getByText(/demande à Kavita quels comptes/)).toBeInTheDocument();
-    expect(form.getByRole('button', { name: "Créer l'étagère et la lier à Kavita" })).toBeEnabled();
+    expect(form.getByRole('button', { name: "Créer l'étagère et la lier à Kavita" })).not.toHaveAttribute('aria-disabled');
   });
 
   // req: ENF-UX-001
@@ -174,7 +174,7 @@ describe('Assistant : dossier partagé, l\'étagère liée à Kavita', () => {
     for (const bad of ['../dehors', '/etc', 'a/b', '.cache', '']) {
       await user.clear(folder);
       if (bad) await user.type(folder, bad);
-      expect(make, `"${bad}"`).toBeDisabled();
+      expect(make, `"${bad}"`).toHaveAttribute('aria-disabled', 'true');
     }
     expect(calls).toBe(0);
   });

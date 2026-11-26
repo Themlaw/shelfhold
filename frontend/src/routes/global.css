@@ -480,7 +480,9 @@ a.standalone {
     background: var(--color-bg);
   }
   /* a form screen's submit is the accent button: its text colour is meant for that background */
-  .form-screen form > button[type='submit']:last-child {
+  .form-screen form > button[type='submit']:last-child,
+  form > button.btn--primary[type='submit']:last-child,
+  .main-action.btn--primary {
     background: var(--color-accent);
   }
 }

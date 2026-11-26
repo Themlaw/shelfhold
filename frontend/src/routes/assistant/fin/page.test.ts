@@ -117,9 +117,9 @@ describe('Assistant : fin', () => {
     // nothing to finish with while the server says the keyring was not exported
     expect(screen.queryByRole('link', { name: 'Terminer' })).toBeNull();
     const exportButton = screen.getByRole('button', { name: 'Exporter le trousseau' });
-    expect(exportButton).toBeDisabled(); // no phrase yet
+    expect(exportButton).toHaveAttribute('aria-disabled', 'true'); // no phrase yet
     await user.type(field, 'trop court');
-    expect(exportButton).toBeDisabled(); // under twelve characters: no request leaves
+    expect(exportButton).toHaveAttribute('aria-disabled', 'true'); // under twelve characters: no request leaves
     await user.clear(field);
     await user.type(field, PHRASE);
     await user.click(exportButton);
@@ -262,7 +262,7 @@ describe('Assistant : fin', () => {
     render(Page);
     const user = userEvent.setup();
     const button = await screen.findByRole('button', { name: 'Lancer le premier livre' });
-    expect(button).toBeDisabled(); // nothing typed
+    expect(button).toHaveAttribute('aria-disabled', 'true'); // nothing typed
     await user.type(screen.getByLabelText('Numéro du livre sur Gutenberg (libre de droits aux États-Unis)'), ' 84 ');
     await user.click(button);
     expect(await screen.findByText('Premier livre lancé.')).toBeInTheDocument();

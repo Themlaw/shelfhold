@@ -18,8 +18,15 @@
   import type { WizardStateOut } from '#lib/api/types.gen.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
-  import WizardSteps from '#lib/components/WizardSteps.svelte';
+  import WizardPage from '#lib/components/WizardPage.svelte';
+  import WizardSignedOut from '#lib/components/WizardSignedOut.svelte';
   import { t } from '#lib/i18n/index.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import type { ProblemView } from '#lib/problems.ts';
   import { attempt, type Outcome } from '#lib/wizard.ts';
@@ -138,15 +145,9 @@
   <title>{t('admin.wizard.fin.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('admin.wizard.title')}</h1>
-  <WizardSteps current="fin" />
-  <h2>{t('admin.wizard.fin.title')}</h2>
-
+<WizardPage current="fin" title={t('admin.wizard.fin.title')}>
   {#if signedOut}
-    <p role="alert">{t('admin.wizard.signed_out')}</p>
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <p><a href="/login" data-sveltekit-reload>{t('admin.wizard.login')}</a></p>
+    <WizardSignedOut />
   {:else}
     {#if reauthMethods}
       <ReauthPrompt
@@ -157,96 +158,101 @@
     {/if}
     {#if problem}<ProblemCard {problem} />{/if}
 
+    {#if !facts && !problem}
+      <div aria-busy="true">
+        <p class="visually-hidden" role="status">{t('admin.wizard.loading')}</p>
+        <Skeleton /><Skeleton /><Skeleton short />
+      </div>
+    {/if}
+
     {#if facts}
-      <section aria-labelledby="fin-jurisdiction">
-        <h3 id="fin-jurisdiction">{t('admin.wizard.fin.jurisdiction')}</h3>
-        {#if facts.jurisdiction.confirmed}
-          <p role="status">{t('admin.wizard.fin.jurisdiction_confirmed')}</p>
-        {:else}
+      <section class="panel step" aria-labelledby="fin-jurisdiction">
+        <h3 id="fin-jurisdiction">
+          {t('admin.wizard.fin.jurisdiction')}
+          {#if facts.jurisdiction.confirmed}<Badge tone="success">{t('admin.wizard.fin.jurisdiction_confirmed')}</Badge>{/if}
+        </h3>
+        {#if !facts.jurisdiction.confirmed}
           <p>{t('admin.wizard.fin.country', { country: facts.jurisdiction.country })}</p>
-          <label>
-            {t('admin.wizard.fin.country_code')}
-            <input bind:value={country} maxlength="2" autocomplete="off" />
-          </label>
-          <button type="button" disabled={busy || country.trim().length !== 2} onclick={confirmJurisdiction}>
-            {t('admin.wizard.fin.confirm_jurisdiction')}
-          </button>
+          <Field label={t('admin.wizard.fin.country_code')}>
+            {#snippet children(control)}
+              <Input {...control} bind:value={country} maxlength={2} autocomplete="off" width="short" />
+            {/snippet}
+          </Field>
+          <div class="btn-row">
+            <Button disabled={country.trim().length !== 2} loading={busy} onclick={confirmJurisdiction}>
+              {t('admin.wizard.fin.confirm_jurisdiction')}
+            </Button>
+          </div>
         {/if}
       </section>
 
-      <section aria-labelledby="fin-keyring">
+      <section class="panel step" aria-labelledby="fin-keyring">
         <h3 id="fin-keyring">{t('admin.wizard.fin.keyring')}</h3>
         <p>{t('admin.wizard.fin.keyring_help')}</p>
-        <label>
-          {t('admin.wizard.fin.keyring_phrase')}
-          <input
-            type="password"
-            bind:value={phrase}
-            autocomplete="new-password"
-            spellcheck="false"
-          />
-        </label>
-        <button
-          type="button"
-          disabled={busy || phrase.length < MIN_PASSPHRASE}
-          onclick={exportKeyring}
-        >
-          {t('admin.wizard.fin.export_keyring')}
-        </button>
-        {#if exportedNow}<p role="status">{t('admin.wizard.fin.keyring_exported')}</p>{/if}
-        <p>{t('admin.wizard.fin.recovery_kit_help')}</p>
+        <Field label={t('admin.wizard.fin.keyring_phrase')}>
+          {#snippet children(control)}
+            <Input {...control} type="password" bind:value={phrase} autocomplete="new-password" spellcheck={false} />
+          {/snippet}
+        </Field>
+        <div class="btn-row">
+          <Button icon="download" disabled={phrase.length < MIN_PASSPHRASE} loading={busy} onclick={exportKeyring}>
+            {t('admin.wizard.fin.export_keyring')}
+          </Button>
+        </div>
+        {#if exportedNow}<Alert tone="success" title={t('admin.wizard.fin.keyring_exported')} live="polite" />{/if}
+        <p class="hint">{t('admin.wizard.fin.recovery_kit_help')}</p>
         <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- a page of the server, in its own tab -->
         <a class="standalone" href={RECOVERY_KIT} target="_blank" rel="noopener">{t('admin.wizard.fin.recovery_kit')}</a>
       </section>
 
-      <section aria-labelledby="fin-admin">
+      <section class="panel step" aria-labelledby="fin-admin">
         <h3 id="fin-admin">{t('admin.wizard.fin.second_admin')}</h3>
         <p>{t('admin.wizard.fin.second_admin_help')}</p>
-        <label>
-          {t('admin.wizard.fin.admin_name')}
-          <input bind:value={adminName} autocomplete="off" disabled={adminDone} />
-        </label>
-        <label>
-          {t('admin.wizard.fin.admin_password')}
-          <input
-            type="password"
-            bind:value={adminPassword}
-            autocomplete="new-password"
-            disabled={adminDone}
-          />
-        </label>
-        <button
-          type="button"
-          disabled={busy || adminDone || adminName.trim() === '' || adminPassword === ''}
-          onclick={addSecondAdmin}
-        >
-          {t('admin.wizard.fin.add_admin')}
-        </button>
-        {#if adminDone}<p role="status">{t('admin.wizard.fin.admin_added')}</p>{/if}
+        <Field label={t('admin.wizard.fin.admin_name')}>
+          {#snippet children(control)}
+            <Input {...control} bind:value={adminName} autocomplete="off" disabled={adminDone} />
+          {/snippet}
+        </Field>
+        <Field label={t('admin.wizard.fin.admin_password')}>
+          {#snippet children(control)}
+            <Input {...control} type="password" bind:value={adminPassword} autocomplete="new-password" disabled={adminDone} />
+          {/snippet}
+        </Field>
+        <div class="btn-row">
+          <Button
+            icon="user"
+            disabled={adminDone || adminName.trim() === '' || adminPassword === ''}
+            loading={busy}
+            onclick={addSecondAdmin}
+          >
+            {t('admin.wizard.fin.add_admin')}
+          </Button>
+        </div>
+        {#if adminDone}<Alert tone="success" title={t('admin.wizard.fin.admin_added')} live="polite" />{/if}
       </section>
 
-      <section aria-labelledby="fin-book">
+      <section class="panel step" aria-labelledby="fin-book">
         <h3 id="fin-book">{t('admin.wizard.fin.first_book')}</h3>
-        <label>
-          {t('admin.wizard.fin.book_id')}
-          <input bind:value={bookId} inputmode="numeric" autocomplete="off" disabled={bookDone} />
-        </label>
-        <button
-          type="button"
-          disabled={busy || bookDone || bookId.trim() === ''}
-          onclick={launchFirstBook}
-        >
-          {t('admin.wizard.fin.launch_book')}
-        </button>
-        {#if bookDone}<p role="status">{t('admin.wizard.fin.book_launched')}</p>{/if}
+        <Field label={t('admin.wizard.fin.book_id')}>
+          {#snippet children(control)}
+            <Input {...control} bind:value={bookId} inputmode="numeric" autocomplete="off" disabled={bookDone} width="short" />
+          {/snippet}
+        </Field>
+        <div class="btn-row">
+          <Button icon="read" disabled={bookDone || bookId.trim() === ''} loading={busy} onclick={launchFirstBook}>
+            {t('admin.wizard.fin.launch_book')}
+          </Button>
+        </div>
+        {#if bookDone}<Alert tone="success" title={t('admin.wizard.fin.book_launched')} live="polite" />{/if}
       </section>
 
-      {#if canFinish}
-        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-        <a href="/">{t('admin.wizard.fin.finish')}</a>
-      {:else}
-        <p>{t('admin.wizard.fin.finish_blocked')}</p>
-      {/if}
+      <div class="finish">
+        {#if canFinish}
+          <Button href="/" variant="primary" size="lg" iconEnd="right">{t('admin.wizard.fin.finish')}</Button>
+        {:else}
+          <Alert tone="info" title={t('admin.wizard.fin.finish_blocked')} />
+        {/if}
+      </div>
     {/if}
   {/if}
-</main>
+</WizardPage>

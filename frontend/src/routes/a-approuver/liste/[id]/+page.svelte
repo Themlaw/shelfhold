@@ -10,7 +10,13 @@
   import type { ListItemOut, ListReviewOut, QueueItemOut } from '#lib/api/types.gen.ts';
   import ApproveSheet from '#lib/components/ApproveSheet.svelte';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import DecisionPanel from '#lib/components/DecisionPanel.svelte';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Dialog from '#lib/ui/molecules/Dialog.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
 
@@ -31,6 +37,15 @@
     cancelled: 'lists.state.cancelled',
     to_buy: 'lists.state.to_buy',
     borrow_elsewhere: 'lists.state.borrow_elsewhere'
+  };
+
+  const TONES: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> = {
+    approved: 'success',
+    arrived: 'success',
+    rejected: 'danger',
+    not_found: 'danger',
+    to_buy: 'warning',
+    borrow_elsewhere: 'warning'
   };
 
   async function load(): Promise<void> {
@@ -98,114 +113,99 @@
   <title>{review?.name ?? t('lists.review_title')}</title>
 </svelte:head>
 
-<main>
+<main class="page page--read">
+  <div class="running-head">
+    <span>{t('lists.title')}</span>
+  </div>
   {#if !loaded}
-    <h1>{t('lists.review_title')}</h1>
-    <p>{t('home.loading')}</p>
+    <div class="page-head"><h1 class="page-title">{t('lists.review_title')}</h1></div>
+    <div aria-busy="true"><p class="visually-hidden" role="status">{t('home.loading')}</p><Skeleton /><Skeleton /><Skeleton short /></div>
   {:else if problem || !review}
-    <h1>{t('lists.review_title')}</h1>
+    <div class="page-head"><h1 class="page-title">{t('lists.review_title')}</h1></div>
     {#if problem}<ProblemCard {problem} />{/if}
   {:else}
-    <h1>{review.name}</h1>
-    <p class="summary">
-      {t('lists.counts', { in_library: review.in_library, requested: review.requested })}
-    </p>
-    {#if review.annotated > 0}
-      <p class="warning" role="status">{t('lists.annotated_warning', { count: review.annotated })}</p>
-    {/if}
-    {#if review.user_role === 'child'}
-      <p class="hint">{t('lists.child_note')}</p>
-    {/if}
-    {#if review.items.length > 0 && review.items.every((i) => i.text === null)}
-      <p class="hint">{t('lists.private_adult')}</p>
-    {/if}
+    <div class="page-head">
+      <div class="page-head__text">
+        <h1 class="page-title">{review.name}</h1>
+        <p class="lede">{t('lists.counts', { in_library: review.in_library, requested: review.requested })}</p>
+      </div>
+    </div>
+    <div class="notes">
+      {#if review.annotated > 0}
+        <Alert tone="warning" title={t('lists.annotated_warning', { count: review.annotated })} live="polite" />
+      {/if}
+      {#if review.user_role === 'child'}
+        <Alert tone="info" title={t('lists.child_note')} />
+      {/if}
+      {#if review.items.length > 0 && review.items.every((i) => i.text === null)}
+        <Alert tone="info" title={t('lists.private_adult')} />
+      {/if}
+    </div>
 
-    <ol>
+    <ol class="entries" role="list">
       {#each review.items as item (item.position)}
-        <li>
-          <span class="line">{item.text ?? t('approve.masked')}</span>
-          {#if item.in_library}
-            <span class="badge">{t('lists.outcome.in_library')}</span>
-          {:else}
-            <span class="badge">{t(STATES[item.request_state ?? ''] ?? 'lists.state.pending')}</span>
-          {/if}
-          {#if item.annotated}<span class="badge warn">{t('lists.annotated')}</span>{/if}
-          {#if item.needs_age}<span class="badge">{t('approve.needs_age')}</span>{/if}
+        <li class="line">
+          <span class="line__no folio">{item.position}</span>
+          <span class="line__text">{item.text ?? t('approve.masked')}</span>
+          <span class="line__badges">
+            {#if item.in_library}
+              <Badge tone="success">{t('lists.outcome.in_library')}</Badge>
+            {:else}
+              <Badge tone={TONES[item.request_state ?? ''] ?? 'neutral'}>{t(STATES[item.request_state ?? ''] ?? 'lists.state.pending')}</Badge>
+            {/if}
+            {#if item.annotated}<Badge tone="warning">{t('lists.annotated')}</Badge>{/if}
+            {#if item.needs_age}<Badge tone="warning" icon={null}>{t('approve.needs_age')}</Badge>{/if}
+          </span>
           {#if open(item)}
-            <button type="button" onclick={() => (selected = item)}>{t('lists.decide')}</button>
+            <Button size="sm" onclick={() => (selected = item)}>{t('lists.decide')}</Button>
           {/if}
         </li>
       {/each}
     </ol>
-
-    {#if selected}
-      {#key selected.position}
-        <ApproveSheet item={asQueueItem(selected)} onapproved={decided} />
-      {/key}
-      <div class="reject">
-        <label>
-          {t('approve.reason')}
-          <input bind:value={reason} />
-        </label>
-        <button type="button" disabled={reason.trim() === ''} onclick={doReject}>
-          {t('approve.reject')}
-        </button>
-        <button type="button" onclick={doNotFound}>{t('approve.not_found')}</button>
-        <button type="button" onclick={close}>{t('approve.close')}</button>
-      </div>
-      {#if decisionProblem}
-        <ProblemCard problem={decisionProblem} level={3} />
-      {/if}
-    {/if}
   {/if}
-  <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-  <p><a href="/a-approuver/liste">{t('lists.back_lists')}</a></p>
 </main>
 
+{#if selected}
+  <Dialog open={true} title={t('lists.decide')} description={t('approve.dialog_help')} onclose={close}>
+    {#key selected.position}
+      <ApproveSheet item={asQueueItem(selected)} onapproved={decided} />
+    {/key}
+    <DecisionPanel bind:reason onreject={doReject} onnotfound={doNotFound} onclose={close} />
+    {#if decisionProblem}
+      <ProblemCard problem={decisionProblem} level={3} />
+    {/if}
+  </Dialog>
+{/if}
+
 <style>
-  main {
-    max-width: 42rem;
-    margin: 0 auto;
-    padding: 1rem;
-  }
-  ol {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  li {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    flex-wrap: wrap;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--color-rule);
+  .notes {
+    display: grid;
+    gap: var(--space-3);
+    margin-bottom: var(--space-5);
   }
   .line {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--space-3);
+    padding-block: var(--space-2);
+  }
+  .line__text {
     overflow-wrap: anywhere;
   }
-  .summary,
-  .hint {
-    color: var(--color-muted);
-  }
-  .badge {
-    padding: 0.125rem 0.5rem;
-    border-radius: 999px;
-    border: 1px solid var(--color-rule);
-  }
-  .warning,
-  .warn {
-    border: 1px solid var(--color-rule);
-  }
-  .warning {
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.5rem;
-  }
-  .reject {
+  .line__badges {
     display: flex;
-    gap: 0.5rem;
     flex-wrap: wrap;
-    align-items: end;
-    margin-top: 1rem;
+    gap: var(--space-2);
+  }
+  @media (max-width: 40rem) {
+    .line {
+      grid-template-columns: 2rem minmax(0, 1fr);
+    }
+    .line__badges,
+    .line > :global(.btn) {
+      grid-column: 2;
+      justify-self: start;
+    }
   }
 </style>

@@ -8,7 +8,14 @@
   } from '#lib/api/index.ts';
   import type { PasskeyItem } from '#lib/api/types.gen.ts';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
-  import { t } from '#lib/i18n/index.ts';
+  import { formatDate, t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import ConfirmDialog from '#lib/ui/molecules/ConfirmDialog.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
   import { createPasskey, csrfToken, passkeysSupported } from '#lib/passkeys.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
 
@@ -19,6 +26,9 @@
   let message = $state('');
   let failed = $state(false);
   let busy = $state(false);
+  let loaded = $state(false);
+  let revoking = $state<PasskeyItem | null>(null);
+  let revokeOpen = $state(false);
   let reauthMethods = $state<string[] | null>(null);
   let retry: (() => Promise<void>) | null = null;
 
@@ -34,6 +44,7 @@
       failed = true;
       message = t('passkeys.error');
     }
+    loaded = true;
   }
 
   onMount(load);
@@ -117,30 +128,66 @@
   <title>{t('passkeys.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('passkeys.title')}</h1>
+<main class="page page--form">
+  <div class="running-head"><span>{t('nav.settings')}</span></div>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('passkeys.title')}</h1>
+      <p class="lede">{t('passkeys.lede')}</p>
+    </div>
+  </div>
 
-  {#if items.length === 0}
-    <p>{t('passkeys.none')}</p>
+  {#if !loaded}
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('passkeys.loading')}</p>
+      <Skeleton /><Skeleton short />
+    </div>
   {:else}
-    <ul>
-      {#each items as item (item.id)}
-        <li>
-          <span>{item.name}</span>
-          <button type="button" onclick={() => revoke(item)}>{t('passkeys.revoke')}</button>
-        </li>
-      {/each}
-    </ul>
-  {/if}
+    <section class="section" aria-labelledby="pk-list">
+      <div class="section-head"><h2 id="pk-list">{t('passkeys.list')}</h2></div>
+      {#if items.length === 0}
+        <EmptyState title={t('passkeys.none')} headingLevel={3} art={false} />
+      {:else}
+        <ul class="entries" role="list">
+          {#each items as item (item.id)}
+            <li class="key">
+              <div class="key__text">
+                <p class="key__name">{item.name}</p>
+                <p class="key__meta hint">
+                  {t('passkeys.created', { date: formatDate(item.created_at, { day: 'numeric', month: 'long', year: 'numeric' }) })}
+                  · {item.last_used_at
+                    ? t('passkeys.last_used', { date: formatDate(item.last_used_at, { day: 'numeric', month: 'long', year: 'numeric' }) })
+                    : t('passkeys.never_used')}
+                </p>
+              </div>
+              <Button size="sm" variant="danger-ghost" icon="trash" onclick={() => { revoking = item; revokeOpen = true; }}>
+                {t('passkeys.revoke')}
+              </Button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
 
-  {#if available}
-    <form onsubmit={register}>
-      <label for="passkey-name">{t('passkeys.name')}</label>
-      <input id="passkey-name" bind:value={name} maxlength="64" required />
-      <button type="submit" disabled={busy}>{t('passkeys.add')}</button>
-    </form>
-  {:else if reason}
-    <p class="muted">{reason}</p>
+    <section class="section" aria-labelledby="pk-new">
+      <div class="section-head"><h2 id="pk-new">{t('passkeys.new')}</h2></div>
+      {#if available}
+        <form class="new" onsubmit={register}>
+          <Field label={t('passkeys.name')} hint={t('passkeys.name_help')} required>
+            {#snippet children(control)}
+              <Input {...control} bind:value={name} maxlength={64} autocomplete="off" />
+            {/snippet}
+          </Field>
+          <div class="btn-row">
+            <Button type="submit" variant="primary" icon="key" loading={busy}>{t('passkeys.add')}</Button>
+          </div>
+        </form>
+      {:else if reason}
+        <Alert tone="info" title={t('passkeys.unavailable_title')}>
+          <p>{reason}</p>
+        </Alert>
+      {/if}
+    </section>
   {/if}
 
   {#if reauthMethods}
@@ -148,31 +195,46 @@
   {/if}
 
   {#if message}
-    <p role={failed ? 'alert' : 'status'} class:err={failed}>{message}</p>
+    <div class="notice">
+      <Alert tone={failed ? 'danger' : 'success'} title={message} live={failed ? 'assertive' : 'polite'} />
+    </div>
   {/if}
 </main>
 
+{#if revoking}
+  <ConfirmDialog
+    bind:open={revokeOpen}
+    title={t('passkeys.revoke_title', { name: revoking.name })}
+    message={t('passkeys.revoke_message')}
+    confirmLabel={t('passkeys.revoke')}
+    onconfirm={async () => {
+      const target = revoking;
+      if (target) await revoke(target);
+    }}
+  />
+{/if}
+
 <style>
-  main {
-    max-width: 42rem;
-    margin: 0 auto;
-    padding: 3rem 1rem;
-  }
-  li {
+  .key {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.5rem 0;
+    gap: var(--space-2) var(--space-4);
+    padding-block: var(--space-3);
   }
-  form {
+  .key p {
+    margin: 0;
+  }
+  .key__name {
+    font: 600 var(--step-1) / var(--leading-tight) var(--font-text);
+    overflow-wrap: anywhere;
+  }
+  .new {
     display: grid;
-    gap: 0.5rem;
-    margin-top: 1.5rem;
+    gap: var(--space-4);
   }
-  .muted {
-    color: var(--color-muted);
-  }
-  .err {
-    color: var(--color-err);
+  .notice {
+    margin-top: var(--space-5);
   }
 </style>

@@ -23,9 +23,22 @@
   import { Guard } from '#lib/guard.svelte.ts';
   import { formatDateTime } from '#lib/i18n/format.ts';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import ConfirmDialog from '#lib/ui/molecules/ConfirmDialog.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import ErrorState from '#lib/ui/molecules/ErrorState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import SecretOnce from '#lib/ui/molecules/SecretOnce.svelte';
+  import { notify } from '#lib/ui/toast.svelte.ts';
   import { webAddress } from '#lib/links.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { isForbidden, needsReauth, needsSession } from '#lib/triage.ts';
+
+  let { data }: { data?: { user?: { role?: string } | null } } = $props();
 
   const CLOCK_SKEW_MS = 2 * 60 * 1000;
 
@@ -41,12 +54,21 @@
   let message = $state('');
   let failed = $state(false);
   let busy = $state(false);
+  let loaded = $state(false);
+  let asking = $state<{ device: DeviceOut; what: 'remove' | 'rotate' } | null>(null);
+  let askOpen = $state(false);
+  const ask = (device: DeviceOut, what: 'remove' | 'rotate') => {
+    asking = { device, what };
+    askOpen = true;
+  };
+  const labelOf = (device: DeviceOut) => device.label ?? device.public_id ?? '';
+  const child = $derived(data?.user?.role === 'child');
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
   const origin = () => (typeof window === 'undefined' ? '' : window.location.origin);
   const opdsAddress = $derived(setup ? webAddress(origin() + setup.opds_path) : null);
   const kosyncAddress = $derived(setup ? webAddress(origin() + setup.kosync_path) : null);
-  const KINDS: Array<[DeviceOut['kind'], MessageKey]> = [
+  const KIND_LIST: Array<[DeviceOut['kind'], MessageKey]> = [
     ['koreader', 'deviceTokens.kind_koreader'],
     ['kobo', 'deviceTokens.kind_kobo'],
     ['opds', 'deviceTokens.kind_opds'],
@@ -54,7 +76,7 @@
     ['other', 'deviceTokens.kind_other']
   ];
   const kindName = (value: DeviceOut['kind']): MessageKey =>
-    KINDS.find(([id]) => id === value)?.[1] ?? 'deviceTokens.kind_other';
+    KIND_LIST.find(([id]) => id === value)?.[1] ?? 'deviceTokens.kind_other';
   const subjects = $derived(profiles.filter((p) => p.role !== 'admin'));
   const skewed = $derived(
     setup !== null && Math.abs(Date.now() - Date.parse(setup.server_time)) > CLOCK_SKEW_MS
@@ -75,6 +97,7 @@
         profiles = found.data.items;
         if (!subject && subjects[0]) subject = subjects[0].id;
       }
+      loaded = true;
     });
   }
 
@@ -135,7 +158,7 @@
         throwOnError: true
       });
       shown = { publicId: data.public_id, secret: data.secret };
-      message = t('deviceTokens.rotated', { name: device.label ?? device.public_id ?? '' });
+      notify({ title: t('deviceTokens.rotated', { name: labelOf(device) }), tone: 'info' });
     });
   }
 
@@ -145,7 +168,7 @@
       if (shown?.publicId === device.public_id) forget();
       const list = await deviceList({ throwOnError: true });
       devices = list.data.items;
-      message = t('deviceTokens.removed', { name: device.label ?? device.public_id ?? '' });
+      notify({ title: t('deviceTokens.removed', { name: labelOf(device) }) });
     });
   }
 
@@ -154,17 +177,44 @@
     forbidden: 'deviceTokens.forbidden',
     failed: 'devices.error'
   } as const;
+  const TITLES = {
+    signed_out: 'devices.signed_out_title',
+    forbidden: 'deviceTokens.forbidden_title',
+    failed: 'devices.failed_title'
+  } as const;
+  const KINDS = { signed_out: 'signed-out', forbidden: 'forbidden', failed: 'server' } as const;
+
+  async function copy(url: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(url);
+      notify({ title: t('ui.secret.copied', { what: url }) });
+    } catch {
+      notify({ title: t('ui.secret.copy_failed'), tone: 'warning' });
+    }
+  }
 </script>
 
 <svelte:head>
   <title>{t('deviceTokens.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('deviceTokens.title')}</h1>
+<main class="page">
+  <div class="running-head">
+    <span>{t('nav.devices')}</span>
+  </div>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('deviceTokens.title')}</h1>
+      {#if guard.state === 'ok'}<p class="lede">{t('deviceTokens.lede')}</p>{/if}
+    </div>
+  </div>
 
   {#if guard.state !== 'ok'}
-    <p role="alert" class="err">{t(MESSAGES[guard.state])}</p>
+    <div role="alert">
+    <ErrorState kind={KINDS[guard.state]} title={t(TITLES[guard.state])} headingLevel={2}>
+      {guard.state === 'forbidden' && child ? t('deviceTokens.forbidden_child') : t(MESSAGES[guard.state])}
+    </ErrorState>
+    </div>
   {:else}
     {#if guard.reauthMethods}
       <ReauthPrompt
@@ -174,43 +224,74 @@
       />
     {/if}
 
-    <p>{t('deviceTokens.intro')}</p>
+    {#if shown}
+      <div class="secret">
+        <SecretOnce
+          title={t('deviceTokens.once_title')}
+          note={t('deviceTokens.once_note')}
+          fields={[
+            { label: t('deviceTokens.identifier'), value: shown.publicId, testid: 'public-id' },
+            { label: t('deviceTokens.secret'), value: shown.secret, secret: true, testid: 'secret' }
+          ]}
+          footnote={t('deviceTokens.as_is')}
+          ackLabel={t('deviceTokens.noted')}
+          onack={forget}
+        />
+      </div>
+    {/if}
+
+    {#if !loaded}
+      <div aria-busy="true">
+        <p class="visually-hidden" role="status">{t('deviceTokens.loading')}</p>
+        <Skeleton /><Skeleton /><Skeleton short />
+      </div>
+    {/if}
 
     {#if setup}
       {#if !setup.https}
-        <p role="alert" class="err">
-          {setup.plain_http_allowed
-            ? t('deviceTokens.plain_allowed')
-            : t('deviceTokens.plain_refused')}
-        </p>
+        <div class="notes">
+          <Alert tone="warning" title={setup.plain_http_allowed ? t('deviceTokens.plain_allowed') : t('deviceTokens.plain_refused')} live="assertive" />
+        </div>
       {/if}
 
-      <section aria-labelledby="where">
-        <h2 id="where">{t('deviceTokens.where')}</h2>
-        <dl>
-          <dt>{t('deviceTokens.opds_address')}</dt>
-          <dd><code>{opdsAddress ?? setup.opds_path}</code></dd>
-          <dt>{t('deviceTokens.kosync_address')}</dt>
-          <dd><code>{kosyncAddress ?? setup.kosync_path}</code></dd>
-        </dl>
-        {#if opdsAddress}
-          <QrCode
-            text={opdsAddress}
-            label={t('deviceTokens.qr_label', { url: opdsAddress })}
-          />
-          <p class="muted">{t('deviceTokens.qr_note')}</p>
-        {/if}
-        <p>{t('deviceTokens.https_required')}</p>
-        <p>
-          {t('deviceTokens.server_time', {
-            time: formatDateTime(setup.server_time)
-          })}
-        </p>
-        {#if skewed}
-          <p role="status" class="err">{t('deviceTokens.clock_skew')}</p>
-        {/if}
-        <p>{t('deviceTokens.clock_note')}</p>
-        <ul>
+      <section class="section" aria-labelledby="where">
+        <div class="section-head"><h2 id="where">{t('deviceTokens.where')}</h2></div>
+        <div class="cols">
+          <div>
+            <dl class="meta-list addresses">
+              <dt>{t('deviceTokens.opds_address')}</dt>
+              <dd class="address">
+                <code>{opdsAddress ?? setup.opds_path}</code>
+                {#if opdsAddress}
+                  <Button size="sm" icon="copy" aria-label={`${t('devices.copy_address')} : ${t('deviceTokens.opds_address')}`} onclick={() => copy(opdsAddress)}>{t('ui.secret.copy_short')}</Button>
+                {/if}
+              </dd>
+              <dt>{t('deviceTokens.kosync_address')}</dt>
+              <dd class="address">
+                <code>{kosyncAddress ?? setup.kosync_path}</code>
+                {#if kosyncAddress}
+                  <Button size="sm" icon="copy" aria-label={`${t('devices.copy_address')} : ${t('deviceTokens.kosync_address')}`} onclick={() => copy(kosyncAddress)}>{t('ui.secret.copy_short')}</Button>
+                {/if}
+              </dd>
+            </dl>
+            <p>{t('deviceTokens.https_required')}</p>
+            <p class="hint">
+              {t('deviceTokens.server_time', { time: formatDateTime(setup.server_time) })}
+            </p>
+            {#if skewed}
+              <Alert tone="warning" title={t('deviceTokens.clock_skew')} live="polite" />
+            {/if}
+            <p class="hint">{t('deviceTokens.clock_note')}</p>
+          </div>
+          {#if opdsAddress}
+            <figure class="qr">
+              <QrCode text={opdsAddress} label={t('deviceTokens.qr_label', { url: opdsAddress })} />
+              <figcaption class="hint">{t('deviceTokens.qr_note')}</figcaption>
+            </figure>
+          {/if}
+        </div>
+        <h3 class="technical">{t('deviceTokens.technical')}</h3>
+        <ul class="technical-list">
           <li>{t('deviceTokens.method_binary')}</li>
           <li>{t('deviceTokens.single_server')}</li>
           <li>{t('deviceTokens.in_clear')}</li>
@@ -218,152 +299,156 @@
       </section>
     {/if}
 
-    {#if shown}
-      <section class="once" aria-labelledby="once-title">
-        <h2 id="once-title">{t('deviceTokens.once_title')}</h2>
-        <p>{t('deviceTokens.once_note')}</p>
-        <p>
-          {t('deviceTokens.identifier')} : <code data-testid="public-id">{shown.publicId}</code>
-        </p>
-        <p>
-          {t('deviceTokens.secret')} :
-          <code class="secret" data-testid="secret">{shown.secret}</code>
-        </p>
-        <p class="muted">{t('deviceTokens.as_is')}</p>
-        <button type="button" onclick={forget}>{t('deviceTokens.noted')}</button>
+    {#if loaded && (role === 'admin' || role === 'member')}
+      <section class="section" aria-labelledby="new-title">
+        <div class="section-head"><h2 id="new-title">{t('deviceTokens.new')}</h2></div>
+        <form class="new" onsubmit={pair} aria-labelledby="new-title">
+          {#if role === 'admin'}
+            <Field label={t('deviceTokens.profile')} hint={t('deviceTokens.admin_note')} required>
+              {#snippet children(control)}
+                <Select {...control} bind:value={subject} options={subjects.map((p) => ({ value: p.id, label: p.username }))} />
+              {/snippet}
+            </Field>
+          {/if}
+          <Field label={t('deviceTokens.kind')}>
+            {#snippet children(control)}
+              <Select {...control} bind:value={kind} options={KIND_LIST.map(([id, label]) => ({ value: id, label: t(label) }))} />
+            {/snippet}
+          </Field>
+          <Field label={t('deviceTokens.name')}>
+            {#snippet children(control)}
+              <Input {...control} type="text" bind:value={name} maxlength={80} autocomplete="off" />
+            {/snippet}
+          </Field>
+          <div class="btn-row">
+            <Button type="submit" variant="primary" icon="plus" disabled={role === 'admin' && !subject} loading={busy}>
+              {t('deviceTokens.create')}
+            </Button>
+          </div>
+        </form>
+        {#if failed && message}
+          <div class="notes"><Alert tone="danger" title={message} live="assertive" /></div>
+        {/if}
       </section>
     {/if}
 
-    {#if role === 'admin' || role === 'member'}
-      <form onsubmit={pair} aria-label={t('deviceTokens.new')}>
-        <h2>{t('deviceTokens.new')}</h2>
-        {#if role === 'admin'}
-          <label>
-            {t('deviceTokens.profile')}
-            <select bind:value={subject} required>
-              {#each subjects as profile (profile.id)}
-                <option value={profile.id}>{profile.username}</option>
-              {/each}
-            </select>
-          </label>
-          <p class="muted">{t('deviceTokens.admin_note')}</p>
-        {/if}
-        <label>
-          {t('deviceTokens.kind')}
-          <select bind:value={kind}>
-            {#each KINDS as [id, label] (id)}
-              <option value={id}>{t(label)}</option>
+    {#if loaded}
+      <section class="section" aria-labelledby="list-title">
+        <div class="section-head"><h2 id="list-title">{t('deviceTokens.list')}</h2></div>
+        {#if devices.length === 0}
+          <EmptyState title={t('deviceTokens.none')} headingLevel={3} art={false} />
+        {:else}
+          <ul class="entries" role="list">
+            {#each devices as device (device.id)}
+              <li class="device">
+                <div class="device__text">
+                  <p class="device__name">{labelOf(device)}</p>
+                  <p class="device__meta">
+                    {t(kindName(device.kind))} · {device.subject_username}
+                    <span class="hint">
+                      {device.last_seen_at
+                        ? t('deviceTokens.last_seen', { time: formatDateTime(device.last_seen_at) })
+                        : t('deviceTokens.never_seen')}
+                    </span>
+                  </p>
+                </div>
+                <div class="btn-row">
+                  <Button size="sm" icon="refresh" onclick={() => ask(device, 'rotate')}>{t('deviceTokens.rotate')}</Button>
+                  <Button size="sm" variant="danger-ghost" icon="trash" onclick={() => ask(device, 'remove')}>{t('deviceTokens.remove')}</Button>
+                </div>
+              </li>
             {/each}
-          </select>
-        </label>
-        <label>
-          {t('deviceTokens.name')}
-          <input type="text" bind:value={name} maxlength="80" autocomplete="off" />
-        </label>
-        <button type="submit" disabled={busy || (role === 'admin' && !subject)}>
-          {t('deviceTokens.create')}
-        </button>
-      </form>
+          </ul>
+        {/if}
+        <p class="hint">{t('deviceTokens.revoke_note')}</p>
+      </section>
     {/if}
-
-    {#if message}
-      <p role="status" class:err={failed}>{message}</p>
-    {/if}
-
-    <section aria-labelledby="list-title">
-      <h2 id="list-title">{t('deviceTokens.list')}</h2>
-      {#if devices.length === 0}
-        <p>{t('deviceTokens.none')}</p>
-      {:else}
-        <ul class="tokens">
-          {#each devices as device (device.id)}
-            <li>
-              <span>
-                <strong>{device.label ?? device.public_id ?? ''}</strong>
-                · {t(kindName(device.kind))} · {device.subject_username}
-                <br />
-                <span class="muted">
-                  {device.last_seen_at
-                    ? t('deviceTokens.last_seen', { time: formatDateTime(device.last_seen_at) })
-                    : t('deviceTokens.never_seen')}
-                </span>
-              </span>
-              <span class="actions">
-                <button type="button" onclick={() => rotate(device)}>
-                  {t('deviceTokens.rotate')}
-                </button>
-                <button type="button" onclick={() => remove(device)}>
-                  {t('deviceTokens.remove')}
-                </button>
-              </span>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-      <p class="muted">{t('deviceTokens.revoke_note')}</p>
-    </section>
   {/if}
 </main>
 
+{#if asking}
+  <ConfirmDialog
+    bind:open={askOpen}
+    title={asking.what === 'remove'
+      ? t('deviceTokens.remove_title', { name: labelOf(asking.device) })
+      : t('deviceTokens.rotate_title', { name: labelOf(asking.device) })}
+    message={asking.what === 'remove' ? t('deviceTokens.remove_message') : t('deviceTokens.rotate_message')}
+    confirmLabel={asking.what === 'remove' ? t('deviceTokens.remove') : t('deviceTokens.rotate_confirm')}
+    tone={asking.what === 'remove' ? 'danger' : 'primary'}
+    onconfirm={async () => {
+      const current = asking;
+      if (!current) return;
+      if (current.what === 'remove') await remove(current.device);
+      else await rotate(current.device);
+    }}
+  />
+{/if}
+
 <style>
-  main {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: 3rem 1rem;
+  .secret,
+  .notes {
+    margin-bottom: var(--space-5);
   }
-  h1 {
-    font-family: var(--font-display);
-    font-weight: 400;
-    font-style: italic;
-    letter-spacing: -0.02em;
+  .addresses {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+    margin-bottom: var(--space-4);
   }
-  section,
-  form {
-    margin: 1.5rem 0;
-    display: grid;
-    gap: 0.5rem;
+  .addresses dd {
+    margin-bottom: var(--space-3);
   }
-  label {
-    display: grid;
-    gap: 0.25rem;
-  }
-  .once {
-    padding: 1rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
-    background: var(--color-surface);
-  }
-  .secret {
-    font-size: 1.25em;
-    letter-spacing: 0.05em;
-    user-select: all;
-  }
-  .tokens {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 0.5rem;
-  }
-  .actions {
+  .address {
     display: flex;
-    gap: 0.5rem;
-  }
-  .tokens li {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
+    flex-wrap: wrap;
     align-items: center;
+    gap: var(--space-2) var(--space-3);
   }
-  code,
-  p,
-  dd {
+  .address code {
+    flex: 1 1 14rem;
+    min-width: 0;
     overflow-wrap: anywhere;
   }
-  .muted {
-    color: var(--color-muted);
+  .qr {
+    margin: 0;
+    display: grid;
+    gap: var(--space-2);
+    justify-items: start;
   }
-  .err {
-    color: var(--color-err);
+  .technical {
+    margin-top: var(--space-5);
+    font-size: var(--step-0);
+    font-family: var(--font-ui);
+  }
+  .technical-list {
+    margin: 0;
+    padding-left: 1.2em;
+    color: var(--color-muted);
+    max-width: var(--measure);
+  }
+  .new {
+    display: grid;
+    gap: var(--space-4);
+    max-inline-size: var(--form-max);
+  }
+  .device {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2) var(--space-4);
+    padding-block: var(--space-3);
+  }
+  .device p {
+    margin: 0;
+  }
+  .device__name {
+    font: 600 var(--step-1) / var(--leading-tight) var(--font-text);
+    overflow-wrap: anywhere;
+  }
+  .device__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    color: var(--color-muted);
   }
 </style>
