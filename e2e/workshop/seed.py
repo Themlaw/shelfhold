@@ -77,7 +77,7 @@ READING = {"admin": ("Vingt mille lieues sous les mers", 2, 0.4),
 CHAPTERS = {
     "Vingt mille lieues sous les mers": (
         "Un écueil fuyant", "Le pour et le contre", "Comme il plaira à monsieur",
-        "Ned Land", "À l'aventure",
+        "Le harponneur", "À l'aventure",
     ),
     "Hokusai Manga, choix de planches": ("Les gestes", "Les paysages", "Les esprits", "Les métiers", "Les foules"),
     "Little Nemo, les rêves": ("Le lit qui vole", "Le palais du Roi", "La chute", "Le réveil", "Le retour"),

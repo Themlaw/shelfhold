@@ -9,7 +9,6 @@ cours = "cours"
 sur = "sur"
 opf = "opf"
 appareil = "appareil"
-Ned = "Ned"
 
 # Exact identifiers: a pydantic setting and the in-toto provenance file name.
 [default.extend-identifiers]
