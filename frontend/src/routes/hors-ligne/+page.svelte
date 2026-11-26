@@ -14,6 +14,7 @@
   import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
   import Alert from '#lib/ui/molecules/Alert.svelte';
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
   import { copySize } from './copy-size.ts';
 
   let copies = $state<CopyMeta[]>([]);
@@ -71,13 +72,12 @@
 
 <svelte:head><title>{t('offline.library')}</title></svelte:head>
 
-<main class="page page--read">
-  <header class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('offline.library')}</h1>
-      <p class="lede">{t('offline.lead')}</p>
-    </div>
-  </header>
+<main class="page">
+  <PageHead
+    title={t('offline.library')}
+    lede={t('offline.lead')}
+    folio={loaded && !failed && copies.length > 0 ? t('offline.copy_count', { count: copies.length }) : undefined}
+  />
 
   {#if !loaded}
     <div class="loading" aria-busy="true">
@@ -102,7 +102,6 @@
       {/snippet}
     </EmptyState>
   {:else}
-    <p class="folio count">{t('offline.copy_count', { count: copies.length })}</p>
     <ul class="entries">
       {#each copies as copy (keyOf(copy))}
         {@const size = sizes[keyOf(copy)]}
@@ -129,9 +128,6 @@
 <style>
   main {
     padding: var(--space-5) var(--space-4);
-  }
-  .count {
-    margin: 0 0 var(--space-3);
   }
   .copy {
     display: flex;

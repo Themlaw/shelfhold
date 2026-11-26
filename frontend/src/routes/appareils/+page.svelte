@@ -13,6 +13,7 @@
   import Alert from '#lib/ui/molecules/Alert.svelte';
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
   import ErrorState, { type ErrorKind } from '#lib/ui/molecules/ErrorState.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
   import { notify } from '#lib/ui/toast.svelte.ts';
   import { webAddress } from '#lib/links.ts';
 
@@ -75,20 +76,13 @@
 </svelte:head>
 
 <main class="page">
-  <div class="running-head">
-    <span>{t('nav.devices')}</span>
-  </div>
-  <div class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('devices.title')}</h1>
-      {#if guard.state === 'ok'}<p class="lede">{t('devices.lede')}</p>{/if}
-    </div>
-    {#if guard.state === 'ok'}
-      <div class="page-head__actions">
+  <PageHead title={t('devices.title')} lede={guard.state === 'ok' ? t('devices.lede') : undefined}>
+    {#snippet actions()}
+      {#if guard.state === 'ok'}
         <Button href="/appareils/jetons" icon="device">{t('deviceTokens.title')}</Button>
-      </div>
-    {/if}
-  </div>
+      {/if}
+    {/snippet}
+  </PageHead>
 
   {#if guard.state !== 'ok'}
     <div role="alert">

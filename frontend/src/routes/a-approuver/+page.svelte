@@ -15,6 +15,7 @@
   import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
   import Dialog from '#lib/ui/molecules/Dialog.svelte';
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
 
@@ -82,19 +83,15 @@
 </svelte:head>
 
 <main class="page">
-  <div class="running-head">
-    <span>{t('nav.group.family')}</span>
-    {#if loaded && !problem}<span class="running-head__folio">{t('approve.count', { count: items.length })}</span>{/if}
-  </div>
-  <div class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('approve.title')}</h1>
-      <p class="lede">{t('approve.lede')}</p>
-    </div>
-    <div class="page-head__actions">
+  <PageHead
+    title={t('approve.title')}
+    lede={t('approve.lede')}
+    folio={loaded && !problem ? t('approve.count', { count: items.length }) : undefined}
+  >
+    {#snippet actions()}
       <Button href="/a-approuver/liste" icon="list">{t('approve.import_list')}</Button>
-    </div>
-  </div>
+    {/snippet}
+  </PageHead>
 
   {#if !loaded}
     <div aria-busy="true">

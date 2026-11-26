@@ -19,6 +19,7 @@
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
   import ProblemAlert, { blockKind, type BlockKind } from '#lib/ui/molecules/ProblemAlert.svelte';
   import SearchBar from '#lib/ui/molecules/SearchBar.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   let query = $state('');
   let loading = $state(false);
@@ -188,12 +189,7 @@
 </svelte:head>
 
 <main class="page">
-  <div class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('search.title')}</h1>
-      <p class="lede">{t('search.lede')}</p>
-    </div>
-  </div>
+  <PageHead title={t('search.title')} lede={t('search.lede')} />
 
   <div class="query">
     <div class="query__bar">
