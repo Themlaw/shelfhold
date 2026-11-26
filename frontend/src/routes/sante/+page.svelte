@@ -5,7 +5,7 @@
   import { onMount } from 'svelte';
   import { healthPage } from '#lib/api/index.ts';
   import HealthEntry from '#lib/components/HealthEntry.svelte';
-  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
+  import ProblemAlert, { refusalOf } from '#lib/ui/molecules/ProblemAlert.svelte';
   import { healthView, type HealthView } from '#lib/healthPage.ts';
   import { formatDate, formatNumber, t, tOr } from '#lib/i18n/index.ts';
   import { formatBytes } from '#lib/bytes.ts';
@@ -159,7 +159,7 @@
     lede={view ? (attention > 0 ? t('health_page.lede_attention', { count: attention }) : t('health_page.lede_ok')) : undefined}
   />
   {#if problem}
-    <ProblemAlert {problem} />
+    <ProblemAlert {problem} kind={refusalOf(problem)} />
   {:else if !view}
     <div aria-busy="true">
       <p class="visually-hidden" role="status">{t('health_page.loading')}</p>

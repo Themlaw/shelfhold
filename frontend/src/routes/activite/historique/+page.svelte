@@ -6,7 +6,7 @@
   import { onMount } from 'svelte';
   import { opsActivityHistory, opsBlocklist, opsUnblockChapter } from '#lib/api/index.ts';
   import type { BlockOut, HistoryEntryOut } from '#lib/api/types.gen.ts';
-  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
+  import ProblemAlert, { refusalOf } from '#lib/ui/molecules/ProblemAlert.svelte';
   import { formatDateTime } from '#lib/i18n/format.ts';
   import { hasMessage, t, type MessageKey, tOr } from '#lib/i18n/index.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
@@ -78,7 +78,7 @@
     crumbs={[{ label: t('nav.activity'), href: activityHref }, { label: t('history.title') }]}
   />
   {#if problem}
-    <ProblemAlert {problem} />
+    <ProblemAlert {problem} kind={refusalOf(problem)} />
   {:else if !loaded}
     <div aria-busy="true">
       <p class="visually-hidden" role="status">{t('history.loading')}</p>

@@ -204,9 +204,7 @@ describe("Activity history", () => {
       http.get(`${BASE}/api/v1/ops/blocklist`, forbidden),
     );
     render(Page);
-    expect((await screen.findAllByRole("alert"))[0]).toHaveTextContent(
-      "Accès refusé",
-    );
+    expect(await screen.findByRole("heading", { level: 2, name: /hors de votre portée/ })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Événements" })).toBeNull();
     expect(
       screen.queryByRole("region", { name: "Chapitres bloqués" }),
