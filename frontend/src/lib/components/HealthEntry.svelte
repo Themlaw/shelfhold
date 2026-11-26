@@ -2,7 +2,7 @@
   // One entry of the Health page: its stable code and the way out. The page applies nothing; the
   // command is shown to be run (a reserved one asks a fresh session or the local command line).
   import type { HealthAction } from '#lib/healthPage.ts';
-  import { t } from '#lib/i18n/index.ts';
+  import { hasMessage, t } from '#lib/i18n/index.ts';
   import Badge from '#lib/ui/atoms/Badge.svelte';
 
   let {
@@ -10,11 +10,14 @@
     code,
     action
   }: { label: string; code: string | null; action: HealthAction | null } = $props();
+
+  const codeLabel = $derived(code && hasMessage(`health_page.code.${code}`) ? t(`health_page.code.${code}`) : null);
 </script>
 
 <li class="entry">
   <div class="entry__head">
     {#if label}<span class="entry__label">{label}</span>{/if}
+    {#if codeLabel}<span class="entry__code-label">{codeLabel}</span>{/if}
     {#if code}<code class="entry__code">{code}</code>{/if}
   </div>
   {#if action}
@@ -46,6 +49,10 @@
     font-family: var(--font-mono, ui-monospace, monospace);
     font-size: var(--step--1);
     overflow-wrap: anywhere;
+  }
+  .entry__code-label {
+    color: var(--color-ink);
+    font-size: var(--step-0);
   }
   .entry__code {
     color: var(--color-muted);
