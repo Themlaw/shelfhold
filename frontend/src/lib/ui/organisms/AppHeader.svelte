@@ -22,6 +22,7 @@
     scheme = 'auto',
     searchHref = '/chercher',
     signInHref = '/login',
+    needsAdmin = false,
     notice,
     onscheme,
     onsignout
@@ -30,6 +31,7 @@
     scheme?: Scheme;
     searchHref?: string;
     signInHref?: string;
+    needsAdmin?: boolean;
     /** the notice of the moment, docked in the masthead on a wide screen */
     notice?: Snippet;
     onscheme?: (scheme: Scheme) => void;
@@ -43,12 +45,20 @@
 
   const schemeIcon = $derived(scheme === 'dark' ? 'moon' : scheme === 'light' ? 'sun' : 'device');
 
-  const accountItems = $derived<MenuItem[]>([
-    { label: t('nav.passkeys'), icon: 'key', href: '/compte/passkeys' },
-    { label: t('nav.trackers'), icon: 'shield', href: '/compte/trackers' },
-    { kind: 'separator' },
-    { label: t('ui.account.sign_out'), icon: 'logout', onselect: () => onsignout?.() }
-  ]);
+  const accountItems = $derived<MenuItem[]>(
+    user?.role === 'child'
+      ? [
+          { label: t('nav.offline'), icon: 'offline', href: '/hors-ligne' },
+          { kind: 'separator' },
+          { label: t('ui.account.sign_out'), icon: 'logout', onselect: () => onsignout?.() }
+        ]
+      : [
+          { label: t('nav.passkeys'), icon: 'key', href: '/compte/passkeys' },
+          { label: t('nav.trackers'), icon: 'shield', href: '/compte/trackers' },
+          { kind: 'separator' },
+          { label: t('ui.account.sign_out'), icon: 'logout', onselect: () => onsignout?.() }
+        ]
+  );
 </script>
 
 <header class="masthead">
@@ -113,7 +123,7 @@
           </button>
         {/snippet}
       </Menu>
-    {:else}
+    {:else if !needsAdmin}
       <!-- the sign-in page belongs to the server: a full load, never the router -->
       <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- a page of the server -->
       <a class="signin" href={signInHref} data-sveltekit-reload>

@@ -38,6 +38,29 @@ describe("AppHeader", () => {
     expect(screen.getByText("La bibliothèque de Louise")).toBeInTheDocument();
   });
 
+  // req: EF-UX-005
+  it("a child account menu offers offline copies instead of passkeys and trackers", async () => {
+    render(AppHeader, { user: { name: "Louise", role: "child" } });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Compte de Louise Enfant" }),
+    );
+    const items = await vi.waitFor(() => {
+      const found = screen.queryAllByRole("menuitem", { hidden: true });
+      if (found.length < 2) throw new Error("menu closed");
+      return found;
+    });
+    const labels = items.map((item) => item.textContent?.trim());
+    expect(labels).toContain("Copies hors ligne");
+    expect(labels).not.toContain("Clés d’accès");
+    expect(labels).not.toContain("Suivi de lecture");
+  });
+
+  // req: EF-UX-005
+  it("hides the sign-in link while the instance needs an admin account", () => {
+    render(AppHeader, { user: null, needsAdmin: true });
+    expect(screen.queryByRole("link", { name: "Se connecter" })).toBeNull();
+  });
+
   // req: EF-UX-012
   it("the scheme button opens a menu of three choices, the current one checked", async () => {
     render(AppHeader, { user: null, scheme: "dark" });
@@ -113,6 +136,17 @@ describe("TableOfContents and MobileTabBar", () => {
     expect(more).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(more);
     expect(onmore).toHaveBeenCalled();
+  });
+
+  // req: ENF-A11Y-004
+  it("hides the More button when no handler is given", () => {
+    render(MobileTabBar, {
+      entries: groups[0]!.entries,
+      current: "/",
+      label: "Navigation mobile",
+    });
+    const bar = screen.getByRole("navigation", { name: "Navigation mobile" });
+    expect(within(bar).queryByRole("button", { name: "Plus" })).toBeNull();
   });
 });
 
