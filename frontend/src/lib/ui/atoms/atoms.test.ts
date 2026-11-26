@@ -231,12 +231,16 @@ describe('Cover', () => {
   });
 
   // req: EF-UX-008
-  it('a real image always takes the place of the drawn cover', () => {
+  it('a real image covers the drawn cover, which stays under it until the image has loaded', () => {
     const { container } = render(Cover, { title: 'Hokusai Manga', seed: '01JA0000000000000000000001', kind: 'manga', src: '/api/v1/thumbnails/abc/320' });
     const cover = container.querySelector('.cover')!;
     expect(cover.querySelector('img')).toHaveAttribute('src', '/api/v1/thumbnails/abc/320');
-    expect(cover.querySelector('.cover__art')).toBeNull();
-    expect(cover.querySelector('.cover__title')).toBeNull();
+    // the composed cover is under the picture: no empty slot while it loads or scrolls into view
+    expect(cover.querySelector('.cover__art')).not.toBeNull();
+    expect(cover.querySelector('.cover__title')).toHaveTextContent('Hokusai Manga');
+    expect(cover).toHaveAttribute('data-image', 'pending');
+    fireEvent.load(cover.querySelector('img')!);
+    expect(cover).toHaveAttribute('data-image', 'loaded');
   });
 
   // req: EF-UX-008
