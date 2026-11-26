@@ -15,6 +15,10 @@ const API = `${BASE}/api/v1/editions/ED1`;
 const server = setupServer(
   http.get(`${API}/support-author`, () =>
     HttpResponse.json({ edition_id: 'ED1', links: [], pause_suggestions: [] })
+  ),
+  // « Œuvres liées » sits in the Gestion tab (RelatedWorks.test.ts): none here
+  http.get(`${BASE}/api/v1/works/WK1/relations`, () =>
+    HttpResponse.json({ work_id: 'WK1', count: 0, items: [] })
   )
 );
 
@@ -201,6 +205,7 @@ describe('Series sheet', () => {
       })
     );
     render(Page);
+    await user.click(await screen.findByRole('tab', { name: 'Gestion' }));
     const input = await screen.findByLabelText('Valeur');
     await user.type(input, 'Titre à la main');
     await user.click(screen.getByRole('button', { name: 'Enregistrer et verrouiller' }));
@@ -221,6 +226,7 @@ describe('Series sheet', () => {
       })
     );
     render(Page);
+    await user.click(await screen.findByRole('tab', { name: 'Gestion' }));
     await user.selectOptions(await screen.findByRole('combobox', { name: t('sheet.status.title') }), 'finished');
     await user.click(screen.getByRole('button', { name: 'Régler' }));
     expect(await screen.findByText('Réglé à la main')).toBeInTheDocument();
@@ -238,6 +244,7 @@ describe('Series sheet', () => {
       })
     );
     const first = render(Page);
+    await user.click(await screen.findByRole('tab', { name: 'Gestion' }));
     expect(screen.queryByRole('button', { name: 'Préférer Équipe un' })).toBeNull();
     await user.click(await screen.findByRole('button', { name: 'Préférer Équipe deux' }));
     await waitFor(() => expect(bodies[0]).toEqual({ team_id: 'T2' }));
@@ -273,6 +280,7 @@ describe('Series sheet', () => {
       })
     );
     render(Page);
+    await user.click(await screen.findByRole('tab', { name: 'Gestion' }));
     await user.click(await screen.findByRole('button', { name: 'Séparer' }));
     expect(calls).toBe(0); // one click is only a question
     await user.click(screen.getByRole('button', { name: 'Annuler' }));
@@ -305,6 +313,7 @@ describe('Series sheet', () => {
       })
     );
     render(Page);
+    await user.click(await screen.findByRole('tab', { name: 'Gestion' }));
     await user.click(await screen.findByRole('button', { name: 'Séparer' }));
     await user.click(screen.getByRole('button', { name: 'Confirmer la séparation' }));
     expect(await screen.findByText('Confirmez votre identité')).toBeInTheDocument();
@@ -334,10 +343,25 @@ describe('Series sheet', () => {
       })
     );
     render(Page);
+    await user.click(await screen.findByRole('tab', { name: 'Gestion' }));
     await user.click(await screen.findByRole('button', { name: 'Voir le plan' }));
     expect(await screen.findByText('1 retrait d\'étagère')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Confirmer le rattachement' }));
     await waitFor(() => expect(bodies[0]).toEqual({ confirm: '3-abcdef12' }));
+  });
+
+  // req: EF-BIB-020
+  it('shows the header with the language name, or the raw code when it is not a language tag', async () => {
+    server.use(serve());
+    current = sheet({ lang: 'fr', upstream_status: 'finished' });
+    const first = render(Page);
+    expect(await screen.findByText('français')).toBeInTheDocument();
+    expect(screen.getAllByText('Terminée').length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { level: 1, name: 'Une série' })).toBeInTheDocument();
+    first.unmount();
+    current = sheet({ lang: 'fr_FR!' });
+    render(Page);
+    expect(await screen.findByText('fr_FR!')).toBeInTheDocument();
   });
 
   // req: EF-USR-006
