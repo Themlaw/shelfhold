@@ -475,6 +475,9 @@
   .sheet__actions {
     margin-top: var(--space-5);
   }
+  .crumb-sep {
+    margin-inline: var(--space-2);
+  }
   .sheet__meta {
     display: flex;
     flex-wrap: wrap;
