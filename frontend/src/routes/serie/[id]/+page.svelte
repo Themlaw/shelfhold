@@ -26,7 +26,7 @@
   import Gaps from '#lib/components/Gaps.svelte';
   import ProblemAlert, { refusalOf } from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
-  import { formatDateTime, t, type MessageKey } from '#lib/i18n/index.ts';
+  import { formatDateTime, t, uiLanguage, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
@@ -36,6 +36,7 @@
   import Input from '#lib/ui/atoms/Input.svelte';
   import Select from '#lib/ui/atoms/Select.svelte';
   import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Tabs from '#lib/ui/molecules/Tabs.svelte';
   import Alert from '#lib/ui/molecules/Alert.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
   import BundleSlices from './BundleSlices.svelte';
@@ -55,12 +56,16 @@
     unknown: 'sheet.status.unknown'
   };
 
+  const LANGS = (code: string): string =>
+    new Intl.DisplayNames([uiLanguage()], { type: 'language' }).of(code) ?? code;
+
   const editionId = $derived(page.params.id ?? '');
   let sheet = $state<SheetOut | null>(null);
   let readScope = $state<'full' | 'excerpt' | null>(null); // what the read button found: a copy is kept only for a full read
   let problem = $state<ProblemView | null>(null);
   let actionProblem = $state<ProblemView | null>(null);
   let message = $state('');
+  let tab = $state('sources');
   let status = $state<Status>('unknown');
   let fieldKey = $state('');
   let fieldValue = $state('');
@@ -222,14 +227,12 @@
 </svelte:head>
 
 <main class="page sheet">
-  <div class="running-head">
-    <span>{t('sheet.title')}</span>
-  </div>
-
   {#if problem}
+    <div class="running-head"><span>{t('sheet.title')}</span></div>
     <h1 class="visually-hidden">{t('sheet.title')}</h1>
     <ProblemAlert {problem} kind={refusalOf(problem)} />
   {:else if !sheet}
+    <div class="running-head"><span>{t('sheet.title')}</span></div>
     <h1 class="visually-hidden">{t('sheet.title')}</h1>
     <div class="page-head" role="status" aria-busy="true">
       <span class="visually-hidden">{t('sheet.loading')}</span>
@@ -241,6 +244,14 @@
       </div>
     </div>
   {:else}
+    <div class="running-head">
+      <nav aria-label={t('sheet.title')}>
+        <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+        <a href="/bibliotheque">{t('nav.library')}</a><span class="crumb-sep" aria-hidden="true">›</span><span
+          aria-current="page">{sheet.title}</span
+        >
+      </nav>
+    </div>
     <div class="page-head sheet__head">
       <div class="sheet__cover">
         <Cover
@@ -252,12 +263,25 @@
       </div>
       <div class="page-head__text">
         <h1 class="page-title page-title--work sheet__title">{sheet.title}</h1>
+        <p class="sheet__meta">
+          <Badge>{LANGS(sheet.lang)}</Badge>
+          {#if sheet.upstream_status !== 'unknown'}
+            <Badge>{t(STATUS_LABELS[sheet.upstream_status])}</Badge>
+          {/if}
+          {#if sheet.followed}<Badge>{t('sheet.followed')}</Badge>{/if}
+        </p>
         <div class="btn-row sheet__actions">
           <ReadButton unitId={sheet.first_unit_id} bind:scope={readScope} />
           {#if sheet.can.check}
             <Button variant="secondary" size="lg" onclick={checkNow}>{t('sheet.check')}</Button>
           {/if}
         </div>
+        {#if !sheet.first_unit_id}
+          <p class="hint sheet__empty">
+            {t('sheet.no_unit')}
+            {sheet.can.check ? t('sheet.no_unit_check') : t('sheet.no_unit_sources')}
+          </p>
+        {/if}
         {#if readScope === 'full'}
           <div class="sheet__offline"><OfflineButton unitId={sheet.first_unit_id} /></div>
         {/if}
@@ -272,147 +296,169 @@
       {/if}
     </div>
 
-    <Bindings
-      bindings={sheet.bindings}
-      editionId={sheet.edition_id}
-      canReorder={sheet.can.reorder}
-      onreload={load}
-    />
-    {#if sheet.bindings.some((b) => !b.active)}
-      <p class="section">
-        <Button href={`/serie/${sheet.edition_id}/migrer`} variant="secondary">{t('migrate.title')}</Button>
-      </p>
-    {/if}
-
-    <BundleSlices editionId={sheet.edition_id} />
-    <ReadMarks editionId={sheet.edition_id} />
-    <RelatedWorks workId={sheet.work_id} canEdit />
-    <SupportAuthor editionId={sheet.edition_id} />
-
-    {#if sheet.can.acknowledge_gap}
-      <Gaps gaps={sheet.gaps} editionId={sheet.edition_id} />
-    {/if}
-
-    {#if sheet.can.set_upstream_status}
-      <section class="section" aria-labelledby="status-title">
-        <div class="section-head"><h2 id="status-title">{t('sheet.status.title')}</h2></div>
-        <div class="btn-row">
-          <Select
-            bind:value={status}
-            aria-label={t('sheet.status.title')}
-            inline
-            options={STATUSES.map((value) => ({ value, label: t(STATUS_LABELS[value]) }))}
+    <Tabs
+      bind:value={tab}
+      label={t('sheet.tabs.label')}
+      items={[
+        { value: 'sources', label: t('sheet.tab.sources') },
+        {
+          value: 'reading',
+          label: t('sheet.tab.reading'),
+          short: t('sheet.tab.reading_short')
+        },
+        { value: 'manage', label: t('sheet.tab.manage') }
+      ]}
+    >
+      {#snippet panel(item)}
+        {#if item.value === 'sources'}
+          <Bindings
+            bindings={sheet!.bindings}
+            editionId={sheet!.edition_id}
+            canReorder={sheet!.can.reorder}
+            onreload={load}
           />
-          <Button variant="secondary" onclick={saveStatus}>{t('sheet.status.save')}</Button>
-          {#if sheet.upstream_status_by === 'manual'}
-            <Badge>{t('sheet.status.manual')}</Badge>
+          {#if sheet!.bindings.some((b) => !b.active)}
+            <p class="section">
+              <Button href={`/serie/${sheet!.edition_id}/migrer`} variant="secondary">{t('migrate.title')}</Button>
+            </p>
           {/if}
-        </div>
-      </section>
-    {/if}
-
-    {#if sheet.can.prefer_team}
-      <section class="section" aria-labelledby="teams-title">
-        <div class="section-head"><h2 id="teams-title">{t('sheet.teams.title')}</h2></div>
-        <ul class="entries">
-          {#each sheet.teams as team (team.id)}
-            <li class="sheet__row">
-              <span class="sheet__row-text">{team.label}</span>
-              {#if team.preferred}
-                <Badge tone="accent">{t('sheet.teams.preferred')}</Badge>
-              {:else}
-                <Button variant="secondary" size="sm" onclick={() => prefer(team.id)}
-                  >{t('sheet.teams.prefer', { team: team.label })}</Button
-                >
-              {/if}
-            </li>
-          {/each}
-        </ul>
-        <p class="hint">{t('sheet.teams.note')}</p>
-      </section>
-      <!-- the second step: replace what is already served (a reserved action, a fresh session) -->
-      <SwitchReport {editionId} />
-    {/if}
-
-    {#if sheet.can.edit_field && edits.length > 0}
-      <section class="section" aria-labelledby="fields-title">
-        <div class="section-head"><h2 id="fields-title">{t('sheet.fields.title')}</h2></div>
-        <div class="stack sheet__form">
-          <Field label={t('sheet.fields.field')}>
-            {#snippet children(control)}
-              <Select
-                {...control}
-                bind:value={fieldKey}
-                onchange={() => (fieldValue = selected?.value ?? '')}
-                options={edits.map((f) => ({
-                  value: `${f.on}|${f.field}|${f.lang}`,
-                  label: `${f.field} (${f.lang}, ${t(f.on === 'work' ? 'sheet.fields.on_work' : 'sheet.fields.on_edition')})`
-                }))}
-              />
-            {/snippet}
-          </Field>
-          {#if selected?.locked && selected.manual}
-            <Badge icon="lock">{t('sheet.fields.locked')}</Badge>
+          {#if sheet!.can.acknowledge_gap}
+            <Gaps gaps={sheet!.gaps} editionId={sheet!.edition_id} />
           {/if}
-          <Field label={t('sheet.fields.value')}>
-            {#snippet children(control)}
-              <Input {...control} bind:value={fieldValue} />
-            {/snippet}
-          </Field>
-          <Button variant="primary" disabled={!selected} onclick={lockField}>{t('sheet.fields.lock')}</Button>
-        </div>
-      </section>
-    {/if}
-
-    {#if sheet.can.separate && merge}
-      <section class="section" aria-labelledby="separate-title">
-        <div class="section-head"><h2 id="separate-title">{t('sheet.separate.title')}</h2></div>
-        <p>{t('sheet.separate.explain')}</p>
-        <p class="hint">
-          {t('sheet.separate.until', { date: formatDateTime(merge.undoable_until) })}
-        </p>
-        <div class="btn-row">
-          {#if confirmingSeparate}
-            <Button variant="danger" onclick={() => separate(merge.merge_id)}
-              >{t('sheet.separate.confirm')}</Button
-            >
-            <Button variant="ghost" onclick={() => (confirmingSeparate = false)}
-              >{t('sheet.separate.cancel')}</Button
-            >
-          {:else}
-            <Button variant="secondary" onclick={() => (confirmingSeparate = true)}
-              >{t('sheet.separate.ask')}</Button
-            >
-          {/if}
-        </div>
-      </section>
-    {/if}
-
-    {#if separated}
-      <section class="section" aria-labelledby="plan-title">
-        <div class="section-head"><h2 id="plan-title">{t('sheet.separate.plan')}</h2></div>
-        <p>{t('sheet.separate.moves', { count: separated.series_plan.moves.length })}</p>
-        <p>{t('sheet.separate.blockers', { count: separated.series_plan.blockers.length })}</p>
-      </section>
-    {/if}
-
-    {#if sheet.can.confirm_attach && sheet.attach}
-      <section class="section" aria-labelledby="attach-title">
-        <div class="section-head"><h2 id="attach-title">{t('sheet.attach.title')}</h2></div>
-        {#if plan}
-          <p>{t('sheet.attach.withdrawals', { count: plan.withdrawals.length })}</p>
-          <Button variant="primary" onclick={() => confirmAttach(plan!.attach_id, plan!.token)}
-            >{t('sheet.attach.confirm')}</Button
-          >
+        {:else if item.value === 'reading'}
+          <BundleSlices editionId={sheet!.edition_id} />
+          <ReadMarks editionId={sheet!.edition_id} />
+          <SupportAuthor editionId={sheet!.edition_id} />
         {:else}
-          <Button variant="secondary" onclick={() => planAttach(sheet!.attach!.attach_id)}
-            >{t('sheet.attach.plan')}</Button
-          >
+          {@render manage(sheet!)}
         {/if}
-      </section>
-    {/if}
+      {/snippet}
+    </Tabs>
   {/if}
 </main>
+
+{#snippet manage(sheet: SheetOut)}
+  <RelatedWorks workId={sheet.work_id} canEdit />
+
+  {#if sheet.can.set_upstream_status}
+    <section class="section" aria-labelledby="status-title">
+      <div class="section-head"><h2 id="status-title">{t('sheet.status.title')}</h2></div>
+      <div class="btn-row">
+        <Select
+          bind:value={status}
+          aria-label={t('sheet.status.title')}
+          inline
+          options={STATUSES.map((value) => ({ value, label: t(STATUS_LABELS[value]) }))}
+        />
+        <Button variant="secondary" onclick={saveStatus}>{t('sheet.status.save')}</Button>
+        {#if sheet.upstream_status_by === 'manual'}
+          <Badge>{t('sheet.status.manual')}</Badge>
+        {/if}
+      </div>
+    </section>
+  {/if}
+
+  {#if sheet.can.prefer_team}
+    <section class="section" aria-labelledby="teams-title">
+      <div class="section-head"><h2 id="teams-title">{t('sheet.teams.title')}</h2></div>
+      <ul class="entries">
+        {#each sheet.teams as team (team.id)}
+          <li class="sheet__row">
+            <span class="sheet__row-text">{team.label}</span>
+            {#if team.preferred}
+              <Badge tone="accent">{t('sheet.teams.preferred')}</Badge>
+            {:else}
+              <Button variant="secondary" size="sm" onclick={() => prefer(team.id)}
+                >{t('sheet.teams.prefer', { team: team.label })}</Button
+              >
+            {/if}
+          </li>
+        {/each}
+      </ul>
+      <p class="hint">{t('sheet.teams.note')}</p>
+    </section>
+    <!-- the second step: replace what is already served (a reserved action, a fresh session) -->
+    <SwitchReport {editionId} />
+  {/if}
+
+  {#if sheet.can.edit_field && edits.length > 0}
+    <section class="section" aria-labelledby="fields-title">
+      <div class="section-head"><h2 id="fields-title">{t('sheet.fields.title')}</h2></div>
+      <div class="stack sheet__form">
+        <Field label={t('sheet.fields.field')}>
+          {#snippet children(control)}
+            <Select
+              {...control}
+              bind:value={fieldKey}
+              onchange={() => (fieldValue = selected?.value ?? '')}
+              options={edits.map((f) => ({
+                value: `${f.on}|${f.field}|${f.lang}`,
+                label: `${f.field} (${f.lang}, ${t(f.on === 'work' ? 'sheet.fields.on_work' : 'sheet.fields.on_edition')})`
+              }))}
+            />
+          {/snippet}
+        </Field>
+        {#if selected?.locked && selected.manual}
+          <Badge icon="lock">{t('sheet.fields.locked')}</Badge>
+        {/if}
+        <Field label={t('sheet.fields.value')}>
+          {#snippet children(control)}
+            <Input {...control} bind:value={fieldValue} />
+          {/snippet}
+        </Field>
+        <Button variant="primary" disabled={!selected} onclick={lockField}>{t('sheet.fields.lock')}</Button>
+      </div>
+    </section>
+  {/if}
+
+  {#if sheet.can.separate && merge}
+    <section class="section" aria-labelledby="separate-title">
+      <div class="section-head"><h2 id="separate-title">{t('sheet.separate.title')}</h2></div>
+      <p>{t('sheet.separate.explain')}</p>
+      <p class="hint">
+        {t('sheet.separate.until', { date: formatDateTime(merge.undoable_until) })}
+      </p>
+      <div class="btn-row">
+        {#if confirmingSeparate}
+          <Button variant="danger" onclick={() => separate(merge.merge_id)}
+            >{t('sheet.separate.confirm')}</Button
+          >
+          <Button variant="ghost" onclick={() => (confirmingSeparate = false)}
+            >{t('sheet.separate.cancel')}</Button
+          >
+        {:else}
+          <Button variant="secondary" onclick={() => (confirmingSeparate = true)}
+            >{t('sheet.separate.ask')}</Button
+          >
+        {/if}
+      </div>
+    </section>
+  {/if}
+
+  {#if separated}
+    <section class="section" aria-labelledby="plan-title">
+      <div class="section-head"><h2 id="plan-title">{t('sheet.separate.plan')}</h2></div>
+      <p>{t('sheet.separate.moves', { count: separated.series_plan.moves.length })}</p>
+      <p>{t('sheet.separate.blockers', { count: separated.series_plan.blockers.length })}</p>
+    </section>
+  {/if}
+
+  {#if sheet.can.confirm_attach && sheet.attach}
+    <section class="section" aria-labelledby="attach-title">
+      <div class="section-head"><h2 id="attach-title">{t('sheet.attach.title')}</h2></div>
+      {#if plan}
+        <p>{t('sheet.attach.withdrawals', { count: plan.withdrawals.length })}</p>
+        <Button variant="primary" onclick={() => confirmAttach(plan!.attach_id, plan!.token)}
+          >{t('sheet.attach.confirm')}</Button
+        >
+      {:else}
+        <Button variant="secondary" onclick={() => planAttach(sheet!.attach!.attach_id)}
+          >{t('sheet.attach.plan')}</Button
+        >
+      {/if}
+    </section>
+  {/if}
+{/snippet}
 
 <style>
   .sheet__head,
@@ -428,6 +474,16 @@
   }
   .sheet__actions {
     margin-top: var(--space-5);
+  }
+  .sheet__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: var(--space-3) 0 0;
+  }
+  .sheet__empty {
+    max-width: var(--measure);
+    margin-top: var(--space-3);
   }
   .sheet__offline {
     margin-top: var(--space-3);
