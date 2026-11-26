@@ -11,6 +11,7 @@ import EmptyState from './EmptyState.svelte';
 import ErrorState from './ErrorState.svelte';
 import Field from './Field.svelte';
 import Pagination, { pageWindow } from './Pagination.svelte';
+import ProblemAlert, { blockKind } from './ProblemAlert.svelte';
 import SearchBar from './SearchBar.svelte';
 import SeriesCard from './SeriesCard.svelte';
 import SettingRow from './SettingRow.svelte';
@@ -234,5 +235,41 @@ describe('Tabs', () => {
     const nav = screen.getByRole('navigation', { name: 'Réglages' });
     expect(within(nav).getByRole('link', { name: 'Notifications' })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getByRole('link', { name: 'Bibliothèques' })).not.toHaveAttribute('aria-current');
+  });
+});
+
+describe('ProblemAlert', () => {
+  const problem = { code: 'collection.cbl_refused', title: 'Fichier refusé', cause: 'Trop gros', action: 'Découpez-le', requestId: 'req-1' };
+
+  // req: EF-UX-003
+  it('tells the problem as an alert: its title, its cause, its action and the request id', () => {
+    render(ProblemAlert, { problem });
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Fichier refusé');
+    expect(alert).toHaveTextContent('Trop gros');
+    expect(alert).toHaveTextContent('Découpez-le');
+    expect(alert).toHaveTextContent('req-1');
+  });
+
+  // req: EF-UX-003
+  it('offers to try again when the screen can', async () => {
+    const onretry = vi.fn();
+    render(ProblemAlert, { problem, onretry });
+    await userEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+    expect(onretry).toHaveBeenCalledOnce();
+  });
+
+  // req: EF-UX-003
+  it('says a refusal of the role in the words of the interface, not in the server\'s', () => {
+    render(ProblemAlert, { problem, kind: 'forbidden' });
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/hors de votre portée/);
+    expect(screen.queryByText('Fichier refusé')).toBeNull();
+  });
+
+  // req: EF-UX-003
+  it('names the refusal an error answer stands for', () => {
+    expect(blockKind({ status: 403 })).toBe('forbidden');
+    expect(blockKind({ status: 401 })).toBe('signed-out');
+    expect(blockKind({ status: 422, code: 'x' })).toBeNull();
   });
 });

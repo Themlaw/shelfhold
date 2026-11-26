@@ -9,6 +9,8 @@
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
 
   let { editionId }: { editionId: string } = $props();
 
@@ -64,30 +66,47 @@
 </script>
 
 {#if marks !== null}
-  <section aria-labelledby="read-marks-title">
-    <h2 id="read-marks-title">{t('readMarks.title')}</h2>
-    <p>{t('readMarks.intro')}</p>
+  <section class="section" aria-labelledby="read-marks-title">
+    <div class="section-head"><h2 id="read-marks-title">{t('readMarks.title')}</h2></div>
+    <p class="hint">{t('readMarks.intro')}</p>
     {#if marks.length === 0}
       <p>{t('readMarks.empty')}</p>
     {:else}
-      <ul>
+      <ul class="entries marks">
         {#each marks as mark (mark.user_id + '|' + mark.unit_id)}
           <li>
-            <span>
+            <span class="marks__text">
               {mark.title
                 ? t('readMarks.mark', { number: mark.number, title: mark.title, username: mark.username })
                 : t('readMarks.mark_no_title', { number: mark.number, username: mark.username })}
             </span>
-            <button type="button" onclick={() => undo(mark)}>{t('readMarks.undo')}</button>
+            <Button variant="secondary" size="sm" onclick={() => undo(mark)}>{t('readMarks.undo')}</Button>
           </li>
         {/each}
       </ul>
     {/if}
     {#if undone !== null}
-      <p role="status">{t('readMarks.undone', { count: undone })}</p>
+      <Alert tone="info" live="polite" title={t('readMarks.undone', { count: undone })} />
     {/if}
     {#if problem}
       <ProblemCard {problem} />
     {/if}
   </section>
 {/if}
+
+<style>
+  .marks > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: var(--target);
+    padding: var(--space-2) 0;
+  }
+  .marks__text {
+    flex: 1 1 14rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+</style>

@@ -292,9 +292,7 @@
       "aside",
       "nav",
       "main",
-      "h1: Fiche série",
-      "header",
-      "h2: Series Alpha",
+      "h1: Series Alpha",
       "h2: Sources classées",
       "h2: Bloc pour liseuse",
       "h2: Lectures marquées",
@@ -340,9 +338,7 @@
       "aside",
       "nav",
       "main",
-      "h1: Fiche série",
-      "header",
-      "h2: Series Alpha",
+      "h1: Series Alpha",
       "h2: Sources classées",
       "h2: Bloc pour liseuse",
       "h2: Lectures marquées",
@@ -906,9 +902,7 @@
       "aside",
       "nav",
       "main",
-      "h1: Fiche série",
-      "header",
-      "h2: Series Alpha",
+      "h1: Series Alpha",
       "h2: Sources classées",
       "h2: Bloc pour liseuse",
       "h2: Lectures marquées",
@@ -954,9 +948,7 @@
       "aside",
       "nav",
       "main",
-      "h1: Fiche série",
-      "header",
-      "h2: Series Alpha",
+      "h1: Series Alpha",
       "h2: Sources classées",
       "h2: Bloc pour liseuse",
       "h2: Lectures marquées",
@@ -1520,9 +1512,7 @@
       "aside",
       "nav",
       "main",
-      "h1: Fiche série",
-      "header",
-      "h2: Series Alpha",
+      "h1: Series Alpha",
       "h2: Sources classées",
       "h2: Bloc pour liseuse",
       "h2: Lectures marquées",
@@ -1568,9 +1558,7 @@
       "aside",
       "nav",
       "main",
-      "h1: Fiche série",
-      "header",
-      "h2: Series Alpha",
+      "h1: Series Alpha",
       "h2: Sources classées",
       "h2: Bloc pour liseuse",
       "h2: Lectures marquées",
@@ -2134,9 +2122,7 @@
       "aside",
       "nav",
       "main",
-      "h1: Fiche série",
-      "header",
-      "h2: Series Alpha",
+      "h1: Series Alpha",
       "h2: Sources classées",
       "h2: Bloc pour liseuse",
       "h2: Lectures marquées",
@@ -2182,9 +2168,7 @@
       "aside",
       "nav",
       "main",
-      "h1: Fiche série",
-      "header",
-      "h2: Series Alpha",
+      "h1: Series Alpha",
       "h2: Sources classées",
       "h2: Bloc pour liseuse",
       "h2: Lectures marquées",
@@ -2659,7 +2643,7 @@
       "nav",
       "main",
       "h1: Mes demandes",
-      "h3: Aucune demande en cours",
+      "h2: Tu n’as rien demandé pour l’instant.",
       "footer",
       "nav"
     ]
@@ -2700,7 +2684,7 @@
       "nav",
       "main",
       "h1: Mes demandes",
-      "h3: Aucune demande en cours",
+      "h2: Tu n’as rien demandé pour l’instant.",
       "footer",
       "nav"
     ]
@@ -2909,7 +2893,7 @@
       "nav",
       "main",
       "h1: Mes demandes",
-      "h3: Aucune demande en cours",
+      "h2: Tu n’as rien demandé pour l’instant.",
       "footer",
       "nav"
     ]
@@ -2950,7 +2934,7 @@
       "nav",
       "main",
       "h1: Mes demandes",
-      "h3: Aucune demande en cours",
+      "h2: Tu n’as rien demandé pour l’instant.",
       "footer",
       "nav"
     ]
@@ -3159,7 +3143,7 @@
       "nav",
       "main",
       "h1: Mes demandes",
-      "h3: Aucune demande en cours",
+      "h2: Tu n’as rien demandé pour l’instant.",
       "footer",
       "nav"
     ]
@@ -3200,7 +3184,7 @@
       "nav",
       "main",
       "h1: Mes demandes",
-      "h3: Aucune demande en cours",
+      "h2: Tu n’as rien demandé pour l’instant.",
       "footer",
       "nav"
     ]
@@ -3409,7 +3393,7 @@
       "nav",
       "main",
       "h1: Mes demandes",
-      "h3: Aucune demande en cours",
+      "h2: Tu n’as rien demandé pour l’instant.",
       "footer",
       "nav"
     ]
@@ -3450,7 +3434,7 @@
       "nav",
       "main",
       "h1: Mes demandes",
-      "h3: Aucune demande en cours",
+      "h2: Tu n’as rien demandé pour l’instant.",
       "footer",
       "nav"
     ]

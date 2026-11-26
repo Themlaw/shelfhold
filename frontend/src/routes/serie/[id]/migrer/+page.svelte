@@ -28,8 +28,6 @@
   import Alert from '#lib/ui/molecules/Alert.svelte';
   import ConfirmDialog from '#lib/ui/molecules/ConfirmDialog.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
-  import DataTable from '#lib/ui/organisms/DataTable.svelte';
-  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   const GONE = ['not_loaded', 'removed_upstream'];
   const REASONS: Record<string, MessageKey> = {
@@ -49,8 +47,8 @@
   let problem = $state<ProblemView | null>(null);
   let reauthMethods = $state<string[] | null>(null);
   let retry: (() => Promise<void>) | null = null;
-  let busy = $state(false);
   let confirmingApply = $state(false);
+  let busy = $state(false);
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
   const applied = $derived(migration?.state === 'applied');
@@ -153,11 +151,6 @@
     });
   }
 
-  const COLUMNS = [
-    { key: 'source', label: t('migrate.col.source'), primary: true },
-    { key: 'library', label: t('migrate.col.library') },
-    { key: 'basis', label: t('migrate.col.basis') }
-  ] as const;
   const why = (row: Row, offset: number): string =>
     row.basis === 'offset'
       ? t('migrate.basis.offset', { offset })
@@ -169,92 +162,112 @@
     });
 </script>
 
-<main class="page page--read">
-  <PageHead
-    title={t('migrate.title')}
-    lede={t('migrate.intro')}
-    crumbs={[{ label: t('migrate.back'), href: `/serie/${editionId}` }, { label: t('migrate.title') }]}
-  />
+<svelte:head>
+  <title>{t('migrate.title')}</title>
+</svelte:head>
 
-  <div class="stack-lg">
+<main class="page">
+  <div class="running-head">
+    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+    <a href={`/serie/${editionId}`}>{t('migrate.back')}</a>
+  </div>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('migrate.title')}</h1>
+      <p class="lede">{t('migrate.intro')}</p>
+    </div>
+  </div>
+
+  <div class="stack">
     {#if problem}<ProblemCard {problem} level={2} />{/if}
     {#if reauthMethods}
       <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
     {/if}
+  </div>
 
-    {#if !migration}
-      <form class="panel form" aria-label={t('migrate.propose')} onsubmit={propose}>
-        <Field label={t('migrate.source_key')} required>
-          {#snippet children(control)}
-            <Input {...control} mono bind:value={sourceKey} maxlength={500} autocomplete="off" />
-          {/snippet}
-        </Field>
-        <Field label={t('migrate.remote_id')} required>
-          {#snippet children(control)}
-            <Input {...control} mono bind:value={remoteId} maxlength={1000} autocomplete="off" />
-          {/snippet}
-        </Field>
-        <Field label={t('migrate.replaces')}>
-          {#snippet children(control)}
-            <Select
-              {...control}
-              bind:value={replaces}
-              options={[
-                { value: '', label: t('migrate.replaces_none') },
-                ...bindings.map((binding) => ({ value: binding.id, label: source(binding) }))
-              ]}
-            />
-          {/snippet}
-        </Field>
-        <div><Button type="submit" variant="primary" loading={busy}>{t('migrate.propose')}</Button></div>
-      </form>
-    {:else}
-      {#if !applied}
-        <div class="summary">
-          <p class="figures num">{t('migrate.summary', { held: migration.held_count, fetch: migration.to_fetch })}</p>
-          {#if migration.unmatched_units.length > 0}
-            <Alert tone="warning" title={t('migrate.unmatched', { count: migration.unmatched_units.length })} />
-          {/if}
-        </div>
-      {/if}
-      <DataTable
-        caption={t('migrate.table')}
-        columns={COLUMNS}
-        rows={migration.rows.map((row) => ({ ...row, id: row.place }))}
-        key={(row) => String(row.id)}
-      >
-        {#snippet cell(column, row)}
-          {#if column.key === 'source'}
-            {String(row.number) || t('migrate.unnumbered')}
-          {:else if column.key === 'library'}
-            {#if row.number && migration?.state === 'proposed'}
-              <Input
-                aria-label={t('migrate.row_target', { number: String(row.number) })}
-                value={edits[String(row.place)] ?? String(row.target)}
-                oninput={(e: Event) => (edits[String(row.place)] = (e.currentTarget as HTMLInputElement).value)}
-                inputmode="decimal"
-                maxlength={64}
-                width="short"
-              />
-            {:else}
-              {String(row.target) || t('migrate.unnumbered')}
-            {/if}
-          {:else}
-            {why(row as unknown as Row, migration?.offset ?? 0)}
-          {/if}
+  {#if !migration}
+    <form class="stack page--form propose" onsubmit={propose}>
+      <Field label={t('migrate.source_key')} required>
+        {#snippet children(control)}
+          <Input {...control} bind:value={sourceKey} maxlength={500} autocomplete="off" />
         {/snippet}
-      </DataTable>
+      </Field>
+      <Field label={t('migrate.remote_id')} required>
+        {#snippet children(control)}
+          <Input {...control} bind:value={remoteId} maxlength={1000} autocomplete="off" />
+        {/snippet}
+      </Field>
+      <Field label={t('migrate.replaces')}>
+        {#snippet children(control)}
+          <Select
+            {...control}
+            bind:value={replaces}
+            options={[
+              { value: '', label: t('migrate.replaces_none') },
+              ...bindings.map((binding) => ({ value: binding.id, label: source(binding) }))
+            ]}
+          />
+        {/snippet}
+      </Field>
+      <div class="btn-row">
+        <Button type="submit" variant="primary" disabled={busy}>{t('migrate.propose')}</Button>
+      </div>
+    </form>
+  {:else}
+    <div class="stack">
+      {#if !applied}
+        <p>{t('migrate.summary', { held: migration.held_count, fetch: migration.to_fetch })}</p>
+        {#if migration.unmatched_units.length > 0}
+          <p class="hint">{t('migrate.unmatched', { count: migration.unmatched_units.length })}</p>
+        {/if}
+      {/if}
+      <table class="mapping">
+        <caption class="section-head">{t('migrate.table')}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{t('migrate.col.source')}</th>
+            <th scope="col">{t('migrate.col.library')}</th>
+            <th scope="col">{t('migrate.col.basis')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each migration.rows as row (row.place)}
+            <tr>
+              <td data-label={t('migrate.col.source')}>{row.number || t('migrate.unnumbered')}</td>
+              <td data-label={t('migrate.col.library')}>
+                {#if row.number && migration.state === 'proposed'}
+                  <Input
+                    aria-label={t('migrate.row_target', { number: row.number })}
+                    value={edits[row.place] ?? row.target}
+                    oninput={(e) => (edits[row.place] = e.currentTarget.value)}
+                    inputmode="decimal"
+                    maxlength={64}
+                    width="short"
+                  />
+                {:else}
+                  {row.target || t('migrate.unnumbered')}
+                {/if}
+              </td>
+              <td data-label={t('migrate.col.basis')}>{why(row, migration.offset)}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
 
       {#if applied}
         <Alert tone="success" live="polite" title={t('migrate.done', { count: migration.to_fetch })} />
       {:else if validated}
-        <Alert tone="info" title={t('migrate.validated')} />
-        <div><Button variant="primary" onclick={() => (confirmingApply = true)} disabled={busy}>{t('migrate.apply')}</Button></div>
+        <p>{t('migrate.validated')}</p>
+        <div class="btn-row">
+          <Button variant="primary" onclick={() => (confirmingApply = true)} disabled={busy} loading={busy}>{t('migrate.apply')}</Button>
+        </div>
       {:else}
-        <div><Button variant="primary" onclick={validate} loading={busy}>{t('migrate.validate')}</Button></div>
+        <div class="btn-row">
+          <Button variant="primary" onclick={validate} disabled={busy} loading={busy}>{t('migrate.validate')}</Button>
+        </div>
       {/if}
-    {/if}
-  </div>
+    </div>
+  {/if}
 </main>
 
 <ConfirmDialog
@@ -267,13 +280,58 @@
 />
 
 <style>
-  .form {
-    display: grid;
-    gap: var(--space-4);
-    max-width: var(--form-max);
+  .propose {
+    margin-top: var(--space-4);
   }
-  .figures {
-    margin: 0 0 var(--space-3);
-    font: 500 var(--step-2) / var(--leading-tight) var(--font-text);
+  .mapping {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .mapping caption {
+    text-align: left;
+    font: 700 var(--step-1) / 1.2 var(--font-text);
+  }
+  .mapping th {
+    padding: var(--space-2) var(--space-3);
+    text-align: left;
+    font: 600 var(--step--1) / var(--leading-ui) var(--font-ui);
+    color: var(--color-muted);
+    border-bottom: var(--rule-hair) solid var(--color-ink);
+  }
+  .mapping td {
+    padding: var(--space-2) var(--space-3);
+    min-height: var(--target);
+    vertical-align: middle;
+    border-bottom: var(--rule-hair) solid var(--color-rule);
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 40rem) {
+    .mapping thead {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    .mapping tr,
+    .mapping td {
+      display: block;
+    }
+    .mapping tr {
+      padding: var(--space-2) 0;
+      border-bottom: var(--rule-hair) solid var(--color-rule-strong);
+    }
+    .mapping td {
+      display: grid;
+      grid-template-columns: minmax(7rem, 40%) minmax(0, 1fr);
+      align-items: center;
+      gap: var(--space-3);
+      border-bottom: 0;
+    }
+    .mapping td::before {
+      content: attr(data-label);
+      color: var(--color-muted);
+      font: 600 var(--step--1) / var(--leading-ui) var(--font-ui);
+    }
   }
 </style>

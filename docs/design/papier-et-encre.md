@@ -37,16 +37,31 @@ Dans `frontend/src/lib/ui/`, par niveau ; chacun a ses tests de comportement et 
 - **Atomes** (`atoms/`) : `Button` (primary, secondary, ghost, danger, danger-ghost ; sm, md,
   lg ; `loading`, `disabled` par `aria-disabled`, `href` pour un lien), `IconButton` (nom
   obligatoire), `Input`, `Textarea`, `Select` (natif), `Checkbox`, `Radio`, `Switch`, `Badge`,
-  `Avatar` (ex-libris), `Link`, `Icon` (jeu maison `icons.ts`), `Spinner`, `Skeleton`, `Cover`,
+  `Avatar` (ex-libris), `Segmented` (un choix parmi trois ou quatre, tous visibles : vrais boutons radio dessinés en segments, encre pleine pour le choix ; la politique d'une source, « Ajouter directement / Demander / Interdit »), `Link`, `Icon` (jeu maison `icons.ts`), `Spinner`, `Skeleton`, `Cover`,
   `Progress`, `ProgressRibbon` (le signet), `Illustration`.
 - **Molécules** (`molecules/`) : `Field`, `SettingRow`, `SeriesCard`, `ChapterRow`, `TableRow`,
-  `Alert`, `Toast`, `Dialog`, `ConfirmDialog`, `Menu`, `Tabs`, `SearchBar`, `Pagination`,
-  `EmptyState`, `ErrorState`.
+  `Alert`, `ProblemAlert`, `Toast`, `Dialog`, `ConfirmDialog`, `Menu`, `Tabs`, `SearchBar`, `Pagination`,
+  `EmptyState`, `ErrorState`, `AgeScale` (l'échelle d'âge à crans d'un enfant : une règle de marches en boutons radio, la part sous le plafond encrée, celle au-dessus en pointillé, le signet bleu sur la marche choisie ; un plafond hors des marches reçoit sa propre marche ; `counts` imprime le nombre d'œuvres visibles par marche quand l'API le donne, ce qu'elle ne fait pas encore), `SecretOnce` (un secret montré une seule fois : cadre à filet d'alerte, valeurs en monospace, bouton « Copier », un seul geste pour le refermer ; la page garde la valeur en mémoire seulement).
 - **Organismes** (`organisms/`) : `AppHeader`, `TableOfContents`, `MobileTabBar`, `Colophon`,
   `Shelf`, `DataTable`, `SettingsForm`, `ErrorScreen`, `PageHead` (le fil d'Ariane, le `h1`, le chapeau et les actions d'un écran d'exploitation) et `StatBar` (la bande de chiffres clés en tête d'un registre : étiquette, grand chiffre tabulaire, ligne de contexte ; un ton se dit par une icône et des mots).
 
 `bits-ui` fournit le focus, le clavier et l'ARIA de `Dialog`, `Menu` et `Tabs`, et n'est importé
 que par eux (ESLint). Ni thème de bibliothèque, ni Tailwind.
+
+### Notes d'usage
+
+- **`ProblemAlert`** dit une erreur du serveur avec les mots de l'interface : le problème écrit
+  par le serveur (titre, cause, action, identifiant d'incident à communiquer), jamais son corps
+  brut, avec un bouton « Réessayer » si `onretry` est donné. Un refus de session (401) ou de rôle
+  (403), repéré par `blockKind(error)`, devient un `ErrorState` avec son dessin, pour ne pas se
+  lire comme une panne de l'écran. Il remplace `ProblemCard` dans les écrans refaits.
+- **Lecteur** : page à part (`/lire`, politique CSP propre) ; il charge la fondation (jetons et
+  polices servis par l'instance). La planche d'une page d'images et la colonne webtoon posent
+  sur `--cv-paper`, qui ne s'inverse pas en sombre ; le reste de la scène suit le thème. Les
+  réglages sont une feuille du bas sous 48 rem et un panneau latéral au-delà ; ni l'un ni l'autre
+  ne piège le focus.
+- **`OfflineKeep`** a une variante `compact` (icônes seules, noms accessibles conservés) pour les
+  barres du lecteur.
 
 ## Pages écrites par le serveur
 

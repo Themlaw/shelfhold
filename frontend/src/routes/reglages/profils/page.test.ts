@@ -58,7 +58,7 @@ describe('Profils', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    expect(await screen.findByText(/admin — admin/)).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 3, name: 'admin' })).toBeTruthy();
     await user.type(screen.getByLabelText('Nom'), 'Lea');
     await user.type(screen.getByLabelText('Mot de passe du profil'), NEW_PW);
     await user.selectOptions(screen.getByLabelText('Rôle'), 'child');
@@ -101,7 +101,7 @@ describe('Profils', () => {
   it('shows nothing of the management to a member: the server refused the list', async () => {
     server.use(http.get(`${BASE}/api/v1/profiles`, forbidden));
     render(Page);
-    expect((await screen.findByRole('alert')).textContent).toMatch(/réservés à l'administrateur/);
+    expect(await screen.findByText(/réservés à l'administrateur/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Créer' })).toBeNull();
     expect(screen.queryByLabelText('Nom')).toBeNull();
   });
@@ -118,7 +118,7 @@ describe('Profils', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const li = (await screen.findByText(/Lea — member/)).closest('li')!;
+    const li = (await screen.findByRole('heading', { level: 3, name: 'Lea' })).closest('li')!;
     await user.selectOptions(within(li).getByLabelText('Visibilité'), 'household');
     await screen.findByText('Enregistré.');
     expect(put).toEqual({ url: '/api/v1/profiles/p2/visibility', body: { visibility: 'household' } });
@@ -136,11 +136,10 @@ describe('Profils', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const li = (await screen.findByText(/Max — child/)).closest('li')!;
-    const age = within(li).getByLabelText('Âge maximal') as HTMLInputElement;
-    await user.clear(age);
-    await user.type(age, '12');
-    await user.tab();
+    const li = (await screen.findByRole('heading', { level: 3, name: 'Max' })).closest('li')!;
+    // the rule of ages: a ceiling of 7 has a mark of its own, and 12+ is one click away
+    expect(within(li).getByRole('radio', { name: '7+' })).toBeChecked();
+    await user.click(within(li).getByRole('radio', { name: '12+' }));
     await screen.findByText('Enregistré.');
     expect(patched).toEqual({ max_age_rating: 12 });
   });
@@ -160,8 +159,10 @@ describe('Profils', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const li = (await screen.findByText(/Max — child/)).closest('li')!;
-    await user.selectOptions(await within(li).findByLabelText(/Politique : gutenberg/), 'forbidden');
+    const li = (await screen.findByRole('heading', { level: 3, name: 'Max' })).closest('li')!;
+    expect(await within(li).findByText('Politique : gutenberg')).toBeTruthy();
+    expect(within(li).getByRole('radio', { name: 'Demander' })).toBeChecked();
+    await user.click(within(li).getByRole('radio', { name: 'Interdit' }));
     await screen.findByText('Enregistré.');
     expect(put).toEqual({ policy: 'forbidden' });
   });
@@ -178,8 +179,9 @@ describe('Profils', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const li = (await screen.findByText(/Lea — member/)).closest('li')!;
+    const li = (await screen.findByRole('heading', { level: 3, name: 'Lea' })).closest('li')!;
     await user.click(within(li).getByRole('button', { name: 'Supprimer' }));
+    await user.click(await screen.findByRole('button', { name: 'Supprimer le profil' }));
     await screen.findByText('Profil supprimé.');
     expect(deleted).toBe(true);
   });

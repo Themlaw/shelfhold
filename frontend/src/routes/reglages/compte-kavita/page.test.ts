@@ -190,7 +190,7 @@ describe('Compte Kavita', () => {
       http.get(`${BASE}/api/v1/me`, () => HttpResponse.json({ id: ME, username: 'kid', role: 'child', nav: [] }))
     );
     render(Page);
-    expect(await screen.findByText('Un parent saisit la clé de votre compte Kavita.')).toBeTruthy();
+    expect(await screen.findByText('Un parent saisit la clé de ton compte Kavita.')).toBeTruthy();
     expect(screen.queryByLabelText('Clé de votre compte Kavita')).toBeNull();
   });
 

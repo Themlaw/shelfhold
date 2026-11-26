@@ -25,11 +25,11 @@
   .picker {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-1) var(--space-2);
+    gap: var(--space-2);
     border: 0;
     margin: 0;
     padding: 0;
-    min-width: 0;
+    min-inline-size: 0;
   }
   legend {
     padding: 0;
@@ -42,22 +42,22 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 2.75rem;
-    min-width: 2.75rem;
+    min-block-size: 44px;
+    min-inline-size: 44px;
     padding: 0 var(--space-3);
     border: var(--rule-hair) solid var(--color-rule-strong);
     border-radius: var(--radius-sm);
     background: var(--color-surface);
-    font-variant-numeric: tabular-nums;
     cursor: pointer;
   }
-  label:hover {
-    border-color: var(--color-ink);
+  label:hover:not(.on) {
+    background: var(--color-surface-2);
   }
   label.on {
-    border-color: var(--color-accent);
-    background: var(--color-accent);
-    color: var(--color-on-accent);
+    border-color: var(--color-ink);
+    background: var(--color-ink);
+    color: var(--color-bg);
+    font-weight: 600;
   }
   input {
     /* hidden by its look, not by display:none: it stays focusable and in the tab order */
@@ -67,9 +67,10 @@
     width: 100%;
     height: 100%;
     margin: 0;
+    cursor: pointer;
   }
   label:has(input:focus-visible) {
-    outline: var(--rule-thick) solid var(--color-focus);
+    outline: 2px solid var(--color-focus);
     outline-offset: 2px;
   }
 </style>

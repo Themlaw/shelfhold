@@ -45,7 +45,7 @@ describe('Écran des trackers', () => {
     );
     render(Page);
     await screen.findByRole('heading', { name: 'Trackers', level: 1 });
-    await userEvent.type(screen.getByLabelText('Module'), KEY);
+    await userEvent.type(await screen.findByLabelText('Module'), KEY);
     await userEvent.type(screen.getByLabelText('Jeton'), TOKEN);
     await userEvent.click(screen.getByRole('button', { name: 'Lier' }));
     expect(await screen.findByText(KEY)).toBeTruthy();
@@ -75,7 +75,7 @@ describe('Écran des trackers', () => {
       http.put(`${BASE}/api/v1/profiles/u1/trackers/${KEY}/push`, () => stale())
     );
     render(Page);
-    const box = await screen.findByRole('checkbox');
+    const box = await screen.findByRole('switch');
     await userEvent.click(box);
     expect(await screen.findByRole('region', { name: 'Confirmez votre identité' })).toBeTruthy();
   });
@@ -100,6 +100,6 @@ describe('Écran des trackers', () => {
     );
     render(Page);
     expect(await screen.findByRole('heading', { name: 'Trackers', level: 1 })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Lier' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Lier' })).toBeTruthy();
   });
 });

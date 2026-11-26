@@ -52,7 +52,7 @@ describe('Assistant : connexion à Kavita', () => {
     render(Page);
     expect(screen.getByRole('note')).toHaveTextContent('Compte administrateur requis');
     expect(screen.getByLabelText('Mot de passe Kavita')).toHaveAttribute('type', 'password');
-    expect(screen.getByRole('button', { name: 'Connecter Kavita' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Connecter Kavita' })).toHaveAttribute('aria-disabled', 'true');
   });
 
   // req: EF-UX-001
@@ -61,7 +61,7 @@ describe('Assistant : connexion à Kavita', () => {
     server.use(http.post(`${BASE}/api/v1/targets`, () => (calls += 1, problem(409))));
     render(Page);
     await fill(false);
-    expect(screen.getByRole('button', { name: 'Connecter Kavita' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Connecter Kavita' })).toHaveAttribute('aria-disabled', 'true');
     expect(calls).toBe(0);
   });
 

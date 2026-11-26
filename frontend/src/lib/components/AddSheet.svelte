@@ -7,7 +7,6 @@
   import { client } from '#lib/api/client.gen.ts';
   import { emptyTrash as emptyTrashApi, follow, shelves as loadShelves, spaceCheck } from '#lib/api/index.ts';
   import type { EstimateOut, ShelfItemOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { t, formatNumber } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
@@ -18,9 +17,11 @@
   import Input from '#lib/ui/atoms/Input.svelte';
   import Radio from '#lib/ui/atoms/Radio.svelte';
   import Select from '#lib/ui/atoms/Select.svelte';
+  import Spinner from '#lib/ui/atoms/Spinner.svelte';
   import Alert from '#lib/ui/molecules/Alert.svelte';
   import Dialog from '#lib/ui/molecules/Dialog.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
 
   type Mode = 'all' | 'from_number' | 'new_only';
 
@@ -37,8 +38,9 @@
   } = $props();
 
   let open = $state(true);
-
-  let mode = $state<Mode>('all');
+  // the radio group holds a string; the mode is one of the three the server knows
+  let choice = $state<string | null>('all');
+  const mode = $derived<Mode>(choice === 'from_number' || choice === 'new_only' ? choice : 'all');
   let fromNumber = $state('');
   let shelves = $state<ShelfItemOut[]>([]);
   let shelvesProblem = $state<ProblemView | null>(null);
@@ -222,124 +224,158 @@
   }
 </script>
 
-<Dialog bind:open title={t('add.title')} {onclose}>
-  <div class="add-sheet">
-    <p class="edition"><strong>{edition.title}</strong> <span class="muted">{sourceName}</span></p>
-    {#if shelvesProblem}
-      <ProblemCard problem={shelvesProblem} level={2} />
-    {/if}
+<!-- the screen that opened the sheet is the one that closes it: the sheet stays open until it is removed -->
+<Dialog
+  bind:open
+  title={t('add.title')}
+  dismissible={!busy}
+  onclose={() => {
+    open = true;
+    onclose();
+  }}
+>
+  <div class="who">
+    <p class="who__title">{edition.title}</p>
+    <p class="who__source">{sourceName}</p>
+  </div>
 
-    {#if estimateLoading}
-      <p role="status" class="muted">{t('add.counting')}</p>
-    {:else if estimateProblem}
-      <ProblemCard problem={estimateProblem} level={2} />
-      <div><Button onclick={fetchEstimate}>{t('add.retry')}</Button></div>
-    {:else if estimate}
-      <p class="summary num" data-testid="add-summary">
-        {t('add.summary', { units: formatNumber(estimate.units), bytes: formatNumber(estimate.size_bytes) })}
-      </p>
-    {/if}
+  {#if shelvesProblem}
+    <ProblemAlert problem={shelvesProblem} />
+  {/if}
 
-    {#if shelves.length > 0}
-      <Field label={t('add.shelf')}>
-        {#snippet children(control)}
-          <Select
-            {...control}
-            bind:value={selectedShelf}
-            options={shelves.map((shelf) => ({ value: shelf.id, label: shelf.name }))}
-          />
-        {/snippet}
-      </Field>
-    {:else if !shelvesProblem}
-      <p class="muted">{t('add.unshelved')}</p>
-    {/if}
+  {#if estimateLoading}
+    <p class="counting" role="status"><Spinner size="sm" /> {t('add.counting')}</p>
+  {:else if estimateProblem}
+    <ProblemAlert problem={estimateProblem} onretry={fetchEstimate} />
+  {:else if estimate}
+    <p class="summary" data-testid="add-summary">
+      {t('add.summary', { units: formatNumber(estimate.units), bytes: formatNumber(estimate.size_bytes) })}
+    </p>
+  {/if}
 
-    <fieldset class="modes">
-      <legend>{t('add.mode_group')}</legend>
-      <Radio name="mode" value="all" bind:group={mode} label={t('add.mode.all')} />
-      <Radio name="mode" value="from_number" bind:group={mode} label={t('add.mode.from_number')} />
-      <Radio name="mode" value="new_only" bind:group={mode} label={t('add.mode.new_only')} />
-    </fieldset>
+  {#if shelves.length > 0}
+    <Field label={t('add.shelf')}>
+      {#snippet children(control)}
+        <Select {...control} bind:value={selectedShelf}>
+          {#each shelves as shelf (shelf.id)}
+            <option value={shelf.id}>{shelf.name}</option>
+          {/each}
+        </Select>
+      {/snippet}
+    </Field>
+  {:else if !shelvesProblem}
+    <p class="unshelved">{t('add.unshelved')}</p>
+  {/if}
 
-    {#if mode === 'from_number'}
-      <Field label={t('add.from_number')}>
-        {#snippet children(control)}
-          <Input {...control} type="text" bind:value={fromNumber} width="short" />
-        {/snippet}
-      </Field>
-    {/if}
+  <fieldset class="modes">
+    <legend>{t('add.mode_group')}</legend>
+    <Radio name="mode" value="all" bind:group={choice} label={t('add.mode.all')} />
+    <Radio name="mode" value="from_number" bind:group={choice} label={t('add.mode.from_number')} />
+    <Radio name="mode" value="new_only" bind:group={choice} label={t('add.mode.new_only')} />
+  </fieldset>
 
-    {#if estimate && estimate.needs_confirmation}
-      <Checkbox bind:checked={confirmed} label={t('add.confirm_size')} />
-    {/if}
+  {#if mode === 'from_number'}
+    <Field label={t('add.from_number')}>
+      {#snippet children(control)}
+        <Input {...control} type="text" width="short" bind:value={fromNumber} />
+      {/snippet}
+    </Field>
+  {/if}
 
-    {#if spaceRefusal}
-      <Alert tone="danger" live="assertive" title={t('add.refusal.estimated', { bytes: formatNumber(spaceRefusal.estimated) })}>
-        <p>{t('add.refusal.free', { bytes: formatNumber(spaceRefusal.free) })}</p>
-        <p>{t('add.refusal.reserve', { bytes: formatNumber(spaceRefusal.reserve) })}</p>
-        {#snippet actions()}
-          <Button onclick={() => (trashConfirmOpen = true)}>{t('add.empty_trash')}</Button>
-        {/snippet}
-      </Alert>
-      {#if trashConfirmOpen}
-        <div class="trash">
-          <Field label={t('add.empty_trash_prompt')}>
-            {#snippet children(control)}
-              <Input {...control} aria-label={t('add.empty_trash_input')} type="text" mono bind:value={trashWord} />
-            {/snippet}
-          </Field>
-          <div>
+  {#if estimate && estimate.needs_confirmation}
+    <Checkbox bind:checked={confirmed} label={t('add.confirm_size')} />
+  {/if}
+
+  {#if spaceRefusal}
+    <Alert tone="warning" title={t('add.refusal.title')} live="assertive">
+      <p>{t('add.refusal.estimated', { bytes: formatNumber(spaceRefusal.estimated) })}</p>
+      <p>{t('add.refusal.free', { bytes: formatNumber(spaceRefusal.free) })}</p>
+      <p>{t('add.refusal.reserve', { bytes: formatNumber(spaceRefusal.reserve) })}</p>
+      {#snippet actions()}
+        <Button onclick={() => (trashConfirmOpen = true)}>{t('add.empty_trash')}</Button>
+        {#if trashConfirmOpen}
+          <div class="trash">
+            <Field label={t('add.empty_trash_prompt')}>
+              {#snippet children(control)}
+                <Input {...control} type="text" mono bind:value={trashWord} />
+              {/snippet}
+            </Field>
             <Button variant="danger" disabled={trashWord !== 'empty-trash' || busy} onclick={emptyTrash}>
               {t('add.empty_trash_now')}
             </Button>
+            {#if reauthMethods}
+              <ReauthPrompt methods={reauthMethods} ondone={emptyTrash} oncancel={() => (reauthMethods = null)} />
+            {/if}
           </div>
-          {#if reauthMethods}
-            <ReauthPrompt methods={reauthMethods} ondone={emptyTrash} oncancel={() => (reauthMethods = null)} />
-          {/if}
-        </div>
-      {/if}
-    {/if}
+        {/if}
+      {/snippet}
+    </Alert>
+  {/if}
 
-    {#if actionProblem}
-      <ProblemCard problem={actionProblem} level={2} />
-    {/if}
+  {#if actionProblem}
+    <ProblemAlert problem={actionProblem} />
+  {/if}
 
-    {#if statusMessage}
-      <Alert tone="success" live="polite" title={statusMessage} />
-    {/if}
-  </div>
+  {#if statusMessage}
+    <Alert tone="success" title={statusMessage} live="polite" />
+  {/if}
+
   {#snippet footer()}
-    <Button variant="primary" disabled={!canAdd || busy} loading={busy} onclick={add}>{t('add.submit')}</Button>
+    <Button variant="primary" loading={busy} disabled={!canAdd || busy} onclick={add}>{t('add.submit')}</Button>
   {/snippet}
 </Dialog>
 
 <style>
-  .add-sheet {
+  .who {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--space-1);
     min-width: 0;
   }
-  .edition {
+  .who__title {
     margin: 0;
+    font: 600 var(--step-1) / 1.25 var(--font-text);
+    overflow-wrap: anywhere;
+  }
+  .who__source {
+    margin: 0;
+    color: var(--color-muted);
+    font-style: italic;
+    overflow-wrap: anywhere;
+  }
+  .counting {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--color-muted);
   }
   .summary {
     margin: 0;
-    font: 500 var(--step-1) / var(--leading-tight) var(--font-text);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface);
+    border-left: var(--rule-thick) solid var(--color-shelf);
+    font-variant-numeric: tabular-nums;
+  }
+  .unshelved {
+    margin: 0;
+    color: var(--color-muted);
   }
   .modes {
-    border: 0;
-    padding: 0;
-    margin: 0;
     display: grid;
     gap: var(--space-2);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
   }
   .modes legend {
+    padding: 0;
     margin-bottom: var(--space-2);
-    font-weight: 600;
+    font-weight: 700;
   }
   .trash {
     display: grid;
     gap: var(--space-3);
-    justify-items: start;
+    width: 100%;
   }
 </style>

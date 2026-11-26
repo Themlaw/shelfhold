@@ -10,6 +10,8 @@
   import { formatDateTime, t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
 
   let { editionId }: { editionId: string } = $props();
 
@@ -63,39 +65,57 @@
 </script>
 
 {#if loaded !== null && (links.length > 0 || proposed !== null || paused)}
-  <section aria-labelledby="support-author-title">
-    <h2 id="support-author-title">{t('support.title')}</h2>
+  <section class="section" aria-labelledby="support-author-title">
+    <div class="section-head"><h2 id="support-author-title">{t('support.title')}</h2></div>
     {#if links.length > 0}
-      <p>{t('support.intro')}</p>
-      <ul>
+      <p class="hint">{t('support.intro')}</p>
+      <ul class="entries support">
         {#each links as link (`${link.provider}|${link.url}`)}
           <li>
             <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- a third-party address, kept only when it is plain https -->
             <a href={link.url} target="_blank" rel="noopener noreferrer"
               >{t('support.link', { kind: t(KINDS[link.kind]), provider: link.provider })}</a
             >
-            <small>
+            <small class="hint">
               {t('support.provenance', {
                 provider: link.provider,
                 date: link.fetched_at ? formatDateTime(link.fetched_at) : '—'
               })}
             </small>
             {#if link.lang !== 'und'}
-              <small>{t('support.lang', { lang: link.lang })}</small>
+              <small class="hint">{t('support.lang', { lang: link.lang })}</small>
             {/if}
           </li>
         {/each}
       </ul>
     {/if}
     {#if proposed !== null}
-      <p>{t('support.pause.hint')}</p>
-      <button type="button" onclick={() => pause(proposed)}>{t('support.pause.action')}</button>
+      <div class="stack pause">
+        <p>{t('support.pause.hint')}</p>
+        <Button variant="secondary" onclick={() => pause(proposed)}>{t('support.pause.action')}</Button>
+      </div>
     {/if}
     {#if paused}
-      <p role="status">{t('support.pause.done')}</p>
+      <Alert tone="success" live="polite" title={t('support.pause.done')} />
     {/if}
     {#if problem}
       <ProblemCard {problem} />
     {/if}
   </section>
 {/if}
+
+<style>
+  .support > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-4);
+    min-height: var(--target);
+    padding: var(--space-2) 0;
+    overflow-wrap: anywhere;
+  }
+  .pause {
+    margin-top: var(--space-4);
+    max-width: var(--measure);
+  }
+</style>

@@ -3,42 +3,72 @@
   // answer with no recognised code shows a generic text and the request identifier.
   import type { ProblemView } from '#lib/problems.ts';
   import { t } from '#lib/i18n/index.ts';
-  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Icon from '#lib/ui/atoms/Icon.svelte';
 
   let {
     problem,
     level = 2,
     note = null
   }: { problem: ProblemView; level?: 1 | 2 | 3; note?: string | null } = $props();
-  // Alert has no level one: a page that asks for it keeps its own heading, this one is a level two
-  const headingLevel = $derived(level === 1 ? 2 : level);
+
+  const uid = $props.id();
+  const titleId = $derived(`problem-title-${uid}`);
 </script>
 
-<Alert tone="danger" title={problem.title} live="assertive" {headingLevel}>
-  {#if note}
-    <p class="problem__note">{note}</p>
-  {/if}
-  <dl class="problem__facts">
-    {#if problem.code}
-      <dt>{t('problem.code')}</dt>
-      <dd class="problem__code">{problem.code}</dd>
+<section role="alert" class="problem" aria-labelledby={titleId}>
+  <Icon name="alert" />
+  <svelte:element this={`h${level}`} class="problem__title" id={titleId}>{problem.title}</svelte:element>
+  <div class="problem__body">
+    {#if note}
+      <p class="problem__note">{note}</p>
     {/if}
-    {#if problem.cause}
-      <dt>{t('problem.cause')}</dt>
-      <dd>{problem.cause}</dd>
-    {/if}
-    {#if problem.action}
-      <dt>{t('problem.action')}</dt>
-      <dd>{problem.action}</dd>
-    {/if}
-    {#if problem.requestId}
-      <dt>{t('problem.request_id')}</dt>
-      <dd class="problem__code">{problem.requestId}</dd>
-    {/if}
-  </dl>
-</Alert>
+    <dl class="problem__facts">
+      {#if problem.code}
+        <dt>{t('problem.code')}</dt>
+        <dd class="problem__code">{problem.code}</dd>
+      {/if}
+      {#if problem.cause}
+        <dt>{t('problem.cause')}</dt>
+        <dd>{problem.cause}</dd>
+      {/if}
+      {#if problem.action}
+        <dt>{t('problem.action')}</dt>
+        <dd>{problem.action}</dd>
+      {/if}
+      {#if problem.requestId}
+        <dt>{t('problem.request_id')}</dt>
+        <dd class="problem__code">{problem.requestId}</dd>
+      {/if}
+    </dl>
+  </div>
+</section>
 
 <style>
+  .problem {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-1) var(--space-3);
+    align-items: start;
+    margin-block: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border: var(--rule-hair) solid var(--color-err);
+    border-left-width: var(--rule-thick);
+    border-radius: var(--radius-xs);
+    background: var(--color-err-soft);
+    color: var(--color-ink);
+  }
+  .problem > :global(.icon) {
+    margin-top: 0.1rem;
+    color: var(--color-err);
+  }
+  .problem__title {
+    margin: 0;
+    font: 700 var(--step-0) / var(--leading-ui) var(--font-ui);
+    color: var(--color-err);
+  }
+  .problem__body {
+    grid-column: 2;
+  }
   .problem__note {
     margin: 0 0 var(--space-2);
   }
@@ -48,16 +78,16 @@
     gap: var(--space-1) var(--space-4);
     margin: 0;
   }
-  dt {
+  .problem__facts dt {
     color: var(--color-muted);
     font-size: var(--step--1);
   }
-  dd {
+  .problem__facts dd {
     margin: 0;
-    min-width: 0;
   }
   .problem__code {
-    font-family: var(--font-mono, ui-monospace, monospace);
+    font-family: var(--font-mono);
+    font-size: var(--step--1);
     overflow-wrap: anywhere;
   }
   @media (max-width: 40rem) {
@@ -65,7 +95,7 @@
       grid-template-columns: minmax(0, 1fr);
       gap: 0;
     }
-    dd {
+    .problem__facts dd {
       margin-bottom: var(--space-2);
     }
   }

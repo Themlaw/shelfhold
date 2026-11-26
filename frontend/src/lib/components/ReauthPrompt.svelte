@@ -3,11 +3,11 @@
   // lost. The methods come from the 401 (`reauth_methods`); the password is the default.
   import { oidcReauth, passkeyReauthOptions, reauth } from '#lib/api/index.ts';
   import { t } from '#lib/i18n/index.ts';
-  import { csrfToken, getPasskey, passkeysSupported } from '#lib/passkeys.ts';
   import Button from '#lib/ui/atoms/Button.svelte';
   import Input from '#lib/ui/atoms/Input.svelte';
-  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Icon from '#lib/ui/atoms/Icon.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
+  import { csrfToken, getPasskey, passkeysSupported } from '#lib/passkeys.ts';
 
   let {
     methods = ['password'],
@@ -86,30 +86,47 @@
 </script>
 
 <section class="reauth" aria-labelledby="reauth-title">
-  <h2 id="reauth-title">{t('reauth.title')}</h2>
-  <p class="muted">{t('reauth.explain')}</p>
+  <div class="reauth__head">
+    <Icon name="lock" />
+    <h2 id="reauth-title">{t('reauth.title')}</h2>
+  </div>
+  <p class="reauth__explain">{t('reauth.explain')}</p>
   {#if canProvider && providerFirst}
-    <Button loading={busy} onclick={withProvider}>{t('reauth.provider')}</Button>
+    <Button variant="primary" icon="external" disabled={busy} onclick={withProvider}>{t('reauth.provider')}</Button>
   {/if}
   {#if canPassword}
-    <form onsubmit={withPassword}>
+    <form class="reauth__form" onsubmit={withPassword}>
       <Field label={t('reauth.password')} id="reauth-password">
         {#snippet children(control)}
-                    <Input {...control} type="password" autocomplete="current-password" bind:value={password} required autofocus />
+          <Input
+            {...control}
+            type="password"
+            autocomplete="current-password"
+            bind:value={password}
+            required
+            autofocus
+          />
         {/snippet}
       </Field>
-      <Button type="submit" variant="primary" loading={busy}>{t('reauth.confirm')}</Button>
+      <div class="btn-row">
+        <Button type="submit" variant="primary" disabled={busy} loading={busy}>{t('reauth.confirm')}</Button>
+        <Button variant="ghost" onclick={oncancel}>{t('reauth.cancel')}</Button>
+      </div>
     </form>
   {/if}
   {#if canPasskey}
-    <Button icon="key" loading={busy} onclick={withPasskey}>{t('reauth.passkey')}</Button>
+    <Button icon="key" disabled={busy} onclick={withPasskey}>{t('reauth.passkey')}</Button>
   {/if}
   {#if canProvider && !providerFirst}
-    <Button loading={busy} onclick={withProvider}>{t('reauth.provider')}</Button>
+    <Button icon="external" disabled={busy} onclick={withProvider}>{t('reauth.provider')}</Button>
   {/if}
-  <div><Button variant="ghost" onclick={oncancel}>{t('reauth.cancel')}</Button></div>
+  {#if !canPassword}
+    <div class="btn-row">
+      <Button variant="ghost" onclick={oncancel}>{t('reauth.cancel')}</Button>
+    </div>
+  {/if}
   {#if failed}
-    <Alert tone="danger" title={t('reauth.failed')} live="assertive" />
+    <p role="alert" class="reauth__failed"><Icon name="alert" size="sm" /> {t('reauth.failed')}</p>
   {/if}
 </section>
 
@@ -118,27 +135,41 @@
     display: grid;
     gap: var(--space-3);
     justify-items: start;
-    margin: var(--space-4) 0;
-    padding: var(--space-5);
+    margin-block: var(--space-5);
+    padding: var(--space-4) var(--space-5);
     border: var(--rule-hair) solid var(--color-warn);
     border-left-width: var(--rule-thick);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
     background: var(--color-surface);
+    box-shadow: var(--shadow-1);
   }
-  .reauth > :global(*) {
-    max-width: 100%;
+  .reauth__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--color-warn);
   }
   h2 {
     margin: 0;
     font-size: var(--step-1);
+    color: var(--color-ink);
   }
-  p {
+  .reauth__explain {
     margin: 0;
+    color: var(--color-muted);
+    max-width: var(--measure);
   }
-  form {
+  .reauth__form {
     display: grid;
     gap: var(--space-3);
-    justify-items: start;
     inline-size: min(100%, 24rem);
+  }
+  .reauth__failed {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--color-err);
+    font-weight: 600;
   }
 </style>

@@ -10,19 +10,19 @@
   import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
   import Alert from '#lib/ui/molecules/Alert.svelte';
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import type { Column } from '#lib/ui/molecules/TableRow.svelte';
   import DataTable from '#lib/ui/organisms/DataTable.svelte';
-  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   let items = $state<ToShelveItem[]>([]);
   let loaded = $state(false);
   let signedOut = $state(false);
   let failed = $state(false);
 
-  const COLUMNS = [
-    { key: 'title', label: t('toShelve.col_title'), primary: true },
-    { key: 'lang', label: t('toShelve.col_lang') },
-    { key: 'media', label: t('toShelve.col_media') }
-  ] as const;
+  const columns: readonly Column[] = [
+    { key: 'title', label: t('toShelve.col.title'), primary: true },
+    { key: 'lang', label: t('toShelve.col.lang') },
+    { key: 'media', label: t('toShelve.col.media') }
+  ];
 
   onMount(async () => {
     try {
@@ -34,40 +34,67 @@
       else failed = true;
     }
   });
-
-
 </script>
 
 <svelte:head>
   <title>{t('toShelve.title')}</title>
 </svelte:head>
 
-
 <main class="page">
-  <PageHead title={t('toShelve.title')} lede={t('toShelve.explain')}>
-    {#snippet actions()}
-      <Button href="/a-ranger/meme-oeuvre" icon="arrows">{t('toShelve.same_work')}</Button>
-    {/snippet}
-  </PageHead>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('toShelve.title')}</h1>
+      <p class="lede">{t('toShelve.explain')}</p>
+    </div>
+    <div class="page-head__actions">
+      <Button href="/a-ranger/meme-oeuvre">{t('toShelve.same_work')}</Button>
+    </div>
+  </div>
 
   {#if signedOut}
-    <Alert tone="warning" title={t('toRate.signed_out')} live="assertive" />
+    <Alert tone="danger" live="assertive" title={t('toRate.signed_out')} />
   {:else if failed}
-    <Alert tone="danger" title={t('toShelve.error')} live="assertive" />
+    <Alert tone="danger" live="assertive" title={t('toShelve.error')} />
   {:else if !loaded}
     <div aria-busy="true">
       <p class="visually-hidden" role="status">{t('toShelve.loading')}</p>
-      <Skeleton /><Skeleton /><Skeleton short />
+      <div class="loading">
+        {#each { length: 5 }, index (index)}
+          <Skeleton />
+        {/each}
+      </div>
     </div>
-  {:else if items.length === 0}
-    <EmptyState title={t('toShelve.none')} />
   {:else}
     <DataTable
-      caption={t('toShelve.title')}
+      caption={t('toShelve.caption')}
       captionHidden
-      columns={COLUMNS}
-      rows={items.map((item) => ({ id: item.edition_id, title: item.title, lang: item.lang, media: item.media }))}
-      key={(row) => String(row.id)}
-    />
+      {columns}
+      rows={items}
+      key={(item) => item.edition_id}
+      compact
+    >
+      {#snippet cell(column, item)}
+        {#if column.key === 'title'}
+          <span class="long">{item.title}</span>
+        {:else if column.key === 'lang'}
+          {item.lang}
+        {:else}
+          {item.media}
+        {/if}
+      {/snippet}
+      {#snippet empty()}
+        <EmptyState title={t('toShelve.none')} />
+      {/snippet}
+    </DataTable>
   {/if}
 </main>
+
+<style>
+  .loading {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .long {
+    overflow-wrap: anywhere;
+  }
+</style>

@@ -212,16 +212,21 @@
   }
 </script>
 
-<section class="bulk panel" aria-labelledby="bulk-title">
-  <h2 id="bulk-title">{t('toRate.bulk.title')}</h2>
+<section class="panel bulk" aria-labelledby="bulk-title">
+  <div class="section-head">
+    <h2 id="bulk-title">{t('toRate.bulk.title')}</h2>
+    <span class="folio" role="status">{t('toRate.bulk.selected_count', { count: selected.size })}</span>
+  </div>
 
-  <ul class="bulk-works">
+  <ul class="bulk-works" role="list">
     {#each items as item (item.work_id)}
       <li>
         {#if tickable(item)}
-          <Checkbox checked={selected.has(item.work_id)} onchange={() => toggle(item.work_id)} label={item.title} />
+          <Checkbox checked={selected.has(item.work_id)} onchange={() => toggle(item.work_id)}>
+            <span class="long">{item.title}</span>
+          </Checkbox>
         {:else}
-          <span class="untickable">
+          <span class="long untickable">
             {item.title}
             {#if item.rated && item.age !== null && item.age !== undefined}
               <span class="muted">{t('toRate.bulk.already_rated', { age: item.age_x ? 'X' : `${item.age}+` })}</span>
@@ -236,11 +241,10 @@
     <div class="btn-row">
       <Button size="sm" onclick={selectAllDisplayed}>{t('toRate.bulk.select_all')}</Button>
       <Button size="sm" variant="ghost" onclick={deselectAll}>{t('toRate.bulk.deselect_all')}</Button>
-      <p role="status" class="counter num">{t('toRate.bulk.selected_count', { count: selected.size })}</p>
     </div>
     <Checkbox bind:checked={filterMode} label={t('toRate.bulk.filter_mode')} />
     <AgePicker name="age-bulk" legend={t('toRate.bulk.age')} bind:value={age} />
-    <div>
+    <div class="btn-row">
       <Button variant="primary" disabled={!canPreview || busy} onclick={doPreview}>
         {t('toRate.bulk.preview')}
       </Button>
@@ -249,25 +253,35 @@
 
   {#if preview}
     <div class="preview">
-      <p>{t('toRate.bulk.preview_summary', { count: preview.items.length, age: t(ageLabel(preview.age as Age)) })}</p>
-      <ul class="preview-titles">
-        {#each preview.items as item (item.work_id)}
-          <li>{item.title}</li>
-        {/each}
-      </ul>
-      {#if preview.skipped > 0}
-        <p>{t('toRate.bulk.skipped', { count: preview.skipped })}</p>
-      {/if}
-      <p class="muted">{t('toRate.bulk.expires_at', { value: preview.expires_at })}</p>
+      <Alert
+        tone="info"
+        title={t('toRate.bulk.preview_summary', { count: preview.items.length, age: t(ageLabel(preview.age as Age)) })}
+      >
+        <ul class="preview-titles">
+          {#each preview.items as item (item.work_id)}
+            <li class="long">{item.title}</li>
+          {/each}
+        </ul>
+        {#if preview.skipped > 0}
+          <p>{t('toRate.bulk.skipped', { count: preview.skipped })}</p>
+        {/if}
+        <p class="muted">{t('toRate.bulk.expires_at', { value: preview.expires_at })}</p>
+      </Alert>
       <div class="btn-row">
-        <Button variant="primary" loading={busy} onclick={applyPreview}>{t('toRate.bulk.apply')}</Button>
+        <Button variant="primary" disabled={busy} loading={busy} onclick={applyPreview}>
+          {t('toRate.bulk.apply')}
+        </Button>
         <Button variant="ghost" disabled={busy} onclick={cancelPreview}>{t('toRate.bulk.cancel')}</Button>
       </div>
     </div>
   {/if}
 
   {#if message}
-    <Alert tone={failed ? 'danger' : 'success'} title={message} live={failed ? 'assertive' : 'polite'} />
+    <Alert
+      tone={failed ? 'danger' : 'info'}
+      live={failed ? 'assertive' : 'polite'}
+      title={message}
+    />
   {/if}
 
   {#if reauthMethods}
@@ -279,39 +293,45 @@
   .bulk {
     display: grid;
     gap: var(--space-4);
-    margin-top: var(--space-6);
     min-width: 0;
   }
-  .bulk h2 {
-    margin: 0;
-    font-size: var(--step-1);
+  .bulk .section-head {
+    margin-bottom: 0;
   }
   .bulk-works {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    max-height: 18rem;
-    overflow-y: auto;
+    gap: var(--space-1);
   }
   .untickable {
-    display: block;
-    padding: var(--space-2) 0;
-    overflow-wrap: anywhere;
-  }
-  .counter {
-    margin: 0;
-    color: var(--color-muted);
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    min-height: var(--target);
+    align-items: center;
   }
   .controls,
   .preview {
     display: grid;
-    gap: var(--space-3);
+    gap: var(--space-4);
     justify-items: start;
+    min-width: 0;
+  }
+  .preview {
+    justify-items: stretch;
   }
   .preview-titles {
+    list-style: none;
     margin: 0;
-    padding-inline-start: var(--space-5);
+    padding: 0;
+  }
+  .preview-titles + p,
+  .preview p {
+    margin: var(--space-2) 0 0;
+  }
+  .long {
     overflow-wrap: anywhere;
   }
 </style>

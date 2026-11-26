@@ -7,6 +7,7 @@ import { detectLanguage, setUiLanguage } from '#lib/i18n/index.ts';
 import { applyAppearance, loadAppearance } from '#lib/themes/index.ts';
 import '#lib/themes/base.css';
 import '#lib/themes/themes.css';
+import '#lib/themes/foundation.css'; // spacing, type scale, fonts, motion: the tokens the components read
 import '../routes/global.css';
 import { parseLocation } from './location.ts';
 import Reader from './Reader.svelte';
