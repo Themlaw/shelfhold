@@ -28,6 +28,7 @@
   import Alert from '#lib/ui/molecules/Alert.svelte';
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   let items = $state<ToRateItem[]>([]);
   let loaded = $state(false);
@@ -153,11 +154,10 @@
 </svelte:head>
 
 <main class="page">
-  <div class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('toRate.title')}</h1>
-    </div>
-  </div>
+  <PageHead
+    title={t('toRate.title')}
+    crumbs={[{ label: t('settings.title'), href: '/reglages' }, { label: t('toRate.title') }]}
+  />
 
   {#if signedOut}
     <Alert tone="danger" live="assertive" title={t('toRate.signed_out')} />

@@ -19,7 +19,7 @@
     SuggestionOut,
     WorkMergeOut
   } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
@@ -33,6 +33,7 @@
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
   import ConfirmDialog from '#lib/ui/molecules/ConfirmDialog.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   const REASONS: Record<string, MessageKey> = {
     suwayomi_migration: 'sameWork.reason.suwayomi_migration',
@@ -183,17 +184,21 @@
 </svelte:head>
 
 <main class="page">
-  <div class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('sameWork.title')}</h1>
-      <p class="lede">{t('sameWork.intro')}</p>
-    </div>
-    {#if !signedOut && !forbidden && !failed}
-      <div class="page-head__actions">
+  <PageHead
+    title={t('sameWork.title')}
+    lede={t('sameWork.intro')}
+    crumbs={[
+      { label: t('settings.title'), href: '/reglages' },
+      { label: t('toShelve.title'), href: '/a-ranger' },
+      { label: t('sameWork.title') }
+    ]}
+  >
+    {#snippet actions()}
+      {#if !signedOut && !forbidden && !failed}
         <Button icon="refresh" onclick={scan} disabled={busy}>{t('sameWork.scan')}</Button>
-      </div>
-    {/if}
-  </div>
+      {/if}
+    {/snippet}
+  </PageHead>
 
   {#if signedOut}
     <Alert tone="danger" live="assertive" title={t('toRate.signed_out')} />
@@ -352,7 +357,7 @@
   {/if}
 
   {#if problem}
-    <div class="problem"><ProblemCard {problem} level={2} /></div>
+    <div class="problem"><ProblemAlert {problem} level={2} /></div>
   {/if}
   {#if reauth.reauthMethods}
     <div class="problem">

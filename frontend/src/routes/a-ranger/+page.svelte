@@ -12,6 +12,7 @@
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
   import type { Column } from '#lib/ui/molecules/TableRow.svelte';
   import DataTable from '#lib/ui/organisms/DataTable.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   let items = $state<ToShelveItem[]>([]);
   let loaded = $state(false);
@@ -41,15 +42,15 @@
 </svelte:head>
 
 <main class="page">
-  <div class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('toShelve.title')}</h1>
-      <p class="lede">{t('toShelve.explain')}</p>
-    </div>
-    <div class="page-head__actions">
+  <PageHead
+    title={t('toShelve.title')}
+    lede={t('toShelve.explain')}
+    crumbs={[{ label: t('settings.title'), href: '/reglages' }, { label: t('toShelve.title') }]}
+  >
+    {#snippet actions()}
       <Button href="/a-ranger/meme-oeuvre">{t('toShelve.same_work')}</Button>
-    </div>
-  </div>
+    {/snippet}
+  </PageHead>
 
   {#if signedOut}
     <Alert tone="danger" live="assertive" title={t('toRate.signed_out')} />

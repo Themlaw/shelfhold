@@ -53,7 +53,8 @@ describe('À classer', () => {
     expect(rate).toHaveAttribute('aria-disabled', 'true');
     // keyboard: Tab into the group, arrows move, nothing chosen until a key does it
     const user = userEvent.setup();
-    await user.tab(); // the two filters come first: the state, then the search
+    await user.tab(); // the way back to the settings comes first
+    await user.tab(); // then the two filters: the state, then the search
     await user.tab();
     await user.tab();
     expect(radios[0]).toHaveFocus();

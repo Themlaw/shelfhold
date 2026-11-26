@@ -16,7 +16,7 @@
   import type { MigrationOut, SheetBindingOut } from '#lib/api/types.gen.ts';
 
   type Row = MigrationOut['rows'][number];
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
@@ -28,6 +28,7 @@
   import Alert from '#lib/ui/molecules/Alert.svelte';
   import ConfirmDialog from '#lib/ui/molecules/ConfirmDialog.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   const GONE = ['not_loaded', 'removed_upstream'];
   const REASONS: Record<string, MessageKey> = {
@@ -167,19 +168,18 @@
 </svelte:head>
 
 <main class="page">
-  <div class="running-head">
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <a href={`/serie/${editionId}`}>{t('migrate.back')}</a>
-  </div>
-  <div class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('migrate.title')}</h1>
-      <p class="lede">{t('migrate.intro')}</p>
-    </div>
-  </div>
+  <PageHead
+    title={t('migrate.title')}
+    lede={t('migrate.intro')}
+    crumbs={[
+      { label: t('settings.title'), href: '/reglages' },
+      { label: t('migrate.back'), href: `/serie/${editionId}` },
+      { label: t('migrate.title') }
+    ]}
+  />
 
   <div class="stack">
-    {#if problem}<ProblemCard {problem} level={2} />{/if}
+    {#if problem}<ProblemAlert {problem} level={2} />{/if}
     {#if reauthMethods}
       <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
     {/if}
