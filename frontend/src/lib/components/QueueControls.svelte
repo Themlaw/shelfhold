@@ -18,7 +18,7 @@
   } from '#lib/api/index.ts';
   import type { JobOut, MaintenanceStatusOut } from '#lib/api/types.gen.ts';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
-  import { t, type MessageKey } from '#lib/i18n/index.ts';
+  import { hasMessage, t, type MessageKey } from '#lib/i18n/index.ts';
   import { reloadOnStream } from '#lib/live.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { isForbidden, needsReauth, needsSession, problemOf } from '#lib/triage.ts';
@@ -193,6 +193,8 @@
     ['failed', 'cancelled', 'dead_letter'].includes(job.status);
   const statusLabel = (value: string): string =>
     STATUS_LABEL[value] ? t(STATUS_LABEL[value]) : value;
+  const kindLabel = (kind: string): string =>
+    hasMessage(`queue.kind.${kind}`) ? t(`queue.kind.${kind}`) : kind;
   const shortId = (id: string): string => id.slice(-8);
   const STATUS_TONE: Record<string, BadgeTone> = {
     running: 'accent',
@@ -281,7 +283,10 @@
       <ul class="entries jobs" data-testid="queue-jobs">
         {#each jobs as job (job.id)}
           <li class="row" class:preempted={isPreempted(job)} data-testid="queue-job">
-            <span class="row__name kind">{job.kind}</span>
+            <span class="row__name">
+              <span class="kind-label">{kindLabel(job.kind)}</span>
+              <code class="kind">{job.kind}</code>
+            </span>
             <Badge tone={STATUS_TONE[job.status] ?? 'neutral'}>{statusLabel(job.status)}</Badge>
             {#if job.request_id}
               <span class="muted">{t('queue.for_whom', { request: shortId(job.request_id) })}</span>
@@ -293,7 +298,7 @@
               {#if job.status === 'queued'}
                 <Select
                   inline
-                  aria-label={t('queue.priority', { kind: job.kind })}
+                  aria-label={t('queue.priority', { kind: kindLabel(job.kind) })}
                   value={job.priority_class}
                   disabled={maintenanceActive}
                   onchange={(e: Event) => setPriority(job, (e.target as HTMLSelectElement).value)}
@@ -305,7 +310,7 @@
                   size="sm"
                   variant="ghost"
                   disabled={maintenanceActive}
-                  aria-label={t('queue.cancel_job', { kind: job.kind })}
+                  aria-label={t('queue.cancel_job', { kind: kindLabel(job.kind) })}
                   onclick={() => cancel(job)}>{t('queue.cancel')}</Button
                 >
               {/if}
@@ -314,7 +319,7 @@
                   size="sm"
                   icon="refresh"
                   disabled={maintenanceActive}
-                  aria-label={t('queue.replay_job', { kind: job.kind })}
+                  aria-label={t('queue.replay_job', { kind: kindLabel(job.kind) })}
                   onclick={() => replay(job)}
                   >{job.status === 'dead_letter' ? t('queue.replay_verify') : t('queue.replay')}</Button
                 >
@@ -378,9 +383,14 @@
     min-width: 0;
     overflow-wrap: anywhere;
   }
+  .kind-label {
+    font-weight: 600;
+  }
   .kind {
+    display: block;
     font-family: var(--font-mono, ui-monospace, monospace);
     font-size: var(--step--1);
+    color: var(--color-muted);
   }
   .row__actions {
     display: flex;

@@ -26,7 +26,7 @@
     TrustCardOut,
     TrustLineOut
   } from '#lib/api/types.gen.ts';
-  import { t } from '#lib/i18n/index.ts';
+  import { hasMessage, t } from '#lib/i18n/index.ts';
   import { formatDateTime } from '#lib/i18n/format.ts';
   import TrustCard from '#lib/components/TrustCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
@@ -382,8 +382,14 @@
                 <span class="card__id">
                   <strong class="card__name">{plugin.name}</strong>
                   <span class="num muted">{plugin.version}</span>
-                  <Badge tone="neutral">{plugin.mode}</Badge>
-                  <Badge tone={plugin.status === 'enabled' ? 'success' : 'warning'}>{plugin.status}</Badge>
+                  <Badge tone="neutral">
+                    {hasMessage(`modules.mode.${plugin.mode}`) ? t(`modules.mode.${plugin.mode}`) : plugin.mode}
+                    {#if hasMessage(`modules.mode.${plugin.mode}`)}<code class="raw-code">{plugin.mode}</code>{/if}
+                  </Badge>
+                  <Badge tone={plugin.status === 'enabled' ? 'success' : 'warning'}>
+                    {hasMessage(`modules.status.${plugin.status}`) ? t(`modules.status.${plugin.status}`) : plugin.status}
+                    {#if hasMessage(`modules.status.${plugin.status}`)}<code class="raw-code">{plugin.status}</code>{/if}
+                  </Badge>
                 </span>
                 <Button
                   size="sm"
@@ -554,5 +560,10 @@
     gap: var(--space-4);
     max-width: var(--form-max);
     margin-top: var(--space-5);
+  }
+  .raw-code {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.85em;
+    opacity: 0.8;
   }
 </style>

@@ -6,10 +6,12 @@
 
   let {
     label,
+    meta,
     help,
     children
   }: {
     label: string;
+    meta?: string;
     help?: string;
     children: Snippet<[{ id: string; 'aria-describedby': string | undefined }]>;
   } = $props();
@@ -22,6 +24,7 @@
 <div class="setting">
   <div class="setting__text">
     <label class="setting__label" for={id}>{label}</label>
+    {#if meta}<p class="setting__meta"><code>{meta}</code></p>{/if}
     {#if help}<p class="setting__help" id={helpId}>{help}</p>{/if}
   </div>
   <div class="setting__control">{@render children({ id, 'aria-describedby': helpId })}</div>
@@ -38,6 +41,15 @@
   .setting__label {
     display: block;
     font-weight: 700;
+  }
+  .setting__meta {
+    margin: var(--space-1) 0 0;
+    font-size: var(--step--1);
+    color: var(--color-muted);
+  }
+  .setting__meta code {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    overflow-wrap: anywhere;
   }
   .setting__help {
     margin: var(--space-1) 0 0;

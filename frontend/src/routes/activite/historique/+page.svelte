@@ -8,7 +8,7 @@
   import type { BlockOut, HistoryEntryOut } from '#lib/api/types.gen.ts';
   import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import { formatDateTime } from '#lib/i18n/format.ts';
-  import { t, type MessageKey } from '#lib/i18n/index.ts';
+  import { hasMessage, t, type MessageKey } from '#lib/i18n/index.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { navItems } from '#lib/nav.ts';
   import Button from '#lib/ui/atoms/Button.svelte';
@@ -93,8 +93,9 @@
         <ul class="entries">
           {#each entries as entry (entry.event_id)}
             <li class="event">
+              <span class="title">{hasMessage(`activity.kind.${entry.type}`) ? t(`activity.kind.${entry.type}`) : (entry.title ?? entry.type)}</span>
               <code class="code">{entry.type}</code>
-              {#if entry.title}<span class="title">{entry.title}</span>{/if}
+              {#if entry.title && hasMessage(`activity.kind.${entry.type}`)}<span class="meta">{entry.title}</span>{/if}
               <time class="folio" datetime={entry.occurred_at}>{formatDateTime(entry.occurred_at)}</time>
             </li>
           {/each}
