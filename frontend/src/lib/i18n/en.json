@@ -36,7 +36,7 @@
   "age.13": "13+",
   "age.16": "16+",
   "age.18": "18+",
-  "age.x": "None",
+  "age.x": "X (adults)",
   "toRate.title": "To classify",
   "toRate.loading": "Loading the Works to classify…",
   "toRate.none": "Nothing to classify: all Works have an age.",

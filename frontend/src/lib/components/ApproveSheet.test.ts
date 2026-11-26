@@ -102,7 +102,7 @@ describe('ApproveSheet', () => {
     answer(preview());
     render(ApproveSheet, { item: item(), onapproved: vi.fn() });
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('radio', { name: 'Aucun' }));
+    await user.click(await screen.findByRole('radio', { name: 'X (adultes)' }));
     await user.click(approveButton());
     await vi.waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0]?.body).toMatchObject({ age: 18, x: true });
