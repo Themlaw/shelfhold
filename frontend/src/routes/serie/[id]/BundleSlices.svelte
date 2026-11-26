@@ -5,7 +5,7 @@
   // reader who is not the admin (403) and sets nothing the server did not allow.
   import { bundleSlicesRead, bundleSlicesSet } from '#lib/api/index.ts';
   import type { BundleOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
@@ -126,7 +126,7 @@
       <Alert tone="success" live="polite" title={t('bundleSlices.saved')} />
     {/if}
     {#if problem}
-      <ProblemCard {problem} />
+      <ProblemAlert {problem} />
     {/if}
   </section>
 {/if}

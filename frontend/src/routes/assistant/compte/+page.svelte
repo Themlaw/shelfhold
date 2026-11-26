@@ -4,7 +4,7 @@
   // Otherwise the screen says who is signed in and sends whoever is not to the sign-in page.
   import { onDestroy, onMount } from 'svelte';
   import { firstRunStatus, makeFirstAdmin, me } from '#lib/api/index.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import WizardNext from '#lib/components/WizardNext.svelte';
   import WizardPage from '#lib/components/WizardPage.svelte';
   import WizardSignedOut from '#lib/components/WizardSignedOut.svelte';
@@ -105,7 +105,7 @@
           {/snippet}
         </Field>
         {#if problem}
-          <ProblemCard {problem} />
+          <ProblemAlert {problem} />
         {/if}
         <div class="btn-row">
           <Button type="submit" variant="primary" size="lg" loading={busy}>{t('admin.wizard.compte.submit')}</Button>

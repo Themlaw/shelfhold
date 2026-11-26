@@ -9,7 +9,7 @@
   import { notFound, readRequestList, reject } from '#lib/api/index.ts';
   import type { ListItemOut, ListReviewOut, QueueItemOut } from '#lib/api/types.gen.ts';
   import ApproveSheet from '#lib/components/ApproveSheet.svelte';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import DecisionPanel from '#lib/components/DecisionPanel.svelte';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
   import Badge from '#lib/ui/atoms/Badge.svelte';
@@ -122,7 +122,7 @@
     <div aria-busy="true"><p class="visually-hidden" role="status">{t('home.loading')}</p><Skeleton /><Skeleton /><Skeleton short /></div>
   {:else if problem || !review}
     <div class="page-head"><h1 class="page-title">{t('lists.review_title')}</h1></div>
-    {#if problem}<ProblemCard {problem} />{/if}
+    {#if problem}<ProblemAlert {problem} />{/if}
   {:else}
     <div class="page-head">
       <div class="page-head__text">
@@ -172,7 +172,7 @@
     {/key}
     <DecisionPanel bind:reason onreject={doReject} onnotfound={doNotFound} onclose={close} />
     {#if decisionProblem}
-      <ProblemCard problem={decisionProblem} level={3} />
+      <ProblemAlert problem={decisionProblem} level={3} />
     {/if}
   </Dialog>
 {/if}

@@ -16,7 +16,7 @@
     wizardState
   } from '#lib/api/index.ts';
   import type { WizardStateOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import WizardPage from '#lib/components/WizardPage.svelte';
   import WizardSignedOut from '#lib/components/WizardSignedOut.svelte';
@@ -156,7 +156,7 @@
         oncancel={() => (reauthMethods = null)}
       />
     {/if}
-    {#if problem}<ProblemCard {problem} />{/if}
+    {#if problem}<ProblemAlert {problem} />{/if}
 
     {#if !facts && !problem}
       <div aria-busy="true">

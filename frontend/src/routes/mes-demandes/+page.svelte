@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { cancel, mine } from '#lib/api/index.ts';
   import type { RequestOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import RequestItem from '#lib/components/RequestItem.svelte';
   import { formatNumber, t } from '#lib/i18n/index.ts';
   import Button from '#lib/ui/atoms/Button.svelte';
@@ -78,7 +78,7 @@
       <Skeleton /><Skeleton /><Skeleton short />
     </div>
   {:else if problem}
-    <ProblemCard {problem} />
+    <ProblemAlert {problem} />
   {:else if items.length === 0}
     <EmptyState title={child ? t('requests.empty_child') : t('home.requests_empty')}>
       {#if child}{t('requests.empty_child_help')}{/if}
@@ -86,7 +86,7 @@
     </EmptyState>
   {:else}
     {#if cancelProblem}
-      <ProblemCard problem={cancelProblem} />
+      <ProblemAlert problem={cancelProblem} />
     {/if}
     <ul class="entries" role="list">
       {#each items as request (request.id)}

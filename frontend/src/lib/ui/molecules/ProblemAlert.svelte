@@ -25,11 +25,14 @@
     problem,
     kind = null,
     level = 2,
+    note = null,
     onretry
   }: {
     problem: ProblemView;
     kind?: BlockKind | null;
     level?: 2 | 3 | 4;
+    /** a sentence of the screen, before what the server said */
+    note?: string | null;
     /** a way out for a read that can be tried again */
     onretry?: () => void;
   } = $props();
@@ -52,9 +55,8 @@
   </ErrorState>
 {:else}
   <Alert tone="danger" title={problem.title} live="assertive" headingLevel={level} incident={problem.requestId} actions={onretry ? retry : undefined}>
-    {#if problem.cause || problem.action}
-      {#if problem.cause}<p>{problem.cause}</p>{/if}
-      {#if problem.action}<p>{problem.action}</p>{/if}
-    {/if}
+    {#if note}<p>{note}</p>{/if}
+    {#if problem.cause}<p>{problem.cause}</p>{/if}
+    {#if problem.action}<p>{problem.action}</p>{/if}
   </Alert>
 {/if}

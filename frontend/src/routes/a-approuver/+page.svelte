@@ -6,7 +6,7 @@
   import { notFound, queue as loadQueue, reject } from '#lib/api/index.ts';
   import type { QueueItemOut } from '#lib/api/types.gen.ts';
   import ApproveSheet from '#lib/components/ApproveSheet.svelte';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import DecisionPanel from '#lib/components/DecisionPanel.svelte';
   import { formatDate, t, type MessageKey } from '#lib/i18n/index.ts';
   import Badge from '#lib/ui/atoms/Badge.svelte';
@@ -106,7 +106,7 @@
       </ul>
     </div>
   {:else if problem}
-    <ProblemCard {problem} />
+    <ProblemAlert {problem} />
   {:else if items.length === 0}
     <EmptyState title={t('approve.empty')} />
   {:else}
@@ -140,7 +140,7 @@
     {/key}
     <DecisionPanel bind:reason onreject={doReject} onnotfound={doNotFound} onclose={close} />
     {#if decisionProblem}
-      <ProblemCard problem={decisionProblem} level={3} />
+      <ProblemAlert problem={decisionProblem} level={3} />
     {/if}
   </Dialog>
 {/if}
