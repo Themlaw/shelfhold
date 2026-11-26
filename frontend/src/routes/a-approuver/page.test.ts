@@ -109,7 +109,10 @@ describe('To approve screen', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: /Titre A/ }));
     const refuse = await screen.findByRole('button', { name: 'Refuser' });
-    expect(refuse).toHaveAttribute('aria-disabled', 'true');
+    // a click without a reason explains and sends nothing
+    await user.click(refuse);
+    expect(await screen.findByText('Indiquez un motif pour refuser.')).toBeInTheDocument();
+    expect(sent).toBeNull();
     await user.type(screen.getByLabelText('Motif du refus'), 'Déjà possédé');
     await user.click(refuse);
     await vi.waitFor(() => expect(sent).not.toBeNull());
