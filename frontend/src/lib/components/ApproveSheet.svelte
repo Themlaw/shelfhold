@@ -68,9 +68,8 @@
   });
 
   const needsAge = $derived(preview?.needs_age ?? item.needs_age);
-  const canApprove = $derived(
-    !busy && (!needsAge || age !== null) && (!preview?.confirmation_required || confirmed)
-  );
+  const missingAge = $derived(needsAge && age === null);
+  const canApprove = $derived(!busy && (!preview?.confirmation_required || confirmed));
 
   /** The way the server reads a tier: X is the top tier with the X flag. */
   function rating(chosen: Age | null): { age: number | null; x: boolean } {
@@ -80,7 +79,7 @@
   }
 
   async function send(): Promise<void> {
-    if (!canApprove) return;
+    if (missingAge || !canApprove) return;
     busy = true;
     problem = null;
     try {

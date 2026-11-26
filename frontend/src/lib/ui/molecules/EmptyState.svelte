@@ -3,6 +3,8 @@
   // says what to do next. `variant="filtered"` is the empty answer to a filter: it recalls the
   // filter and offers to clear it, with another drawing than the first use.
   import type { Snippet } from 'svelte';
+  import { t } from '#lib/i18n/index.ts';
+  import Button from '../atoms/Button.svelte';
   import Illustration from '../atoms/Illustration.svelte';
 
   let {
@@ -11,6 +13,8 @@
     headingLevel = 2,
     center = false,
     art = true,
+    query,
+    onclear,
     children,
     actions
   }: {
@@ -19,6 +23,8 @@
     headingLevel?: 2 | 3;
     center?: boolean;
     art?: boolean;
+    query?: string;
+    onclear?: () => void;
     children?: Snippet;
     actions?: Snippet;
   } = $props();
@@ -29,8 +35,14 @@
     <div class="empty__art"><Illustration name={variant === 'filtered' ? 'nothing-found' : 'empty'} /></div>
   {/if}
   <svelte:element this={`h${headingLevel}`} class="empty__title" class:empty__title--small={headingLevel === 3}>{title}</svelte:element>
+  {#if query}<p class="empty__query">«&nbsp;{query}&nbsp;»</p>{/if}
   {#if children}<div class="empty__body">{@render children()}</div>{/if}
-  {#if actions}<div class="empty__actions">{@render actions()}</div>{/if}
+  {#if actions || onclear}
+    <div class="empty__actions">
+      {#if onclear}<Button variant="secondary" onclick={onclear}>{t('ui.clear')}</Button>{/if}
+      {#if actions}{@render actions()}{/if}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -57,6 +69,12 @@
   }
   .empty__title--small {
     font-size: var(--step-1);
+  }
+  .empty__query {
+    margin: 0;
+    color: var(--color-muted);
+    font: italic var(--step-1) / var(--leading-read) var(--font-text);
+    overflow-wrap: anywhere;
   }
   .empty__body {
     color: var(--color-muted);

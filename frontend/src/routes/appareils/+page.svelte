@@ -161,6 +161,7 @@
   .card__url {
     max-width: 100%;
     overflow-wrap: anywhere;
+    word-break: break-all;
     font-size: var(--step--1);
     color: var(--color-muted);
   }

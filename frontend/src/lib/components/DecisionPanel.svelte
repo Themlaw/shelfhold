@@ -17,14 +17,23 @@
     onnotfound: () => void;
     onclose: () => void;
   } = $props();
+
+  let attempted = $state(false);
+  const missingReason = $derived(attempted && reason.trim() === '');
+
+  function refuse(): void {
+    attempted = true;
+    if (reason.trim() === '') return;
+    onreject();
+  }
 </script>
 
 <section class="decision" aria-label={t('approve.refuse_group')}>
-  <Field label={t('approve.reason')}>
+  <Field label={t('approve.reason')} error={missingReason ? t('approve.reason_needed') : null}>
     {#snippet children(control)}<Input {...control} bind:value={reason} />{/snippet}
   </Field>
   <div class="btn-row">
-    <Button variant="danger" disabled={reason.trim() === ''} onclick={onreject}>{t('approve.reject')}</Button>
+    <Button variant="danger" onclick={refuse}>{t('approve.reject')}</Button>
     <Button onclick={onnotfound}>{t('approve.not_found')}</Button>
     <Button variant="ghost" onclick={onclose}>{t('approve.close')}</Button>
   </div>
