@@ -18,7 +18,7 @@
     WizardProbeOut
   } from '#lib/api/types.gen.ts';
   import { previewAdoption } from '#lib/adoption.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import WizardPage from '#lib/components/WizardPage.svelte';
   import WizardSignedOut from '#lib/components/WizardSignedOut.svelte';
@@ -183,7 +183,7 @@
       <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
     {/if}
     {#if problem}
-      <ProblemCard {problem} />
+      <ProblemAlert {problem} />
     {/if}
     {#if message}
       <Alert tone="success" title={message} live="polite" />

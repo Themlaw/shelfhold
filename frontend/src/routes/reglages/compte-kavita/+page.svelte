@@ -6,7 +6,7 @@
   // here: a parent does it for them.
   import { onMount } from 'svelte';
   import { client } from '#lib/api/client.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import SyncStatus from '#lib/components/SyncStatus.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { formatDateTime, hasMessage, t } from '#lib/i18n/index.ts';
@@ -259,7 +259,7 @@
           {:else if outcome?.kind === 'revoked'}
             <Alert tone="info" title={t('kavita.revoked')} live="polite" />
           {:else if outcome?.kind === 'refused'}
-            <ProblemCard problem={outcome.problem} level={3} note={outcome.note} />
+            <ProblemAlert problem={outcome.problem} level={3} note={outcome.note} />
           {/if}
         </section>
       {/each}

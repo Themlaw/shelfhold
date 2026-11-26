@@ -6,7 +6,7 @@
   // its action) — this component decides nothing, it only does not hide the reason.
   import { onMount } from 'svelte';
   import { client } from '#lib/api/client.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { hasMessage, t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
@@ -167,7 +167,7 @@
     <Alert tone="success" live="polite" title={t('bindings.linked')} />
   {/if}
   {#if refusal}
-    <ProblemCard problem={refusal} level={3} />
+    <ProblemAlert problem={refusal} level={3} />
   {/if}
 
   {#if reauthMethods}

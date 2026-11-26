@@ -13,7 +13,7 @@
     listRequestLists
   } from '#lib/api/index.ts';
   import type { ListImportOut, ListSummaryOut, ProfileOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { formatNumber, t } from '#lib/i18n/index.ts';
   import Button from '#lib/ui/atoms/Button.svelte';
@@ -151,7 +151,7 @@
     <ReauthPrompt methods={reauthMethods} ondone={send} oncancel={() => (reauthMethods = null)} />
   {/if}
   {#if actionProblem}
-    <ProblemCard problem={actionProblem} level={2} />
+    <ProblemAlert problem={actionProblem} level={2} />
   {/if}
 
   {#if done}
@@ -175,7 +175,7 @@
     {#if !loaded}
       <div aria-busy="true"><p class="visually-hidden" role="status">{t('home.loading')}</p><Skeleton /><Skeleton short /></div>
     {:else if problem}
-      <ProblemCard {problem} level={3} />
+      <ProblemAlert {problem} level={3} />
     {:else if batches.length === 0}
       <EmptyState title={t('lists.recent_empty')} headingLevel={3} art={false} />
     {:else}

@@ -6,7 +6,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { precreate, wizardMarkFamily, wizardState } from '#lib/api/index.ts';
   import type { WizardShelfOut, WizardSourceOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import SentenceShelf from '#lib/components/SentenceShelf.svelte';
   import WizardNext from '#lib/components/WizardNext.svelte';
@@ -103,7 +103,7 @@
         oncancel={() => (reauthMethods = null)}
       />
     {/if}
-    {#if problem}<ProblemCard {problem} />{/if}
+    {#if problem}<ProblemAlert {problem} />{/if}
 
     {#if !loaded}
       <div aria-busy="true">

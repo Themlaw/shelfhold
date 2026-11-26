@@ -6,6 +6,13 @@
   import type { NotificationPrefsOut } from '#lib/api/types.gen.ts';
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   const MODES = ['digest', 'immediate'] as const;
 
@@ -68,42 +75,58 @@
   <title>{t('notifications.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('notifications.title')}</h1>
+<main class="page">
+  <PageHead
+    title={t('notifications.title')}
+    crumbs={[{ label: t('settings.title'), href: '/reglages' }, { label: t('notifications.title') }]}
+  />
   {#if prefs}
-    <form onsubmit={save}>
-      <label for="notify-mode">{t('notifications.mode')}</label>
-      <select id="notify-mode" bind:value={notifyMode}>
-        {#each MODES as mode (mode)}
-          <option value={mode}>{t(`notifications.mode.${mode}`)}</option>
-        {/each}
-      </select>
-      <label for="quiet-start">{t('notifications.quiet_start')}</label>
-      <input id="quiet-start" type="time" bind:value={quietStart} />
-      <label for="quiet-end">{t('notifications.quiet_end')}</label>
-      <input id="quiet-end" type="time" bind:value={quietEnd} />
-      <label for="timezone">{t('notifications.timezone')}</label>
-      <input id="timezone" bind:value={timezone} required />
-      <button type="submit">{t('notifications.save')}</button>
+    <form class="stack page--form" onsubmit={save}>
+      <Field label={t('notifications.mode')}>
+        {#snippet children(control)}
+          <Select
+            {...control}
+            bind:value={notifyMode}
+            options={MODES.map((mode) => ({ value: mode, label: t(`notifications.mode.${mode}`) }))}
+          />
+        {/snippet}
+      </Field>
+      <Field label={t('notifications.quiet_start')}>
+        {#snippet children(control)}
+          <Input {...control} type="time" width="short" bind:value={quietStart} />
+        {/snippet}
+      </Field>
+      <Field label={t('notifications.quiet_end')}>
+        {#snippet children(control)}
+          <Input {...control} type="time" width="short" bind:value={quietEnd} />
+        {/snippet}
+      </Field>
+      <Field label={t('notifications.timezone')} required>
+        {#snippet children(control)}
+          <Input {...control} width="mid" bind:value={timezone} />
+        {/snippet}
+      </Field>
+      <div class="btn-row">
+        <Button type="submit" variant="primary">{t('notifications.save')}</Button>
+      </div>
     </form>
+  {:else if !failed}
+    <div aria-busy="true"><Skeleton /><Skeleton /><Skeleton short /></div>
   {/if}
   {#if message}
-    <p role={failed ? 'alert' : 'status'} class:err={failed}>{message}</p>
+    <div class="notice">
+      <Alert
+        tone={failed ? 'danger' : 'success'}
+        live={failed ? 'assertive' : 'polite'}
+        title={message}
+      />
+    </div>
   {/if}
 </main>
 
 <style>
-  main {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: 2rem 1rem;
-  }
-  form {
-    display: grid;
-    gap: 0.5rem;
-    max-width: 24rem;
-  }
-  .err {
-    color: var(--color-err);
+  .notice {
+    max-width: var(--form-max);
+    margin-top: var(--space-4);
   }
 </style>

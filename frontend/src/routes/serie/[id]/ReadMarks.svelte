@@ -5,7 +5,7 @@
   // many marks were undone, and this screen draws nothing the server did not answer.
   import { me, readerReadMarks, readerUndoReadMark, readerUndoReadMarkForChild } from '#lib/api/index.ts';
   import type { ReadMarkOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
@@ -89,7 +89,7 @@
       <Alert tone="info" live="polite" title={t('readMarks.undone', { count: undone })} />
     {/if}
     {#if problem}
-      <ProblemCard {problem} />
+      <ProblemAlert {problem} />
     {/if}
   </section>
 {/if}

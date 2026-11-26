@@ -7,6 +7,10 @@
   import { t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   const INTENT = 'oidc-intent';
   // what a person asked for before the provider took the browser away is worth no more than the
@@ -123,85 +127,103 @@
   <title>{t('oidc.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('oidc.title')}</h1>
-  <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-  <p><a href="/reglages">{t('oidc.back')}</a></p>
+<main class="page">
+  <PageHead
+    title={t('oidc.title')}
+    crumbs={[{ label: t('oidc.back'), href: '/reglages' }, { label: t('oidc.title') }]}
+  />
 
-  {#if loaded && issuer === null && items.length === 0}
-    <p>{t('oidc.not_configured')}</p>
-  {:else if issuer !== null}
-    <p>{t('oidc.issuer', { issuer })}</p>
-  {/if}
+  <div class="stack page--form">
+    {#if !loaded}
+      <div aria-busy="true"><Skeleton /><Skeleton short /></div>
+    {:else if issuer === null && items.length === 0}
+      <p>{t('oidc.not_configured')}</p>
+    {:else if issuer !== null}
+      <p>{t('oidc.issuer', { issuer })}</p>
+    {/if}
 
-  {#if issuer === null && items.length === 0}
-    <!-- nothing to link, nothing to remove -->
-  {:else if items.length === 0}
-    <p>{t('oidc.none')}</p>
-  {:else}
-    <ul>
-      {#each items as item (item.issuer)}
-        <li>
-          <span>{item.issuer}</span>
-          <span class="muted">
-            {t('oidc.linked_since', { date: formatDate(item.linked_at) })}
-            {#if item.linked_by_other}· {t('oidc.by_admin')}{/if}
-          </span>
-          <button type="button" disabled={busy} onclick={unlink}>{t('oidc.unlink')}</button>
-        </li>
-      {/each}
-    </ul>
-  {/if}
+    {#if issuer === null && items.length === 0}
+      <!-- nothing to link, nothing to remove -->
+    {:else if items.length === 0}
+      <p>{t('oidc.none')}</p>
+    {:else}
+      <ul class="identities">
+        {#each items as item (item.issuer)}
+          <li>
+            <span class="issuer">{item.issuer}</span>
+            <span class="muted">
+              {t('oidc.linked_since', { date: formatDate(item.linked_at) })}
+              {#if item.linked_by_other}· {t('oidc.by_admin')}{/if}
+            </span>
+            <Button variant="secondary" disabled={busy} onclick={unlink}>{t('oidc.unlink')}</Button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
 
-  {#if items.length === 0 && issuer !== null}
-    <button type="button" disabled={busy} onclick={link}>{t('oidc.link')}</button>
-  {/if}
+    {#if items.length === 0 && issuer !== null}
+      <div class="btn-row">
+        <Button variant="primary" disabled={busy} onclick={link}>{t('oidc.link')}</Button>
+      </div>
+    {/if}
 
-  {#if resumable}
-    <p>{t(resumable === 'unlink' ? 'oidc.resume_unlink' : 'oidc.resume_link')}</p>
-    <button type="button" disabled={busy} onclick={resume}>
-      {t(resumable === 'unlink' ? 'oidc.unlink' : 'oidc.link')}
-    </button>
-  {/if}
+    {#if resumable}
+      <p>{t(resumable === 'unlink' ? 'oidc.resume_unlink' : 'oidc.resume_link')}</p>
+      <div class="btn-row">
+        <Button variant="primary" disabled={busy} onclick={resume}>
+          {t(resumable === 'unlink' ? 'oidc.unlink' : 'oidc.link')}
+        </Button>
+      </div>
+    {/if}
 
-  {#if lastUnlinked}
-    <p class="muted">
-      {t('oidc.last_unlinked', { date: formatDate(lastUnlinked.at) })}
-      {#if lastUnlinked.by_other}· {t('oidc.by_admin_removed')}{/if}
-    </p>
-  {/if}
+    {#if lastUnlinked}
+      <p class="muted">
+        {t('oidc.last_unlinked', { date: formatDate(lastUnlinked.at) })}
+        {#if lastUnlinked.by_other}· {t('oidc.by_admin_removed')}{/if}
+      </p>
+    {/if}
 
-  {#if reauthMethods}
-    <ReauthPrompt
-      methods={reauthMethods}
-      ondone={afterReauth}
-      oncancel={() => (reauthMethods = null)}
-      onprovider={() =>
-        sessionStorage.setItem(INTENT, JSON.stringify({ intent: pending ?? 'link', at: Date.now() }))}
-    />
-  {/if}
+    {#if reauthMethods}
+      <ReauthPrompt
+        methods={reauthMethods}
+        ondone={afterReauth}
+        oncancel={() => (reauthMethods = null)}
+        onprovider={() =>
+          sessionStorage.setItem(INTENT, JSON.stringify({ intent: pending ?? 'link', at: Date.now() }))}
+      />
+    {/if}
 
-  {#if message}
-    <p role={failed ? 'alert' : 'status'} class:err={failed}>{message}</p>
-  {/if}
+    {#if message}
+      <Alert
+        tone={failed ? 'danger' : 'success'}
+        live={failed ? 'assertive' : 'polite'}
+        title={message}
+      />
+    {/if}
+  </div>
 </main>
 
 <style>
-  main {
-    max-width: 42rem;
-    margin: 0 auto;
-    padding: 3rem 1rem;
+  .identities {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: var(--rule-hair) solid var(--color-rule);
   }
-  li {
+  .identities li {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.5rem 0;
+    gap: var(--space-2) var(--space-4);
+    padding-block: var(--space-3);
+    border-bottom: var(--rule-hair) solid var(--color-rule);
+  }
+  .issuer {
+    overflow-wrap: anywhere;
+    font-weight: 600;
   }
   .muted {
     color: var(--color-muted);
-  }
-  .err {
-    color: var(--color-err);
   }
 </style>

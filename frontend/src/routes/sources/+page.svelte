@@ -5,7 +5,7 @@
   import { onMount } from 'svelte';
   import { healthPage } from '#lib/api/index.ts';
   import HealthEntry from '#lib/components/HealthEntry.svelte';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import { healthView, type SourceEntry } from '#lib/healthPage.ts';
   import { t } from '#lib/i18n/index.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
@@ -44,7 +44,7 @@
     {/snippet}
   </PageHead>
   {#if problem}
-    <ProblemCard {problem} />
+    <ProblemAlert {problem} />
   {:else if degraded === null}
     <div aria-busy="true">
       <p class="visually-hidden" role="status">{t('sources_page.loading')}</p>

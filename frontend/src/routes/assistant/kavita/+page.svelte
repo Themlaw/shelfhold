@@ -5,7 +5,7 @@
   // is asked again, because the same request is then sent again).
   import { onDestroy } from 'svelte';
   import { addTarget, wizardState } from '#lib/api/index.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import WizardNext from '#lib/components/WizardNext.svelte';
   import WizardPage from '#lib/components/WizardPage.svelte';
@@ -126,7 +126,7 @@
       <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
     {/if}
     {#if problem}
-      <ProblemCard {problem} />
+      <ProblemAlert {problem} />
     {/if}
     <form class="connect" onsubmit={submit} autocomplete="off">
       <Field label={t('admin.wizard.kavita.url')} required>

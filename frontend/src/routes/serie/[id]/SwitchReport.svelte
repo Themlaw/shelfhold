@@ -7,7 +7,7 @@
   // is the only source of what is shown: no path and no name of a file ever reaches this screen.
   import { teamSwitchApply, teamSwitchPreview, teamSwitchReport } from '#lib/api/index.ts';
   import type { TeamSwitchOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import { hasMessage, t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
@@ -102,7 +102,7 @@
 
   <div class="stack">
     {#if problem}
-      <ProblemCard {problem} />
+      <ProblemAlert {problem} />
     {/if}
 
     {#if view?.state === 'stale'}

@@ -7,7 +7,7 @@
   import { approve, approval as fetchApproval } from '#lib/api/index.ts';
   import type { ApprovalOut, QueueItemOut } from '#lib/api/types.gen.ts';
   import AgePicker from '#lib/components/AgePicker.svelte';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { formatNumber, t } from '#lib/i18n/index.ts';
   import Button from '#lib/ui/atoms/Button.svelte';
@@ -148,7 +148,7 @@
   {/if}
 
   {#if problem}
-    <ProblemCard {problem} level={3} />
+    <ProblemAlert {problem} level={3} />
   {/if}
 </section>
 

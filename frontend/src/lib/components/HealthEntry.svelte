@@ -57,6 +57,11 @@
   .entry__command {
     display: block;
   }
+  /* the reserved-action badge is a whole sentence: it wraps instead of pushing the page wider */
+  .entry__action :global(.badge) {
+    max-width: 100%;
+    white-space: normal;
+  }
   .entry__command code {
     padding: var(--space-1) var(--space-2);
     background: var(--color-surface-2);

@@ -6,7 +6,7 @@
   // Pausing a community binding is only proposed here; the admin decides with one explicit click.
   import { supportAuthorPause, supportAuthorRead } from '#lib/api/index.ts';
   import type { SupportAuthorOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import { formatDateTime, t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
@@ -99,7 +99,7 @@
       <Alert tone="success" live="polite" title={t('support.pause.done')} />
     {/if}
     {#if problem}
-      <ProblemCard {problem} />
+      <ProblemAlert {problem} />
     {/if}
   </section>
 {/if}

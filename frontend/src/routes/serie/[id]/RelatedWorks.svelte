@@ -6,7 +6,7 @@
   // the admin's (`canEdit`); the server refuses anyone else.
   import { relationsAdd, relationsRead, relationsRemove, search as apiSearch } from '#lib/api/index.ts';
   import type { RelationOut, SearchHitOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
@@ -165,7 +165,7 @@
       </div>
     {/if}
     {#if problem}
-      <ProblemCard {problem} />
+      <ProblemAlert {problem} />
     {/if}
   </section>
 {/if}

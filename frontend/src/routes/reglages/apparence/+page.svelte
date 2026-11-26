@@ -8,6 +8,12 @@
   import type { PreferencesOut } from '#lib/api/types.gen.ts';
   import { hasMessage, setUiLanguage, t } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   let prefs = $state<PreferencesOut | null>(null);
   const SCHEMES: PreferencesOut['color_scheme'][] = ['auto', 'light', 'dark'];
@@ -112,52 +118,69 @@
   <title>{t('appearance.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('appearance.title')}</h1>
+<main class="page">
+  <PageHead
+    title={t('appearance.title')}
+    crumbs={[{ label: t('settings.title'), href: '/reglages' }, { label: t('appearance.title') }]}
+  />
   {#if prefs}
-    <form onsubmit={(event) => event.preventDefault()}>
-      <label for="theme">{t('appearance.theme')}</label>
-      <select id="theme" bind:value={theme} onchange={changeTheme}>
-        {#each prefs.available_themes as name (name)}
-          <option value={name}>{themeLabel(name)}</option>
-        {/each}
-      </select>
-    </form>
-    <form onsubmit={save}>
-      <label for="color-scheme">{t('appearance.scheme')}</label>
-      <select id="color-scheme" bind:value={colorScheme}>
-        {#each SCHEMES as scheme (scheme)}
-          <option value={scheme}>{t(`appearance.scheme.${scheme}`)}</option>
-        {/each}
-      </select>
-      <button type="submit">{t('appearance.save')}</button>
-    </form>
-    <form onsubmit={(event) => event.preventDefault()}>
-      <label for="language">{t('appearance.language')}</label>
-      <select id="language" bind:value={language} onchange={changeLanguage}>
-        {#each LANGUAGES as value (value)}
-          <option value={value}>{value === 'fr' ? 'Français' : 'English'}</option>
-        {/each}
-      </select>
-    </form>
+    <div class="stack-lg page--form">
+      <form onsubmit={(event) => event.preventDefault()}>
+        <Field label={t('appearance.theme')}>
+          {#snippet children(control)}
+            <Select
+              {...control}
+              bind:value={theme}
+              onchange={changeTheme}
+              options={prefs!.available_themes.map((name) => ({ value: name, label: themeLabel(name) }))}
+            />
+          {/snippet}
+        </Field>
+      </form>
+      <form class="stack" onsubmit={save}>
+        <Field label={t('appearance.scheme')}>
+          {#snippet children(control)}
+            <Select
+              {...control}
+              bind:value={colorScheme}
+              options={SCHEMES.map((scheme) => ({ value: scheme, label: t(`appearance.scheme.${scheme}`) }))}
+            />
+          {/snippet}
+        </Field>
+        <div class="btn-row">
+          <Button type="submit" variant="primary">{t('appearance.save')}</Button>
+        </div>
+      </form>
+      <form onsubmit={(event) => event.preventDefault()}>
+        <Field label={t('appearance.language')}>
+          {#snippet children(control)}
+            <Select
+              {...control}
+              bind:value={language}
+              onchange={changeLanguage}
+              options={LANGUAGES.map((value) => ({ value, label: value === 'fr' ? 'Français' : 'English' }))}
+            />
+          {/snippet}
+        </Field>
+      </form>
+    </div>
+  {:else if !failed}
+    <div aria-busy="true"><Skeleton /><Skeleton /><Skeleton short /></div>
   {/if}
   {#if message}
-    <p role={failed ? 'alert' : 'status'} class:err={failed}>{message}</p>
+    <div class="notice">
+      <Alert
+        tone={failed ? 'danger' : 'success'}
+        live={failed ? 'assertive' : 'polite'}
+        title={message}
+      />
+    </div>
   {/if}
 </main>
 
 <style>
-  main {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: 2rem 1rem;
-  }
-  form {
-    display: grid;
-    gap: 0.5rem;
-    max-width: 24rem;
-  }
-  .err {
-    color: var(--color-err);
+  .notice {
+    max-width: var(--form-max);
+    margin-top: var(--space-4);
   }
 </style>
