@@ -17,6 +17,7 @@ describe('ProblemAlert, as the one place a problem is told (EF-UX-003)', () => {
       })
     });
     expect(screen.getByRole('alert')).toHaveTextContent('Page introuvable.');
+    expect(screen.getByText('not_found')).toBeInTheDocument();
     expect(screen.getByText('L’élément n’existe pas.')).toBeInTheDocument();
     expect(screen.getByText('Vérifiez le lien.')).toBeInTheDocument();
     expect(screen.getByText('req-1')).toBeInTheDocument();

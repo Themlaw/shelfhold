@@ -56,7 +56,18 @@
 {:else}
   <Alert tone="danger" title={problem.title} live="assertive" headingLevel={level} incident={problem.requestId} actions={onretry ? retry : undefined}>
     {#if note}<p>{note}</p>{/if}
+    {#if problem.code}<p class="problem__code"><code>{problem.code}</code></p>{/if}
     {#if problem.cause}<p>{problem.cause}</p>{/if}
     {#if problem.action}<p>{problem.action}</p>{/if}
   </Alert>
 {/if}
+
+<style>
+  /* the stable code of the problem (EF-UX-003): to be read out in a report */
+  .problem__code code {
+    font-family: var(--font-mono);
+    font-size: var(--step--1);
+    color: var(--color-muted);
+    overflow-wrap: anywhere;
+  }
+</style>
