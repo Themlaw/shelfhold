@@ -286,6 +286,7 @@
                 src={thumb(work.cover_hash, 320)}
                 kind={coverKind(work.kind)}
                 href={href(work)}
+                headingLevel={2}
               >
                 {#snippet meta()}{kindLabel(work)}{/snippet}
               </SeriesCard>

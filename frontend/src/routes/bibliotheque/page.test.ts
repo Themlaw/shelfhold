@@ -96,8 +96,8 @@ describe('Library screen', () => {
     expect(screen.queryByRole('alert')).toBeNull();
     // the only link is her own saved selections (M5 L21); none goes to a sheet
     expect(screen.queryAllByRole('link').map((l) => l.getAttribute('href')?.endsWith('/selections'))).toEqual([true]);
-    expect(screen.getByRole('heading', { name: 'Titre 1' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Titre 2' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Titre 1', level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Titre 2', level: 2 })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Titre 3' })).toBeNull();
   });
 
