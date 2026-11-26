@@ -6,7 +6,7 @@
   import { notFound, queue as loadQueue, reject } from '#lib/api/index.ts';
   import type { QueueItemOut } from '#lib/api/types.gen.ts';
   import ApproveSheet from '#lib/components/ApproveSheet.svelte';
-  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
+  import ProblemAlert, { refusalOf } from '#lib/ui/molecules/ProblemAlert.svelte';
   import DecisionPanel from '#lib/components/DecisionPanel.svelte';
   import { formatDate, t, type MessageKey } from '#lib/i18n/index.ts';
   import Badge from '#lib/ui/atoms/Badge.svelte';
@@ -24,6 +24,8 @@
   let selected = $state<QueueItemOut | null>(null);
   let decisionProblem = $state<ProblemView | null>(null);
   let reason = $state('');
+  // a refusal of the queue is the whole screen: no lede nor action above it
+  const refused = $derived(problem !== null && refusalOf(problem) !== null);
 
   const ROLES: Record<string, MessageKey> = {
     child: 'approve.role.child',
@@ -89,11 +91,13 @@
   <div class="page-head">
     <div class="page-head__text">
       <h1 class="page-title">{t('approve.title')}</h1>
-      <p class="lede">{t('approve.lede')}</p>
+      {#if !refused}<p class="lede">{t('approve.lede')}</p>{/if}
     </div>
-    <div class="page-head__actions">
-      <Button href="/a-approuver/liste" icon="list">{t('approve.import_list')}</Button>
-    </div>
+    {#if !refused}
+      <div class="page-head__actions">
+        <Button href="/a-approuver/liste" icon="list">{t('approve.import_list')}</Button>
+      </div>
+    {/if}
   </div>
 
   {#if !loaded}
@@ -106,7 +110,7 @@
       </ul>
     </div>
   {:else if problem}
-    <ProblemAlert {problem} />
+    <ProblemAlert {problem} kind={refusalOf(problem)} />
   {:else if items.length === 0}
     <EmptyState title={t('approve.empty')} />
   {:else}

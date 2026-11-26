@@ -96,6 +96,6 @@ describe('activity page', () => {
       )
     );
     render(Page);
-    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: /hors de votre portée/ })).toBeInTheDocument();
   });
 });

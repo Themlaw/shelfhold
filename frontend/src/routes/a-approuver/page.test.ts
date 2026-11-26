@@ -59,8 +59,10 @@ describe('To approve screen', () => {
   it('shows nothing of the queue to a role the server refuses', async () => {
     server.use(http.get(`${BASE}/api/v1/requests/queue`, () => problem(403, 'forbidden', 'Accès refusé')));
     render(Page);
-    expect(await screen.findByRole('alert')).toHaveTextContent('Accès refusé');
+    expect(await screen.findByRole('heading', { level: 2, name: /hors de votre portée/ })).toBeInTheDocument();
+    expect(screen.queryByText('forbidden')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByRole('link', { name: /Importer une liste/ })).toBeNull();
     expect(screen.queryByText('Aucune demande à approuver')).toBeNull();
   });
 

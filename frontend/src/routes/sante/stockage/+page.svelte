@@ -5,7 +5,7 @@
   import { onMount } from 'svelte';
   import { opsStorageDashboard } from '#lib/api/index.ts';
   import type { StorageOut } from '#lib/api/types.gen.ts';
-  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
+  import ProblemAlert, { refusalOf } from '#lib/ui/molecules/ProblemAlert.svelte';
   import { formatBytes } from '#lib/bytes.ts';
   import { formatDate, formatNumber } from '#lib/i18n/format.ts';
   import { t } from '#lib/i18n/index.ts';
@@ -62,7 +62,7 @@
     ]}
   />
   {#if problem}
-    <ProblemAlert {problem} />
+    <ProblemAlert {problem} kind={refusalOf(problem)} />
   {:else if !board}
     <div aria-busy="true">
       <p class="visually-hidden" role="status">{t('storage.loading')}</p>

@@ -158,7 +158,8 @@ describe('Réglages', () => {
       )
     );
     render(Page);
-    expect((await screen.findByRole('alert')).textContent).toMatch(/réservés à l'administrateur/);
+    expect(await screen.findByRole('heading', { level: 2, name: /hors de votre portée/ })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryAllByRole('textbox')).toHaveLength(0);
     expect(screen.getByRole('link', { name: /Notifications/ }).getAttribute('href')).toBe(
       '/reglages/notifications'

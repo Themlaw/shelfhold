@@ -113,7 +113,8 @@ describe('Storage and network dashboard', () => {
       )
     );
     render(Page);
-    expect(await screen.findByRole('alert')).toHaveTextContent('Accès refusé');
+    expect(await screen.findByRole('heading', { level: 2, name: /hors de votre portée/ })).toBeInTheDocument();
+    expect(screen.queryByText('forbidden')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Espace par étagère' })).toBeNull();
   });
 

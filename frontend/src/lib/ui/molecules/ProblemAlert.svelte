@@ -9,13 +9,20 @@
     if (needsSession(error)) return 'signed-out';
     return null;
   }
+
+  /** The refusal a problem view tells (status 403 or 401, or the code `forbidden`), or null. */
+  export function refusalOf(problem: { code: string | null; status?: number | null }): BlockKind | null {
+    return blockKind({ status: problem.status ?? undefined, code: problem.code ?? undefined });
+  }
 </script>
 
 <script lang="ts">
   // What the server refused, told by the interface: the problem it wrote (title, cause, action and
   // the request id to report), never its raw body. A refusal of the session (401) or of the role
   // (403) is a block of its own, with its drawing, so it is not read as a fault of the screen.
+  import { page } from '$app/state';
   import { t } from '#lib/i18n/index.ts';
+  import { signInHref } from '#lib/session.ts';
   import type { ProblemView } from '#lib/problems.ts';
   import Button from '../atoms/Button.svelte';
   import Alert from './Alert.svelte';
@@ -29,6 +36,7 @@
     onretry
   }: {
     problem: ProblemView;
+    /** a refusal of what the screen is about, told as a block (`refusalOf(problem)`); left out, an alert */
     kind?: BlockKind | null;
     level?: 2 | 3 | 4;
     /** a sentence of the screen, before what the server said */
@@ -42,6 +50,14 @@
   {#if onretry}<Button size="sm" icon="refresh" onclick={onretry}>{t('error.retry')}</Button>{/if}
 {/snippet}
 
+{#snippet way()}
+  {#if kind === 'signed-out'}
+    <Button href={signInHref(page.url.pathname)} variant="primary" icon="key" data-sveltekit-reload>{t('ui.account.sign_in')}</Button>
+  {:else if kind === 'forbidden'}
+    <Button href="/" icon="home">{t('error.back_home')}</Button>
+  {/if}
+  {@render retry()}
+{/snippet}
 {#if kind}
   <ErrorState
     kind={kind}
@@ -49,7 +65,7 @@
     code={t('error.code', { status: kind === 'forbidden' ? 403 : 401 })}
     title={kind === 'forbidden' ? t('error.forbidden.title') : t('error.signed_out.title')}
     incident={problem.requestId}
-    actions={onretry ? retry : undefined}
+    actions={way}
   >
     <p>{kind === 'forbidden' ? t('error.forbidden.body') : t('error.signed_out.body')}</p>
   </ErrorState>

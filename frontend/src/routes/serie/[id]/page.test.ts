@@ -344,7 +344,7 @@ describe('Series sheet', () => {
   it('shows the problem and nothing of the sheet to someone the server refuses', async () => {
     server.use(http.get(`${API}/sheet`, () => problem(403, 'forbidden', 'Accès refusé')));
     render(Page);
-    expect(await screen.findByRole('alert')).toHaveTextContent('Accès refusé');
+    expect(await screen.findByRole('heading', { level: 2, name: /hors de votre portée/ })).toBeInTheDocument();
     expect(screen.queryByText('Trous')).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
   });
