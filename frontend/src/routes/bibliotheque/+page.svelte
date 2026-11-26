@@ -34,12 +34,12 @@
   type Layout = 'grid' | 'list';
   type View = { series: string; shelf: string; sort: Sort; layout: Layout | null; page: number };
 
-  /** The view the address describes: `serie`, `etagere`, `tri` (`recent`), `vue` (`liste`), `page`. */
+  /** The view the address describes: `series`, `etagere`, `tri` (`recent`), `vue` (`liste`), `page`. */
   function parse(params: Pick<URLSearchParams, 'get'>): View {
     const n = Number.parseInt(params.get('page') ?? '', 10);
     const vue = params.get('vue');
     return {
-      series: params.get('serie') ?? '',
+      series: params.get('series') ?? '',
       shelf: params.get('etagere') ?? '',
       sort: params.get('tri') === 'recent' ? 'recent' : 'title',
       layout: vue === 'liste' ? 'list' : vue === 'grille' ? 'grid' : null,
@@ -87,7 +87,7 @@
 
   function address(v: View): string {
     const params = new SvelteURLSearchParams();
-    if (v.series) params.set('serie', v.series);
+    if (v.series) params.set('series', v.series);
     if (v.shelf) params.set('etagere', v.shelf);
     if (v.sort !== 'title') params.set('tri', v.sort);
     if (v.layout) params.set('vue', v.layout === 'list' ? 'liste' : 'grille');

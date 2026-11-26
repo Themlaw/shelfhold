@@ -202,7 +202,7 @@ describe('Library screen', () => {
     expect(await screen.findByText('1 œuvre')).toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('Série'), SERIES_A.id);
     const chip = await screen.findByRole('button', { name: /Série : Saga claire/ });
-    expect(goto).toHaveBeenLastCalledWith(expect.stringContaining(`?serie=${SERIES_A.id}`), expect.anything());
+    expect(goto).toHaveBeenLastCalledWith(expect.stringContaining(`?series=${SERIES_A.id}`), expect.anything());
     await user.click(chip);
     await waitFor(() => expect(seen.at(-1)?.searchParams.has('series_id')).toBe(false));
     expect(screen.queryByRole('button', { name: /Série : Saga claire/ })).toBeNull();
