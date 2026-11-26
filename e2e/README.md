@@ -25,6 +25,31 @@ git diff tests/references/key-screens.json   # relire chaque écart, puis le com
 
 Sans machine pour construire l'image : chaque passage de la CI dépose ce qu'il a vu dans l'artefact `e2e-browser-amd64-m3-themes` (`key-screens.json`, à côté des captures). Le copier dans `tests/references/`, relire chaque écart avec `git diff`, puis le commiter avec sa raison, comme ci-dessus.
 
+## Captures de revue (`workshop/capture-screens.mjs`)
+
+Le script photographie chaque écran du SPA et du lecteur sur la base synthétique de l'atelier
+(`seed.py`), pour la relecture visuelle. Les PNG ne sont jamais commités : ils vont dans le
+dossier donné, avec un `report-*.json` (défilement latéral, nombre de `h1`, requêtes refusées hors
+de l'instance).
+
+```sh
+cd frontend && npm ci && npm run build            # le SPA et le lecteur (build/)
+cd ../e2e && npm ci && npx playwright install chromium
+# un serveur de l'atelier ouvert : la commande `webServer` de `playwright.config.ts`, à la main
+node workshop/capture-screens.mjs <dossier> [--base http://localhost:8792] [--only accueil,lecteur]
+node workshop/capture-screens.mjs --list          # les écrans et les scènes du lecteur
+```
+
+Ce que fait chaque capture : attendre `networkidle` et les polices, parcourir la page jusqu'en bas
+(images différées) puis revenir en haut, poser les barres collantes dans le flux et les barres fixes
+au pied du document (une page longue ne répète pas son en-tête). Les états sont forcés par
+interception du réseau : vide (les listes de la vraie réponse sont vidées), chargement (les données
+sont retenues), erreur 500, 403, 401 et hors ligne. La liste des écrans reprend l'inventaire du
+front. Le lecteur est joué sur des œuvres du domaine public (les Fables de La Fontaine,
+`workshop/capture-books.mjs`) dans chacun de ses états ; les copies hors ligne passent par les vraies
+réserves du navigateur (IndexedDB, Cache Storage). Accueil, bibliothèque et page introuvable sont
+pris dans chacun des quatre thèmes.
+
 ## Navigation fencing (ENF-PRIV-001)
 
 Every Playwright context is fenced by `context.route('**/*')`: any request whose origin

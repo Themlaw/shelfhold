@@ -71,6 +71,27 @@ LIBRARY = (
 READING = {"admin": ("Vingt mille lieues sous les mers", 2, 0.4),
            "membre": ("Hokusai Manga, choix de planches", 3, 0.6),
            "enfant8": ("Little Nemo, les rêves", 1, 0.3)}  # fmt: skip
+# The chapters of the works that have some: public domain titles (Verne, 1870; La Fontaine, 1668),
+# so that a series sheet and the reader have a list to show. The three works being read keep a copy
+# of each chapter; the others (`SERIES`) only list theirs, as a source would.
+CHAPTERS = {
+    "Vingt mille lieues sous les mers": (
+        "Un écueil fuyant", "Le pour et le contre", "Comme il plaira à monsieur",
+        "Ned Land", "À l'aventure",
+    ),
+    "Hokusai Manga, choix de planches": ("Les gestes", "Les paysages", "Les esprits", "Les métiers", "Les foules"),
+    "Little Nemo, les rêves": ("Le lit qui vole", "Le palais du Roi", "La chute", "Le réveil", "Le retour"),
+}  # fmt: skip
+SERIES = {
+    "Fables": (
+        "La Cigale et la Fourmi", "Le Corbeau et le Renard", "Le Loup et l'Agneau",
+        "Le Lièvre et la Tortue", "La Laitière et le Pot au lait",
+    ),
+    "Le Phare des brumes": tuple(f"Épisode {n}" for n in range(1, 9)),
+    "Alice au pays des merveilles": (
+        "Dans le terrier du lapin", "La mare de larmes", "Une course au comité",
+    ),
+}  # fmt: skip
 SEEDED = datetime(2026, 11, 1, 10, 0, tzinfo=UTC)
 CONTENT_HASH = "sha256:" + "5e" * 32  # the copies of a reading under way (no file behind them)
 
@@ -217,7 +238,12 @@ def seed_collections(db: sa.Connection, member_id: str, work_ids: list[str]) -> 
 
 
 def seed_reading(
-    db: sa.Connection, user_id: str, edition_id: str, chapter: int, percent: float
+    db: sa.Connection,
+    user_id: str,
+    edition_id: str,
+    chapter: int,
+    percent: float,
+    titles: tuple[str, ...] = (),
 ) -> None:
     """A reading under way: five chapters, each with a kept copy (adopted in place: the home only
     needs to know there is one), and a position in `chapter`, as the reader would have sent it."""
@@ -234,6 +260,7 @@ def seed_reading(
             sa.insert(catalog.unit).values(
                 id=unit_id, edition_id=edition_id, number_raw=str(number), number_norm=str(number),
                 number_sort=float(number), track="main", kind="chapter",
+                title=titles[number - 1] if number <= len(titles) else None,
             )
         )  # fmt: skip
         db.execute(
@@ -260,6 +287,19 @@ def seed_reading(
         percent=percent, client_ts=SEEDED, device_id="liseuse", source="device", now=SEEDED,
         traverse=False,
     )  # fmt: skip
+
+
+def seed_chapters(db: sa.Connection, edition_id: str, titles: tuple[str, ...]) -> None:
+    """The chapters a source lists for an Edition, with no file yet: the series sheet shows them as
+    available to fetch."""
+    for number, title in enumerate(titles, start=1):
+        db.execute(
+            sa.insert(catalog.unit).values(
+                id=new_ulid(), edition_id=edition_id, number_raw=str(number),
+                number_norm=str(number), number_sort=float(number), track="main", kind="chapter",
+                title=title,
+            )
+        )  # fmt: skip
 
 
 def seed_requests(db: sa.Connection, users: dict[str, str]) -> None:
@@ -313,7 +353,11 @@ def main(data_dir: Path) -> None:
             for r in db.execute(sa.select(identity.user.c.id, identity.user.c.username))
         }
         for name, (title, chapter, percent) in READING.items():
-            seed_reading(db, users[name], editions[title], chapter, percent)
+            seed_reading(
+                db, users[name], editions[title], chapter, percent, CHAPTERS.get(title, ())
+            )
+        for title, titles in SERIES.items():
+            seed_chapters(db, editions[title], titles)
         seed_requests(db, users)
 
 
