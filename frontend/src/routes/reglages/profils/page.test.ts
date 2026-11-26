@@ -58,9 +58,11 @@ describe('Profils', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    expect(await screen.findByRole('heading', { level: 3, name: 'admin' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'admin' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Nouveau profil' }));
     await user.type(screen.getByLabelText('Nom'), 'Lea');
     await user.type(screen.getByLabelText('Mot de passe du profil'), NEW_PW);
+    expect((screen.getByLabelText('Mot de passe du profil') as HTMLInputElement).type).toBe('password');
     await user.selectOptions(screen.getByLabelText('Rôle'), 'child');
     await user.type(screen.getByLabelText('Âge maximal'), '10');
     await user.click(screen.getByRole('button', { name: 'Créer' }));
@@ -69,7 +71,6 @@ describe('Profils', () => {
       username: 'Lea', password: NEW_PW, role: 'child', max_age_rating: 10,
       can_rate: false
     });
-    expect((screen.getByLabelText('Mot de passe du profil') as HTMLInputElement).type).toBe('password');
   });
 
   // req: EF-USR-022
@@ -87,6 +88,7 @@ describe('Profils', () => {
     );
     render(Page);
     const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Nouveau profil' }));
     await user.type(await screen.findByLabelText('Nom'), 'Lea');
     await user.type(screen.getByLabelText('Mot de passe du profil'), NEW_PW);
     await user.click(screen.getByRole('button', { name: 'Créer' }));
@@ -118,7 +120,8 @@ describe('Profils', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const li = (await screen.findByRole('heading', { level: 3, name: 'Lea' })).closest('li')!;
+    await user.click(await screen.findByRole('button', { name: 'Lea' }));
+    const li = await screen.findByTestId('profile-editor');
     await user.selectOptions(within(li).getByLabelText('Visibilité'), 'household');
     await screen.findByText('Enregistré.');
     expect(put).toEqual({ url: '/api/v1/profiles/p2/visibility', body: { visibility: 'household' } });
@@ -136,7 +139,8 @@ describe('Profils', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const li = (await screen.findByRole('heading', { level: 3, name: 'Max' })).closest('li')!;
+    await user.click(await screen.findByRole('button', { name: 'Max' }));
+    const li = await screen.findByTestId('profile-editor');
     // the rule of ages: a ceiling of 7 has a mark of its own, and 12+ is one click away
     expect(within(li).getByRole('radio', { name: '7+' })).toBeChecked();
     await user.click(within(li).getByRole('radio', { name: '12+' }));
@@ -159,7 +163,8 @@ describe('Profils', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const li = (await screen.findByRole('heading', { level: 3, name: 'Max' })).closest('li')!;
+    await user.click(await screen.findByRole('button', { name: 'Max' }));
+    const li = await screen.findByTestId('profile-editor');
     expect(await within(li).findByText('Politique : gutenberg')).toBeTruthy();
     expect(within(li).getByRole('radio', { name: 'Demander' })).toBeChecked();
     await user.click(within(li).getByRole('radio', { name: 'Interdit' }));
@@ -179,10 +184,28 @@ describe('Profils', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const li = (await screen.findByRole('heading', { level: 3, name: 'Lea' })).closest('li')!;
+    await user.click(await screen.findByRole('button', { name: 'Lea' }));
+    const li = await screen.findByTestId('profile-editor');
     await user.click(within(li).getByRole('button', { name: 'Supprimer' }));
     await user.click(await screen.findByRole('button', { name: 'Supprimer le profil' }));
     await screen.findByText('Profil supprimé.');
     expect(deleted).toBe(true);
+  });
+
+  // req: EF-USR-001
+  it('keeps one editor open at a time and one danger zone, for the chosen profile', async () => {
+    list([profile('p1', 'admin', 'admin'), profile('p2', 'Lea', 'member'), profile('p3', 'Max', 'child', { max_age_rating: 7 })]);
+    render(Page);
+    const user = userEvent.setup();
+    const editor = await screen.findByTestId('profile-editor');
+    expect(within(editor).getByRole('heading', { name: 'admin' })).toBeTruthy();
+    expect(screen.getAllByText('Zone dangereuse')).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Max' }));
+    expect(within(screen.getByTestId('profile-editor')).getByRole('heading', { name: 'Max' })).toBeTruthy();
+    expect(screen.getAllByTestId('profile-editor')).toHaveLength(1);
+    expect(screen.getAllByText('Zone dangereuse')).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Nouveau profil' }));
+    expect(screen.queryByTestId('profile-editor')).toBeNull();
+    expect(screen.getByLabelText('Nom')).toBeTruthy();
   });
 });
