@@ -8,6 +8,7 @@
   import Button from '#lib/ui/atoms/Button.svelte';
   import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
   import { reloadOnStream } from '#lib/live.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
@@ -60,17 +61,12 @@
   <title>{t('nav.requests')}</title>
 </svelte:head>
 
-<main class="page page--read">
-  <div class="running-head">
-    <span>{t('home.my_requests')}</span>
-    {#if loaded && !problem && items.length > 0}<span class="running-head__folio">{formatNumber(items.length)}</span>{/if}
-  </div>
-  <div class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('nav.requests')}</h1>
-      <p class="lede">{child ? t('requests.lede_child') : t('requests.lede')}</p>
-    </div>
-  </div>
+<main class="page">
+  <PageHead
+    title={t('nav.requests')}
+    lede={child ? t('requests.lede_child') : t('requests.lede')}
+    folio={loaded && !problem && items.length > 0 ? formatNumber(items.length) : undefined}
+  />
 
   {#if !loaded}
     <div aria-busy="true">
