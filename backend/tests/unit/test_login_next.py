@@ -9,7 +9,18 @@ pytestmark = pytest.mark.req("EF-USR-021", "ENF-SEC-004")
 
 @pytest.mark.parametrize(
     "raw",
-    ["/", "/lite", "/bibliotheque", "/oeuvres/01HZ?tab=chapitres#haut", "/a/b%20c", "/%252Fx"],
+    [
+        "/",
+        "/lite",
+        "/bibliotheque",
+        "/oeuvres/01HZ?tab=chapitres#haut",
+        "/a/b%20c",
+        "/%252Fx",
+        "/a?next=//b",
+        # a browser keeps these in the path: still this site
+        "/\uff0fevil.example",
+        "/\u2215evil.example",
+    ],
 )
 def test_safe_next_keeps_an_internal_path(raw: str) -> None:
     assert safe_next(raw) == raw
@@ -41,6 +52,16 @@ def test_safe_next_keeps_an_internal_path(raw: str) -> None:
         "/ok\x7f",
         "/" + "a" * 3000,
         " //evil.example",
+        "/%09/evil.example",
+        "/%0a/evil.example",
+        "/%2F%2Fevil.example",
+        "HTTPS://evil.example",
+        "/\t/evil.example",
+        "/.//evil.example",
+        "/a//b",
+        "/./x",
+        "/a/../b",
+        "/%2E%2E/x",
     ],
 )
 def test_safe_next_refuses_anything_else(raw: str | None) -> None:

@@ -72,7 +72,10 @@
         },
       });
       if (response.ok) {
-        window.location.assign(button.dataset.next || "/");
+        // the server already filtered it: the same check as the password form, all the same
+        const next = button.dataset.next || "/";
+        const plain = next.startsWith("/") && !next.startsWith("//") && !/[\\\u0000-\u001f\u007f]/.test(next);
+        window.location.assign(plain ? next : "/");
         return;
       }
       const refusal = await response.json();

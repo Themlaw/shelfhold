@@ -74,7 +74,9 @@ def _fragment(name: str) -> Template:
 
 def safe_next(raw: str | None) -> str:
     """Where a successful sign-in sends the person back to: only a relative path of this site (one
-    leading `/`, not `//`, no scheme, no backslash, no control character, and the same after one
+    leading `/`, no `//` nor `.` or `..` segment in the path (a browser would fold them into a
+    path a later rebuild could read as another host), no scheme, no backslash, no control
+    character, and the same after one
     decoding, since a browser or a proxy may decode once); anything else is `/`."""
     if not raw or len(raw) > 2048:
         return "/"
@@ -86,6 +88,8 @@ def safe_next(raw: str | None) -> str:
             or any(ord(char) < 0x20 or ord(char) == 0x7F for char in candidate)
             or urlsplit(candidate).scheme
             or urlsplit(candidate).netloc
+            or "//" in urlsplit(candidate).path
+            or any(part in {".", ".."} for part in urlsplit(candidate).path.split("/"))
         ):
             return "/"
     return raw
@@ -269,7 +273,7 @@ def build_login_router(source_url: str) -> APIRouter:
         provider = None
         if gate is not None and oidc:
             issuer = gate.auth.oidc.issuer
-            provider = urlsplit(issuer).netloc or issuer
+            provider = urlsplit(issuer).hostname
         target = safe_next(request.query_params.get("next"))
         # the page of a return path is not kept (the path comes from the request)
         body = (
