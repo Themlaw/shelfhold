@@ -110,6 +110,9 @@ describe('Même œuvre ?', () => {
     expect(seen[0]).toEqual({ keep_id: 'WA', drop_id: 'WB' });
     // apply: the fingerprint of the plan that was shown goes back
     await user.click(screen.getByRole('button', { name: 'Appliquer la fusion' }));
+    // nothing leaves before the confirmation of the dialog
+    expect(seen).toHaveLength(1);
+    await user.click(await screen.findByRole('button', { name: 'Confirmer la fusion' }));
     expect(await screen.findByRole('status')).toHaveTextContent('Fusion appliquée');
     expect(seen[1]).toEqual({ keep_id: 'WA', drop_id: 'WB', confirm: 'fp1234567890abcd' });
   });

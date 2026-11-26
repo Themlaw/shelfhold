@@ -12,6 +12,12 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
 
   export type Target = { id: string; name: string; kind: string; partitioning: string };
   type Binding = {
@@ -100,60 +106,65 @@
   onMount(load);
 </script>
 
-<section aria-labelledby="bindings-{shelf.id}">
+<section class="bindings" aria-labelledby="bindings-{shelf.id}">
   <h2 id="bindings-{shelf.id}">{t('bindings.title', { name: shelf.name })}</h2>
   {#if family}
-    <p><strong>{t('bindings.family')}</strong> — {t('bindings.family_hint')}</p>
+    <p><Badge tone="accent" icon="users">{t('bindings.family')}</Badge> <span class="muted">{t('bindings.family_hint')}</span></p>
   {/if}
   {#if loadFailed}
-    <p role="alert">{t('bindings.loading_error')}</p>
+    <Alert tone="danger" live="assertive" title={t('bindings.loading_error')} />
   {:else if bindings.length === 0}
-    <p>{t('bindings.empty')}</p>
+    <p class="muted">{t('bindings.empty')}</p>
   {:else}
-    <ul>
+    <ul class="entries">
       {#each bindings as binding (binding.id)}
-        <li>
+        <li class="binding">
           <strong>{nameOf(binding.target_id)}</strong>
-          <span>{label('bindings.transport', binding.transport)}</span>
-          <span>{label('bindings.partitioning', binding.partitioning)}</span>
-          {#if binding.role}<span>{label('bindings.role', binding.role)}</span>{/if}
+          <span class="muted">{label('bindings.transport', binding.transport)}</span>
+          <span class="muted">{label('bindings.partitioning', binding.partitioning)}</span>
+          {#if binding.role}<span class="muted">{label('bindings.role', binding.role)}</span>{/if}
         </li>
       {/each}
     </ul>
   {/if}
 
-  <form onsubmit={link}>
+  <form class="add" onsubmit={link}>
     <h3>{t('bindings.add')}</h3>
-    <label>
-      {t('bindings.target')}
-      <select bind:value={targetId}>
-        <option value="" disabled>{t('bindings.target_none')}</option>
-        {#each targets as target (target.id)}
-          <option value={target.id}>{target.name}</option>
-        {/each}
-      </select>
-    </label>
-    <label>
-      {t('bindings.transport')}
-      <select bind:value={transport}>
-        {#each TRANSPORTS as kind (kind)}
-          <option value={kind}>{t(`bindings.transport.${kind}`)}</option>
-        {/each}
-      </select>
-    </label>
-    <label>
-      {t('bindings.folder')}
-      <input type="text" bind:value={folder} autocomplete="off" spellcheck="false" />
-    </label>
+    <Field label={t('bindings.target')}>
+      {#snippet children(control)}
+        <Select
+          {...control}
+          bind:value={targetId}
+          options={[
+            { value: '', label: t('bindings.target_none'), disabled: true },
+            ...targets.map((target) => ({ value: target.id, label: target.name }))
+          ]}
+        />
+      {/snippet}
+    </Field>
+    <Field label={t('bindings.transport')}>
+      {#snippet children(control)}
+        <Select
+          {...control}
+          bind:value={transport}
+          options={TRANSPORTS.map((kind) => ({ value: kind, label: t(`bindings.transport.${kind}`) }))}
+        />
+      {/snippet}
+    </Field>
+    <Field label={t('bindings.folder')}>
+      {#snippet children(control)}
+        <Input {...control} type="text" mono bind:value={folder} autocomplete="off" spellcheck={false} />
+      {/snippet}
+    </Field>
     <!-- not the lone last child of the form: one form per shelf, so one sticky action per shelf
          would stack at the bottom of a phone and cover the fields -->
     <div class="actions">
-      <button type="submit" disabled={busy || targetId === ''}>{t('bindings.submit')}</button>
+      <Button type="submit" variant="primary" disabled={busy || targetId === ''}>{t('bindings.submit')}</Button>
     </div>
   </form>
 
   {#if linked}
-    <p role="status">{t('bindings.linked')}</p>
+    <Alert tone="success" live="polite" title={t('bindings.linked')} />
   {/if}
   {#if refusal}
     <ProblemCard problem={refusal} level={3} />
@@ -177,9 +188,41 @@
 </section>
 
 <style>
-  section { margin: 1.5rem 0; }
-  ul { list-style: none; padding: 0; }
-  li { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin-bottom: 0.5rem; }
-  form { display: grid; gap: 0.5rem; max-width: 30rem; }
-  label { display: grid; gap: 0.25rem; }
+  .bindings {
+    display: grid;
+    gap: var(--space-4);
+    justify-items: start;
+    margin-top: var(--space-7);
+  }
+  .bindings > :global(*) {
+    max-width: 100%;
+  }
+  .bindings h2 {
+    margin: 0;
+    inline-size: 100%;
+    padding-bottom: var(--space-2);
+    border-bottom: var(--rule-hair) solid var(--color-ink);
+    font-size: var(--step-2);
+  }
+  .bindings h3 {
+    margin: 0;
+    font-size: var(--step-1);
+  }
+  .bindings p {
+    margin: 0;
+  }
+  .entries {
+    inline-size: 100%;
+  }
+  .binding {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+    padding: var(--space-3) 0;
+  }
+  .add {
+    display: grid;
+    gap: var(--space-4);
+    inline-size: min(100%, var(--form-max));
+  }
 </style>

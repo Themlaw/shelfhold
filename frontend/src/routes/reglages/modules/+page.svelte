@@ -33,11 +33,24 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { Reauth } from '#lib/guard.svelte.ts';
   import { isForbidden } from '#lib/triage.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import ConfirmDialog from '#lib/ui/molecules/ConfirmDialog.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   let repos = $state<RepoOut[]>([]);
   let plugins = $state<PluginOut[]>([]);
   let attestations = $state<Record<string, AttestationOut[]>>({});
   let adminOnly = $state(false);
+  let loaded = $state(false);
+  // an action that cannot be undone waits here for its confirmation
+  let confirming = $state<{ title: string; message: string; label: string; run: () => Promise<void> } | null>(null);
   let notice = $state<{ text: string; kind: 'status' | 'alert' } | null>(null);
   let busy = $state(false);
   const reauth = new Reauth();
@@ -80,7 +93,10 @@
     attestations = next;
   }
 
-  onMount(load);
+  onMount(async () => {
+    await load();
+    loaded = true;
+  });
 
   async function addRepo(): Promise<void> {
     busy = true;
@@ -172,6 +188,9 @@
 
   /** The lifecycle and attestation routes are addressed by the plugin key, never by the name of
    * its distribution. A plugin without a key is not offered these actions (the buttons are off). */
+  const ask = (next: NonNullable<typeof confirming>): void => {
+    confirming = next;
+  };
   const lifecycleKey = (plugin: PluginOut): string => plugin.key ?? '';
 
   async function pin(plugin: PluginOut, pinned: boolean): Promise<void> {
@@ -287,75 +306,137 @@
   <title>{t('modules.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('modules.title')}</h1>
+<main class="page">
+  <PageHead
+    title={t('modules.title')}
+    crumbs={[{ label: t('settings.title'), href: '/reglages' }, { label: t('modules.title') }]}
+    lede={t('modules.lede')}
+  />
 
   {#if adminOnly}
-    <p role="alert">{t('screens.admin_only')}</p>
+    <Alert tone="danger" title={t('screens.admin_only')} live="assertive" />
+  {:else if !loaded}
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('modules.loading')}</p>
+      <Skeleton shape="block" /><Skeleton /><Skeleton short />
+    </div>
   {:else}
-    <section aria-labelledby="indexes">
-      <h2 id="indexes">{t('modules.indexes')}</h2>
+    <section class="section" aria-labelledby="indexes">
+      <div class="section-head"><h2 id="indexes">{t('modules.indexes')}</h2></div>
       {#if repos.length === 0}
-        <p>{t('modules.no_indexes')}</p>
+        <EmptyState title={t('modules.no_indexes')} headingLevel={3} art={false} />
       {:else}
-        <ul>
+        <ul class="cards">
           {#each repos as repo (repo.url)}
-            <li>
-              <span class="url">{repo.url}</span>
-              <span>{t('modules.fingerprint')}: {repo.key_id}</span>
-              <span>{t('modules.version')}: {repo.last_version}</span>
-              <span>{t('modules.expires')}: {repo.expires ? formatDateTime(repo.expires) : t('modules.no_expiry')}</span>
-              <button type="button" onclick={() => refreshRepo(repo.url)} disabled={busy}>{t('modules.refresh')}</button>
-              <button type="button" onclick={() => removeRepo(repo.url)} disabled={busy}>{t('modules.remove_index')}</button>
+            <li class="card">
+              <div class="card__head">
+                <span class="url">{repo.url}</span>
+                <span class="btn-row">
+                  <Button size="sm" icon="refresh" onclick={() => refreshRepo(repo.url)} disabled={busy}>{t('modules.refresh')}</Button>
+                  <Button
+                    size="sm"
+                    variant="danger-ghost"
+                    onclick={() => ask({
+                      title: t('modules.remove_index_title', { url: repo.url }),
+                      message: t('modules.remove_index_message'),
+                      label: t('modules.remove_index_confirm'),
+                      run: () => removeRepo(repo.url)
+                    })}
+                    disabled={busy}>{t('modules.remove_index')}</Button
+                  >
+                </span>
+              </div>
+              <dl class="meta-list">
+                <dt>{t('modules.fingerprint')}</dt>
+                <dd class="mono">{repo.key_id}</dd>
+                <dt>{t('modules.version')}</dt>
+                <dd class="num">{repo.last_version}</dd>
+                <dt>{t('modules.expires')}</dt>
+                <dd>{repo.expires ? formatDateTime(repo.expires) : t('modules.no_expiry')}</dd>
+              </dl>
             </li>
           {/each}
         </ul>
       {/if}
 
-      <form onsubmit={(e) => { e.preventDefault(); void addRepo(); }}>
-        <label for="index-url">{t('modules.index_url')}</label>
-        <input id="index-url" bind:value={addUrl} />
-        <label for="index-pubkey">{t('modules.index_pubkey')}</label>
-        <input id="index-pubkey" bind:value={addPubkey} />
-        <button type="submit" disabled={busy}>{t('modules.add_index')}</button>
+      <form class="panel form" aria-label={t('modules.add_index')} onsubmit={(e) => { e.preventDefault(); void addRepo(); }}>
+        <Field label={t('modules.index_url')}>
+          {#snippet children(control)}<Input {...control} mono bind:value={addUrl} />{/snippet}
+        </Field>
+        <Field label={t('modules.index_pubkey')}>
+          {#snippet children(control)}<Input {...control} mono bind:value={addPubkey} />{/snippet}
+        </Field>
+        <div><Button type="submit" variant="primary" icon="plus" loading={busy}>{t('modules.add_index')}</Button></div>
       </form>
     </section>
 
-    <section aria-labelledby="installed">
-      <h2 id="installed">{t('modules.installed')}</h2>
+    <section class="section" aria-labelledby="installed">
+      <div class="section-head"><h2 id="installed">{t('modules.installed')}</h2></div>
       {#if plugins.length === 0}
-        <p>{t('modules.no_plugins')}</p>
+        <EmptyState title={t('modules.no_plugins')} headingLevel={3} art={false} />
       {:else}
-        <ul>
+        <ul class="cards">
           {#each plugins as plugin (plugin.name)}
-            <li>
-              <strong>{plugin.name}</strong>
-              <span>{plugin.version}</span>
-              <span>{plugin.mode}</span>
-              <span>{plugin.status}</span>
-              {#if plugin.reason}<span>{plugin.reason}</span>{/if}
-              {#if plugin.notice}<span>{plugin.notice}</span>{/if}
+            <li class="card">
+              <div class="card__head">
+                <span class="card__id">
+                  <strong class="card__name">{plugin.name}</strong>
+                  <span class="num muted">{plugin.version}</span>
+                  <Badge tone="neutral">{plugin.mode}</Badge>
+                  <Badge tone={plugin.status === 'enabled' ? 'success' : 'warning'}>{plugin.status}</Badge>
+                </span>
+                <Button
+                  size="sm"
+                  variant={plugin.status === 'enabled' ? 'secondary' : 'primary'}
+                  onclick={() => togglePlugin(plugin, plugin.status !== 'enabled')}
+                  disabled={busy}
+                >
+                  {plugin.status === 'enabled' ? t('modules.disable') : t('modules.enable')}
+                </Button>
+              </div>
+              {#if plugin.reason}<Alert tone="warning" title={plugin.reason} />{/if}
+              {#if plugin.notice}<Alert tone="info" title={plugin.notice} />{/if}
 
-              <button type="button" onclick={() => togglePlugin(plugin, plugin.status !== 'enabled')} disabled={busy}>
-                {plugin.status === 'enabled' ? t('modules.disable') : t('modules.enable')}
-              </button>
-              <button type="button" onclick={() => pin(plugin, true)} disabled={busy || !plugin.key}>{t('modules.pin')}</button>
-              <button type="button" onclick={() => pin(plugin, false)} disabled={busy || !plugin.key}>{t('modules.unpin')}</button>
-              <button type="button" onclick={() => update(plugin)} disabled={busy || !plugin.key}>{t('modules.update')}</button>
-              <button type="button" onclick={() => rollback(plugin)} disabled={busy || !plugin.key}>{t('modules.rollback')}</button>
+              <div class="btn-row">
+                <Button size="sm" variant="ghost" onclick={() => pin(plugin, true)} disabled={busy || !plugin.key}>{t('modules.pin')}</Button>
+                <Button size="sm" variant="ghost" onclick={() => pin(plugin, false)} disabled={busy || !plugin.key}>{t('modules.unpin')}</Button>
+                <Button size="sm" variant="ghost" icon="refresh" onclick={() => update(plugin)} disabled={busy || !plugin.key}>{t('modules.update')}</Button>
+                <Button
+                  size="sm"
+                  variant="danger-ghost"
+                  icon="undo"
+                  onclick={() => ask({
+                    title: t('modules.rollback_title', { name: plugin.name }),
+                    message: t('modules.rollback_message'),
+                    label: t('modules.rollback_confirm'),
+                    run: () => rollback(plugin)
+                  })}
+                  disabled={busy || !plugin.key}>{t('modules.rollback')}</Button
+                >
+              </div>
 
               <TrustCard trust={trustOf(plugin)} />
 
               <div class="attestations">
                 <h3>{t('modules.attestations')}</h3>
                 {#if (attestations[plugin.key ?? ''] ?? []).length === 0}
-                  <p>{t('modules.no_attestations')}</p>
+                  <p class="muted">{t('modules.no_attestations')}</p>
                 {:else}
-                  <ul>
+                  <ul class="entries">
                     {#each attestations[plugin.key ?? ''] ?? [] as a (a.field + a.value)}
-                      <li>
-                        {a.field}: {a.value}
-                        <button type="button" onclick={() => doWithdraw(lifecycleKey(plugin), a.field)} disabled={busy}>{t('modules.withdraw')}</button>
+                      <li class="attestation">
+                        <span>{a.field}: {a.value}</span>
+                        <Button
+                          size="sm"
+                          variant="danger-ghost"
+                          onclick={() => ask({
+                            title: t('modules.withdraw_title', { field: a.field }),
+                            message: t('modules.withdraw_message'),
+                            label: t('modules.withdraw_confirm'),
+                            run: () => doWithdraw(lifecycleKey(plugin), a.field)
+                          })}
+                          disabled={busy}>{t('modules.withdraw')}</Button
+                        >
                       </li>
                     {/each}
                   </ul>
@@ -366,18 +447,27 @@
         </ul>
       {/if}
 
-      <form onsubmit={(e) => { e.preventDefault(); attestKey = attestKey; void doAttest(); }}>
-        <label for="attest-key">{t('modules.attest_key')}</label>
-        <input id="attest-key" bind:value={attestKey} />
-        <label for="attest-field">{t('modules.attest_field')}</label>
-        <select id="attest-field" bind:value={attestField}>
-          <option value="content_trust">{t('modules.field.content_trust')}</option>
-          <option value="access_partitioning">{t('modules.field.access_partitioning')}</option>
-          <option value="egress">{t('modules.field.egress')}</option>
-        </select>
-        <label for="attest-value">{t('modules.attest_value')}</label>
-        <input id="attest-value" bind:value={attestValue} />
-        <button type="submit" disabled={busy}>{t('modules.attest')}</button>
+      <form class="panel form" aria-label={t('modules.attest')} onsubmit={(e) => { e.preventDefault(); void doAttest(); }}>
+        <Field label={t('modules.attest_key')}>
+          {#snippet children(control)}<Input {...control} mono bind:value={attestKey} />{/snippet}
+        </Field>
+        <Field label={t('modules.attest_field')}>
+          {#snippet children(control)}
+            <Select
+              {...control}
+              bind:value={attestField}
+              options={[
+                { value: 'content_trust', label: t('modules.field.content_trust') },
+                { value: 'access_partitioning', label: t('modules.field.access_partitioning') },
+                { value: 'egress', label: t('modules.field.egress') }
+              ]}
+            />
+          {/snippet}
+        </Field>
+        <Field label={t('modules.attest_value')}>
+          {#snippet children(control)}<Input {...control} bind:value={attestValue} />{/snippet}
+        </Field>
+        <div><Button type="submit" variant="primary" loading={busy}>{t('modules.attest')}</Button></div>
       </form>
     </section>
   {/if}
@@ -387,16 +477,82 @@
   {/if}
 
   {#if notice}
-    <p role={notice.kind === 'alert' ? 'alert' : 'status'}>{notice.text}</p>
+    <Alert
+      tone={notice.kind === 'alert' ? 'danger' : 'success'}
+      live={notice.kind === 'alert' ? 'assertive' : 'polite'}
+      title={notice.text}
+    />
   {/if}
 </main>
 
+<ConfirmDialog
+  bind:open={() => confirming !== null, (value) => { if (!value) confirming = null; }}
+  title={confirming?.title ?? ''}
+  message={confirming?.message}
+  confirmLabel={confirming?.label ?? ''}
+  onconfirm={async () => {
+    const pending = confirming;
+    confirming = null;
+    await pending?.run();
+  }}
+/>
+
 <style>
-  main { max-width: 48rem; margin: 0 auto; padding: 2rem 1rem; }
-  section { margin: 1.5rem 0; }
-  ul { list-style: none; padding: 0; }
-  li { margin: 0.75rem 0; padding: 0.5rem; border: 1px solid var(--color-muted, #ccc); border-radius: 0.5rem; }
-  .url { font-family: monospace; word-break: break-all; }
-  form { display: grid; gap: 0.5rem; margin: 1rem 0; }
-  button { margin-right: 0.5rem; }
+  .cards {
+    list-style: none;
+    margin: 0 0 var(--space-5);
+    padding: 0;
+    display: grid;
+    gap: var(--space-4);
+  }
+  .card {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+    border: var(--rule-hair) solid var(--color-rule);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+  }
+  .card__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+  .card__id {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2) var(--space-3);
+    min-width: 0;
+  }
+  .card__name {
+    font: 500 var(--step-1) / var(--leading-tight) var(--font-text);
+    overflow-wrap: anywhere;
+  }
+  .url,
+  .mono {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--step--1);
+    overflow-wrap: anywhere;
+  }
+  .attestations h3 {
+    margin: 0 0 var(--space-2);
+    font-size: var(--step-0);
+  }
+  .attestation {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+  }
+  .form {
+    display: grid;
+    gap: var(--space-4);
+    max-width: var(--form-max);
+    margin-top: var(--space-5);
+  }
 </style>

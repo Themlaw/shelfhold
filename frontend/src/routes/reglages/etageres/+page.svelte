@@ -10,6 +10,12 @@
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   const FIELDS = ['chapter', 'volume', 'special', 'special_dir', 'segment'] as const;
   type Template = Record<(typeof FIELDS)[number], string>;
@@ -183,71 +189,83 @@
   <title>{t('shelves.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('shelves.title')}</h1>
+<main class="page">
+  <PageHead
+    title={t('shelves.title')}
+    crumbs={[{ label: t('settings.title'), href: '/reglages' }, { label: t('shelves.title') }]}
+  />
   {#if adminOnly}
-    <p role="alert">{notice?.text}</p>
+    <Alert tone="danger" title={notice?.text ?? ''} live="assertive" />
   {:else}
     {#each shelves as shelf (shelf.id)}
       <ShelfBindings {shelf} {targets} />
     {/each}
     {#if destinations.length === 0}
-      <p>{t('shelves.empty')}</p>
+      <EmptyState title={t('shelves.empty')} art={false} />
     {/if}
-    <ul>
+    <ul class="dests">
       {#each destinations as dest (dest.id)}
         {@const st = states[dest.id]}
         {#if st}
-          <li>
+          <li class="panel dest">
             <fieldset>
-              <legend>{dest.shelf_name} <span>{dest.root_subpath}</span></legend>
-              {#each FIELDS as field (field)}
-                <label>
-                  {t(`shelves.field.${field}`)}
-                  <input
-                    type="text"
-                    value={st.template[field]}
-                    oninput={(event) => onField(dest, field, event.currentTarget.value)}
-                  />
-                </label>
-              {/each}
+              <legend>{dest.shelf_name} <code>{dest.root_subpath}</code></legend>
+              <div class="fields">
+                {#each FIELDS as field (field)}
+                  <Field label={t(`shelves.field.${field}`)}>
+                    {#snippet children(control)}
+                      <Input
+                        {...control}
+                        type="text"
+                        mono
+                        value={st.template[field]}
+                        oninput={(event: Event) => onField(dest, field, (event.currentTarget as HTMLInputElement).value)}
+                      />
+                    {/snippet}
+                  </Field>
+                {/each}
+              </div>
             </fieldset>
             {#if dest.flagged_names === null}
-              <p>{t('shelves.naming.unknown')}</p>
+              <Alert tone="info" title={t('shelves.naming.unknown')} />
             {/if}
             <details open={st.previewOpen} ontoggle={(event) => (st.previewOpen = event.currentTarget.open)}>
               <summary>{t('shelves.naming.title')}</summary>
               {#if st.preview}
                 {@const verified = st.preview.verified}
-                <ul>
+                <ul class="preview">
                   {#each st.preview.entries as entry (entry.key)}
-                    <li><span>{entry.rel_path}</span> <span>{statusLabel(entry.status, verified)}</span></li>
+                    <li><span class="path">{entry.rel_path}</span> <span class="status">{statusLabel(entry.status, verified)}</span></li>
                   {/each}
                 </ul>
                 {#each st.preview.collisions as collision (collision.names.join('\u0000'))}
-                  <p>{collision.names.join(', ')}</p>
+                  <p class="collision">{collision.names.join(', ')}</p>
                 {/each}
               {/if}
             </details>
-            <button type="button" disabled={sameTemplate(st.template, dest.template)} onclick={() => rename(dest)}>
-              {t('shelves.rename')}
-            </button>
+            <div>
+              <Button variant="primary" disabled={sameTemplate(st.template, dest.template)} onclick={() => rename(dest)}>
+                {t('shelves.rename')}
+              </Button>
+            </div>
             {#if st.plan}
-              <PlanPreview
-                plan={st.plan}
-                onapply={(result) => applyPlan(dest, result.confirmProgressLoss)}
-                oncancel={() => (st.plan = null)}
-              />
+              <div class="plan">
+                <PlanPreview
+                  plan={st.plan}
+                  onapply={(result) => applyPlan(dest, result.confirmProgressLoss)}
+                  oncancel={() => (st.plan = null)}
+                />
+              </div>
             {/if}
           </li>
         {/if}
       {/each}
     </ul>
     {#each unplaced as shelf (shelf.id)}
-      <p>{t('shelves.no_destination', { name: shelf.name })}</p>
+      <p class="muted">{t('shelves.no_destination', { name: shelf.name })}</p>
     {/each}
     {#if notice}
-      <p role={notice.kind}>{notice.text}</p>
+      <Alert tone={notice.kind === 'alert' ? 'danger' : 'success'} live={notice.kind === 'alert' ? 'assertive' : 'polite'} title={notice.text} />
     {/if}
   {/if}
   {#if reauthMethods}
@@ -268,9 +286,82 @@
 </main>
 
 <style>
-  main { max-width: 60rem; margin: 0 auto; padding: 2rem 1rem; }
-  ul { list-style: none; padding: 0; }
-  li { margin-bottom: 2rem; }
-  details { margin: 0.5rem 0; }
-  label { display: block; margin: 0.25rem 0; }
+  .dests {
+    list-style: none;
+    margin: var(--space-7) 0 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-5);
+  }
+  .dest {
+    display: grid;
+    gap: var(--space-4);
+    justify-items: start;
+    min-width: 0;
+  }
+  .dest > :global(*) {
+    max-width: 100%;
+  }
+  fieldset {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+    inline-size: 100%;
+  }
+  legend {
+    padding: 0;
+    margin-bottom: var(--space-3);
+    font: 500 var(--step-1) / var(--leading-tight) var(--font-text);
+  }
+  legend code {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--step--1);
+    color: var(--color-muted);
+  }
+  .fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: var(--space-3) var(--space-5);
+  }
+  summary {
+    min-height: 2.75rem;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .preview {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: var(--rule-hair) solid var(--color-ink);
+  }
+  .preview li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-4);
+    padding: var(--space-2) 0;
+    border-bottom: var(--rule-hair) solid var(--color-rule);
+  }
+  .path {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--step--1);
+    overflow-wrap: anywhere;
+  }
+  .status {
+    color: var(--color-muted);
+    font-size: var(--step--1);
+  }
+  .collision {
+    margin: var(--space-2) 0 0;
+    color: var(--color-err);
+  }
+  .plan {
+    display: grid;
+    gap: var(--space-3);
+    justify-items: start;
+    inline-size: 100%;
+  }
 </style>

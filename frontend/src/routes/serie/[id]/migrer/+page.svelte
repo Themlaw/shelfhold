@@ -26,6 +26,7 @@
   import Input from '#lib/ui/atoms/Input.svelte';
   import Select from '#lib/ui/atoms/Select.svelte';
   import Alert from '#lib/ui/molecules/Alert.svelte';
+  import ConfirmDialog from '#lib/ui/molecules/ConfirmDialog.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
 
   const GONE = ['not_loaded', 'removed_upstream'];
@@ -46,6 +47,7 @@
   let problem = $state<ProblemView | null>(null);
   let reauthMethods = $state<string[] | null>(null);
   let retry: (() => Promise<void>) | null = null;
+  let confirmingApply = $state(false);
   let busy = $state(false);
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
@@ -257,7 +259,7 @@
       {:else if validated}
         <p>{t('migrate.validated')}</p>
         <div class="btn-row">
-          <Button variant="primary" onclick={apply} disabled={busy} loading={busy}>{t('migrate.apply')}</Button>
+          <Button variant="primary" onclick={() => (confirmingApply = true)} disabled={busy} loading={busy}>{t('migrate.apply')}</Button>
         </div>
       {:else}
         <div class="btn-row">
@@ -267,6 +269,15 @@
     </div>
   {/if}
 </main>
+
+<ConfirmDialog
+  bind:open={confirmingApply}
+  title={t('migrate.apply_title')}
+  message={t('migrate.apply_message', { count: migration?.to_fetch ?? 0 })}
+  confirmLabel={t('migrate.apply_confirm')}
+  tone="primary"
+  onconfirm={apply}
+/>
 
 <style>
   .propose {

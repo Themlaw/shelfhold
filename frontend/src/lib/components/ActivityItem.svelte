@@ -5,6 +5,7 @@
   import type { ActivityOut } from '#lib/api/types.gen.ts';
   import OpenInKavita from '#lib/components/OpenInKavita.svelte';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
 
   let { item }: { item: ActivityOut } = $props();
 
@@ -24,7 +25,7 @@
     <span class="title">{item.title}</span>
   {/if}
   {#if label}
-    <span class="state">{label}</span>
+    <Badge tone={item.family_state === 'available' ? 'success' : 'neutral'} icon={item.family_state === 'available' ? 'check' : 'clock'}>{label}</Badge>
   {/if}
   {#if item.family_state === 'available'}
     <OpenInKavita url={item.open_url} />
@@ -33,30 +34,30 @@
     <span class="step">{t('activity.step', { step })}</span>
   {/if}
   {#if item.koreader_reset}
-    <span class="koreader-reset">{t('activity.koreader_reset')}</span>
+    <Badge tone="warning">{t('activity.koreader_reset')}</Badge>
   {/if}
 </article>
 
 <style>
   .activity-item {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2) var(--space-3);
     align-items: center;
     flex-wrap: wrap;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--color-rule, #eee);
+    padding: var(--space-3) 0;
   }
   .title {
     font-weight: 600;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
-  .state {
-    padding: 0.125rem 0.5rem;
-    border-radius: 999px;
-    border: 1px solid var(--color-rule, #ccc);
+  .masked {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--color-muted);
   }
-  .step,
-  .koreader-reset {
-    font-size: 0.875rem;
+  .step {
+    font-size: var(--step--1);
     color: var(--color-muted);
   }
 </style>

@@ -31,6 +31,7 @@
   import Select from '#lib/ui/atoms/Select.svelte';
   import Alert from '#lib/ui/molecules/Alert.svelte';
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import ConfirmDialog from '#lib/ui/molecules/ConfirmDialog.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
 
   const REASONS: Record<string, MessageKey> = {
@@ -53,6 +54,7 @@
   let problem = $state<ProblemView | null>(null);
   const reauth = new Reauth();
   let busy = $state(false);
+  let confirming = $state<'works' | 'editions' | null>(null);
 
   const headers = () => ({ 'X-CSRF-Token': csrfToken() });
   const titleOf = (workId: string): string =>
@@ -273,7 +275,7 @@
             <Alert tone="success" live="polite" title={t('sameWork.applied')} />
           {:else if workPlan.mergeable}
             <div class="btn-row">
-              <Button variant="primary" onclick={applyWork} disabled={busy}>
+              <Button variant="danger" onclick={() => (confirming = 'works')} disabled={busy}>
                 {t('sameWork.apply')}
               </Button>
             </div>
@@ -339,7 +341,7 @@
             <Alert tone="success" live="polite" title={t('sameWork.editions.applied')} />
           {:else if editionPlan.mergeable}
             <div class="btn-row">
-              <Button variant="primary" onclick={applyEdition} disabled={busy}>
+              <Button variant="danger" onclick={() => (confirming = 'editions')} disabled={busy}>
                 {t('sameWork.editions.apply')}
               </Button>
             </div>
@@ -362,6 +364,19 @@
     </div>
   {/if}
 </main>
+
+<ConfirmDialog
+  bind:open={() => confirming !== null, (value) => { if (!value) confirming = null; }}
+  title={confirming === 'editions' ? t('sameWork.editions.confirm_title') : t('sameWork.confirm_title')}
+  message={confirming === 'editions' ? t('sameWork.editions.confirm_message') : t('sameWork.confirm_message')}
+  confirmLabel={t('sameWork.confirm')}
+  onconfirm={async () => {
+    const which = confirming;
+    confirming = null;
+    if (which === 'editions') await applyEdition();
+    else if (which === 'works') await applyWork();
+  }}
+/>
 
 <style>
   .loading {

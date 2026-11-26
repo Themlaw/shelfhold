@@ -23,6 +23,17 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { Reauth } from '#lib/guard.svelte.ts';
   import { isForbidden, problemOf } from '#lib/triage.ts';
+  import Badge from '#lib/ui/atoms/Badge.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Checkbox from '#lib/ui/atoms/Checkbox.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import ConfirmDialog from '#lib/ui/molecules/ConfirmDialog.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import DataTable from '#lib/ui/organisms/DataTable.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   type Shown = { hook: WebhookOut; deliveries: DeliveryOut[]; unreadable: boolean };
   type Secret = { value: string; kind: 'created' | 'rotated'; hookId: string };
@@ -35,6 +46,8 @@
 
   let hooks = $state<Shown[]>([]);
   let adminOnly = $state(false);
+  let loaded = $state(false);
+  let deleting = $state<WebhookOut | null>(null);
   let notice = $state<{ text: string; kind: 'status' | 'alert' } | null>(null);
   let secret = $state<Secret | null>(null);
   let busy = $state(false);
@@ -48,6 +61,32 @@
   const stateText = (status: string): string =>
     STATES[status] ? t(STATES[status]) : t('webhooks.state.unknown');
   const when = (value: string | null): string => (value ? formatDateTime(value) : t('webhooks.dash'));
+
+  const DELIVERY_COLUMNS = [
+    { key: 'event', label: t('webhooks.deliveries.event'), primary: true },
+    { key: 'state', label: t('webhooks.deliveries.state') },
+    { key: 'attempts', label: t('webhooks.deliveries.attempts'), num: true },
+    { key: 'status', label: t('webhooks.deliveries.status'), num: true },
+    { key: 'error', label: t('webhooks.deliveries.error') },
+    { key: 'delivered', label: t('webhooks.deliveries.delivered_at') },
+    { key: 'next', label: t('webhooks.deliveries.next_try') }
+  ] as const;
+  const STATE_TONE: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> = {
+    delivered: 'success',
+    pending: 'warning',
+    dead: 'danger'
+  };
+  const deliveryRows = (shown: Shown) =>
+    shown.deliveries.map((delivery) => ({
+      id: delivery.id,
+      event: delivery.event_id,
+      state: delivery.status,
+      attempts: delivery.attempts,
+      status: delivery.last_status ?? t('webhooks.dash'),
+      error: delivery.last_error ?? t('webhooks.dash'),
+      delivered: when(delivery.delivered_at),
+      next: delivery.status === 'pending' ? when(delivery.next_try_at) : t('webhooks.dash')
+    }));
 
   function say(text: string, kind: 'status' | 'alert'): void {
     notice = { text, kind };
@@ -74,6 +113,7 @@
 
   async function load(): Promise<void> {
     const { data, error } = await listWebhooks({ throwOnError: false });
+    loaded = true;
     if (error) {
       const problem = problemOf(error);
       if (isForbidden(error)) {
@@ -190,97 +230,99 @@
   <title>{t('webhooks.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('webhooks.title')}</h1>
+<main class="page">
+  <PageHead
+    title={t('webhooks.title')}
+    crumbs={[{ label: t('settings.title'), href: '/reglages' }, { label: t('webhooks.title') }]}
+    lede={t('webhooks.lede')}
+  />
 
   {#if adminOnly}
-    <p role="alert">{notice?.text}</p>
+    <Alert tone="danger" title={notice?.text ?? ''} live="assertive" />
+  {:else if !loaded}
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('webhooks.loading')}</p>
+      <Skeleton shape="block" /><Skeleton /><Skeleton short />
+    </div>
   {:else}
     <form
+      class="panel add"
+      aria-label={t('webhooks.add')}
       onsubmit={(event) => {
         event.preventDefault();
         void create();
       }}
     >
-      <label for="webhook-url">{t('webhooks.url')}</label>
-      <input id="webhook-url" type="url" bind:value={url} required />
-      <label for="webhook-types">{t('webhooks.types')}</label>
-      <input id="webhook-types" bind:value={types} required />
-      <label>
-        <input type="checkbox" bind:checked={allowPrivate} />
-        {t('webhooks.allow_private')}
-      </label>
-      <button type="submit" disabled={busy}>{t('webhooks.add')}</button>
+      <Field label={t('webhooks.url')} required>
+        {#snippet children(control)}
+          <Input {...control} type="url" bind:value={url} />
+        {/snippet}
+      </Field>
+      <Field label={t('webhooks.types')} required hint={t('webhooks.types_hint')}>
+        {#snippet children(control)}
+          <Input {...control} mono bind:value={types} />
+        {/snippet}
+      </Field>
+      <Checkbox bind:checked={allowPrivate} label={t('webhooks.allow_private')} />
+      <div><Button type="submit" variant="primary" icon="plus" loading={busy}>{t('webhooks.add')}</Button></div>
     </form>
 
     {#if secret}
-      <section aria-labelledby="secret-title">
-        <h2 id="secret-title">{t('webhooks.secret.title')}</h2>
+      <Alert tone="warning" title={t('webhooks.secret.title')} live="polite">
         <p>{t(secret.kind === 'created' ? 'webhooks.secret.created' : 'webhooks.secret.rotated')}</p>
-        <code>{secret.value}</code>
-        <p>{t('webhooks.secret.once')}</p>
-      </section>
+        <code class="secret">{secret.value}</code>
+        <p><strong>{t('webhooks.secret.once')}</strong></p>
+      </Alert>
+    {/if}
+
+    {#if notice}
+      <Alert tone={notice.kind === 'alert' ? 'danger' : 'success'} live={notice.kind === 'alert' ? 'assertive' : 'polite'} title={notice.text} />
     {/if}
 
     {#if hooks.length === 0}
-      <p>{t('webhooks.empty')}</p>
+      <EmptyState title={t('webhooks.empty')} />
     {/if}
 
-    <ul>
+    <ul class="hooks">
       {#each hooks as shown (shown.hook.id)}
-        <li>
-          <span>{shown.hook.url_host}</span>
-          <span>{shown.hook.event_types.join(', ')}</span>
-          {#if shown.hook.private_target}
-            <span>{t('webhooks.private', { endpoint: shown.hook.private_target })}</span>
-          {/if}
-          <button type="button" disabled={busy} onclick={() => rotate(shown.hook)}>
-            {t('webhooks.rotate')}
-          </button>
-          <button type="button" disabled={busy} onclick={() => remove(shown.hook)}>
-            {t('webhooks.delete')}
-          </button>
+        <li class="hook">
+          <div class="hook__head">
+            <div class="hook__id">
+              <span class="hook__host">{shown.hook.url_host}</span>
+              <span class="hook__types">{shown.hook.event_types.join(', ')}</span>
+              {#if shown.hook.private_target}
+                <Badge tone="warning" icon="alert">{t('webhooks.private', { endpoint: shown.hook.private_target })}</Badge>
+              {/if}
+            </div>
+            <div class="btn-row">
+              <Button size="sm" icon="refresh" disabled={busy} onclick={() => rotate(shown.hook)}>
+                {t('webhooks.rotate')}
+              </Button>
+              <Button size="sm" variant="danger-ghost" icon="trash" disabled={busy} onclick={() => (deleting = shown.hook)}>
+                {t('webhooks.delete')}
+              </Button>
+            </div>
+          </div>
 
           {#if shown.unreadable}
-            <p>{t('webhooks.deliveries.unreadable')}</p>
+            <Alert tone="warning" title={t('webhooks.deliveries.unreadable')} />
           {:else if shown.deliveries.length === 0}
-            <p>{t('webhooks.deliveries.empty')}</p>
+            <p class="muted">{t('webhooks.deliveries.empty')}</p>
           {:else}
-            <table>
-              <caption>{t('webhooks.deliveries')}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">{t('webhooks.deliveries.event')}</th>
-                  <th scope="col">{t('webhooks.deliveries.state')}</th>
-                  <th scope="col">{t('webhooks.deliveries.attempts')}</th>
-                  <th scope="col">{t('webhooks.deliveries.status')}</th>
-                  <th scope="col">{t('webhooks.deliveries.error')}</th>
-                  <th scope="col">{t('webhooks.deliveries.delivered_at')}</th>
-                  <th scope="col">{t('webhooks.deliveries.next_try')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each shown.deliveries as delivery (delivery.id)}
-                  <tr>
-                    <th scope="row">{delivery.event_id}</th>
-                    <td>{stateText(delivery.status)}</td>
-                    <td>{delivery.attempts}</td>
-                    <td>{delivery.last_status ?? t('webhooks.dash')}</td>
-                    <td>{delivery.last_error ?? t('webhooks.dash')}</td>
-                    <td>{when(delivery.delivered_at)}</td>
-                    <td>{delivery.status === 'pending' ? when(delivery.next_try_at) : t('webhooks.dash')}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
+            <h3 class="deliveries-title">{t('webhooks.deliveries')}</h3>
+            <DataTable caption={t('webhooks.deliveries')} captionHidden compact columns={DELIVERY_COLUMNS} rows={deliveryRows(shown)} key={(row) => String(row.id)}>
+              {#snippet cell(column, row)}
+                {#if column.key === 'state'}
+                  <Badge tone={STATE_TONE[String(row.state)] ?? 'neutral'}>{stateText(String(row.state))}</Badge>
+                {:else}
+                  {String((row as Record<string, unknown>)[column.key] ?? '')}
+                {/if}
+              {/snippet}
+            </DataTable>
           {/if}
         </li>
       {/each}
     </ul>
-
-    {#if notice}
-      <p role={notice.kind}>{notice.text}</p>
-    {/if}
   {/if}
 
   {#if reauth.reauthMethods}
@@ -292,43 +334,72 @@
   {/if}
 </main>
 
+<ConfirmDialog
+  bind:open={() => deleting !== null, (value) => { if (!value) deleting = null; }}
+  title={t('webhooks.delete_title', { host: deleting?.url_host ?? '' })}
+  message={t('webhooks.delete_message')}
+  confirmLabel={t('webhooks.delete_confirm')}
+  onconfirm={async () => {
+    const hook = deleting;
+    deleting = null;
+    if (hook) await remove(hook);
+  }}
+/>
+
 <style>
-  main {
-    max-width: 60rem;
-    margin: 0 auto;
-    padding: 2rem 1rem;
-  }
-  form {
+  .add {
     display: grid;
-    gap: 0.5rem;
-    max-width: 32rem;
-    margin-bottom: 1.5rem;
+    gap: var(--space-4);
+    max-width: var(--form-max);
+    margin-bottom: var(--space-6);
   }
-  ul {
+  .secret {
+    display: block;
+    margin: var(--space-2) 0;
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+  .hooks {
     list-style: none;
+    margin: var(--space-6) 0 0;
     padding: 0;
+    display: grid;
+    gap: var(--space-6);
   }
-  li {
-    margin-bottom: 1.5rem;
+  .hook {
+    display: grid;
+    gap: var(--space-3);
   }
-  section {
-    margin: 1rem 0;
-    padding: 1rem;
-    border: 1px solid var(--color-warn);
-    border-radius: var(--radius-cover);
+  .hook__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding-bottom: var(--space-2);
+    border-bottom: var(--rule-hair) solid var(--color-ink);
   }
-  table {
-    margin-top: 0.5rem;
-    border-collapse: collapse;
+  .deliveries-title {
+    margin: var(--space-2) 0 0;
+    font: italic var(--step-0) / var(--leading-ui) var(--font-text);
+    color: var(--color-muted);
   }
-  caption {
-    text-align: left;
-    font-weight: 600;
-    padding-bottom: 0.25rem;
+  .hook__id {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
   }
-  th,
-  td {
-    padding: 0.25rem 0.75rem 0.25rem 0;
-    text-align: left;
+  .hook__host {
+    font: 500 var(--step-1) / var(--leading-tight) var(--font-text);
+    overflow-wrap: anywhere;
+  }
+  .hook__types {
+    color: var(--color-muted);
+    font-size: var(--step--1);
+    overflow-wrap: anywhere;
   }
 </style>

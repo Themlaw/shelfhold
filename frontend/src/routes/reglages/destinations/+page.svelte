@@ -15,6 +15,16 @@
   import TypedConfirm from '#lib/components/TypedConfirm.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Checkbox from '#lib/ui/atoms/Checkbox.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Radio from '#lib/ui/atoms/Radio.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Switch from '#lib/ui/atoms/Switch.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   type Destination = {
     id: string;
@@ -54,6 +64,7 @@
   };
   let destinations = $state<Destination[]>([]);
   let adminOnly = $state(false);
+  let loaded = $state(false);
   let notice = $state<{ text: string; kind: 'status' | 'alert' } | null>(null);
 
   let removing = $state<Destination | null>(null);
@@ -100,6 +111,7 @@
 
   async function load(): Promise<void> {
     const { data, error } = await client.get({ url: '/api/v1/destinations', throwOnError: false });
+    loaded = true;
     if (error) {
       adminOnly = isForbidden(error);
       say(adminOnly ? t('screens.admin_only') : t('destinations.error'), 'alert');
@@ -283,7 +295,6 @@
   }
 
   const jobFailed = (j: Job): boolean => j.status === 'failed' || j.status === 'dead_letter';
-  const jobRunning = (j: Job): boolean => ['queued', 'running'].includes(j.status);
 
   onMount(load);
 </script>
@@ -292,59 +303,69 @@
   <title>{t('destinations.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('destinations.title')}</h1>
+<main class="page">
+  <PageHead
+    title={t('destinations.title')}
+    crumbs={[{ label: t('settings.title'), href: '/reglages' }, { label: t('destinations.title') }]}
+    lede={t('destinations.lede')}
+  />
   {#if adminOnly}
-    <p role="alert">{notice?.text}</p>
+    <Alert tone="danger" title={notice?.text ?? ''} live="assertive" />
+  {:else if !loaded}
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('destinations.loading')}</p>
+      <Skeleton shape="block" /><Skeleton /><Skeleton short />
+    </div>
   {:else}
     {#if destinations.length === 0}
-      <p>{t('destinations.empty')}</p>
-    {/if}
-    <ul>
-      {#each destinations as dest (dest.id)}
-        <li>
-          <span>{dest.shelf_name}</span>
-          <span>{dest.root_subpath}</span>
-          {#if dest.can_sync_progress}
-            <label>
-              <input
-                type="checkbox"
+      <EmptyState title={t('destinations.empty')} />
+    {:else}
+      <ul class="entries destinations">
+        {#each destinations as dest (dest.id)}
+          <li class="dest">
+            <div class="dest__name">
+              <span class="dest__shelf">{dest.shelf_name}</span>
+              <code class="dest__path">{dest.root_subpath}</code>
+            </div>
+            {#if dest.can_sync_progress}
+              <Switch
+                label={t('destinations.sync.label')}
                 checked={Boolean(dest.sync_progress)}
                 onchange={(event) => setSync(dest, event.currentTarget.checked, event.currentTarget)}
               />
-              {t('destinations.sync.label')}
-            </label>
-          {/if}
-          <button type="button" onclick={() => startRemove(dest)}>{t('destinations.remove')}</button>
-          <button type="button" aria-describedby="scope-{dest.id}" onclick={() => startDetach(dest)}>
-            {t('destinations.detach')}
-          </button>
-          <small id="scope-{dest.id}">{t('destinations.detach.scope', { names: concerned(dest) })}</small>
-        </li>
-      {/each}
-    </ul>
+            {/if}
+            <div class="dest__actions">
+              <Button variant="danger-ghost" size="sm" onclick={() => startRemove(dest)}>{t('destinations.remove')}</Button>
+              <Button size="sm" aria-describedby="scope-{dest.id}" onclick={() => startDetach(dest)}>
+                {t('destinations.detach')}
+              </Button>
+            </div>
+            <small class="dest__scope hint" id="scope-{dest.id}">{t('destinations.detach.scope', { names: concerned(dest) })}</small>
+          </li>
+        {/each}
+      </ul>
+    {/if}
 
     {#if removing}
-      <section aria-labelledby="removal-title">
+      <section class="panel step" aria-labelledby="removal-title">
         <h2 id="removal-title">{t('destinations.remove')}</h2>
-        <fieldset>
+        <fieldset class="choices">
           <legend>{t('destinations.removal.mode')}</legend>
-          <label>
-            <input type="radio" bind:group={removeMode} value="keep_files" onchange={() => (removePreview = null)} />
-            {t('destinations.removal.keep')}
-          </label>
-          <label>
-            <input type="radio" bind:group={removeMode} value="delete_files" onchange={() => (removePreview = null)} />
-            {t('destinations.removal.delete')}
-          </label>
+          <Radio bind:group={removeMode} value="keep_files" label={t('destinations.removal.keep')} onchange={() => (removePreview = null)} />
+          <Radio bind:group={removeMode} value="delete_files" label={t('destinations.removal.delete')} onchange={() => (removePreview = null)} />
         </fieldset>
-        <button type="button" onclick={previewRemoval}>{t('destinations.removal.preview_button')}</button>
+        <div class="btn-row">
+          <Button variant="primary" onclick={previewRemoval}>{t('destinations.removal.preview_button')}</Button>
+          <Button variant="ghost" onclick={cancelRemove}>{t('destinations.cancel')}</Button>
+        </div>
         {#if removePreview}
-          <ul>
-            {#each removePreview.warnings as line (line.code)}
-              <li>{warningText(line)}</li>
-            {/each}
-          </ul>
+          <Alert tone="warning" title={t('destinations.preview.title')}>
+            <ul class="warnings">
+              {#each removePreview.warnings as line (line.code)}
+                <li>{warningText(line)}</li>
+              {/each}
+            </ul>
+          </Alert>
           <TypedConfirm
             phrase={removePreview.phrase}
             confirmLabel={t('destinations.confirm')}
@@ -352,27 +373,31 @@
             onconfirm={confirmRemoval}
           />
         {/if}
-        <button type="button" onclick={cancelRemove}>{t('destinations.cancel')}</button>
       </section>
     {/if}
 
     {#if detaching}
-      <section aria-labelledby="detach-title">
+      <section class="panel step" aria-labelledby="detach-title">
         <h2 id="detach-title">{t('destinations.detach')}</h2>
         <p>{t('destinations.detach.scope', { names: concerned(detaching) })}</p>
         {#if detachPreview}
-          <ul>
-            {#each detachPreview.warnings as line (line.code)}
-              <li>{warningText(line)}</li>
-            {/each}
-          </ul>
-          <label>
-            {t('destinations.detach.password_label')}
-            <input type="password" autocomplete="off" bind:value={detachPassword} />
-          </label>
-          <label><input type="checkbox" bind:checked={discardHidden} /> {t('destinations.detach.discard_hidden')}</label>
-          <label><input type="checkbox" bind:checked={discardJournal} /> {t('destinations.detach.discard_journal')}</label>
-          <label><input type="checkbox" bind:checked={keyGone} /> {t('destinations.detach.key_gone')}</label>
+          <Alert tone="warning" title={t('destinations.preview.title')}>
+            <ul class="warnings">
+              {#each detachPreview.warnings as line (line.code)}
+                <li>{warningText(line)}</li>
+              {/each}
+            </ul>
+          </Alert>
+          <Field label={t('destinations.detach.password_label')}>
+            {#snippet children(control)}
+              <Input {...control} type="password" autocomplete="off" bind:value={detachPassword} />
+            {/snippet}
+          </Field>
+          <div class="choices">
+            <Checkbox bind:checked={discardHidden} label={t('destinations.detach.discard_hidden')} />
+            <Checkbox bind:checked={discardJournal} label={t('destinations.detach.discard_journal')} />
+            <Checkbox bind:checked={keyGone} label={t('destinations.detach.key_gone')} />
+          </div>
           <TypedConfirm
             phrase={detachPreview.phrase}
             confirmLabel={t('destinations.confirm')}
@@ -380,51 +405,47 @@
             onconfirm={confirmDetach}
           />
         {/if}
-        <button type="button" onclick={cancelDetach}>{t('destinations.cancel')}</button>
+        <Button variant="ghost" onclick={cancelDetach}>{t('destinations.cancel')}</Button>
       </section>
     {/if}
 
     {#if job}
-      <section aria-labelledby="job-title">
+      <section class="panel step" aria-labelledby="job-title">
         <h2 id="job-title">{t('destinations.job.title')}</h2>
         {#if job.status === 'succeeded' || jobFailed(job)}
           <h3>{t('destinations.report.title')}</h3>
         {/if}
         {#if job.status === 'succeeded'}
-          <p role="status">
-            {job.kind === 'removal' ? t('destinations.removal.done') : t('destinations.detach.done')}
-          </p>
+          <Alert tone="success" live="polite" title={job.kind === 'removal' ? t('destinations.removal.done') : t('destinations.detach.done')} />
           {#if job.kind === 'detach'}
             <p>{t('destinations.detach.left_in_place')} : {t('destinations.detach.stays')}</p>
           {/if}
         {:else if jobFailed(job)}
           {#if job.error === 'removal.incomplete'}
-            <p role="alert">{t('destinations.removal.unfinished')}</p>
+            <Alert tone="danger" live="assertive" title={t('destinations.removal.unfinished')} />
             <p>{t('destinations.detach.left_in_place')} : {t('destinations.job.removal_left')}</p>
           {:else if job.error === 'detach.incomplete'}
-            <p role="alert">{t('destinations.detach.unfinished')}</p>
+            <Alert tone="danger" live="assertive" title={t('destinations.detach.unfinished')} />
             <p>{t('destinations.job.detach_again')}</p>
           {:else}
-            <p role="alert">{t('destinations.job.failed')}</p>
+            <Alert tone="danger" live="assertive" title={t('destinations.job.failed')} />
           {/if}
         {:else if job.status === 'paused'}
-          <p role="status">{t('destinations.job.paused')}</p>
+          <Alert tone="info" live="polite" title={t('destinations.job.paused')} />
         {:else if job.status === 'cancelled'}
-          <p role="status">{t('destinations.job.cancelled')}</p>
-        {:else if jobRunning(job)}
-          <p role="status">{t('destinations.job.maybe_running')}</p>
+          <Alert tone="info" live="polite" title={t('destinations.job.cancelled')} />
         {:else}
-          <p role="status">{t('destinations.job.maybe_running')}</p>
+          <Alert tone="info" live="polite" title={t('destinations.job.maybe_running')} />
         {/if}
-        <button type="button" disabled={busy} onclick={reload}>{t('destinations.job.reload')}</button>
+        <div><Button icon="refresh" disabled={busy} onclick={reload}>{t('destinations.job.reload')}</Button></div>
       </section>
     {/if}
 
     {#if notice}
-      <p role={notice.kind}>{notice.text}</p>
+      <Alert tone={notice.kind === 'alert' ? 'danger' : 'success'} live={notice.kind === 'alert' ? 'assertive' : 'polite'} title={notice.text} />
     {/if}
     {#if leftCount > 0}
-      <p>{t('destinations.removal.left', { count: leftCount })}</p>
+      <p class="muted">{t('destinations.removal.left', { count: leftCount })}</p>
     {/if}
   {/if}
 
@@ -446,9 +467,65 @@
 </main>
 
 <style>
-  main { max-width: 60rem; margin: 0 auto; padding: 2rem 1rem; }
-  ul { list-style: none; padding: 0; }
-  li { margin-bottom: 1rem; }
-  section { margin: 1rem 0; padding: 1rem; border: 1px solid #ccc; }
-  label { display: block; margin: 0.25rem 0; }
+  .dest {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--space-2) var(--space-5);
+    padding: var(--space-4) 0;
+  }
+  .dest__name {
+    display: grid;
+    min-width: 0;
+  }
+  .dest__shelf {
+    font-weight: 600;
+  }
+  .dest__path {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--step--1);
+    color: var(--color-muted);
+    overflow-wrap: anywhere;
+  }
+  .dest__actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+  .dest__scope {
+    grid-column: 1 / -1;
+  }
+  .step {
+    display: grid;
+    gap: var(--space-4);
+    justify-items: start;
+    margin-top: var(--space-6);
+  }
+  .step > :global(*) {
+    max-width: 100%;
+  }
+  .step h2,
+  .step h3 {
+    margin: 0;
+    font-size: var(--step-1);
+  }
+  .choices {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .choices legend {
+    margin-bottom: var(--space-2);
+    font-weight: 600;
+  }
+  .warnings {
+    margin: 0;
+    padding-inline-start: var(--space-5);
+  }
+  @media (max-width: 40rem) {
+    .dest {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
 </style>
