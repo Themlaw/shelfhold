@@ -31,6 +31,8 @@
   import ErrorState from '#lib/ui/molecules/ErrorState.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
   import SettingRow from '#lib/ui/molecules/SettingRow.svelte';
+  import type { Column } from '#lib/ui/molecules/TableRow.svelte';
+  import DataTable from '#lib/ui/organisms/DataTable.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
 
@@ -48,6 +50,17 @@
   let reauthMethods = $state<string[] | null>(null);
   let retry: (() => Promise<void>) | null = null;
 
+  // One editor at a time: the chosen profile, or the creation form (`creating`).
+  let selectedId = $state<string | null>(null);
+  let creating = $state(false);
+  const selected = $derived(profiles.find((profile) => profile.id === selectedId) ?? null);
+  const COLUMNS: readonly Column[] = [
+    { key: 'username', label: t('profiles.name'), primary: true },
+    { key: 'role', label: t('profiles.role') },
+    { key: 'age', label: t('profiles.age') },
+    { key: 'visibility', label: t('profiles.visibility') }
+  ];
+
   let newName = $state('');
   let newPassword = $state('');
   let newRole = $state<(typeof ROLES)[number]>('member');
@@ -60,6 +73,7 @@
     try {
       const { data } = await listProfiles({ throwOnError: true });
       profiles = data.items;
+      if (!creating && !profiles.some((profile) => profile.id === selectedId)) selectedId = profiles[0]?.id ?? null;
     } catch (error) {
       failed = true;
       adminOnly = isForbidden(error);
@@ -128,7 +142,7 @@
   function create(event: SubmitEvent): void {
     event.preventDefault();
     void run(async () => {
-      await createProfile({
+      const { data: made } = await createProfile({
         headers: headers(),
         body: {
           username: newName,
@@ -142,6 +156,8 @@
       newName = '';
       newPassword = '';
       newAge = null;
+      selectedId = made.id;
+      creating = false;
     }, t('profiles.created'));
   }
 
@@ -216,6 +232,11 @@
       <h1 class="page-title">{t('profiles.title')}</h1>
       <p class="lede">{t('profiles.lede')}</p>
     </div>
+    {#if loaded && !adminOnly && !(failed && profiles.length === 0)}
+      <div class="page-head__actions">
+        <Button variant="primary" icon="plus" onclick={() => (creating = true)}>{t('profiles.new')}</Button>
+      </div>
+    {/if}
   </div>
 
   {#if !loaded}
@@ -237,126 +258,159 @@
       <div class="section-head">
         <h2 id="profiles-existing">{t('profiles.existing')}</h2>
       </div>
-      {#if profiles.length === 0}
-        <EmptyState title={t('profiles.empty')} headingLevel={3} art={false} />
-      {:else}
-        <ul class="profiles" role="list">
-          {#each profiles as profile (profile.id)}
-            <li class="profile panel" data-testid="profile-row" class:profile--child={profile.role === 'child'}>
-              <header class="profile__head">
-                <Avatar name={profile.username} kind={kindOf(profile.role)} size="lg" />
-                <div class="profile__who">
-                  <h3 class="profile__name">{profile.username}</h3>
-                  <p class="profile__role">
-                    <span>{roleName(profile.role)}</span>
-                    {#if profile.role === 'child'}
-                      <Badge tone="age" label={t('profiles.age_current', { age: ageText(profile.max_age_rating) })}>{ageText(profile.max_age_rating)}</Badge>
-                    {/if}
-                  </p>
-                </div>
-              </header>
+      <DataTable
+        caption={t('profiles.existing')}
+        captionHidden
+        columns={COLUMNS}
+        rows={profiles.map((profile) => ({ ...profile }))}
+        key={(row) => String(row.id)}
+        selected={(row) => !creating && row.id === selectedId}
+      >
+        {#snippet empty()}
+          <EmptyState title={t('profiles.empty')} headingLevel={3} art={false} />
+        {/snippet}
+        {#snippet cell(column, row)}
+          {@const profile = row as unknown as ProfileOut}
+          {#if column.key === 'username'}
+            <button
+              type="button"
+              class="pick"
+              data-testid="profile-row"
+              aria-pressed={!creating && profile.id === selectedId}
+              onclick={() => {
+                creating = false;
+                selectedId = profile.id;
+              }}
+            >
+              <Avatar name={profile.username} kind={kindOf(profile.role)} size="sm" />
+              <span>{profile.username}</span>
+            </button>
+          {:else if column.key === 'role'}
+            {roleName(profile.role)}
+          {:else if column.key === 'age'}
+            {#if profile.role === 'child'}
+              <Badge tone="age" label={t('profiles.age_current', { age: ageText(profile.max_age_rating) })}>{ageText(profile.max_age_rating)}</Badge>
+            {:else}
+              <span class="muted" aria-hidden="true">—</span>
+            {/if}
+          {:else}
+            {t(`profiles.visibility.${profile.visibility}` as MessageKey)}
+          {/if}
+        {/snippet}
+      </DataTable>
+    </section>
 
-              <div class="settings">
-                {#if profile.role === 'child'}
-                  <SettingRow label={t('profiles.age')} help={t('profiles.age_help')}>
-                    <AgeScale
-                      name={`age-${profile.id}`}
-                      legend={t('profiles.age')}
+    {#if creating}
+      <section class="section editor" aria-labelledby="profiles-new">
+        <div class="section-head">
+          <h2 id="profiles-new">{t('profiles.new')}</h2>
+        </div>
+        <p class="hint">{t('profiles.new_help')}</p>
+        <form class="new" onsubmit={create} aria-labelledby="profiles-new">
+          <Field label={t('profiles.name')} required>
+            {#snippet children(control)}<Input {...control} bind:value={newName} autocomplete="off" />{/snippet}
+          </Field>
+          <Field label={t('profiles.password')} required>
+            {#snippet children(control)}
+              <Input {...control} type="password" bind:value={newPassword} autocomplete="new-password" />
+            {/snippet}
+          </Field>
+          <Field label={t('profiles.role')}>
+            {#snippet children(control)}
+              <Select {...control} bind:value={newRole} options={ROLES.map((value) => ({ value, label: roleName(value) }))} />
+            {/snippet}
+          </Field>
+          <Field label={t('profiles.age')}>
+            {#snippet children(control)}<Input {...control} type="number" min="0" bind:value={newAge} width="short" />{/snippet}
+          </Field>
+          <Checkbox bind:checked={newCanRate} label={t('profiles.can_rate')} />
+          <div class="new__actions">
+            <Button type="submit" variant="primary" icon="plus" class="main-action">{t('profiles.create')}</Button>
+            <Button variant="ghost" onclick={() => (creating = false)}>{t('profiles.cancel')}</Button>
+          </div>
+        </form>
+      </section>
+    {:else if selected}
+      {@const profile = selected}
+      <section class="section editor" aria-labelledby="profile-editor-title" data-testid="profile-editor">
+        <header class="profile__head">
+          <Avatar name={profile.username} kind={kindOf(profile.role)} size="lg" />
+          <div class="profile__who">
+            <h2 id="profile-editor-title" class="profile__name">{profile.username}</h2>
+            <p class="profile__role">{roleName(profile.role)}</p>
+          </div>
+        </header>
+
+        <div class="settings">
+          {#if profile.role === 'child'}
+            <SettingRow label={t('profiles.age')} help={t('profiles.age_help')}>
+              <AgeScale
+                name={`age-${profile.id}`}
+                legend={t('profiles.age')}
+                hideLegend
+                steps={steps(profile.max_age_rating)}
+                value={profile.max_age_rating}
+                onchange={(age) => update(profile, { max_age_rating: age })}
+              />
+            </SettingRow>
+          {:else}
+            <div class="settings__row">
+              <Switch
+                label={t('profiles.can_rate')}
+                checked={profile.can_rate}
+                onchange={(e) => update(profile, { can_rate: (e.target as HTMLInputElement).checked })}
+              />
+            </div>
+          {/if}
+
+          <SettingRow label={t('profiles.visibility')} help={t('profiles.visibility_help')}>
+            {#snippet children(control)}
+              <Select
+                {...control}
+                value={profile.visibility}
+                options={VISIBILITIES.map((value) => ({ value, label: t(`profiles.visibility.${value}`) }))}
+                onchange={(e) =>
+                  chooseVisibility(profile, (e.target as HTMLSelectElement).value as 'private' | 'household')}
+              />
+            {/snippet}
+          </SettingRow>
+
+          <SettingRow label={t('profiles.policy_title', { name: profile.username })} help={t('profiles.policy_help')}>
+            {#if (policies[profile.id] ?? []).length === 0}
+              <p class="hint">{t('profiles.policy_none')}</p>
+            {:else}
+              <ul class="policies" role="list">
+                {#each policies[profile.id] ?? [] as policy (policy.source_key)}
+                  <li class="policy">
+                    <span class="policy__source" aria-hidden="true">{policy.source_key}</span>
+                    <Segmented
+                      name={`policy-${profile.id}-${policy.source_key}`}
+                      legend={t('profiles.policy', { source: policy.source_key })}
                       hideLegend
-                      steps={steps(profile.max_age_rating)}
-                      value={profile.max_age_rating}
-                      onchange={(age) => update(profile, { max_age_rating: age })}
+                      value={policy.policy}
+                      options={[
+                        { value: 'add_directly', label: t('profiles.policy.add_directly'), icon: 'plus' },
+                        { value: 'request', label: t('profiles.policy.request'), icon: 'inbox' },
+                        { value: 'forbidden', label: t('profiles.policy.forbidden'), icon: 'x' }
+                      ]}
+                      onchange={(value) => choosePolicy(profile, policy.source_key, value)}
                     />
-                  </SettingRow>
-                {:else}
-                  <div class="settings__row">
-                    <Switch
-                      label={t('profiles.can_rate')}
-                      checked={profile.can_rate}
-                      onchange={(e) => update(profile, { can_rate: (e.target as HTMLInputElement).checked })}
-                    />
-                  </div>
-                {/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </SettingRow>
+        </div>
 
-                <SettingRow label={t('profiles.visibility')} help={t('profiles.visibility_help')}>
-                  {#snippet children(control)}
-                    <Select
-                      {...control}
-                      value={profile.visibility}
-                      options={VISIBILITIES.map((value) => ({ value, label: t(`profiles.visibility.${value}`) }))}
-                      onchange={(e) =>
-                        chooseVisibility(profile, (e.target as HTMLSelectElement).value as 'private' | 'household')}
-                    />
-                  {/snippet}
-                </SettingRow>
-
-                <SettingRow label={t('profiles.policy_title', { name: profile.username })} help={t('profiles.policy_help')}>
-                  {#if (policies[profile.id] ?? []).length === 0}
-                    <p class="hint">{t('profiles.policy_none')}</p>
-                  {:else}
-                    <ul class="policies" role="list">
-                      {#each policies[profile.id] ?? [] as policy (policy.source_key)}
-                        <li class="policy">
-                          <span class="policy__source" aria-hidden="true">{policy.source_key}</span>
-                          <Segmented
-                            name={`policy-${profile.id}-${policy.source_key}`}
-                            legend={t('profiles.policy', { source: policy.source_key })}
-                            hideLegend
-                            value={policy.policy}
-                            options={[
-                              { value: 'add_directly', label: t('profiles.policy.add_directly'), icon: 'plus' },
-                              { value: 'request', label: t('profiles.policy.request'), icon: 'inbox' },
-                              { value: 'forbidden', label: t('profiles.policy.forbidden'), icon: 'x' }
-                            ]}
-                            onchange={(value) => choosePolicy(profile, policy.source_key, value)}
-                          />
-                        </li>
-                      {/each}
-                    </ul>
-                  {/if}
-                </SettingRow>
-              </div>
-
-              <div class="danger">
-                <div>
-                  <p class="danger__title">{t('profiles.danger')}</p>
-                  <p class="hint">{t('profiles.remove_help')}</p>
-                </div>
-                <Button variant="danger-ghost" icon="trash" onclick={() => askRemove(profile)}>{t('profiles.remove')}</Button>
-              </div>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
-
-    <section class="section" aria-labelledby="profiles-new">
-      <div class="section-head">
-        <h2 id="profiles-new">{t('profiles.new')}</h2>
-      </div>
-      <p class="hint">{t('profiles.new_help')}</p>
-      <form class="new" onsubmit={create} aria-labelledby="profiles-new">
-        <Field label={t('profiles.name')} required>
-          {#snippet children(control)}<Input {...control} bind:value={newName} autocomplete="off" />{/snippet}
-        </Field>
-        <Field label={t('profiles.password')} required>
-          {#snippet children(control)}
-            <Input {...control} type="password" bind:value={newPassword} autocomplete="new-password" />
-          {/snippet}
-        </Field>
-        <Field label={t('profiles.role')}>
-          {#snippet children(control)}
-            <Select {...control} bind:value={newRole} options={ROLES.map((value) => ({ value, label: roleName(value) }))} />
-          {/snippet}
-        </Field>
-        <Field label={t('profiles.age')}>
-          {#snippet children(control)}<Input {...control} type="number" min="0" bind:value={newAge} width="short" />{/snippet}
-        </Field>
-        <Checkbox bind:checked={newCanRate} label={t('profiles.can_rate')} />
-        <!-- a direct child of the form: on a phone the main action of a long form stays in reach -->
-        <Button type="submit" variant="primary" icon="plus" class="main-action new__submit">{t('profiles.create')}</Button>
-      </form>
-    </section>
+        <div class="danger">
+          <div>
+            <p class="danger__title">{t('profiles.danger')}</p>
+            <p class="hint">{t('profiles.remove_help')}</p>
+          </div>
+          <Button variant="danger-ghost" icon="trash" onclick={() => askRemove(profile)}>{t('profiles.remove')}</Button>
+        </div>
+      </section>
+    {/if}
   {/if}
 
   {#if reauthMethods}
@@ -384,16 +438,39 @@
 {/if}
 
 <style>
-  .profiles {
-    display: grid;
-    gap: var(--space-5);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .profile {
+  .editor {
     display: grid;
     gap: var(--space-4);
+  }
+  .pick {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-block-size: 44px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-link, var(--color-accent-text));
+    font: 600 var(--step-0) / 1.2 var(--font-text);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    cursor: pointer;
+  }
+  .pick[aria-pressed='true'] {
+    color: var(--color-ink);
+    text-decoration-thickness: var(--rule-thick);
+  }
+  .pick:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  .muted {
+    color: var(--color-muted);
+  }
+  .new__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
   }
   .profile__head {
     display: flex;
@@ -463,9 +540,6 @@
     flex-direction: column;
     gap: var(--space-4);
     max-inline-size: var(--form-max);
-  }
-  .new :global(.new__submit) {
-    align-self: flex-start;
   }
   .notice {
     position: sticky;
