@@ -72,13 +72,13 @@ describe('ApproveSheet', () => {
     const onapproved = vi.fn();
     render(ApproveSheet, { item: item(), onapproved });
     const group = await screen.findByRole('group', { name: 'Âge pour cette demande' });
-    expect(approveButton()).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('Choisissez un âge pour pouvoir approuver.')).toBeInTheDocument();
+    expect(approveButton()).not.toHaveAttribute('aria-disabled');
     const user = userEvent.setup();
-    // a click on a disabled button asks the server for nothing
+    // a click without a chosen age asks the server for nothing
     await user.click(approveButton());
     expect(posted).toEqual([]);
     await user.click(within(group).getByRole('radio', { name: '13+' }));
-    expect(approveButton()).not.toHaveAttribute("aria-disabled");
     await user.click(approveButton());
     await vi.waitFor(() => expect(onapproved).toHaveBeenCalledOnce());
     expect(posted).toEqual([
@@ -102,7 +102,7 @@ describe('ApproveSheet', () => {
     answer(preview());
     render(ApproveSheet, { item: item(), onapproved: vi.fn() });
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('radio', { name: 'X' }));
+    await user.click(await screen.findByRole('radio', { name: 'Aucun' }));
     await user.click(approveButton());
     await vi.waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0]?.body).toMatchObject({ age: 18, x: true });
