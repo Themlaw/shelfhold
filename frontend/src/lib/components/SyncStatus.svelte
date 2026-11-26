@@ -56,9 +56,47 @@
 {/if}
 
 <style>
-  section { margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--color-rule); }
-  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
-  li { padding: 0.5rem 0; border-top: 1px solid var(--color-rule); }
-  h3, h4, p { margin: 0.25rem 0; }
-  .state { font-weight: 600; }
+  section {
+    display: grid;
+    gap: var(--space-3);
+    margin-block: var(--space-6);
+    padding-top: var(--space-4);
+    border-top: var(--rule-hair) solid var(--color-ink);
+  }
+  h2 {
+    margin: 0;
+    font-size: var(--step-2);
+  }
+  h3 {
+    margin: var(--space-3) 0 0;
+    font-size: var(--step-1);
+  }
+  h4 {
+    margin: 0;
+    font-size: var(--step-0);
+  }
+  p {
+    margin: 0;
+  }
+  ul {
+    list-style: none;
+    margin: var(--space-2) 0 0;
+    padding: 0;
+    display: grid;
+    border-top: var(--rule-hair) solid var(--color-rule);
+  }
+  li {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-3) 0;
+    border-bottom: var(--rule-hair) solid var(--color-rule);
+    overflow-wrap: anywhere;
+  }
+  li > p:not(.state) {
+    color: var(--color-muted);
+    font-size: var(--step--1);
+  }
+  .state {
+    font-weight: 600;
+  }
 </style>

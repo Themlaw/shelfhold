@@ -8,7 +8,7 @@
   import { wizardAdoptionConfirm, wizardState } from '#lib/api/index.ts';
   import { previewAdoption } from '#lib/adoption.ts';
   import type { WizardDestinationOut, WizardPreviewOut } from '#lib/api/types.gen.ts';
-  import ProblemCard from '#lib/components/ProblemCard.svelte';
+  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import Button from '#lib/ui/atoms/Button.svelte';
   import Select from '#lib/ui/atoms/Select.svelte';
   import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
@@ -132,7 +132,7 @@
         <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
       {/if}
       {#if problem}
-        <ProblemCard {problem} />
+        <ProblemAlert {problem} />
       {/if}
       {#if message}
         <Alert tone="success" title={message} live="polite" />
