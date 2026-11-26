@@ -6,7 +6,7 @@
   import { listActivity } from '#lib/api/index.ts';
   import type { ActivityOut } from '#lib/api/types.gen.ts';
   import ActivityItem from '#lib/components/ActivityItem.svelte';
-  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
+  import ProblemAlert, { refusalOf } from '#lib/ui/molecules/ProblemAlert.svelte';
   import { t } from '#lib/i18n/index.ts';
   import { reloadOnStream } from '#lib/live.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
@@ -48,7 +48,7 @@
       <Skeleton /><Skeleton /><Skeleton short />
     </div>
   {:else if problem}
-    <ProblemAlert {problem} />
+    <ProblemAlert {problem} kind={refusalOf(problem)} />
   {:else if items.length === 0}
     <EmptyState title={t('activity.empty')}>
       {#snippet actions()}

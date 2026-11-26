@@ -38,6 +38,28 @@ describe("AppHeader", () => {
     expect(screen.getByText("La bibliothèque de Louise")).toBeInTheDocument();
   });
 
+  // req: EF-UX-005
+  it("a child account menu also offers the offline copies", async () => {
+    render(AppHeader, { user: { name: "Louise", role: "child" } });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Compte de Louise Enfant" }),
+    );
+    const items = await vi.waitFor(() => {
+      const found = screen.queryAllByRole("menuitem", { hidden: true });
+      if (found.length < 2) throw new Error("menu closed");
+      return found;
+    });
+    const labels = items.map((item) => item.textContent?.trim());
+    expect(labels).toContain("Copies hors ligne");
+    expect(labels).toContain("Clés d’accès");
+  });
+
+  // req: EF-UX-005
+  it("hides the sign-in link while the instance needs an admin account", () => {
+    render(AppHeader, { user: null, needsAdmin: true });
+    expect(screen.queryByRole("link", { name: "Se connecter" })).toBeNull();
+  });
+
   // req: EF-UX-012
   it("the scheme button opens a menu of three choices, the current one checked", async () => {
     render(AppHeader, { user: null, scheme: "dark" });
@@ -113,6 +135,17 @@ describe("TableOfContents and MobileTabBar", () => {
     expect(more).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(more);
     expect(onmore).toHaveBeenCalled();
+  });
+
+  // req: ENF-A11Y-004
+  it("hides the More button when no handler is given", () => {
+    render(MobileTabBar, {
+      entries: groups[0]!.entries,
+      current: "/",
+      label: "Navigation mobile",
+    });
+    const bar = screen.getByRole("navigation", { name: "Navigation mobile" });
+    expect(within(bar).queryByRole("button", { name: "Plus" })).toBeNull();
   });
 });
 
@@ -335,5 +368,17 @@ describe("StatBar", () => {
     const note = within(group).getByText("1 en difficulté");
     expect(note.querySelector('[data-icon="alert"]')).not.toBeNull();
     expect(within(group).getByText("14")).toBeInTheDocument();
+  });
+});
+
+describe("ErrorScreen, the text of a 500", () => {
+  // req: EF-UX-003
+  it("points to the id below only when there is one", () => {
+    const { unmount } = render(ErrorScreen, { status: 500 });
+    expect(screen.queryByText(/ci-dessous/)).toBeNull();
+    unmount();
+    render(ErrorScreen, { status: 500, incident: "req-5" });
+    expect(screen.getByText(/ci-dessous/)).toBeInTheDocument();
+    expect(screen.getByText("req-5")).toBeInTheDocument();
   });
 });
