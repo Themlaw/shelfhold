@@ -3194,6 +3194,7 @@
   prev_button = "Previous"
   next_button = "Next"
   page_n = "Page {number}"
+  meta = "{author} · {kind}"
   page_of = "Page {number} of {pages}"
   range = "{first} to {last} of {total}"
   part_of = "{title}, part {part} of {parts}"

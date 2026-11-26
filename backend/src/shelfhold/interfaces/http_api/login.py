@@ -267,7 +267,7 @@ def build_login_router(source_url: str) -> APIRouter:
         oidc = gate is not None and gate.auth.oidc_available
         failed = oidc and request.query_params.get("oidc_error") == "1"
         provider = None
-        if oidc:
+        if gate is not None and oidc:
             issuer = gate.auth.oidc.issuer
             provider = urlsplit(issuer).netloc or issuer
         target = safe_next(request.query_params.get("next"))

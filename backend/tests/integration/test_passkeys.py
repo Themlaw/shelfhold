@@ -670,8 +670,9 @@ def test_passkey_requires_secure_context(
         page = anon.get("/login")
         assert "passkey" not in page.text.lower()  # the function is absent from the page
         assert (
-            "<button" in page.text and page.text.count("<button") == 1
-        )  # the password button only
+            "<button" in page.text and page.text.count("<button") == 2
+        )  # the password form only: its submit and the reveal button of the field
+        assert 'id="passkey"' not in page.text
         assert anon.get("/login/passkey.js").status_code == 404
         assert "/login/passkey.js" not in PageParts.of(page.text).script_sources
         assert api.post(

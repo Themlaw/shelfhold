@@ -79,7 +79,6 @@ from shelfhold.reading.bundle import (
 __all__ = ["LiteBundles", "build_lite_router"]
 
 PAGE = 25
-_KINDS = frozenset({"book", "manga", "webtoon", "comic"})
 MAX_OFFSET = 100_000
 MAX_QUERY = 200
 COVER = 160
@@ -104,6 +103,20 @@ def _ulid(who: Reader, raw: str) -> str:
     if not _ULID.fullmatch(raw):
         raise absent(who)
     return raw
+
+
+def _kind_label(page: Page, kind: str) -> str:
+    """The kind of a work in words ("" for a kind this page has no word for); each key is written
+    out so that the catalog check finds it."""
+    if kind == "book":
+        return t("lite.kind_book", page)
+    if kind == "manga":
+        return t("lite.kind_manga", page)
+    if kind == "webtoon":
+        return t("lite.kind_webtoon", page)
+    if kind == "comic":
+        return t("lite.kind_comic", page)
+    return ""
 
 
 def _row(href: str, label: str, cover: str | None = None, meta: str = "") -> str:
@@ -223,8 +236,12 @@ def build_lite_router(
     def _work_rows(who: Reader, works: list[VisibleWork]) -> list[str]:
         page, paths, rows = who.page, who.page.paths, []
         for work in works:
-            kind = t(f"lite.kind_{work.kind}", page) if work.kind in _KINDS else ""
-            meta = " · ".join(part for part in (work.author, kind) if part)
+            kind = _kind_label(page, work.kind)
+            meta = (
+                t("lite.meta", page, author=work.author, kind=kind)
+                if work.author and kind
+                else work.author or kind
+            )
             digest = cover_hash(work.cover_ref) if work.cover_ref else None
             rows.append(
                 _row(
