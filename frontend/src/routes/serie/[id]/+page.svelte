@@ -56,8 +56,14 @@
     unknown: 'sheet.status.unknown'
   };
 
-  const LANGS = (code: string): string =>
-    new Intl.DisplayNames([uiLanguage()], { type: 'language' }).of(code) ?? code;
+  /** The name of a language in the interface language; the code itself when it is not a valid tag. */
+  function languageName(code: string): string {
+    try {
+      return new Intl.DisplayNames([uiLanguage()], { type: 'language' }).of(code) ?? code;
+    } catch {
+      return code;
+    }
+  }
 
   const editionId = $derived(page.params.id ?? '');
   let sheet = $state<SheetOut | null>(null);
@@ -264,7 +270,7 @@
       <div class="page-head__text">
         <h1 class="page-title page-title--work sheet__title">{sheet.title}</h1>
         <p class="sheet__meta">
-          <Badge>{LANGS(sheet.lang)}</Badge>
+          <Badge>{languageName(sheet.lang)}</Badge>
           {#if sheet.upstream_status !== 'unknown'}
             <Badge>{t(STATUS_LABELS[sheet.upstream_status])}</Badge>
           {/if}

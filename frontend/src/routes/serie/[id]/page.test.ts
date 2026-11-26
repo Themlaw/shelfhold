@@ -350,6 +350,20 @@ describe('Series sheet', () => {
     await waitFor(() => expect(bodies[0]).toEqual({ confirm: '3-abcdef12' }));
   });
 
+  // req: EF-BIB-020
+  it('shows the header with the language name, or the raw code when it is not a language tag', async () => {
+    server.use(serve());
+    current = sheet({ lang: 'fr', upstream_status: 'finished' });
+    const first = render(Page);
+    expect(await screen.findByText('français')).toBeInTheDocument();
+    expect(screen.getAllByText('Terminée').length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { level: 1, name: 'Une série' })).toBeInTheDocument();
+    first.unmount();
+    current = sheet({ lang: 'fr_FR!' });
+    render(Page);
+    expect(await screen.findByText('fr_FR!')).toBeInTheDocument();
+  });
+
   // req: EF-USR-006
   it('shows the problem and nothing of the sheet to someone the server refuses', async () => {
     server.use(http.get(`${API}/sheet`, () => problem(403, 'forbidden', 'Accès refusé')));
