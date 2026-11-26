@@ -475,6 +475,13 @@
   .sheet__actions {
     margin-top: var(--space-5);
   }
+  /* the way back is a link on its own: a 44 px target (ENF-A11Y-004) */
+  .running-head a {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--target);
+    min-inline-size: var(--target);
+  }
   .crumb-sep {
     margin-inline: var(--space-2);
   }
