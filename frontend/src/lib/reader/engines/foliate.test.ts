@@ -121,6 +121,21 @@ describe('the EPUB engine', () => {
     expect(book.transformTarget).toBeInstanceOf(EventTarget);
   });
 
+  // req: EF-LEC-003
+  it('gives the book the paper and the ink of the page around it, and nothing when the theme has none', async () => {
+    const root = document.documentElement;
+    root.style.setProperty('--color-bg', '#191714');
+    root.style.setProperty('--color-ink', '#ECE5D6');
+    const { fake } = await opened();
+    const css = (fake.renderer.setStyles.mock.calls[0] as [string])[0];
+    expect(css).toContain('background: #191714');
+    expect(css).toContain('color: #ECE5D6');
+    root.style.removeProperty('--color-bg');
+    root.style.removeProperty('--color-ink');
+    const bare = await opened();
+    expect((bare.fake.renderer.setStyles.mock.calls[0] as [string])[0]).toBe('');
+  });
+
   // req: ENF-SEC-004
   it('refuses a publication that is not an EPUB, and one with no package', async () => {
     const engine = createEpubEngine({ fetch: fetcher, createView: () => new FakeView() });

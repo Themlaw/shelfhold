@@ -469,6 +469,10 @@ async function captureSearch() {
       const ctx = await context({ size, scheme, blockWorkers: true });
       const page = await ctx.newPage();
       await page.route('**/api/v1/search*', (route) => route.fulfill({ json: FOUND }));
+      // the source of the results is not a real one: its estimate is answered, so that the sheet shows what it shows with a source that answers
+      await page.route('**/api/v1/sources/*/series/*/estimate*', (route) =>
+        route.fulfill({ json: { free_bytes: 48_000_000_000, mode: 'all', needs_confirmation: false, size_bytes: 82_000_000, units: 5 } })
+      );
       await visit(page, '/chercher');
       await page.locator('main input').first().fill('fables');
       await page.keyboard.press('Enter');
@@ -703,6 +707,8 @@ async function captureReaderOffline(ids) {
     for (const scheme of SCHEMES) {
       const ctx = await context({ size, scheme, blockWorkers: false });
       const page = await ctx.newPage();
+      // the SPA first: it is where the device learns which profile is signed in, as for a real reader
+      await visit(page, '/');
       await serveBook(page, ids, 'pages');
       await openReader(page, ids);
       const keep = page.getByRole('button', { name: /Lire hors ligne/ });

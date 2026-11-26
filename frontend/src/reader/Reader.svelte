@@ -618,6 +618,7 @@
   .bar {
     top: 0;
     display: flex;
+    flex-wrap: wrap; /* the tools go to a line of their own when the kept copy adds its words to them */
     align-items: center;
     gap: var(--space-2) var(--space-3);
     padding: var(--space-2) var(--space-3);
@@ -625,7 +626,7 @@
   }
   .bar__title {
     display: grid;
-    flex: 1 1 8rem;
+    flex: 1 1 4rem;
     min-width: 0;
   }
   .bar h1 {
@@ -793,7 +794,8 @@
   .dock {
     position: fixed;
     z-index: var(--z-dialog);
-    inset: auto var(--space-3) var(--space-3) var(--space-3);
+    /* under the bar, not over the sheet: the question must not hide the setting it asks about */
+    inset: 4.5rem var(--space-3) auto var(--space-3);
     max-width: 30rem;
     margin-inline: auto;
     box-shadow: var(--shadow-3);
