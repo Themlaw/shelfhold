@@ -12,6 +12,7 @@ from html import escape
 from importlib import resources
 from string import Template
 from typing import Annotated, Any, Literal
+from urllib.parse import unquote, urlsplit
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -71,6 +72,29 @@ def _fragment(name: str) -> Template:
     )
 
 
+def safe_next(raw: str | None) -> str:
+    """Where a successful sign-in sends the person back to: only a relative path of this site (one
+    leading `/`, no `//` nor `.` or `..` segment in the path (a browser would fold them into a
+    path a later rebuild could read as another host), no scheme, no backslash, no control
+    character, and the same after one
+    decoding, since a browser or a proxy may decode once); anything else is `/`."""
+    if not raw or len(raw) > 2048:
+        return "/"
+    for candidate in (raw, unquote(raw)):
+        if (
+            not candidate.startswith("/")
+            or candidate.startswith("//")
+            or "\\" in candidate
+            or any(ord(char) < 0x20 or ord(char) == 0x7F for char in candidate)
+            or urlsplit(candidate).scheme
+            or urlsplit(candidate).netloc
+            or "//" in urlsplit(candidate).path
+            or any(part in {".", ".."} for part in urlsplit(candidate).path.split("/"))
+        ):
+            return "/"
+    return raw
+
+
 LITE_SIGN_IN = "/lite/sign-in"  # the e-readers' own door (no script there)
 _BUTTON = _fragment("passkey_button.html")
 _OIDC_BUTTON = _fragment("oidc_button.html")
@@ -88,11 +112,15 @@ def login_page_html(
     language: str = "fr",
     oidc: bool = False,
     oidc_failed: bool = False,
+    provider: str | None = None,
+    next_path: str = "/",
 ) -> str:
     """`passkeys`: the button and the same-origin script are there only in a secure context.
     `language`: the language of the request (ENF-I18N-001); the page is anonymous, so the
     `Accept-Language` of the browser picks it.
     `oidc`: the sign-in link of the identity provider (M5 L03), there only when it is configured;
+    `provider`: the host of the configured provider, named on its button;
+    `next_path`: the path to go back to after the sign-in (already checked by `safe_next`);
     `oidc_failed`: a sign-in that came back refused, said in one neutral line."""
     button = script = ""
     if passkeys:
@@ -101,6 +129,7 @@ def login_page_html(
             login=PASSKEY_LOGIN_PATH,
             error=escape(t_lang("login.error", language=language)),
             label=escape(t_lang("login.passkey", language=language)),
+            next=escape(next_path),
         )
         script = _SCRIPT_TAG.substitute(src=PASSKEY_SCRIPT_PATH)
     values = {
@@ -112,6 +141,10 @@ def login_page_html(
         "remember": t_lang("login.remember", language=language),
         "remember_hint": t_lang("login.remember_hint", language=language),
         "help": t_lang("login.help", language=language),
+        "forgot": t_lang("login.forgot", language=language),
+        "show_password": t_lang("login.show_password", language=language),
+        "hide_password": t_lang("login.hide_password", language=language),
+        "next": next_path,
         "lite": t_lang("login.lite", language=language),
         "lite_href": LITE_SIGN_IN,
         "style": STYLE_PATH,
@@ -127,7 +160,12 @@ def login_page_html(
     escaped = {name: escape(value) for name, value in values.items()}
     oidc_button = (
         _OIDC_BUTTON.substitute(
-            href=OIDC_LOGIN_PATH, label=escape(t_lang("login.oidc", language=language))
+            href=OIDC_LOGIN_PATH,
+            label=escape(
+                t_lang("login.oidc_named", language=language, provider=provider)
+                if provider
+                else t_lang("login.oidc", language=language)
+            ),
         )
         if oidc
         else ""
@@ -215,8 +253,13 @@ def _throttled(error: ThrottledError) -> ProblemError:
 def build_login_router(source_url: str) -> APIRouter:
     router = APIRouter()
     page = cache(
-        lambda passkeys, language, oidc, failed: login_page_html(
-            source_url, passkeys=passkeys, language=language, oidc=oidc, oidc_failed=failed
+        lambda passkeys, language, oidc, failed, provider: login_page_html(
+            source_url,
+            passkeys=passkeys,
+            language=language,
+            oidc=oidc,
+            oidc_failed=failed,
+            provider=provider,
         )
     )
 
@@ -227,8 +270,27 @@ def build_login_router(source_url: str) -> APIRouter:
         language = negotiate(request.headers.get("accept-language"))
         oidc = gate is not None and gate.auth.oidc_available
         failed = oidc and request.query_params.get("oidc_error") == "1"
+        provider = None
+        if gate is not None and oidc:
+            issuer = gate.auth.oidc.issuer
+            provider = urlsplit(issuer).hostname
+        target = safe_next(request.query_params.get("next"))
+        # the page of a return path is not kept (the path comes from the request)
+        body = (
+            page(passkeys, language, oidc, failed, provider)
+            if target == "/"
+            else login_page_html(
+                source_url,
+                passkeys=passkeys,
+                language=language,
+                oidc=oidc,
+                oidc_failed=failed,
+                provider=provider,
+                next_path=target,
+            )
+        )
         return HTMLResponse(
-            page(passkeys, language, oidc, failed),
+            body,
             headers={
                 "Content-Security-Policy": PASSKEY_LOGIN_CSP if passkeys else LOGIN_CSP,
                 "Cache-Control": "no-store",
