@@ -27,6 +27,7 @@
   import Pagination from '#lib/ui/molecules/Pagination.svelte';
   import ProblemAlert, { blockKind, type BlockKind } from '#lib/ui/molecules/ProblemAlert.svelte';
   import SeriesCard from '#lib/ui/molecules/SeriesCard.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
   import Shelf from '#lib/ui/organisms/Shelf.svelte';
 
   const PAGE = 24;
@@ -163,15 +164,11 @@
 </svelte:head>
 
 <main class="page">
-  <div class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('library.title')}</h1>
-      <p class="lede">{t('library.lede')}</p>
-    </div>
-    <div class="page-head__actions">
+  <PageHead title={t('library.title')} lede={t('library.lede')}>
+    {#snippet actions()}
       <Button href="{page.url.pathname}/selections" icon="bookmark">{t('library.selections')}</Button>
-    </div>
-  </div>
+    {/snippet}
+  </PageHead>
 
   <div class="toolbar" role="group" aria-label={t('library.toolbar')}>
     {#if series.length > 0}

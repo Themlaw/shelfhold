@@ -156,7 +156,8 @@ describe('Health page', () => {
       )
     );
     render(Page);
-    expect(await screen.findByRole('alert')).toHaveTextContent('Accès refusé');
+    expect(await screen.findByRole('heading', { level: 2, name: /hors de votre portée/ })).toBeInTheDocument();
+    expect(screen.queryByText('forbidden')).toBeNull();
     expect(screen.queryByRole('link', { name: /diagnostic/ })).toBeNull();
     expect(screen.queryByText(/Sources|irremplaçable|Kavita/)).toBeNull();
   });

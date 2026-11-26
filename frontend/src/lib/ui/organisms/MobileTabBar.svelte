@@ -17,7 +17,8 @@
     label,
     moreLabel,
     moreOpen = false,
-    onmore
+    onmore,
+    comfortable = false
   }: {
     entries: readonly TabBarEntry[];
     current?: string | null;
@@ -25,10 +26,11 @@
     moreLabel?: string;
     moreOpen?: boolean;
     onmore?: () => void;
+    comfortable?: boolean;
   } = $props();
 </script>
 
-<nav class="tabbar" aria-label={label}>
+<nav class="tabbar" class:tabbar--comfortable={comfortable} aria-label={label}>
   {#each entries as entry (entry.href)}
     <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
     <a class="tabbar__item" href={entry.href} aria-current={entry.href === current ? 'page' : undefined}>
@@ -77,6 +79,9 @@
     color: var(--color-muted);
     text-decoration: none;
     cursor: pointer;
+  }
+  .tabbar--comfortable .tabbar__item {
+    min-height: 48px;
   }
   .tabbar__item > :global(.icon) {
     width: 1.5rem;

@@ -22,7 +22,8 @@ describe('problem view (EF-UX-003)', () => {
       title: 'Page introuvable.',
       cause: 'L’élément n’existe pas.',
       action: 'Vérifiez le lien.',
-      requestId: 'req-1'
+      requestId: 'req-1',
+      status: 404
     });
   });
 

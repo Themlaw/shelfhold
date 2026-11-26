@@ -8,6 +8,12 @@ import { csrfToken } from '#lib/passkeys.ts';
 
 export const SIGN_IN_PAGE = '/login';
 
+/** The sign-in page, asking to come back to `path` (a path of this application) once signed in. */
+export function signInHref(path: string | null | undefined): string {
+  if (!path || !path.startsWith('/') || path.startsWith('//') || path.startsWith('/login')) return SIGN_IN_PAGE;
+  return `${SIGN_IN_PAGE}?next=${encodeURIComponent(path)}`;
+}
+
 /** Close the session; `false` when the server could not be told (the session may still be open). */
 export async function signOut(navigate: (url: string) => void = (url) => location.assign(url)): Promise<boolean> {
   await wipeOfflineCopies();
