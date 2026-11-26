@@ -16,6 +16,7 @@ import { CONTENT_FILTER, FilterRefusal, installFilter } from '../filter.ts';
 import { EPUB_TYPE } from '../registry.ts';
 
 export interface FoliateViewLike extends EventTarget {
+  renderer?: { setStyles?: (css: string) => void };
   open(book: unknown): Promise<void>;
   init?(options: { lastLocation?: string; showTextStart?: boolean }): Promise<void>;
   goTo(target: unknown): Promise<unknown>;
@@ -103,6 +104,17 @@ const isHttp = (href: unknown): href is string => {
     return false;
   }
 };
+
+/** The paper and the ink of the page around the book: a book is a document of its own (a `blob:`
+ * frame) that knows nothing of the theme, so left alone it is black on white, a bright slab on a dark
+ * page. Only the root and the body take them, after the styles of the book; the rest stays its own. */
+function pageStyles(): string {
+  const root = getComputedStyle(document.documentElement);
+  const paper = root.getPropertyValue('--color-bg').trim();
+  const ink = root.getPropertyValue('--color-ink').trim();
+  if (!paper || !ink) return '';
+  return `html, body { background: ${paper}; color: ${ink}; } a { color: inherit; }`;
+}
 
 export function createEpubEngine(options: EpubEngineOptions = {}): ReaderEngine {
   const doFetch = options.fetch ?? ((input, init) => fetch(input, init));
@@ -275,6 +287,7 @@ export function createEpubEngine(options: EpubEngineOptions = {}): ReaderEngine 
       }
       // an object, never a File, a Blob or a string: foliate picks no format here
       await el.open(epub);
+      el.renderer?.setStyles?.(pageStyles());
       await el.init?.({});
     },
 
