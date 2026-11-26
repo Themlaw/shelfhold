@@ -155,7 +155,8 @@
         <div class="hero__text">
           <h2 class="hero__kicker" id="continue-title">{child ? t('home.hero_child') : t('home.hero')}</h2>
           <p class="hero__title">{hero.title}</p>
-          {#if hero.unit_title}<p class="hero__by">{hero.unit_title}</p>{/if}
+          {#if heroWork?.author}<p class="hero__by">{heroWork.author}</p>{/if}
+          {#if hero.unit_title}<p class="hero__unit">{hero.unit_title}</p>{/if}
           <p class="hero__where">{where(hero)}</p>
           {#if open}
             <div class="btn-row">
@@ -335,6 +336,11 @@
   .hero__by {
     margin: 0;
     font: italic var(--step-1) / 1.3 var(--font-text);
+  }
+  .hero__unit {
+    margin: 0;
+    font: var(--step-0) / 1.3 var(--font-text);
+    color: var(--color-muted);
   }
   .hero__where {
     margin: 0 0 var(--space-3);
