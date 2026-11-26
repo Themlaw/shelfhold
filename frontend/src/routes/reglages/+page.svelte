@@ -9,7 +9,6 @@
   import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
-  import Badge from '#lib/ui/atoms/Badge.svelte';
   import Icon from '#lib/ui/atoms/Icon.svelte';
   import type { IconName } from '#lib/ui/atoms/icons.ts';
   import Input from '#lib/ui/atoms/Input.svelte';
@@ -209,7 +208,7 @@
               <SettingRow label={row.key} help={helpOf(row) ?? undefined}>
                 {#snippet children(control)}
                   {#if row.secret}
-                    <Badge tone="neutral" icon="lock">{t('settings.secret')}</Badge>
+                    <p class="origin"><Icon name="lock" size="sm" />{t('settings.secret')}</p>
                   {:else}
                     <Input
                       {...control}
@@ -220,7 +219,7 @@
                       onchange={(e: Event) => save(row.key, (e.target as HTMLInputElement).value)}
                     />
                     {#if row.locked}
-                      <p class="origin"><Badge tone="neutral" icon="lock">{originText(row)}</Badge></p>
+                      <p class="origin"><Icon name="lock" size="sm" />{originText(row)}</p>
                     {/if}
                   {/if}
                   {#if row.warning}
@@ -272,7 +271,13 @@
     text-decoration: underline;
   }
   .origin {
+    display: flex;
+    gap: var(--space-1);
+    align-items: flex-start;
     margin: var(--space-1) 0 0;
+    font-size: var(--step--1);
+    color: var(--color-muted);
+    overflow-wrap: anywhere;
   }
   .warn {
     display: flex;

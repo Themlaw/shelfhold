@@ -65,7 +65,7 @@
     loaded = true;
   });
 
-  const activityHref = navItems(['activity'])[0].href;
+  const activityHref = navItems(['activity'])[0]?.href;
 </script>
 
 <svelte:head>

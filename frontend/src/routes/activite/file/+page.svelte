@@ -6,7 +6,7 @@
   import { navItems } from '#lib/nav.ts';
   import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
-  const activityHref = navItems(['activity'])[0].href;
+  const activityHref = navItems(['activity'])[0]?.href;
 </script>
 
 <svelte:head>
