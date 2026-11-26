@@ -42,28 +42,35 @@
   } = $props();
 
   let failed = $state(false);
+  let loaded = $state(false);
   // a new address is a new chance for the image
   $effect(() => {
     void src;
     failed = false;
+    loaded = false;
   });
+  // an image already in the cache may have loaded before the handler was attached
+  function settle(node: HTMLImageElement): void {
+    if (node.complete && node.naturalWidth > 0) loaded = true;
+  }
 
   const plan = $derived(coverPlan(seed ?? title, kind));
   const image = $derived(!locked && !!src && !failed);
+  // the composed cover is always there, under the picture: while the image loads, scrolls into
+  // view or fails, the slot is a cover and never an empty box
   const generated = $derived(locked ? 'locked' : plan.family === 'book' && plan.layout === 'blanche' ? 'blanche' : plan.family);
   const ribbon = $derived(!locked && (done || (progress !== null && progress > 0)));
 </script>
 
 <div
-  class="cover cover--{size} cover--{image ? 'image' : generated} paper-{plan.paper} ink-{plan.ink} layout-{plan.layout} scene-{plan.scene?.name ?? 'none'}"
+  class="cover cover--{size} cover--{generated} paper-{plan.paper} ink-{plan.ink} layout-{plan.layout} scene-{plan.scene?.name ?? 'none'}"
   role={label ? 'img' : undefined}
   aria-label={label}
   aria-hidden={label ? undefined : 'true'}
-  data-family={image ? 'image' : generated}
+  data-family={generated}
+  data-image={image ? (loaded ? 'loaded' : 'pending') : undefined}
 >
-  {#if image}
-    <img class="cover__img" src={src} alt="" loading="lazy" decoding="async" onerror={() => (failed = true)} />
-  {:else if generated === 'locked'}
+  {#if generated === 'locked'}
     <span class="cover__frame"></span>
     <span class="cover__lock"><Icon name="lock" size="lg" /></span>
     <span class="cover__title">{t('ui.cover.locked')}</span>
@@ -98,6 +105,19 @@
       <svg class="cover__motif" viewBox="0 0 40 40" aria-hidden="true"><Shapes shapes={MOTIFS[plan.motif]} /></svg>
       {#if number !== null}<span class="cover__tome">{number}</span>{/if}
     </span>
+  {/if}
+  {#if image}
+    <img
+      class="cover__img"
+      class:is-loaded={loaded}
+      {src}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      use:settle
+      onload={() => (loaded = true)}
+      onerror={() => (failed = true)}
+    />
   {/if}
   {#if ribbon}<ProgressRibbon value={progress ?? 1} {done} side={generated === 'manga' && !image ? 'left' : 'right'} />{/if}
 </div>
@@ -154,6 +174,12 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+    z-index: 1;
+    opacity: 0;
+    transition: opacity var(--dur-2) var(--ease-out);
+  }
+  .cover__img.is-loaded {
+    opacity: 1;
   }
   .cover__title {
     overflow-wrap: break-word;
@@ -577,6 +603,14 @@
   @container cover (width < 9rem) {
     .cover__author {
       display: none !important;
+    }
+  }
+  /* the « collection blanche » has no picture: its title is the cover, so it stays at any size */
+  @container cover (width < 6.5rem) {
+    .cover--blanche:not([data-image]) .cover__title {
+      display: -webkit-box !important;
+      margin-inline: 8cqw;
+      font-size: 16cqw;
     }
   }
 </style>

@@ -67,14 +67,14 @@ describe('i18n', () => {
   it('speaks English once the language is set, with English plurals and formats, then French again', () => {
     try {
       setUiLanguage('en');
-      expect(t('library.total', { count: 1 })).toBe('1 Work');
-      expect(t('library.total', { count: 2 })).toBe('2 Works');
-      expect(t('library.total', { count: 0 })).toBe('No Works');
+      expect(t('library.total', { count: 1 })).toBe('1 work');
+      expect(t('library.total', { count: 2 })).toBe('2 works');
+      expect(t('library.total', { count: 0 })).toBe('No works');
       expect(t('sheet.bindings.rank', { rank: 1234 })).toBe('Rank 1,234');
     } finally {
       setUiLanguage('fr');
     }
-    expect(t('library.total', { count: 2 })).toBe('2 Œuvres');
+    expect(t('library.total', { count: 2 })).toBe('2 œuvres');
   });
 
   // req: ENF-I18N-001

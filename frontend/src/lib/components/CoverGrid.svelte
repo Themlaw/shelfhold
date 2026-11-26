@@ -22,6 +22,11 @@
   // a cover that fails to load, or that the server never made, is composed in type: never an empty
   // slot nor a broken picture
   let broken = $state<Record<string, boolean>>({});
+  let loaded = $state<Record<string, boolean>>({});
+  // a picture already in the cache may have loaded before the handler was attached
+  function settle(node: HTMLImageElement, id: string): void {
+    if (node.complete && node.naturalWidth > 0) loaded[id] = true;
+  }
   const HASH = /^[0-9a-f]{64}$/;
   const thumb = (hash: string, size: 160 | 320): string => `/api/v1/thumbnails/${hash}/${size}`;
 
@@ -37,20 +42,25 @@
   {#each items as item (item.id)}
     <li class="cover">
       <span class="stand">
-        {#if item.coverHash && HASH.test(item.coverHash) && !broken[item.id]}
-          <img
-            src={thumb(item.coverHash, 160)}
-            srcset={`${thumb(item.coverHash, 160)} 160w, ${thumb(item.coverHash, 320)} 320w`}
-            sizes="160px"
-            width="160"
-            height="240"
-            loading="lazy"
-            alt={item.title}
-            onerror={() => (broken[item.id] = true)}
-          />
-        {:else}
+        <!-- the composed cover is under the picture: no empty slot while it loads or fails -->
+        <span class="frame">
           <span class="composed"><Cover title={item.title} seed={item.id} /></span>
-        {/if}
+          {#if item.coverHash && HASH.test(item.coverHash) && !broken[item.id]}
+            <img
+              class:is-loaded={loaded[item.id]}
+              src={thumb(item.coverHash, 160)}
+              srcset={`${thumb(item.coverHash, 160)} 160w, ${thumb(item.coverHash, 320)} 320w`}
+              sizes="160px"
+              width="160"
+              height="240"
+              loading="lazy"
+              alt={item.title}
+              use:settle={item.id}
+              onload={() => (loaded[item.id] = true)}
+              onerror={() => (broken[item.id] = true)}
+            />
+          {/if}
+        </span>
       </span>
       <span class="name">
         {#if item.href}
@@ -105,14 +115,23 @@
     padding: 0;
     border-bottom: 0;
   }
-  img {
+  .frame {
+    position: relative;
     display: block;
+  }
+  img {
+    position: absolute;
+    inset: 0;
     width: 100%;
-    height: auto;
-    aspect-ratio: 2 / 3;
+    height: 100%;
     border-radius: var(--radius-cover);
     object-fit: cover;
     box-shadow: var(--shadow-1);
+    opacity: 0;
+    transition: opacity var(--dur-2) var(--ease-out);
+  }
+  img.is-loaded {
+    opacity: 1;
   }
   .composed {
     display: block;
