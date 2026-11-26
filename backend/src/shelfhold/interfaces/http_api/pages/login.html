@@ -15,15 +15,16 @@
 <h1>$title</h1>
 <p class="lede">$lede</p>
 <div id="message" class="alert alert--danger" role="alert" $message_state><p class="alert__title">$notice</p><p class="alert__body"></p></div>
-<form id="login" method="post" data-endpoint="$endpoint" data-error="$error">
+<form id="login" method="post" data-endpoint="$endpoint" data-error="$error" data-next="$next" data-show="$show_password" data-hide="$hide_password">
 <div class="field"><label for="username">$username</label>
 <input id="username" class="input" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="128" required autofocus></div>
-<div class="field"><label for="password">$password</label>
-<input id="password" class="input" name="password" type="password" autocomplete="current-password" maxlength="$max_password" required></div>
+<div class="field"><div class="field__head"><label for="password">$password</label><a class="field__aid" href="#help">$forgot</a></div>
+<div class="reveal"><input id="password" class="input" name="password" type="password" autocomplete="current-password" maxlength="$max_password" required aria-describedby="password-error"><button type="button" id="reveal" class="reveal__btn" aria-controls="password" aria-pressed="false" aria-label="$show_password" hidden></button></div>
+<p id="password-error" class="field__error" hidden></p></div>
 <label class="choice"><input class="check" name="remember" type="checkbox" checked aria-describedby="remember-hint"><span class="choice__text">$remember<span id="remember-hint" class="hint">$remember_hint</span></span></label>
 <button class="btn btn--primary btn--lg btn--block" type="submit">$submit</button>
 </form>
-$alternatives<p class="help">$help</p>
+$alternatives<p class="help" id="help" tabindex="-1">$help</p>
 <footer class="colophon">
 <p><a href="$lite_href">$lite</a> · <a href="$source_url" rel="noopener noreferrer">$source</a></p>
 </footer>

@@ -72,7 +72,7 @@
         },
       });
       if (response.ok) {
-        window.location.assign("/");
+        window.location.assign(button.dataset.next || "/");
         return;
       }
       const refusal = await response.json();

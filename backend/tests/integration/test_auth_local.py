@@ -402,6 +402,30 @@ def test_login_page_neutral_no_og_tags(monkeypatch: pytest.MonkeyPatch, settings
     assert "<img" not in lowered
 
 
+@pytest.mark.req("EF-USR-021", "ENF-SEC-004")
+def test_login_page_hands_the_return_path_to_its_form_only_when_internal(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    with auth_env(monkeypatch, settings) as env:
+        kept = env.client.get("/login", params={"next": "/lite/works?offset=25"}).text
+        refused = [
+            env.client.get("/login", params={"next": raw}).text
+            for raw in (
+                "//evil.example",
+                "https://evil.example/",
+                "/\\evil.example",
+                "/%2Fevil.example",
+                "/%5Cevil.example",
+                "/ok\r\nx",
+            )
+        ]
+        absent = env.client.get("/login").text
+    assert 'data-next="/lite/works?offset=25"' in kept
+    for html in [*refused, absent]:
+        assert 'data-next="/"' in html
+        assert "evil" not in html
+
+
 @pytest.mark.req("ENF-LEG-012")
 def test_login_page_has_source_link(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> None:
     with auth_env(monkeypatch, settings, with_admin=False) as env:

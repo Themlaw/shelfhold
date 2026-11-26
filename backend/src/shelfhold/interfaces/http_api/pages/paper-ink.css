@@ -409,3 +409,80 @@ h1 {
     border-color: CanvasText;
   }
 }
+
+/* -- sign-in: the aid beside the label, the eye, the refusal under the field ------------------- */
+.field__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+}
+.field__aid {
+  display: inline-block;
+  padding-block: var(--space-2);
+  margin-block: calc(-1 * var(--space-2));
+  font-size: var(--step--1);
+  color: var(--color-muted);
+}
+.reveal {
+  position: relative;
+}
+.reveal .input {
+  padding-inline-end: calc(var(--target) + var(--space-1));
+}
+.reveal__btn {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  inline-size: var(--target);
+  display: grid;
+  place-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.reveal__btn[hidden] {
+  display: none;
+}
+.reveal__btn::before {
+  content: '';
+  inline-size: 1.25rem;
+  block-size: 0.75rem;
+  border: var(--rule-mid) solid currentColor;
+  border-radius: 100% / 70%;
+  background: radial-gradient(circle, currentColor 0 0.14rem, transparent 0.15rem);
+}
+.reveal__btn--on::before {
+  background:
+    linear-gradient(135deg, transparent 46%, currentColor 46% 56%, transparent 56%),
+    radial-gradient(circle, currentColor 0 0.14rem, transparent 0.15rem);
+}
+.reveal__btn:hover {
+  color: var(--color-ink);
+}
+.reveal__btn:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+.input[aria-invalid='true'] {
+  border-color: var(--color-err);
+  border-width: var(--rule-mid);
+}
+.field__error {
+  margin: 0;
+  color: var(--color-err);
+  font-size: var(--step--1);
+  font-weight: 600;
+}
+.field__error[hidden] {
+  display: none;
+}
+.help:target {
+  color: var(--color-ink);
+  outline: 2px solid var(--color-focus);
+  outline-offset: 4px;
+}
