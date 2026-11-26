@@ -63,11 +63,11 @@ describe('Réglages', () => {
       row('source.check_mode', { level: 'essential', value: 'always_on' })
     ]);
     render(Page);
-    const url = (await screen.findByLabelText(/public_url/)) as HTMLInputElement;
+    const url = (await screen.findByLabelText(/Adresse publique/)) as HTMLInputElement;
     expect(url.disabled).toBe(true);
     expect(screen.getByText(/^Origine : variable d'/)).toBeTruthy();
     expect(screen.getByText('Origine : fixé par cette version')).toBeTruthy();
-    expect((screen.getByLabelText(/source\.check_mode/) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByLabelText(/Mode de vérification des sources/) as HTMLInputElement).disabled).toBe(false);
     // the client decides nothing: a locked flag alone greys, whatever the source says
     expect((screen.getByLabelText(/maintenance\.window/) as HTMLInputElement).disabled).toBe(true);
   });
@@ -95,7 +95,7 @@ describe('Réglages', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const input = await screen.findByLabelText(/source\.check_mode/);
+    const input = await screen.findByLabelText(/Mode de vérification des sources/);
     await user.clear(input);
     await user.type(input, 'piloted');
     await user.tab();
@@ -117,7 +117,7 @@ describe('Réglages', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const input = await screen.findByLabelText(/source\.check_mode/);
+    const input = await screen.findByLabelText(/Mode de vérification des sources/);
     await user.type(input, 'z');
     await user.tab();
     expect((await screen.findByRole('alert')).textContent).toMatch(/fixé hors de cet écran/);
@@ -140,7 +140,7 @@ describe('Réglages', () => {
     );
     render(Page);
     const user = userEvent.setup();
-    const input = await screen.findByLabelText(/path_map\.kavita/);
+    const input = await screen.findByLabelText(/Correspondance des chemins/);
     await user.type(input, '1');
     await user.tab();
     await user.type(await screen.findByLabelText(/mot de passe/i), ADMIN_PW);

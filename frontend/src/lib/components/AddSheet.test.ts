@@ -149,7 +149,7 @@ describe('AddSheet', () => {
     expect(within(dialog).getByText('Alpha texts')).toBeInTheDocument();
 
     // the count and the size of the default mode, as the server counted them
-    await waitFor(() => expect(summary()).toHaveTextContent(/1\s000\sunités,\s62\s914\s560\soctets/));
+    await waitFor(() => expect(summary()).toHaveTextContent(/1\s000\sunités,\s60\sMo/));
     expect(estimates).toHaveLength(1);
     expect(estimates[0]!.url.searchParams.get('mode')).toBe('all');
     expect(estimates[0]!.url.searchParams.has('from_number')).toBe(false);
@@ -184,7 +184,7 @@ describe('AddSheet', () => {
     await waitFor(() => expect(summary()).toHaveTextContent(/1\s000\sunités/));
 
     await user.click(screen.getByRole('radio', { name: 'Nouveaux seulement' }));
-    await waitFor(() => expect(summary()).toHaveTextContent(/4\sunités,\s1\s048\s576\soctets/));
+    await waitFor(() => expect(summary()).toHaveTextContent(/4\sunités,\s1\sMo/));
     expect(estimates.at(-1)!.url.searchParams.get('mode')).toBe('new_only');
     expect(estimates.at(-1)!.url.searchParams.has('from_number')).toBe(false);
 
@@ -194,7 +194,7 @@ describe('AddSheet', () => {
     expect(addButton()).toHaveAttribute('aria-disabled', 'true');
     const before = estimates.length;
     await user.type(number, '12');
-    await waitFor(() => expect(summary()).toHaveTextContent(/38\sunités,\s7\s340\s032\soctets/));
+    await waitFor(() => expect(summary()).toHaveTextContent(/38\sunités,\s7\sMo/));
     expect(estimates.at(-1)!.url.searchParams.get('mode')).toBe('from_number');
     expect(estimates.at(-1)!.url.searchParams.get('from_number')).toBe('12');
     expect(estimates.length).toBeGreaterThan(before);
@@ -228,10 +228,10 @@ describe('AddSheet', () => {
     await waitFor(() => expect(summary()).toHaveTextContent(/1\s000\sunités/));
     await user.click(screen.getByRole('radio', { name: 'À partir du numéro' }));
     await user.type(await screen.findByRole('textbox', { name: 'Numéro de départ' }), '25');
-    await waitFor(() => expect(summary()).toHaveTextContent(/7\sunités,\s7\s000\s000\soctets/));
+    await waitFor(() => expect(summary()).toHaveTextContent(/7\sunités,\s6,7\sMo/));
     release();
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(summary()).toHaveTextContent(/7\sunités,\s7\s000\s000\soctets/);
+    expect(summary()).toHaveTextContent(/7\sunités,\s6,7\sMo/);
     expect(summary()).not.toHaveTextContent('99');
   });
 
@@ -365,9 +365,9 @@ describe('AddSheet', () => {
 
     // the refusal says the three figures the server gave, and offers the action
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(/64\s424\s509\s440/); // 60 GiB, what is asked
-    expect(alert).toHaveTextContent(/42\s949\s672\s960/); // 40 GiB, what is free
-    expect(alert).toHaveTextContent(/10\s737\s418\s240/); // 10 GiB, the reserve kept
+    expect(alert).toHaveTextContent(/Demandé\s:\s60\sGo/); // 60 GiB, what is asked
+    expect(alert).toHaveTextContent(/Libre\s:\s40\sGo/); // 40 GiB, what is free
+    expect(alert).toHaveTextContent(/Réserve gardée\s:\s10\sGo/); // 10 GiB, the reserve kept
     expect(within(alert).getByRole('button', { name: 'Vider la corbeille' })).toBeEnabled();
     // nothing was added, nothing was emptied by itself
     expect(follows).toEqual([]);
@@ -430,8 +430,8 @@ describe('AddSheet', () => {
     await user.type(screen.getByRole('textbox', { name: /empty-trash/ }), 'empty-trash');
     await user.click(screen.getByRole('button', { name: 'Vider maintenant' }));
     await waitFor(() => expect(spaceChecks).toHaveLength(2));
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/48\s318\s382\s080/)); // 45 GiB
-    expect(screen.getByRole('alert')).not.toHaveTextContent(/42\s949\s672\s960/);
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/Libre\s:\s45\sGo/)); // 45 GiB
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/Libre\s:\s40\sGo/);
     expect(follows).toEqual([]);
   });
 
@@ -570,7 +570,7 @@ describe('AddSheet', () => {
     try {
       setUiLanguage('en');
       open();
-      await waitFor(() => expect(summary()).toHaveTextContent(/1,000 units, 62,914,560 bytes/));
+      await waitFor(() => expect(summary()).toHaveTextContent(/1,000 units, 60 MB/));
       const dialog = screen.getByRole('dialog', { name: /^Add to my library/ });
       expect(within(dialog).getByRole('group', { name: 'What to add' })).toBeInTheDocument();
       expect(within(dialog).getByRole('radio', { name: 'All' })).toBeChecked();
@@ -580,7 +580,7 @@ describe('AddSheet', () => {
       await userEvent.setup().click(within(dialog).getByRole('button', { name: 'Add to my library' }));
       const alert = await screen.findByRole('alert');
       expect(within(alert).getByRole('button', { name: 'Empty the trash' })).toBeInTheDocument();
-      expect(document.body.textContent).not.toMatch(/Ajouter|Étagère|Tout\b|Vider|unités|octets/);
+      expect(document.body.textContent).not.toMatch(/Ajouter|Étagère|Tout\b|Vider|unités|octets|Mo\b|Go\b/);
     } finally {
       setUiLanguage('fr');
     }
