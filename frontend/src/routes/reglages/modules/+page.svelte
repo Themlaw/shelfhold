@@ -26,7 +26,7 @@
     TrustCardOut,
     TrustLineOut
   } from '#lib/api/types.gen.ts';
-  import { hasMessage, t } from '#lib/i18n/index.ts';
+  import { hasMessage, t, tOr } from '#lib/i18n/index.ts';
   import { formatDateTime } from '#lib/i18n/format.ts';
   import TrustCard from '#lib/components/TrustCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
@@ -383,11 +383,11 @@
                   <strong class="card__name">{plugin.name}</strong>
                   <span class="num muted">{plugin.version}</span>
                   <Badge tone="neutral">
-                    {hasMessage(`modules.mode.${plugin.mode}`) ? t(`modules.mode.${plugin.mode}`) : plugin.mode}
+                    {tOr(`modules.mode.${plugin.mode}`, plugin.mode)}
                     {#if hasMessage(`modules.mode.${plugin.mode}`)}<code class="raw-code">{plugin.mode}</code>{/if}
                   </Badge>
                   <Badge tone={plugin.status === 'enabled' ? 'success' : 'warning'}>
-                    {hasMessage(`modules.status.${plugin.status}`) ? t(`modules.status.${plugin.status}`) : plugin.status}
+                    {tOr(`modules.status.${plugin.status}`, plugin.status)}
                     {#if hasMessage(`modules.status.${plugin.status}`)}<code class="raw-code">{plugin.status}</code>{/if}
                   </Badge>
                 </span>

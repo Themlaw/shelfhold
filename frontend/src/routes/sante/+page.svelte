@@ -7,7 +7,7 @@
   import HealthEntry from '#lib/components/HealthEntry.svelte';
   import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import { healthView, type HealthView } from '#lib/healthPage.ts';
-  import { formatDate, formatNumber, hasMessage, t } from '#lib/i18n/index.ts';
+  import { formatDate, formatNumber, t, tOr } from '#lib/i18n/index.ts';
   import { formatBytes } from '#lib/bytes.ts';
   import Alert from '#lib/ui/molecules/Alert.svelte';
   import { problemView, type ProblemView } from '#lib/problems.ts';
@@ -102,7 +102,7 @@
     for (const source of view.sources.filter((s) => s.state !== 'ok')) {
       items.push({
         title: `${source.pluginId} — ${t(`health_page.state.${source.state}`)}`,
-        detail: source.code ? t(hasHealthCode(source.code) ? `health_page.code.${source.code}` : 'health_page.code.default') : undefined,
+        detail: source.code ? tOr(`health_page.code.${source.code}`, t('health_page.code.default')) : undefined,
         href: '/sources',
         actionLabel: t('health_page.sources_link')
       });
@@ -143,11 +143,8 @@
     return items;
   });
 
-  function hasHealthCode(code: string): boolean {
-    return hasMessage(`health_page.code.${code}`);
-  }
   function healthCodeLabel(code: string): string {
-    return hasHealthCode(code) ? t(`health_page.code.${code}`) : code;
+    return tOr(`health_page.code.${code}`, code);
   }
 </script>
 

@@ -1528,7 +1528,7 @@
   "history.kind.series.tombstoned_upstream": "Series removed upstream",
   "history.kind.follow.stale": "Stale follow",
   "queue.kind.fetch.chapter": "Chapter fetch",
-  "queue.kind.export.run": "Export",
+  "queue.kind.export.run": "Copy to the library",
   "queue.kind.window.job": "Window job",
   "modules.status.enabled": "Enabled",
   "modules.status.disabled": "Disabled",
@@ -1541,9 +1541,8 @@
   "settings.label.export.missing_ceiling": "Maximum missing files allowed",
   "settings.label.path_map": "Path mapping",
   "trust.help.official": "Published and verified by the Shelfhold authors.",
-  "trust.help.community": "Shared by the community; review before trusting it.",
+  "trust.help.community": "Offered by the community; review before trusting it.",
   "trust.help.unknown": "Unverified origin; review before enabling.",
   "activity.kind.series.tombstoned_upstream": "Series removed upstream",
-  "activity.kind.follow.stale": "Stale follow",
-  "settings.label.path_map.Dossier partagé": "Path mapping — Shared folder"
+  "activity.kind.follow.stale": "Stale follow"
 }

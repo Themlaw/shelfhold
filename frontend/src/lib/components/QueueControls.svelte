@@ -18,7 +18,7 @@
   } from '#lib/api/index.ts';
   import type { JobOut, MaintenanceStatusOut } from '#lib/api/types.gen.ts';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
-  import { hasMessage, t, type MessageKey } from '#lib/i18n/index.ts';
+  import { t, type MessageKey, tOr } from '#lib/i18n/index.ts';
   import { reloadOnStream } from '#lib/live.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { isForbidden, needsReauth, needsSession, problemOf } from '#lib/triage.ts';
@@ -194,7 +194,7 @@
   const statusLabel = (value: string): string =>
     STATUS_LABEL[value] ? t(STATUS_LABEL[value]) : value;
   const kindLabel = (kind: string): string =>
-    hasMessage(`queue.kind.${kind}`) ? t(`queue.kind.${kind}`) : kind;
+    tOr(`queue.kind.${kind}`, kind);
   const shortId = (id: string): string => id.slice(-8);
   const STATUS_TONE: Record<string, BadgeTone> = {
     running: 'accent',

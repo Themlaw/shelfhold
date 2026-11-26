@@ -1528,7 +1528,7 @@
   "history.kind.series.tombstoned_upstream": "Série retirée à la source",
   "history.kind.follow.stale": "Suivi périmé",
   "queue.kind.fetch.chapter": "Récupération d’un chapitre",
-  "queue.kind.export.run": "Export",
+  "queue.kind.export.run": "Copie vers la bibliothèque",
   "queue.kind.window.job": "Tâche de fenêtre",
   "modules.status.enabled": "Activé",
   "modules.status.disabled": "Désactivé",
@@ -1541,9 +1541,8 @@
   "settings.label.export.missing_ceiling": "Nombre maximal de fichiers manquants",
   "settings.label.path_map": "Correspondance des chemins",
   "trust.help.official": "Publié et vérifié par les auteurs de Shelfhold.",
-  "trust.help.community": "Partagé par la communauté ; vérifiez avant de lui faire confiance.",
+  "trust.help.community": "Proposé par la communauté ; vérifiez avant de lui faire confiance.",
   "trust.help.unknown": "Origine non vérifiée ; à examiner avant activation.",
   "activity.kind.series.tombstoned_upstream": "Série retirée à la source",
-  "activity.kind.follow.stale": "Suivi périmé",
-  "settings.label.path_map.Dossier partagé": "Correspondance des chemins — Dossier partagé"
+  "activity.kind.follow.stale": "Suivi périmé"
 }
