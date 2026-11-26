@@ -148,7 +148,7 @@ describe("Activité : file et maintenance", () => {
     ).toBeInTheDocument();
     // each job offers only what its state allows
     expect(
-      screen.getByRole("button", { name: "Annuler la tâche fetch.chapter" }),
+      screen.getByRole("button", { name: "Annuler la tâche Récupération d’un chapitre" }),
     ).toBeEnabled();
     expect(
       screen.getByRole("button", { name: "Annuler la tâche run.job" }),
@@ -168,10 +168,10 @@ describe("Activité : file et maintenance", () => {
     );
     await user.click(screen.getByRole("button", { name: "Reprendre alpha" }));
     await user.click(
-      screen.getByRole("button", { name: "Annuler la tâche fetch.chapter" }),
+      screen.getByRole("button", { name: "Annuler la tâche Récupération d’un chapitre" }),
     );
     await user.selectOptions(
-      screen.getByRole("combobox", { name: "Priorité de fetch.chapter" }),
+      screen.getByRole("combobox", { name: "Priorité de Récupération d’un chapitre" }),
       "backfill",
     );
     await user.click(
@@ -225,16 +225,16 @@ describe("Activité : file et maintenance", () => {
       screen.getByRole("button", { name: "Reprendre toute la file" }),
     ).toHaveAttribute("aria-disabled", "true");
     expect(
-      screen.getByRole("button", { name: "Annuler la tâche fetch.chapter" }),
+      screen.getByRole("button", { name: "Annuler la tâche Récupération d’un chapitre" }),
     ).toHaveAttribute("aria-disabled", "true");
     expect(
-      screen.getByRole("combobox", { name: "Priorité de fetch.chapter" }),
+      screen.getByRole("combobox", { name: "Priorité de Récupération d’un chapitre" }),
     ).toBeDisabled();
     await user.click(
       screen.getByRole("button", { name: "Reprendre toute la file" }),
     );
     await user.click(
-      screen.getByRole("button", { name: "Annuler la tâche fetch.chapter" }),
+      screen.getByRole("button", { name: "Annuler la tâche Récupération d’un chapitre" }),
     );
     expect(other).toBe(0);
     await user.click(

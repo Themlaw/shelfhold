@@ -1,7 +1,7 @@
 <script lang="ts">
   // The fiche de confiance of a source (EF-UX-011): three lines, Officiel / Communauté / Inconnu,
   // the server says which one the source has and what each line means. The card decides nothing.
-  import { t } from '#lib/i18n/index.ts';
+  import { hasMessage, t } from '#lib/i18n/index.ts';
   import type { TrustCardOut } from '#lib/api/types.gen.ts';
   import Badge from '#lib/ui/atoms/Badge.svelte';
   import Icon from '#lib/ui/atoms/Icon.svelte';
@@ -13,6 +13,15 @@
     if (level === 'community') return t('trust.level.community');
     return t('trust.level.unknown');
   };
+
+  const detailOf = (line: TrustCardOut['lines'][number]) => {
+    const label = levelLabel(line.level);
+    if (line.label.trim().toLocaleLowerCase() === label.trim().toLocaleLowerCase()) {
+      const key = `trust.help.${line.level}`;
+      return hasMessage(key) ? t(key) : line.label;
+    }
+    return line.label;
+  };
 </script>
 
 {#if trust}
@@ -20,7 +29,7 @@
     {#each trust.lines as line (line.level + line.label)}
       <li aria-current={line.current ? 'true' : undefined}>
         <span class="level"><Icon name={line.level === 'official' ? 'shield' : line.level === 'community' ? 'users' : 'help'} size="sm" />{levelLabel(line.level)}</span>
-        <span class="label">{line.label}</span>
+        <span class="label">{detailOf(line)}</span>
         {#if line.current}
           <Badge tone="accent" icon="check">{t('trust.current')}</Badge>
         {/if}

@@ -9,7 +9,8 @@
   import AgePicker from '#lib/components/AgePicker.svelte';
   import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
-  import { formatNumber, t } from '#lib/i18n/index.ts';
+  import { formatBytes } from '#lib/bytes.ts';
+  import { t } from '#lib/i18n/index.ts';
   import Button from '#lib/ui/atoms/Button.svelte';
   import Checkbox from '#lib/ui/atoms/Checkbox.svelte';
   import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
@@ -109,7 +110,7 @@
     <p class="approve-sheet__summary">
       {t('approve.size_summary', {
         volumes: preview.units,
-        bytes: formatNumber(preview.size_bytes ?? 0)
+        bytes: formatBytes(preview.size_bytes ?? 0)
       })}
       {#if preview.units_minimum}({t('approve.more_to_come')}){/if}
     </p>

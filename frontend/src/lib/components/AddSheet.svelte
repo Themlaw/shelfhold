@@ -8,6 +8,7 @@
   import { emptyTrash as emptyTrashApi, follow, shelves as loadShelves, spaceCheck } from '#lib/api/index.ts';
   import type { EstimateOut, ShelfItemOut } from '#lib/api/types.gen.ts';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
+  import { formatBytes } from '#lib/bytes.ts';
   import { t, formatNumber } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
@@ -249,7 +250,7 @@
     <ProblemAlert problem={estimateProblem} onretry={fetchEstimate} />
   {:else if estimate}
     <p class="summary" data-testid="add-summary">
-      {t('add.summary', { units: formatNumber(estimate.units), bytes: formatNumber(estimate.size_bytes) })}
+      {t('add.summary', { units: formatNumber(estimate.units), bytes: formatBytes(estimate.size_bytes) })}
     </p>
   {/if}
 
@@ -288,9 +289,9 @@
 
   {#if spaceRefusal}
     <Alert tone="warning" title={t('add.refusal.title')} live="assertive">
-      <p>{t('add.refusal.estimated', { bytes: formatNumber(spaceRefusal.estimated) })}</p>
-      <p>{t('add.refusal.free', { bytes: formatNumber(spaceRefusal.free) })}</p>
-      <p>{t('add.refusal.reserve', { bytes: formatNumber(spaceRefusal.reserve) })}</p>
+      <p>{t('add.refusal.estimated', { bytes: formatBytes(spaceRefusal.estimated) })}</p>
+      <p>{t('add.refusal.free', { bytes: formatBytes(spaceRefusal.free) })}</p>
+      <p>{t('add.refusal.reserve', { bytes: formatBytes(spaceRefusal.reserve) })}</p>
       {#snippet actions()}
         <Button onclick={() => (trashConfirmOpen = true)}>{t('add.empty_trash')}</Button>
         {#if trashConfirmOpen}

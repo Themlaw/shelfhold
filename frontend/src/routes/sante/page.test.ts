@@ -70,9 +70,9 @@ describe('Health page', () => {
     const sources = await screen.findByRole('region', { name: 'Sources' });
     expect(within(sources).getByText('source.broken')).toBeInTheDocument();
     expect(within(sources).getByText('shelfhold source recheck')).toBeInTheDocument();
-    expect(screen.getByText('content.original_lost')).toBeInTheDocument();
+    expect(screen.getAllByText('content.original_lost').length).toBeGreaterThan(0);
     expect(screen.getByText('shelfhold content reneutralize')).toBeInTheDocument();
-    expect(screen.getByText('backup_stale')).toBeInTheDocument();
+    expect(screen.getAllByText('backup_stale').length).toBeGreaterThan(0);
     expect(screen.getByText('shelfhold backup run')).toBeInTheDocument();
     expect(screen.getByText('shelfhold target recheck 01TG')).toBeInTheDocument();
     expect(screen.getByText('shelfhold target reconnect 01TH')).toBeInTheDocument();
@@ -129,10 +129,10 @@ describe('Health page', () => {
     render(Page);
     const region = await screen.findByRole('region', { name: 'Caches' });
     expect(within(region).getAllByRole('definition')).toHaveLength(4);
-    expect(within(region).getByText(/12 entrées, 1.?000 octets sur un quota de 2.?000/)).toBeInTheDocument();
-    expect(within(region).getByText(/3 entrées, 5.?000 octets sur un quota de 4.?000/)).toBeInTheDocument();
-    expect(within(region).getByText(/7 entrées \(quota : 3.?000 octets\)/)).toBeInTheDocument();
-    expect(within(region).getByText(/100 entrées, 2.?000 octets sur un quota de 268.?435.?456/)).toBeInTheDocument();
+    expect(within(region).getByText(/12 entrées, 1.?000.?o sur un quota de 2.?ko/)).toBeInTheDocument();
+    expect(within(region).getByText(/3 entrées, 4,9.?ko sur un quota de 3,9.?ko/)).toBeInTheDocument();
+    expect(within(region).getByText(/7 entrées \(quota : 2,9.?ko\)/)).toBeInTheDocument();
+    expect(within(region).getByText(/100 entrées, 2.?ko sur un quota de 256.?Mo/)).toBeInTheDocument();
     expect(within(region).getAllByText(/quota dépassé/)).toHaveLength(1);
   });
 

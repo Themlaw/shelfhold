@@ -166,7 +166,8 @@ describe('ApproveSheet', () => {
   it('shows the size summary, and says when more will follow', async () => {
     answer(preview({ needs_age: false, units: 1, size_bytes: 1000, units_minimum: true }));
     render(ApproveSheet, { item: item({ needs_age: false }), onapproved: vi.fn() });
-    expect(await screen.findByText(/1\svolume,\s1\s000\soctets/)).toBeInTheDocument();
+    expect(await screen.findByText(/1\svolume,/)).toBeInTheDocument();
+    expect(document.body.textContent ?? '').not.toMatch(/\d[\d\s\u202f,.]{6,}\s*octets/i);
     expect(screen.getByText(/d’autres suivront|d'autres suivront/)).toBeInTheDocument();
   });
 
@@ -241,5 +242,13 @@ describe('ApproveSheet', () => {
     render(ApproveSheet, { item: item(), onapproved: vi.fn() });
     expect(await screen.findByRole('alert')).toHaveTextContent('Interdit');
     expect(screen.queryByRole('button', { name: 'Approuver' })).toBeNull();
+  });
+
+  // req: EF-USR-010
+  it('shows large sizes as human units, never as raw bytes', async () => {
+    answer(preview({ needs_age: false, units: 3, size_bytes: 48_234_000 }));
+    render(ApproveSheet, { item: item({ needs_age: false }), onapproved: vi.fn() });
+    await screen.findByText(/3\svolumes/);
+    expect(document.body.textContent ?? '').not.toMatch(/\d[\d\s\u202f,.]{6,}\s*octets/i);
   });
 });

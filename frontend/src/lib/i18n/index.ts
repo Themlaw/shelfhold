@@ -55,4 +55,9 @@ export function hasMessage(key: string): key is MessageKey {
   return Object.hasOwn(fr, key);
 }
 
+/** The message of a key built from data, or `fallback` when the catalogue has none. */
+export function tOr(key: string, fallback: string): string {
+  return hasMessage(key) ? t(key) : fallback;
+}
+
 export * from './format.ts';

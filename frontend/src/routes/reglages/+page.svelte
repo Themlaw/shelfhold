@@ -41,6 +41,12 @@
     const key = `settings.help.${row.key}`;
     return hasMessage(key) ? t(key) : null;
   };
+  const labelOf = (row: ConfigRow): string => {
+    const key = `settings.label.${row.key}`;
+    if (hasMessage(key)) return t(key);
+    if (row.key.startsWith('path_map.')) return `${t('settings.label.path_map')} — ${row.key.slice('path_map.'.length)}`;
+    return row.key;
+  };
   const shown = (value: unknown): string =>
     typeof value === 'string' ? value : JSON.stringify(value ?? '');
 
@@ -212,7 +218,7 @@
         <SettingsForm label={t(`settings.level.${level}`)}>
           {#each groups[level] as row (row.key)}
             <div data-testid="setting-field" data-key={row.key}>
-              <SettingRow label={row.key} help={helpOf(row) ?? undefined}>
+              <SettingRow label={labelOf(row)} meta={row.key} help={helpOf(row) ?? undefined}>
                 {#snippet children(control)}
                   {#if row.secret}
                     <p class="origin"><Icon name="lock" size="sm" />{t('settings.secret')}</p>

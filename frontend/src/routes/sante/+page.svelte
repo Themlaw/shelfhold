@@ -7,7 +7,9 @@
   import HealthEntry from '#lib/components/HealthEntry.svelte';
   import ProblemAlert, { refusalOf } from '#lib/ui/molecules/ProblemAlert.svelte';
   import { healthView, type HealthView } from '#lib/healthPage.ts';
-  import { formatDate, formatNumber, t } from '#lib/i18n/index.ts';
+  import { formatDate, formatNumber, t, tOr } from '#lib/i18n/index.ts';
+  import { formatBytes } from '#lib/bytes.ts';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import Badge from '#lib/ui/atoms/Badge.svelte';
   import Button from '#lib/ui/atoms/Button.svelte';
@@ -31,9 +33,10 @@
   // what asks for the administrator, counted from the entries the server gave
   const attention = $derived(
     view
-      ? view.sources.filter((s) => s.state !== 'ok').length +
+      ? (view.sources.length === 0 ? 1 : view.sources.filter((s) => s.state !== 'ok').length) +
           view.lostOriginals.length +
           view.backup.warnings.length +
+          (!view.backup.lastOkAt && view.backup.warnings.length === 0 ? 1 : 0) +
           view.kavitaAudit.length +
           view.unreadableWebhooks.length +
           view.libraryTypeChanges.length +
@@ -47,12 +50,18 @@
     if (!view) return [];
     const bad = view.sources.filter((s) => s.state !== 'ok').length;
     const backupBad = view.backup.warnings.length > 0;
+    const sourcesTotal = view.sources.length;
     return [
       {
         label: t('health_page.stat_sources'),
-        value: t('health_page.stat_sources_value', { ok: view.sources.length - bad, total: view.sources.length }),
-        note: bad > 0 ? t('health_page.stat_sources_bad', { count: bad }) : t('health_page.stat_sources_good'),
-        tone: bad > 0 ? 'warning' : 'ok'
+        value: t('health_page.stat_sources_value', { ok: sourcesTotal - bad, total: sourcesTotal }),
+        note:
+          sourcesTotal === 0
+            ? t('health_page.stat_sources_none')
+            : bad > 0
+              ? t('health_page.stat_sources_bad', { count: bad })
+              : t('health_page.stat_sources_good'),
+        tone: sourcesTotal === 0 ? undefined : bad > 0 ? 'warning' : 'ok'
       },
       {
         label: t('health_page.stat_bare'),
@@ -67,7 +76,7 @@
           : t('health_page.stat_backup_never'),
         note: view.backup.lastOkAt
           ? t(backupBad ? 'health_page.stat_backup_warn' : 'health_page.stat_backup_good')
-          : undefined,
+          : t('health_page.stat_backup_missing'),
         tone: view.backup.lastOkAt ? (backupBad ? 'warning' : 'ok') : 'warning'
       },
       {
@@ -77,6 +86,66 @@
       }
     ];
   });
+
+  type AttentionItem = { title: string; detail?: string; href?: string; actionLabel?: string };
+  const attentionItems = $derived.by<AttentionItem[]>(() => {
+    if (!view) return [];
+    const items: AttentionItem[] = [];
+    if (view.sources.length === 0) {
+      items.push({
+        title: t('health_page.stat_sources_none'),
+        detail: t('health_page.sources'),
+        href: '/sources',
+        actionLabel: t('health_page.sources_link')
+      });
+    }
+    for (const source of view.sources.filter((s) => s.state !== 'ok')) {
+      items.push({
+        title: `${source.pluginId} — ${t(`health_page.state.${source.state}`)}`,
+        detail: source.code ? tOr(`health_page.code.${source.code}`, t('health_page.code.default')) : undefined,
+        href: '/sources',
+        actionLabel: t('health_page.sources_link')
+      });
+    }
+    for (const entry of view.lostOriginals) {
+      items.push({ title: entry.subject ?? t('health_page.lost_originals'), detail: entry.code ? healthCodeLabel(entry.code) : undefined });
+    }
+    for (const entry of view.backup.warnings) {
+      items.push({ title: healthCodeLabel(entry.code), detail: entry.action?.text || undefined });
+    }
+    if (!view.backup.lastOkAt && view.backup.warnings.length === 0) {
+      items.push({ title: t('health_page.stat_backup_missing'), detail: t('health_page.backup_never') });
+    }
+    for (const entry of view.kavitaAudit) {
+      items.push({ title: entry.subject ?? t('health_page.kavita_audit'), detail: healthCodeLabel(entry.code) });
+    }
+    for (const entry of view.unreadableWebhooks) {
+      items.push({ title: entry.subject ?? t('health_page.unreadable_webhooks'), detail: healthCodeLabel(entry.code) });
+    }
+    for (const entry of view.libraryTypeChanges) {
+      items.push({ title: entry.subject ?? t('health_page.library_types'), detail: healthCodeLabel(entry.code) });
+    }
+    for (const cache of view.caches.filter((c) => c.over)) {
+      items.push({ title: t(`health_page.cache_kind_${cache.kind}`), detail: t('health_page.cache_over') });
+    }
+    if (view.withdrawalPending.count > 0) {
+      items.push({
+        title: t('health_page.withdrawal', { count: view.withdrawalPending.count }),
+        detail: healthCodeLabel('withdrawal_pending')
+      });
+    }
+    if (view.jurisdiction && !view.jurisdiction.confirmed) {
+      items.push({
+        title: t('health_page.jurisdiction', { country: view.jurisdiction.country }),
+        detail: healthCodeLabel('rights.jurisdiction_unconfirmed')
+      });
+    }
+    return items;
+  });
+
+  function healthCodeLabel(code: string): string {
+    return tOr(`health_page.code.${code}`, code);
+  }
 </script>
 
 <svelte:head>
@@ -98,6 +167,23 @@
     </div>
   {:else}
     <StatBar stats={figures} label={t('health_page.figures')} />
+    {#if attentionItems.length > 0}
+      <section class="section" aria-labelledby="h-attention">
+        <div class="section-head"><h2 id="h-attention">{t('health_page.attention')}</h2></div>
+        <div class="attention-list">
+          {#each attentionItems as item, i (i)}
+            <Alert tone="warning" title={item.title}>
+              {#if item.detail}<p class="attention-detail">{item.detail}</p>{/if}
+              {#snippet actions()}
+                {#if item.href && item.actionLabel}
+                  <Button href={item.href} variant="ghost" size="sm" iconEnd="right">{item.actionLabel}</Button>
+                {/if}
+              {/snippet}
+            </Alert>
+          {/each}
+        </div>
+      </section>
+    {/if}
     <section class="section" aria-labelledby="h-sources">
       <div class="section-head"><h2 id="h-sources">{t('health_page.sources')}</h2></div>
       <ul class="entries">
@@ -256,12 +342,12 @@
                 {#if cache.quotaBytes === null}
                   {t('health_page.cache_rows', { entries: cache.entries, quota: cache.quotaEntries ?? 0 })}
                 {:else if cache.usedBytes === null}
-                  {t('health_page.cache_entries', { entries: cache.entries, quota: cache.quotaBytes })}
+                  {t('health_page.cache_entries', { entries: cache.entries, quota: formatBytes(cache.quotaBytes) })}
                 {:else}
                   {t('health_page.cache_bytes', {
                     entries: cache.entries,
-                    used: cache.usedBytes,
-                    quota: cache.quotaBytes
+                    used: formatBytes(cache.usedBytes),
+                    quota: formatBytes(cache.quotaBytes)
                   })}
                 {/if}
               </span>
@@ -339,6 +425,23 @@
   .diagnostic p {
     margin: 0;
     max-width: var(--measure);
+    font-size: var(--step-0);
+  }
+  .attention-list {
+    display: grid;
+    gap: var(--space-3);
+  }
+  .attention-detail {
+    margin: 0;
+    font-size: var(--step-0);
+  }
+  .health .section > p,
+  .health .section .muted {
+    font-size: var(--step-0);
+  }
+  .health :global(.stats dt),
+  .health :global(.stats__note) {
+    font-size: var(--step-0);
   }
   @media (max-width: 40rem) {
     .cache {
