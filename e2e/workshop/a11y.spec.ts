@@ -70,7 +70,8 @@ test('test_keyboard_navigation_workshop', async ({ page }) => {
       Array.from(
         document.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), summary')
       )
-        .filter((el) => el.getClientRects().length > 0 && el.tabIndex < 0)
+        // the tabs of a tablist keep one stop and move with the arrow keys (roving tabindex, WAI-ARIA)
+        .filter((el) => el.getClientRects().length > 0 && el.tabIndex < 0 && el.getAttribute('role') !== 'tab')
         .map((el) => el.tagName + (el.getAttribute('name') ? `[${el.getAttribute('name')}]` : ''))
     );
     expect(unreachable, `${path}: controls out of the tab order`).toEqual([]);
