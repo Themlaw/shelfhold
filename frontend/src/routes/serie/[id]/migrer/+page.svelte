@@ -40,6 +40,7 @@
 
   const editionId = $derived(page.params.id ?? '');
   let bindings = $state<SheetBindingOut[]>([]);
+  let seriesTitle = $state('');
   let sourceKey = $state('');
   let remoteId = $state('');
   let replaces = $state('');
@@ -61,6 +62,7 @@
   onMount(async () => {
     const { data } = await editionSheet({ path: { edition_id: editionId } });
     bindings = data?.bindings ?? [];
+    seriesTitle = data?.title ?? '';
     // the usual case: the source that went away is the one to replace
     replaces = bindings.find((b) => !b.active && GONE.includes(b.disabled_reason ?? ''))?.id ?? '';
   });
@@ -172,8 +174,8 @@
     title={t('migrate.title')}
     lede={t('migrate.intro')}
     crumbs={[
-      { label: t('settings.title'), href: '/reglages' },
-      { label: t('migrate.back'), href: `/serie/${editionId}` },
+      { label: t('nav.library'), href: '/bibliotheque' },
+      { label: seriesTitle || t('migrate.back'), href: `/serie/${editionId}` },
       { label: t('migrate.title') }
     ]}
   />

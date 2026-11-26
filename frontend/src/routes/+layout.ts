@@ -64,10 +64,12 @@ export async function load({
   // the account screen (EF-UX-001). Nothing to type: opening `/` is the whole way in. Only
   // someone nobody knows can be on a new instance, so the status is read for them alone, and the
   // address is read untracked: the screen does not run its reads again at each navigation.
+  let needsAdmin = false;
   if (me === null) {
     const path = untrack && url ? untrack(() => url.pathname) : (url?.pathname ?? '/');
     const setup = await read(fetcher, '/api/v1/setup/status');
-    if (setup?.needs_admin === true && path !== WIZARD_ACCOUNT && !path.startsWith('/assistant/')) {
+    needsAdmin = setup?.needs_admin === true;
+    if (needsAdmin && path !== WIZARD_ACCOUNT && !path.startsWith('/assistant/')) {
       redirect(307, WIZARD_ACCOUNT);
     }
   }
@@ -96,6 +98,7 @@ export async function load({
     language: uiLanguage,
     profileId,
     user,
-    sessionLost: meRead.refused
+    sessionLost: meRead.refused,
+    needsAdmin
   };
 }

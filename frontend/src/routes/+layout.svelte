@@ -107,6 +107,7 @@
   const tabs = $derived(
     tabBarPlaces(data.nav ?? [], role).map((place) => ({ href: place.href, label: t(place.labelKey), icon: place.icon }))
   );
+  const more = $derived(role !== 'child' && tabs.length > 0);
 
   // The address shown, for the entry marked as current (the router does not reload the layout).
   let pathname = $state(typeof location === 'undefined' ? '/' : location.pathname);
@@ -125,7 +126,7 @@
 
 <a class="skip" href="#contenu">{t('ui.layout.skip')}</a>
 <div class="app" class:app--toc={toc.length > 0}>
-  <AppHeader {user} {scheme} onscheme={(next) => void chooseScheme(next)} onsignout={() => void leave()}>
+  <AppHeader {user} {scheme} needsAdmin={data.needsAdmin} onscheme={(next) => void chooseScheme(next)} onsignout={() => void leave()}>
     {#snippet notice()}<Toast />{/snippet}
   </AppHeader>
   {#if toc.length > 0}
@@ -145,11 +146,14 @@
     {current}
     label={t('ui.tabbar.label')}
     moreOpen={sheet}
-    onmore={() => (sheet = true)}
+    onmore={more ? () => (sheet = true) : undefined}
+    comfortable={role === 'child'}
   />
-  <Dialog bind:open={sheet} title={t('ui.toc.title')}>
-    <TableOfContents groups={toc} {current} label={t('nav.label')} onnavigate={() => (sheet = false)} />
-  </Dialog>
+  {#if more}
+    <Dialog bind:open={sheet} title={t('ui.toc.title')}>
+      <TableOfContents groups={toc} {current} label={t('nav.label')} onnavigate={() => (sheet = false)} />
+    </Dialog>
+  {/if}
 {/if}
 
 <style>

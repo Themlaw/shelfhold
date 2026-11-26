@@ -16,6 +16,7 @@
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
   import ProblemAlert, { blockKind, type BlockKind } from '#lib/ui/molecules/ProblemAlert.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
   import Shelf from '#lib/ui/organisms/Shelf.svelte';
 
   const PAGE = 60;
@@ -96,15 +97,11 @@
 </svelte:head>
 
 <main class="page">
-  <div class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('library.title')}</h1>
-      <p class="lede">{t('library.lede')}</p>
-    </div>
-    <div class="page-head__actions">
+  <PageHead title={t('library.title')} lede={t('library.lede')}>
+    {#snippet actions()}
       <Button href="{page.url.pathname}/selections" icon="bookmark">{t('library.selections')}</Button>
-    </div>
-  </div>
+    {/snippet}
+  </PageHead>
 
   {#if series.length > 0 || (shelfChoices && shelfChoices.length > 0)}
     <div class="filters">

@@ -18,6 +18,7 @@
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
   import type { Column } from '#lib/ui/molecules/TableRow.svelte';
   import DataTable from '#lib/ui/organisms/DataTable.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   /** The word the server expects (`EMPTY_TRASH_PHRASE`); it is only shown, the server compares. */
   const EMPTY_WORD = 'empty-trash';
@@ -114,12 +115,7 @@
 </svelte:head>
 
 <main class="page">
-  <div class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('trash.title')}</h1>
-      <p class="lede">{t('trash.intro')}</p>
-    </div>
-  </div>
+  <PageHead title={t('trash.title')} lede={t('trash.intro')} />
 
   {#if guard.state === 'signed_out' || guard.state === 'forbidden'}
     <Alert tone="danger" live="assertive" title={t(MESSAGES[guard.state])} />
