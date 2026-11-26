@@ -15,13 +15,21 @@
   import type { ListImportOut, ListSummaryOut, ProfileOut } from '#lib/api/types.gen.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
-  import { t } from '#lib/i18n/index.ts';
+  import { formatNumber, t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Textarea from '#lib/ui/atoms/Textarea.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
 
   const ME = '';
-  let children = $state<ProfileOut[]>([]);
+  let kids = $state<ProfileOut[]>([]);
   let batches = $state<ListSummaryOut[]>([]);
   let loaded = $state(false);
   let problem = $state<ProblemView | null>(null);
@@ -44,7 +52,7 @@
       batches = lists.data.items;
     }
     // Only an admin may read the profiles (a member's screen simply has no "for" choice).
-    children = (profiles.data?.items ?? []).filter((p) => p.role === 'child');
+    kids = (profiles.data?.items ?? []).filter((p) => p.role === 'child');
     loaded = true;
   }
 
@@ -96,36 +104,47 @@
   <title>{t('lists.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('lists.title')}</h1>
-  <p class="intro">{t('lists.intro')}</p>
+<main class="page page--form">
+  <div class="running-head">
+    <span>{t('approve.title')}</span>
+  </div>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('lists.title')}</h1>
+      <p class="lede">{t('lists.intro')}</p>
+    </div>
+  </div>
 
-  <form onsubmit={submit}>
-    {#if children.length > 0}
-      <label>
-        {t('lists.for')}
-        <select bind:value={target}>
-          <option value={ME}>{t('lists.for_me')}</option>
-          {#each children as child (child.id)}
-            <option value={child.id}>{child.username}</option>
-          {/each}
-        </select>
-      </label>
-      {#if target !== ME}<p class="hint">{t('lists.child_note')}</p>{/if}
+  <form class="import" onsubmit={submit}>
+    {#if kids.length > 0}
+      <Field label={t('lists.for')} hint={target !== ME ? t('lists.child_note') : undefined}>
+        {#snippet children(control)}
+          <Select
+            {...control}
+            bind:value={target}
+            options={[{ value: ME, label: t('lists.for_me') }, ...kids.map((child) => ({ value: child.id, label: child.username }))]}
+          />
+        {/snippet}
+      </Field>
     {/if}
-    <label>
-      {t('lists.name')}
-      <input bind:value={name} maxlength="200" autocomplete="off" />
-    </label>
-    <label>
-      {t('lists.file')}
-      <input type="file" accept=".txt,text/plain" onchange={readFile} />
-    </label>
-    <label>
-      {t('lists.text')}
-      <textarea bind:value={text} rows="8" maxlength="65536" spellcheck="false"></textarea>
-    </label>
-    <button type="submit" disabled={busy || text.trim() === ''}>{t('lists.submit')}</button>
+    <Field label={t('lists.name')}>
+      {#snippet children(control)}
+        <Input {...control} bind:value={name} maxlength={200} autocomplete="off" />
+      {/snippet}
+    </Field>
+    <Field label={t('lists.file')}>
+      {#snippet children(control)}
+        <input {...control} class="file" type="file" accept=".txt,text/plain" onchange={readFile} />
+      {/snippet}
+    </Field>
+    <Field label={t('lists.text')} required>
+      {#snippet children(control)}
+        <Textarea {...control} bind:value={text} rows={8} maxlength={65536} spellcheck={false} />
+      {/snippet}
+    </Field>
+    <div class="btn-row">
+      <Button type="submit" variant="primary" icon="send" disabled={text.trim() === ''} loading={busy}>{t('lists.submit')}</Button>
+    </div>
   </form>
 
   {#if reauthMethods}
@@ -136,82 +155,68 @@
   {/if}
 
   {#if done}
-    <section class="done" role="status" aria-label={t('lists.done_label')}>
-      <p>{t('lists.done', { in_library: done.in_library, requested: done.requested })}</p>
-      {#if done.annotated > 0}
-        <p class="warning">{t('lists.annotated_warning', { count: done.annotated })}</p>
-      {/if}
-      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-      <a href={`/a-approuver/liste/${done.id}`}>{t('lists.open_review')}</a>
-    </section>
+    <div class="done">
+      <Alert tone="success" title={t('lists.done', { in_library: done.in_library, requested: done.requested })} live="polite" headingLevel={2}>
+        {#if done.annotated > 0}
+          <p>{t('lists.annotated_warning', { count: done.annotated })}</p>
+        {/if}
+        {#snippet actions()}
+          <Button href={`/a-approuver/liste/${done?.id}`} variant="primary" size="sm" iconEnd="right">{t('lists.open_review')}</Button>
+        {/snippet}
+      </Alert>
+    </div>
   {/if}
 
-  <h2>{t('lists.recent')}</h2>
-  {#if !loaded}
-    <p>{t('home.loading')}</p>
-  {:else if problem}
-    <ProblemCard {problem} level={3} />
-  {:else if batches.length === 0}
-    <p class="empty">{t('lists.recent_empty')}</p>
-  {:else}
-    <ul>
-      {#each batches as batch (batch.id)}
-        <li>
-          <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-          <a href={`/a-approuver/liste/${batch.id}`}>{batch.name}</a>
-          <span class="who">{t('lists.counts', { in_library: batch.in_library, requested: batch.requested })}</span>
-        </li>
-      {/each}
-    </ul>
-  {/if}
+  <section class="section" aria-labelledby="recent-lists">
+    <div class="section-head">
+      <h2 id="recent-lists">{t('lists.recent')}</h2>
+      {#if loaded && batches.length > 0}<span class="folio">{formatNumber(batches.length)}</span>{/if}
+    </div>
+    {#if !loaded}
+      <div aria-busy="true"><p class="visually-hidden" role="status">{t('home.loading')}</p><Skeleton /><Skeleton short /></div>
+    {:else if problem}
+      <ProblemCard {problem} level={3} />
+    {:else if batches.length === 0}
+      <EmptyState title={t('lists.recent_empty')} headingLevel={3} art={false} />
+    {:else}
+      <ul class="entries" role="list">
+        {#each batches as batch (batch.id)}
+          <li class="batch">
+            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
+            <a class="standalone" href={`/a-approuver/liste/${batch.id}`}>{batch.name}</a>
+            <span class="hint">{t('lists.counts', { in_library: batch.in_library, requested: batch.requested })}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
   <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-  <p><a href="/a-approuver">{t('lists.back_queue')}</a></p>
+  <p class="back"><a class="standalone" href="/a-approuver">{t('lists.back_queue')}</a></p>
 </main>
 
 <style>
-  /* a list's name is a link on its own: a target of 44 px (ENF-A11Y-004) */
-  li > a {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-  }
-  main {
-    max-width: 42rem;
-    margin: 0 auto;
-    padding: 1rem;
-  }
-  form {
+  .import {
     display: grid;
-    gap: 0.75rem;
+    gap: var(--space-4);
   }
-  label {
-    display: grid;
-    gap: 0.25rem;
+  .file {
+    inline-size: 100%;
   }
-  textarea,
-  input,
-  select {
-    max-width: 100%;
-    box-sizing: border-box;
+  .done {
+    margin-top: var(--space-5);
   }
-  .hint,
-  .who {
-    color: var(--color-muted);
-  }
-  .warning {
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--color-rule);
-    border-radius: 0.5rem;
-  }
-  ul {
-    list-style: none;
-    padding: 0;
-  }
-  li {
+  .batch {
     display: flex;
-    gap: 0.5rem;
     flex-wrap: wrap;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--color-rule);
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-4);
+    padding-block: var(--space-1);
+  }
+  .batch a {
+    font: 600 var(--step-1) / var(--leading-tight) var(--font-text);
+  }
+  .back {
+    margin-top: var(--space-6);
   }
 </style>

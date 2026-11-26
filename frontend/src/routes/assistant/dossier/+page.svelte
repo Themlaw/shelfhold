@@ -20,8 +20,15 @@
   import { previewAdoption } from '#lib/adoption.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
-  import WizardSteps from '#lib/components/WizardSteps.svelte';
+  import WizardPage from '#lib/components/WizardPage.svelte';
+  import WizardSignedOut from '#lib/components/WizardSignedOut.svelte';
   import { t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Select from '#lib/ui/atoms/Select.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, needsSession, problemOf } from '#lib/triage.ts';
@@ -168,15 +175,9 @@
   <title>{t('admin.wizard.dossier.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('admin.wizard.title')}</h1>
-  <WizardSteps current="dossier" />
-  <h2>{t('admin.wizard.dossier.title')}</h2>
-
+<WizardPage current="dossier" title={t('admin.wizard.dossier.title')}>
   {#if signedOut}
-    <p role="alert">{t('admin.wizard.signed_out')}</p>
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <p><a href="/login" data-sveltekit-reload>{t('admin.wizard.login')}</a></p>
+    <WizardSignedOut />
   {:else}
     {#if reauthMethods}
       <ReauthPrompt methods={reauthMethods} ondone={afterReauth} oncancel={cancelReauth} />
@@ -185,97 +186,145 @@
       <ProblemCard {problem} />
     {/if}
     {#if message}
-      <p role="status">{message}</p>
+      <Alert tone="success" title={message} live="polite" />
     {/if}
 
-    {#if loaded && destinations.length === 0 && targetName === null}
-      <p>{t('admin.wizard.dossier.no_target')}</p>
-      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-      <p><a href="/assistant/kavita">{t('admin.wizard.dossier.back_to_kavita')}</a></p>
-    {:else if loaded && destinations.length === 0}
-      <section aria-labelledby="shelf-title">
+    {#if !loaded}
+      <div aria-busy="true">
+        <p class="visually-hidden" role="status">{t('admin.wizard.loading')}</p>
+        <Skeleton /><Skeleton short />
+      </div>
+    {:else if destinations.length === 0 && targetName === null}
+      <Alert tone="warning" title={t('admin.wizard.dossier.no_target')}>
+        {#snippet actions()}
+          <Button href="/assistant/kavita" icon="left" size="sm">{t('admin.wizard.dossier.back_to_kavita')}</Button>
+        {/snippet}
+      </Alert>
+    {:else if destinations.length === 0}
+      <section class="panel step" aria-labelledby="shelf-title">
         <h3 id="shelf-title">{t('admin.wizard.dossier.shelf_title')}</h3>
-        <p>{t('admin.wizard.dossier.shelf_explain')}</p>
-        <label>
-          {t('admin.wizard.dossier.shelf_name')}
-          <input type="text" bind:value={shelfName} maxlength="128" />
-        </label>
-        <label>
-          {t('admin.wizard.dossier.shelf_folder')}
-          <input type="text" bind:value={shelfFolder} maxlength="64" autocomplete="off" />
-        </label>
-        <p>{t('admin.wizard.dossier.shelf_folder_help')}</p>
-        <label>
-          {t('admin.wizard.dossier.shelf_age')}
-          <select bind:value={shelfAge}>
-            <option value="18+">{t('admin.wizard.dossier.shelf_age_adult')}</option>
-            <option value="13+">{t('admin.wizard.dossier.shelf_age_family')}</option>
-          </select>
-        </label>
-        <p>{t('admin.wizard.dossier.shelf_audit')}</p>
-        <button type="button" disabled={busy || !shelfReady} onclick={makeShelf}>
-          {t('admin.wizard.dossier.shelf_create')}
-        </button>
+        <p class="intro">{t('admin.wizard.dossier.shelf_explain')}</p>
+        <Field label={t('admin.wizard.dossier.shelf_name')}>
+          {#snippet children(control)}<Input {...control} type="text" bind:value={shelfName} maxlength={128} />{/snippet}
+        </Field>
+        <Field label={t('admin.wizard.dossier.shelf_folder')} hint={t('admin.wizard.dossier.shelf_folder_help')}>
+          {#snippet children(control)}
+            <Input {...control} type="text" bind:value={shelfFolder} maxlength={64} autocomplete="off" mono />
+          {/snippet}
+        </Field>
+        <Field label={t('admin.wizard.dossier.shelf_age')} hint={t('admin.wizard.dossier.shelf_audit')}>
+          {#snippet children(control)}
+            <Select
+              {...control}
+              bind:value={shelfAge}
+              options={[
+                { value: '18+', label: t('admin.wizard.dossier.shelf_age_adult') },
+                { value: '13+', label: t('admin.wizard.dossier.shelf_age_family') }
+              ]}
+            />
+          {/snippet}
+        </Field>
+        <div class="btn-row">
+          <Button variant="primary" disabled={!shelfReady} loading={busy} onclick={makeShelf}>
+            {t('admin.wizard.dossier.shelf_create')}
+          </Button>
+        </div>
       </section>
-    {:else if loaded}
-      <p>{t('admin.wizard.dossier.explain')}</p>
+    {:else}
+      <p class="intro">{t('admin.wizard.dossier.explain')}</p>
       {#if destinations.length > 1}
-        <label>
-          {t('admin.wizard.dossier.destination')}
-          <select bind:value={destination}>
-            {#each destinations as d (d.id)}
-              <option value={d.id}>{d.id}</option>
-            {/each}
-          </select>
-        </label>
+        <Field label={t('admin.wizard.dossier.destination')}>
+          {#snippet children(control)}
+            <Select {...control} bind:value={destination} options={destinations.map((d) => ({ value: d.id, label: d.id }))} />
+          {/snippet}
+        </Field>
       {/if}
 
-      <section aria-labelledby="probe-title">
+      <section class="panel step" aria-labelledby="probe-title">
         <h3 id="probe-title">{t('admin.wizard.dossier.check')}</h3>
-        <button type="button" disabled={busy} onclick={check}>{t('admin.wizard.dossier.check')}</button>
+        <div class="btn-row">
+          <Button icon="pulse" disabled={busy} onclick={check}>{t('admin.wizard.dossier.check')}</Button>
+        </div>
         {#if probe}
           {#if probe.ok && probe.kavita_read === true}
-            <p role="status">{t('admin.wizard.dossier.ok')}</p>
+            <Alert tone="success" title={t('admin.wizard.dossier.ok')} live="polite" />
           {:else if probe.ok}
-            <p role="status">{t('admin.wizard.dossier.no_library')}</p>
+            <Alert tone="warning" title={t('admin.wizard.dossier.no_library')} live="polite" />
           {:else if !probe.write.ok}
-            <p role="alert">{t('admin.wizard.dossier.write_failed')}</p>
+            <Alert tone="danger" title={t('admin.wizard.dossier.write_failed')} live="assertive" />
           {:else}
-            <p role="alert">{t('admin.wizard.dossier.kavita_failed')}</p>
+            <Alert tone="danger" title={t('admin.wizard.dossier.kavita_failed')} live="assertive" />
           {/if}
           {#if probe.yaml_hint}
-            <pre class="yaml"><code>{probe.yaml_hint}</code></pre>
+            <!-- a block that scrolls sideways must take the keyboard focus -->
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+            <pre class="yaml" tabindex="0"><code>{probe.yaml_hint}</code></pre>
           {/if}
         {/if}
       </section>
 
-      <section aria-labelledby="adopt-title">
+      <section class="panel step" aria-labelledby="adopt-title">
         <h3 id="adopt-title">{t('admin.wizard.dossier.adopt_title')}</h3>
-        <label>
-          {t('admin.wizard.dossier.download_dir')}
-          <input type="text" bind:value={downloadDir} />
-        </label>
-        <button type="button" disabled={busy} onclick={look}>{t('admin.wizard.dossier.preview')}</button>
+        <Field label={t('admin.wizard.dossier.download_dir')}>
+          {#snippet children(control)}<Input {...control} type="text" bind:value={downloadDir} mono />{/snippet}
+        </Field>
+        <div class="btn-row">
+          <Button icon="search" disabled={busy} onclick={look}>{t('admin.wizard.dossier.preview')}</Button>
+        </div>
         {#if preview}
-          <p>{t('admin.wizard.dossier.preview_result', { series: preview.series, files: preview.files })}</p>
-          {#if preview.download_dir}
-            <p>{t(`admin.wizard.dossier.verdict.${preview.download_dir.kind}`)}</p>
-          {/if}
-          <p>{t('admin.wizard.dossier.roots', { count: preview.roots.length })}</p>
-          <button type="button" disabled={busy} onclick={adopt}>{t('admin.wizard.dossier.adopt')}</button>
+          <div class="preview">
+            <p>{t('admin.wizard.dossier.preview_result', { series: preview.series, files: preview.files })}</p>
+            {#if preview.download_dir}
+              <p>{t(`admin.wizard.dossier.verdict.${preview.download_dir.kind}`)}</p>
+            {/if}
+            <p>{t('admin.wizard.dossier.roots', { count: preview.roots.length })}</p>
+          </div>
+          <div class="btn-row">
+            <Button variant="primary" disabled={busy} onclick={adopt}>{t('admin.wizard.dossier.adopt')}</Button>
+          </div>
         {/if}
       </section>
 
-      <section aria-labelledby="new-title">
+      <section class="panel step" aria-labelledby="new-title">
         <h3 id="new-title">{t('admin.wizard.dossier.new_title')}</h3>
-        <label>
-          {t('admin.wizard.dossier.new_name')}
-          <input type="text" bind:value={libraryName} maxlength="128" />
-        </label>
-        <button type="button" disabled={busy || libraryName.trim() === ''} onclick={create}>
-          {t('admin.wizard.dossier.new')}
-        </button>
+        <Field label={t('admin.wizard.dossier.new_name')}>
+          {#snippet children(control)}<Input {...control} type="text" bind:value={libraryName} maxlength={128} />{/snippet}
+        </Field>
+        <div class="btn-row">
+          <Button icon="plus" disabled={libraryName.trim() === ''} loading={busy} onclick={create}>
+            {t('admin.wizard.dossier.new')}
+          </Button>
+        </div>
       </section>
     {/if}
   {/if}
-</main>
+</WizardPage>
+
+<style>
+  .step {
+    display: grid;
+    gap: var(--space-3);
+  }
+  .step h3 {
+    margin: 0;
+    font-size: var(--step-1);
+  }
+  .intro {
+    margin: 0;
+    max-width: var(--measure);
+  }
+  .preview p {
+    margin: 0 0 var(--space-1);
+  }
+  .yaml {
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    overflow-x: auto;
+    border: var(--rule-hair) solid var(--color-rule-strong);
+    border-radius: var(--radius-xs);
+    background: var(--color-bg);
+    font-size: var(--step--1);
+    line-height: 1.5;
+    tab-size: 2;
+  }
+</style>

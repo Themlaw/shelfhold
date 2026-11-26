@@ -15,10 +15,8 @@
 
 <style>
   .open-in-kavita {
-    color: var(--color-accent);
-    text-decoration: underline;
-    min-height: 2.75rem;
-    min-width: 2.75rem;
+    min-block-size: 44px;
+    min-inline-size: 44px;
     display: inline-flex;
     align-items: center;
   }

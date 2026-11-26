@@ -37,6 +37,9 @@
 
 <style>
   .qr {
+    /* paper and ink of the system in a light scheme, whatever the theme: a camera reads dark on light */
+    color-scheme: light;
+    border-radius: var(--radius-xs);
     width: 12rem;
     max-width: 100%;
     height: auto;

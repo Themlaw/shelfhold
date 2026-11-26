@@ -72,13 +72,13 @@ describe('ApproveSheet', () => {
     const onapproved = vi.fn();
     render(ApproveSheet, { item: item(), onapproved });
     const group = await screen.findByRole('group', { name: 'Âge pour cette demande' });
-    expect(approveButton()).toBeDisabled();
+    expect(approveButton()).toHaveAttribute('aria-disabled', 'true');
     const user = userEvent.setup();
     // a click on a disabled button asks the server for nothing
     await user.click(approveButton());
     expect(posted).toEqual([]);
     await user.click(within(group).getByRole('radio', { name: '13+' }));
-    expect(approveButton()).toBeEnabled();
+    expect(approveButton()).not.toHaveAttribute("aria-disabled");
     await user.click(approveButton());
     await vi.waitFor(() => expect(onapproved).toHaveBeenCalledOnce());
     expect(posted).toEqual([
@@ -113,7 +113,7 @@ describe('ApproveSheet', () => {
     answer(preview({ decided_age: 12 }));
     render(ApproveSheet, { item: item(), onapproved: vi.fn() });
     expect(await screen.findByRole('radio', { name: '12+' })).toBeChecked();
-    expect(approveButton()).toBeEnabled();
+    expect(approveButton()).not.toHaveAttribute("aria-disabled");
   });
 
   // req: EF-USR-010, EF-USR-006
@@ -123,7 +123,7 @@ describe('ApproveSheet', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('radio', { name: '16+' }));
     expect(await screen.findByRole('status')).toHaveTextContent(/dépasse ce que l’enfant peut voir/);
-    expect(approveButton()).toBeEnabled();
+    expect(approveButton()).not.toHaveAttribute("aria-disabled");
   });
 
   // req: EF-USR-010, EF-USR-014
@@ -136,7 +136,7 @@ describe('ApproveSheet', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       /source n’est pas marquée « famille »/
     );
-    expect(approveButton()).toBeEnabled();
+    expect(approveButton()).not.toHaveAttribute("aria-disabled");
   });
 
   // req: EF-USR-010, EF-USR-014
@@ -175,7 +175,7 @@ describe('ApproveSheet', () => {
     answer(preview({ needs_age: false, units: 150, confirmation_required: true }));
     render(ApproveSheet, { item: item({ needs_age: false }), onapproved: vi.fn() });
     const confirm = await screen.findByRole('checkbox', { name: /la taille/ });
-    expect(approveButton()).toBeDisabled();
+    expect(approveButton()).toHaveAttribute('aria-disabled', 'true');
     const user = userEvent.setup();
     await user.click(confirm);
     await user.click(approveButton());

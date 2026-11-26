@@ -9,8 +9,14 @@
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import SentenceShelf from '#lib/components/SentenceShelf.svelte';
-  import WizardSteps from '#lib/components/WizardSteps.svelte';
+  import WizardNext from '#lib/components/WizardNext.svelte';
+  import WizardPage from '#lib/components/WizardPage.svelte';
+  import WizardSignedOut from '#lib/components/WizardSignedOut.svelte';
   import { t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Checkbox from '#lib/ui/atoms/Checkbox.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import type { ProblemView } from '#lib/problems.ts';
   import {
@@ -86,15 +92,9 @@
   <title>{t('admin.wizard.etageres.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('admin.wizard.title')}</h1>
-  <WizardSteps current="etageres" />
-  <h2>{t('admin.wizard.etageres.title')}</h2>
-
+<WizardPage current="etageres" title={t('admin.wizard.etageres.title')}>
   {#if signedOut}
-    <p role="alert">{t('admin.wizard.signed_out')}</p>
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <p><a href="/login" data-sveltekit-reload>{t('admin.wizard.login')}</a></p>
+    <WizardSignedOut />
   {:else}
     {#if reauthMethods}
       <ReauthPrompt
@@ -105,41 +105,53 @@
     {/if}
     {#if problem}<ProblemCard {problem} />{/if}
 
-    {#if loaded}
-      <p>{t('admin.wizard.etageres.explain')}</p>
-      <ul>
+    {#if !loaded}
+      <div aria-busy="true">
+        <p class="visually-hidden" role="status">{t('admin.wizard.loading')}</p>
+        <Skeleton /><Skeleton /><Skeleton short />
+      </div>
+    {:else}
+      <p class="intro">{t('admin.wizard.etageres.explain')}</p>
+      <ul class="shelves" role="list">
         {#each shelves as shelf (shelf.name)}
           <li><SentenceShelf {shelf} /></li>
         {/each}
       </ul>
 
-      <details>
+      <details class="advanced">
         <summary>{t('admin.wizard.etageres.advanced')}</summary>
         <p>{t('admin.wizard.etageres.advanced_help')}</p>
       </details>
 
-      <fieldset>
+      <fieldset class="sources">
         <legend>{t('admin.wizard.sources.title')}</legend>
-        <p>{t('admin.wizard.sources.explain')}</p>
+        <p class="hint">{t('admin.wizard.sources.explain')}</p>
         {#each sources as source (source.key)}
-          <label>
-            <input type="checkbox" value={source.key} bind:group={family} disabled={done} />
-            {t(SOURCE_NAMES[source.key] ?? 'admin.wizard.sources.name.other')}
-          </label>
+          <Checkbox
+            checked={family.includes(source.key)}
+            disabled={done}
+            value={source.key}
+            label={t(SOURCE_NAMES[source.key] ?? 'admin.wizard.sources.name.other')}
+            onchange={(event) => {
+              const on = (event.currentTarget as HTMLInputElement).checked;
+              family = on ? [...family, source.key] : family.filter((key) => key !== source.key);
+            }}
+          />
         {/each}
       </fieldset>
 
       {#if !done}
-        <button type="button" disabled={busy} onclick={create}>
-          {t('admin.wizard.etageres.create')}
-        </button>
+        <div class="btn-row">
+          <Button variant="primary" size="lg" icon="books" loading={busy} onclick={create}>
+            {t('admin.wizard.etageres.create')}
+          </Button>
+        </div>
       {:else}
-        <p role="status">{t('admin.wizard.etageres.created')}</p>
+        <Alert tone="success" title={t('admin.wizard.etageres.created')} live="polite" />
         {#if next}
-          <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-          <a href={next.href}>{t('admin.wizard.next')}</a>
+          <WizardNext href={next.href} />
         {/if}
       {/if}
     {/if}
   {/if}
-</main>
+</WizardPage>

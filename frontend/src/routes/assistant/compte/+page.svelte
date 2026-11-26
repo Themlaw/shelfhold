@@ -5,8 +5,15 @@
   import { onDestroy, onMount } from 'svelte';
   import { firstRunStatus, makeFirstAdmin, me } from '#lib/api/index.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
-  import WizardSteps from '#lib/components/WizardSteps.svelte';
+  import WizardNext from '#lib/components/WizardNext.svelte';
+  import WizardPage from '#lib/components/WizardPage.svelte';
+  import WizardSignedOut from '#lib/components/WizardSignedOut.svelte';
   import { t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { advanceFrom, nextStep } from '#lib/wizard.ts';
 
@@ -72,53 +79,68 @@
   <title>{t('admin.wizard.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('admin.wizard.title')}</h1>
-  <WizardSteps current="compte" />
-  <h2>{t('admin.wizard.compte.title')}</h2>
-
-  {#if loaded && signedOut && fresh}
+<WizardPage current="compte" title={t('admin.wizard.compte.title')}>
+  {#if !loaded}
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('admin.wizard.loading')}</p>
+      <Skeleton /><Skeleton /><Skeleton short />
+    </div>
+  {:else if signedOut && fresh}
     {#if fresh.tokenConfigured}
-      <form onsubmit={createAccount} aria-label={t('admin.wizard.compte.create')}>
-        <p>{t('admin.wizard.compte.intro')}</p>
-        <label>
-          {t('admin.wizard.compte.username')}
-          <input bind:value={username} required maxlength="128" autocomplete="username" />
-        </label>
-        <label>
-          {t('admin.wizard.compte.password')}
-          <input
-            type="password"
-            bind:value={password}
-            required
-            minlength="12"
-            autocomplete="new-password"
-          />
-        </label>
-        <label>
-          {t('admin.wizard.compte.token')}
-          <input type="password" bind:value={setupToken} required autocomplete="off" />
-        </label>
-        <p class="hint">{t('admin.wizard.compte.token_help')}</p>
+      <form class="create" onsubmit={createAccount} aria-label={t('admin.wizard.compte.create')}>
+        <p class="intro">{t('admin.wizard.compte.intro')}</p>
+        <Field label={t('admin.wizard.compte.username')} required>
+          {#snippet children(control)}
+            <Input {...control} bind:value={username} maxlength={128} autocomplete="username" />
+          {/snippet}
+        </Field>
+        <Field label={t('admin.wizard.compte.password')} hint={t('admin.wizard.compte.password_help')} required>
+          {#snippet children(control)}
+            <Input {...control} type="password" bind:value={password} minlength={12} autocomplete="new-password" />
+          {/snippet}
+        </Field>
+        <Field label={t('admin.wizard.compte.token')} hint={t('admin.wizard.compte.token_help')} required>
+          {#snippet children(control)}
+            <Input {...control} type="password" bind:value={setupToken} autocomplete="off" />
+          {/snippet}
+        </Field>
         {#if problem}
           <ProblemCard {problem} />
         {/if}
-        <button type="submit" disabled={busy}>{t('admin.wizard.compte.submit')}</button>
+        <div class="btn-row">
+          <Button type="submit" variant="primary" size="lg" loading={busy}>{t('admin.wizard.compte.submit')}</Button>
+        </div>
       </form>
     {:else}
-      <p role="alert">{t('admin.wizard.compte.no_token')}</p>
+      <div role="alert">
+        <Alert tone="danger" title={t('admin.wizard.compte.no_token_title')}>
+          <p>{t('admin.wizard.compte.no_token')}</p>
+        </Alert>
+      </div>
     {/if}
-  {:else if loaded && signedOut}
-    <p role="alert">{t('admin.wizard.signed_out')}</p>
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <p><a href="/login" data-sveltekit-reload>{t('admin.wizard.login')}</a></p>
-  {:else if loaded && name !== null}
-    <p role="status">{t('admin.wizard.compte.signed_in', { name })}</p>
+  {:else if signedOut}
+    <WizardSignedOut />
+  {:else if name !== null}
+    <Alert tone="success" title={t('admin.wizard.compte.signed_in', { name })} live="polite" />
     {#if isAdmin && next}
-      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-      <p><a href={next.href}>{t('admin.wizard.next')}</a></p>
+      <WizardNext href={next.href} />
     {:else if !isAdmin}
-      <p role="alert">{t('admin.wizard.compte.not_admin')}</p>
+      <div role="alert">
+        <Alert tone="warning" title={t('admin.wizard.compte.not_admin_title')}>
+          <p>{t('admin.wizard.compte.not_admin')}</p>
+        </Alert>
+      </div>
     {/if}
   {/if}
-</main>
+</WizardPage>
+
+<style>
+  .create {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .intro {
+    margin: 0;
+    max-width: var(--measure);
+  }
+</style>

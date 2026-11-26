@@ -13,6 +13,13 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import ErrorState from '#lib/ui/molecules/ErrorState.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
 
   type Choice = { id: string; shelf_name: string; target_name: string; linked: boolean };
   type Account = {
@@ -159,83 +166,104 @@
   <title>{t('kavita.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('kavita.title')}</h1>
+<main class="page">
+  <div class="running-head"><span>{t('nav.settings')}</span></div>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('kavita.title')}</h1>
+      {#if me && me.role !== 'child' && !failed}<p class="lede">{t('kavita.intro')}</p>{/if}
+    </div>
+  </div>
+
   {#if failed}
-    <p role="alert">{t('kavita.error')}</p>
-  {:else if me?.role === 'child'}
-    <p>{t('kavita.child')}</p>
-  {:else if me}
-    <p>{t('kavita.intro')}</p>
+    <div role="alert">
+      <ErrorState kind="server" title={t('kavita.error_title')} headingLevel={2}>
+        {t('kavita.error')}
+      </ErrorState>
+    </div>
+  {:else if !me}
+    <div aria-busy="true">
+      <p class="visually-hidden" role="status">{t('kavita.loading')}</p>
+      <Skeleton /><Skeleton short />
+    </div>
+  {:else if me.role === 'child'}
+    <EmptyState title={t('kavita.child_title')} center>
+      {t('kavita.child')}
+    </EmptyState>
+  {:else}
     {#if choices.length === 0}
-      <p>{t('kavita.empty')}</p>
+      <EmptyState title={t('kavita.empty')} headingLevel={3} art={false} />
     {/if}
-    {#each choices as choice (choice.id)}
-      {@const account = accounts[choice.id]}
-      {@const form = forms[choice.id]}
-      {@const outcome = outcomes[choice.id]}
-      <section aria-labelledby="kavita-{choice.id}">
-        <h2 id="kavita-{choice.id}">{t('kavita.card', { shelf: choice.shelf_name, server: choice.target_name })}</h2>
-        {#if live(account)}
-          <dl>
-            <dt>{t('kavita.account', { name: account.remote_user ?? '' })}</dt>
-            <dd>
-              <span>{t('kavita.fingerprint')} : </span><code>{account.token_fingerprint}</code>
-              {#if account.verified_at}
-                <span>({t('kavita.verified', { date: formatDateTime(account.verified_at) })})</span>
-              {/if}
-            </dd>
-          </dl>
-        {:else}
-          <p>{t('kavita.none')}</p>
-        {/if}
-        {#if form}
-          <form
-            onsubmit={(event) => {
-              event.preventDefault();
-              void link(choice);
-            }}
-          >
-            <label>
-              {t('kavita.remote_user')}
-              <input type="text" bind:value={form.remote} autocomplete="off" spellcheck="false" />
-            </label>
-            <label>
-              {t('kavita.key')}
-              <input
-                type="password"
-                bind:value={form.key}
-                autocomplete="off"
-                spellcheck="false"
-                aria-describedby="hint-{choice.id}"
-              />
-            </label>
-            <small id="hint-{choice.id}">{t('kavita.key_hint')}</small>
-            <!-- not the lone last child of the form: one card per destination, so one sticky
-                 action per card would stack at the bottom of a phone and cover the fields -->
-            <div class="actions">
-              <button type="submit" disabled={busy === choice.id}>
-                {live(account) ? t('kavita.replace') : t('kavita.link')}
-              </button>
+    <div class="cards">
+      {#each choices as choice (choice.id)}
+        {@const account = accounts[choice.id]}
+        {@const form = forms[choice.id]}
+        {@const outcome = outcomes[choice.id]}
+        <section class="panel card" aria-labelledby="kavita-{choice.id}">
+          <h2 id="kavita-{choice.id}">{t('kavita.card', { shelf: choice.shelf_name, server: choice.target_name })}</h2>
+          {#if live(account)}
+            <dl class="meta-list">
+              <dt>{t('kavita.account', { name: account.remote_user ?? '' })}</dt>
+              <dd>
+                <span>{t('kavita.fingerprint')} : </span><code>{account.token_fingerprint}</code>
+                {#if account.verified_at}
+                  <span class="hint">({t('kavita.verified', { date: formatDateTime(account.verified_at) })})</span>
+                {/if}
+              </dd>
+            </dl>
+          {:else}
+            <p class="hint">{t('kavita.none')}</p>
+          {/if}
+          {#if form}
+            <form
+              class="link"
+              onsubmit={(event) => {
+                event.preventDefault();
+                void link(choice);
+              }}
+            >
+              <Field label={t('kavita.remote_user')}>
+                {#snippet children(control)}
+                  <Input {...control} type="text" bind:value={form.remote} autocomplete="off" spellcheck={false} />
+                {/snippet}
+              </Field>
+              <Field label={t('kavita.key')} hint={t('kavita.key_hint')}>
+                {#snippet children(control)}
+                  <Input {...control} type="password" bind:value={form.key} autocomplete="off" spellcheck={false} mono />
+                {/snippet}
+              </Field>
+              <!-- not the lone last child of the form: one card per destination, so one sticky
+                   action per card would stack at the bottom of a phone and cover the fields -->
+              <div class="btn-row">
+                <Button type="submit" variant="primary" icon="key" disabled={busy === choice.id} loading={busy === choice.id}>
+                  {live(account) ? t('kavita.replace') : t('kavita.link')}
+                </Button>
+                {#if live(account)}
+                  <Button variant="danger-ghost" icon="trash" disabled={busy === choice.id} onclick={() => revoke(choice)}>
+                    {t('kavita.revoke')}
+                  </Button>
+                {/if}
+              </div>
+            </form>
+          {:else if live(account)}
+            <div class="btn-row">
+              <Button variant="danger-ghost" icon="trash" disabled={busy === choice.id} onclick={() => revoke(choice)}>
+                {t('kavita.revoke')}
+              </Button>
             </div>
-          </form>
-        {/if}
-        {#if live(account)}
-          <button type="button" disabled={busy === choice.id} onclick={() => revoke(choice)}>
-            {t('kavita.revoke')}
-          </button>
-        {/if}
-        {#if outcome?.kind === 'linked'}
-          <p role="status">{t('kavita.linked')}</p>
-        {:else if outcome?.kind === 'admin'}
-          <p role="status">{t('kavita.linked_admin')}</p>
-        {:else if outcome?.kind === 'revoked'}
-          <p role="status">{t('kavita.revoked')}</p>
-        {:else if outcome?.kind === 'refused'}
-          <ProblemCard problem={outcome.problem} level={3} note={outcome.note} />
-        {/if}
-      </section>
-    {/each}
+          {/if}
+          {#if outcome?.kind === 'linked'}
+            <Alert tone="success" title={t('kavita.linked')} live="polite" />
+          {:else if outcome?.kind === 'admin'}
+            <Alert tone="warning" title={t('kavita.linked_admin')} live="polite" />
+          {:else if outcome?.kind === 'revoked'}
+            <Alert tone="info" title={t('kavita.revoked')} live="polite" />
+          {:else if outcome?.kind === 'refused'}
+            <ProblemCard problem={outcome.problem} level={3} note={outcome.note} />
+          {/if}
+        </section>
+      {/each}
+    </div>
   {/if}
 
   {#if reauthMethods}
@@ -259,10 +287,28 @@
 </main>
 
 <style>
-  main { max-width: 60rem; margin: 0 auto; padding: 2rem 1rem; }
-  section { margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--color-rule); }
-  form { display: grid; gap: 0.5rem; max-width: 30rem; }
-  label { display: grid; gap: 0.25rem; }
-  dl, dd { margin: 0; }
-  code { overflow-wrap: anywhere; }
+  .cards {
+    display: grid;
+    gap: var(--space-5);
+  }
+  .card {
+    display: grid;
+    gap: var(--space-3);
+  }
+  .card h2 {
+    margin: 0;
+    font-size: var(--step-1);
+  }
+  .meta-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+  code {
+    overflow-wrap: anywhere;
+  }
+  .link {
+    display: grid;
+    gap: var(--space-3);
+    max-inline-size: var(--form-max);
+  }
 </style>

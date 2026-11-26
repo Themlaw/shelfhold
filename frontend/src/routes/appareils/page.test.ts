@@ -50,7 +50,7 @@ describe('Connecter un appareil', () => {
     expect(screen.getAllByText('https://kavita.example/api/opds')).toHaveLength(2);
     expect(screen.getByText(/Kover/)).toBeInTheDocument();
     expect(screen.getAllByText(/KOReader/)).toHaveLength(2);
-    expect(screen.getByText(/liseuse/i)).toBeInTheDocument();
+    expect(screen.getByText('Liseuse : catalogue (OPDS)')).toBeInTheDocument();
   });
 
   // req: EF-UX-004, ENF-SEC-010
@@ -90,7 +90,7 @@ describe('Connecter un appareil', () => {
     server.use(serve({ type: '/api/v1/problems/forbidden', title: 'x', status: 403, code: 'forbidden' }, 403));
     const { container } = render(Page);
     expect(await screen.findByRole('alert')).toBeInTheDocument();
-    expect(container.querySelector('svg')).toBeNull();
+    expect(container.querySelector('svg[data-qr-text]')).toBeNull(); // no code is drawn for a refused screen
     server.use(serve({ type: '/api/v1/problems/x', title: 'x', status: 401, code: 'x' }, 401));
     const again = render(Page);
     expect(await again.findAllByRole('alert')).not.toHaveLength(0);

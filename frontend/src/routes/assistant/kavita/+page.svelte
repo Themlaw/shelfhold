@@ -7,8 +7,15 @@
   import { addTarget, wizardState } from '#lib/api/index.ts';
   import ProblemCard from '#lib/components/ProblemCard.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
-  import WizardSteps from '#lib/components/WizardSteps.svelte';
+  import WizardNext from '#lib/components/WizardNext.svelte';
+  import WizardPage from '#lib/components/WizardPage.svelte';
+  import WizardSignedOut from '#lib/components/WizardSignedOut.svelte';
   import { formatDate, t } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Checkbox from '#lib/ui/atoms/Checkbox.svelte';
+  import Input from '#lib/ui/atoms/Input.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import Field from '#lib/ui/molecules/Field.svelte';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, needsSession, problemOf } from '#lib/triage.ts';
@@ -96,24 +103,23 @@
   <title>{t('admin.wizard.kavita.title')}</title>
 </svelte:head>
 
-<main class="form-screen">
-  <h1>{t('admin.wizard.title')}</h1>
-  <WizardSteps current="kavita" />
-  <h2>{t('admin.wizard.kavita.title')}</h2>
-  <p role="note" class="warning">{t('admin.wizard.kavita.admin_warning')}</p>
+<WizardPage current="kavita" title={t('admin.wizard.kavita.title')}>
+  <div role="note">
+    <Alert tone="warning" title={t('admin.wizard.kavita.warning_title')}>
+      <p>{t('admin.wizard.kavita.admin_warning')}</p>
+    </Alert>
+  </div>
 
   {#if signedOut}
-    <p role="alert">{t('admin.wizard.signed_out')}</p>
-    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-    <p><a href="/login" data-sveltekit-reload>{t('admin.wizard.login')}</a></p>
+    <WizardSignedOut />
   {:else if done}
-    <p role="status">{t('admin.wizard.kavita.done')}</p>
-    {#if expires}
-      <p>{t('admin.wizard.kavita.expires', { date: formatDate(expires) })}</p>
-    {/if}
+    <Alert tone="success" title={t('admin.wizard.kavita.done')} live="polite">
+      {#if expires}
+        <p>{t('admin.wizard.kavita.expires', { date: formatDate(expires) })}</p>
+      {/if}
+    </Alert>
     {#if next}
-      <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the app is served at the root of its origin -->
-      <p><a href={next.href}>{t('admin.wizard.next')}</a></p>
+      <WizardNext href={next.href} />
     {/if}
   {:else}
     {#if reauthMethods}
@@ -122,36 +128,72 @@
     {#if problem}
       <ProblemCard {problem} />
     {/if}
-    <form onsubmit={submit} autocomplete="off">
-      <label>
-        {t('admin.wizard.kavita.url')}
-        <input type="url" bind:value={url} required placeholder="http://kavita:5000" />
-      </label>
-      <label>
-        {t('admin.wizard.kavita.username')}
-        <input type="text" bind:value={username} required autocomplete="off" />
-      </label>
-      <label>
-        {t('admin.wizard.kavita.password')}
-        <input type="password" bind:value={password} required autocomplete="new-password" />
-      </label>
-      <label class="check">
-        <input type="checkbox" bind:checked={accepted} />
-        {t('admin.wizard.kavita.accept')}
-      </label>
-      <div class="map">
-        <p>{t('admin.wizard.kavita.map_help')}</p>
-        <label>
-          {t('admin.wizard.kavita.map')}
-          <input type="text" bind:value={pathMap} autocomplete="off" placeholder="/library=/library" />
-        </label>
-        {#if mapInvalid}
-          <p role="alert">{t('admin.wizard.kavita.map_invalid')}</p>
-        {/if}
+    <form class="connect" onsubmit={submit} autocomplete="off">
+      <Field label={t('admin.wizard.kavita.url')} required>
+        {#snippet children(control)}
+          <Input {...control} type="url" bind:value={url} placeholder={t('admin.wizard.kavita.url_placeholder')} mono />
+        {/snippet}
+      </Field>
+      <div class="pair">
+        <Field label={t('admin.wizard.kavita.username')} required>
+          {#snippet children(control)}
+            <Input {...control} type="text" bind:value={username} autocomplete="off" />
+          {/snippet}
+        </Field>
+        <Field label={t('admin.wizard.kavita.password')} required>
+          {#snippet children(control)}
+            <Input {...control} type="password" bind:value={password} autocomplete="new-password" />
+          {/snippet}
+        </Field>
       </div>
-      <button type="submit" disabled={busy || !accepted || reauthMethods !== null}>
-        {t('admin.wizard.kavita.connect')}
-      </button>
+      <Checkbox bind:checked={accepted} label={t('admin.wizard.kavita.accept')} />
+      <fieldset class="map">
+        <legend>{t('admin.wizard.kavita.map_title')}</legend>
+        <p class="hint">{t('admin.wizard.kavita.map_help')}</p>
+        <Field label={t('admin.wizard.kavita.map')}>
+          {#snippet children(control)}
+            <Input
+              {...control}
+              type="text"
+              bind:value={pathMap}
+              autocomplete="off"
+              placeholder={t('admin.wizard.kavita.map_placeholder')}
+              mono
+            />
+          {/snippet}
+        </Field>
+        {#if mapInvalid}
+          <Alert tone="danger" title={t('admin.wizard.kavita.map_invalid')} live="assertive" />
+        {/if}
+      </fieldset>
+      <div class="btn-row">
+        <Button type="submit" variant="primary" size="lg" icon="plug" disabled={!accepted || reauthMethods !== null} loading={busy}>
+          {t('admin.wizard.kavita.connect')}
+        </Button>
+      </div>
     </form>
   {/if}
-</main>
+</WizardPage>
+
+<style>
+  .connect {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .pair {
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  }
+  .map {
+    margin: 0;
+    padding: var(--space-4);
+    border: var(--rule-hair) solid var(--color-rule);
+    border-radius: var(--radius-sm);
+    display: grid;
+    gap: var(--space-2);
+  }
+  .map .hint {
+    margin: 0;
+  }
+</style>

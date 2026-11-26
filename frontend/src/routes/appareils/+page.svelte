@@ -8,6 +8,12 @@
   import QrCode from '#lib/components/QrCode.svelte';
   import { Guard } from '#lib/guard.svelte.ts';
   import { t, type MessageKey } from '#lib/i18n/index.ts';
+  import Button from '#lib/ui/atoms/Button.svelte';
+  import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Alert from '#lib/ui/molecules/Alert.svelte';
+  import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
+  import ErrorState, { type ErrorKind } from '#lib/ui/molecules/ErrorState.svelte';
+  import { notify } from '#lib/ui/toast.svelte.ts';
   import { webAddress } from '#lib/links.ts';
 
   type Entry = { id: string; what: MessageKey; url: string };
@@ -47,38 +53,83 @@
     forbidden: 'devices.forbidden',
     failed: 'devices.error'
   } as const;
+  const TITLES = {
+    signed_out: 'devices.signed_out_title',
+    forbidden: 'devices.forbidden_title',
+    failed: 'devices.failed_title'
+  } as const;
+  const KINDS = { signed_out: 'signed-out', forbidden: 'forbidden', failed: 'server' } as const satisfies Record<string, ErrorKind>;
+
+  async function copy(url: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(url);
+      notify({ title: t('ui.secret.copied', { what: url }) });
+    } catch {
+      notify({ title: t('ui.secret.copy_failed'), tone: 'warning' });
+    }
+  }
 </script>
 
 <svelte:head>
   <title>{t('devices.title')}</title>
 </svelte:head>
 
-<main>
-  <h1>{t('devices.title')}</h1>
+<main class="page">
+  <div class="running-head">
+    <span>{t('nav.devices')}</span>
+  </div>
+  <div class="page-head">
+    <div class="page-head__text">
+      <h1 class="page-title">{t('devices.title')}</h1>
+      {#if guard.state === 'ok'}<p class="lede">{t('devices.lede')}</p>{/if}
+    </div>
+    {#if guard.state === 'ok'}
+      <div class="page-head__actions">
+        <Button href="/appareils/jetons" icon="device">{t('deviceTokens.title')}</Button>
+      </div>
+    {/if}
+  </div>
 
   {#if guard.state !== 'ok'}
-    <p role="alert" class="err">{t(MESSAGES[guard.state])}</p>
+    <div role="alert">
+    <ErrorState kind={KINDS[guard.state]} title={t(TITLES[guard.state])} headingLevel={2}>
+      {t(MESSAGES[guard.state])}
+    </ErrorState>
+    </div>
   {:else}
-    <p>{t('devices.intro')}</p>
-    <p class="muted">{t('devices.key_note')}</p>
+    <p class="hint key-note">{t('devices.key_note')}</p>
 
     {#each skipped as left (left.target_id)}
-      <p role="status" class="err">{t('devices.skipped', { name: left.name })}</p>
+      <div class="skipped">
+        <Alert tone="warning" title={t('devices.skipped_title')} live="polite">
+          <p>{t('devices.skipped', { name: left.name })}</p>
+        </Alert>
+      </div>
     {/each}
 
-    {#if loaded && targets.length === 0 && skipped.length === 0}
-      <p>{t('devices.none')}</p>
+    {#if !loaded}
+      <div aria-busy="true">
+        <p class="visually-hidden" role="status">{t('devices.loading')}</p>
+        <Skeleton /><Skeleton short />
+      </div>
+    {:else if targets.length === 0 && skipped.length === 0}
+      <EmptyState title={t('devices.none')} />
     {/if}
 
     {#each targets as target (target.target_id)}
-      <section aria-label={t('devices.target', { name: target.name })}>
-        <h2>{t('devices.target', { name: target.name })}</h2>
-        <ul class="cards">
+      <section class="section" aria-labelledby={`target-${target.target_id}`}>
+        <div class="section-head">
+          <h2 id={`target-${target.target_id}`}>{t('devices.target', { name: target.name })}</h2>
+        </div>
+        <ul class="cards" role="list">
           {#each entries(target) as entry (entry.id)}
-            <li>
-              <strong>{t(entry.what)}</strong>
+            <li class="card panel">
+              <h3 class="card__title">{t(entry.what)}</h3>
               <QrCode text={entry.url} label={t('devices.qr_label', { what: t(entry.what), url: entry.url })} />
-              <code>{entry.url}</code>
+              <code class="card__url">{entry.url}</code>
+              <Button size="sm" icon="copy" aria-label={`${t('devices.copy_address')} : ${t(entry.what)}`} onclick={() => copy(entry.url)}>
+                {t('ui.secret.copy_short')}
+              </Button>
             </li>
           {/each}
         </ul>
@@ -88,50 +139,35 @@
 </main>
 
 <style>
-  main {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: 3rem 1rem;
+  .key-note {
+    max-width: var(--measure);
+    margin-top: calc(-1 * var(--space-3));
   }
-  h1 {
-    font-family: var(--font-display);
-    font-weight: 400;
-    font-style: italic;
-    letter-spacing: -0.02em;
+  .skipped {
+    margin-bottom: var(--space-4);
   }
   .cards {
     list-style: none;
-    margin: 1rem 0;
+    margin: 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+    gap: var(--space-5);
   }
-  .cards li {
+  .card {
     display: grid;
-    gap: 0.5rem;
+    gap: var(--space-3);
     justify-items: start;
-    padding: 1rem;
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-cover);
-    background: var(--color-surface);
-  }
-  main,
-  .cards li {
     min-width: 0;
   }
-  .cards li > * {
+  .card__title {
+    margin: 0;
+    font-size: var(--step-1);
+  }
+  .card__url {
     max-width: 100%;
-  }
-  code,
-  strong,
-  p {
     overflow-wrap: anywhere;
-  }
-  .muted {
+    font-size: var(--step--1);
     color: var(--color-muted);
-  }
-  .err {
-    color: var(--color-err);
   }
 </style>
