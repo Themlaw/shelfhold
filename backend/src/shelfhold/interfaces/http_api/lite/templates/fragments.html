@@ -1,22 +1,55 @@
+<!--@brand-->
+<header class="lite__head">
+<p class="lite__brand"><strong>$brand</strong></p>
+</header>
 <!--@header-->
-<header><a href="$home">$home_label</a>
-<form method="get" action="$search_action"><label for="q">$search_label</label><input id="q" name="q" type="search" maxlength="200" value="$query"><button type="submit">$search_button</button></form>
-<form method="post" action="$sign_out_action"><input type="hidden" name="csrf" value="$csrf"><button type="submit">$sign_out_label</button></form></header>
+<header class="lite__head">
+<p class="lite__brand"><strong>$brand</strong> <span>$profile</span></p>
+<nav aria-label="$nav_label"><ul class="lite__doors">
+$html_doors</ul></nav>
+<form class="lite__search" method="get" action="$search_action" role="search"><label class="lite__label" for="q">$search_label</label><span class="lite__field"><input id="q" name="q" type="search" maxlength="200" value="$query" placeholder="$search_placeholder" autocomplete="off"></span><button class="lite__button" type="submit">$search_button</button></form>
+</header>
+<!--@door-->
+<li><a class="lite__button" href="$href">$label</a></li>
+<!--@door_current-->
+<li><a class="lite__button lite__button--fill" href="$href" aria-current="page">$label</a></li>
+<!--@footer-->
+<footer class="lite__foot">
+<form method="post" action="$sign_out_action"><input type="hidden" name="csrf" value="$csrf"><button class="lite__button" type="submit">$sign_out_label</button></form>
+<p>$foot <a href="$full_href">$full_label</a></p>
+</footer>
+<!--@foot_bare-->
+<footer class="lite__foot">
+<p>$foot</p>
+</footer>
 <!--@row-->
-<li><a href="$href">$html_image$label</a></li>
+<li><a href="$href">$html_image<span class="lite__row-title">$label</span><span class="lite__chev" aria-hidden="true">›</span></a></li>
 <!--@thumb-->
-<img src="$src" alt="">
+<img class="lite__thumb" src="$src" alt="">
 <!--@link-->
-<a href="$href">$label</a>
+<a class="lite__button" href="$href" aria-label="$aria">$label</a>
+<!--@pager-->
+<nav class="lite__pager" aria-label="$aria"><span class="lite__cell lite__cell--prev">$html_previous</span><span class="lite__cell lite__count">$count</span><span class="lite__cell lite__cell--next">$html_following</span></nav>
+<!--@pager_link_previous-->
+<a class="lite__button lite__prev" href="$href" aria-label="$aria"><span aria-hidden="true">‹</span> $label</a>
+<!--@pager_link_next-->
+<a class="lite__button lite__next" href="$href" aria-label="$aria">$label <span aria-hidden="true">›</span></a>
+<!--@pager_off_previous-->
+<span class="lite__button lite__prev" aria-disabled="true"><span aria-hidden="true">‹</span> $label</span>
+<!--@pager_off_next-->
+<span class="lite__button lite__next" aria-disabled="true">$label <span aria-hidden="true">›</span></span>
 <!--@alert-->
-<p class="note" role="alert">$text</p>
+<p class="lite__note lite__note--error" role="alert">$text</p>
 <!--@cover-->
-<p><img class="cover" src="$src" alt=""></p>
+<p class="lite__cover"><img src="$src" alt="$alt"></p>
 <!--@heading-->
 <h2>$text</h2>
 <!--@note-->
-<p class="note">$text</p>
+<p class="lite__note">$text</p>
 <!--@offer-->
-<p><a class="button" href="$href">$label</a></p>
+<p><a class="lite__button lite__button--wide" href="$href">$label</a></p>
 <!--@paragraph-->
 <p>$text</p>
+<!--@empty-->
+<p class="lite__note">$text</p>
+<p><a class="lite__button" href="$href">$label</a></p>
