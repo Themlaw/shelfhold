@@ -39,7 +39,7 @@ describe("AppHeader", () => {
   });
 
   // req: EF-UX-005
-  it("a child account menu offers offline copies instead of passkeys and trackers", async () => {
+  it("a child account menu also offers the offline copies", async () => {
     render(AppHeader, { user: { name: "Louise", role: "child" } });
     await userEvent.click(
       screen.getByRole("button", { name: "Compte de Louise Enfant" }),
@@ -51,8 +51,7 @@ describe("AppHeader", () => {
     });
     const labels = items.map((item) => item.textContent?.trim());
     expect(labels).toContain("Copies hors ligne");
-    expect(labels).not.toContain("Clés d’accès");
-    expect(labels).not.toContain("Suivi de lecture");
+    expect(labels).toContain("Clés d’accès");
   });
 
   // req: EF-UX-005

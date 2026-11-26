@@ -45,20 +45,14 @@
 
   const schemeIcon = $derived(scheme === 'dark' ? 'moon' : scheme === 'light' ? 'sun' : 'device');
 
-  const accountItems = $derived<MenuItem[]>(
-    user?.role === 'child'
-      ? [
-          { label: t('nav.offline'), icon: 'offline', href: '/hors-ligne' },
-          { kind: 'separator' },
-          { label: t('ui.account.sign_out'), icon: 'logout', onselect: () => onsignout?.() }
-        ]
-      : [
-          { label: t('nav.passkeys'), icon: 'key', href: '/compte/passkeys' },
-          { label: t('nav.trackers'), icon: 'shield', href: '/compte/trackers' },
-          { kind: 'separator' },
-          { label: t('ui.account.sign_out'), icon: 'logout', onselect: () => onsignout?.() }
-        ]
-  );
+  // a child has no "more" sheet: its offline copies live in the account menu
+  const accountItems = $derived<MenuItem[]>([
+    ...(user?.role === 'child' ? [{ label: t('nav.offline'), icon: 'offline', href: '/hors-ligne' } as MenuItem] : []),
+    { label: t('nav.passkeys'), icon: 'key', href: '/compte/passkeys' },
+    { label: t('nav.trackers'), icon: 'shield', href: '/compte/trackers' },
+    { kind: 'separator' },
+    { label: t('ui.account.sign_out'), icon: 'logout', onselect: () => onsignout?.() }
+  ]);
 </script>
 
 <header class="masthead">
