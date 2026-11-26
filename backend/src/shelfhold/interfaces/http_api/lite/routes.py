@@ -79,6 +79,7 @@ from shelfhold.reading.bundle import (
 __all__ = ["LiteBundles", "build_lite_router"]
 
 PAGE = 25
+_KINDS = frozenset({"book", "manga", "webtoon", "comic"})
 MAX_OFFSET = 100_000
 MAX_QUERY = 200
 COVER = 160
@@ -105,9 +106,10 @@ def _ulid(who: Reader, raw: str) -> str:
     return raw
 
 
-def _row(href: str, label: str, cover: str | None = None) -> str:
+def _row(href: str, label: str, cover: str | None = None, meta: str = "") -> str:
     image = fragment("thumb", src=cover) if cover else ""
-    return fragment("row", href=href, label=label, html_image=image)
+    line = fragment("row_meta", text=meta) if meta else ""
+    return fragment("row", href=href, label=label, html_image=image, html_meta=line)
 
 
 async def _closing(chunks: Any) -> AsyncIterator[bytes]:
@@ -136,7 +138,14 @@ def build_lite_router(
     def _scope(connection: Connection, who: Reader) -> ReaderScope:
         return reader_scope(connection, who.principal.user_id)
 
-    def _pager(page: Page, make: Callable[[int], str], offset: int, *, has_next: bool) -> str:
+    def _pager(
+        page: Page,
+        make: Callable[[int], str],
+        offset: int,
+        *,
+        has_next: bool,
+        total: int | None = None,
+    ) -> str:
         """One line, always: « previous · page n · next », the absent side drawn dashed so that
         the line keeps its shape. Nothing at all on a list that fits one page."""
         if offset == 0 and not has_next:
@@ -160,7 +169,12 @@ def build_lite_router(
             )
         else:
             following = fragment("pager_off_next", label=next_label)
-        count = t("lite.page_n", page, number=offset // PAGE + 1)
+        number = offset // PAGE + 1
+        count = (  # "of N" only when the total is already known (no extra request for it)
+            t("lite.page_of", page, number=number, pages=max(number, -(-total // PAGE)))
+            if total is not None
+            else t("lite.page_n", page, number=number)
+        )
         return fragment(
             "pager",
             aria=t("lite.pages", page),
@@ -181,8 +195,10 @@ def build_lite_router(
         query: str = "",
         current: str = "",
         none: str = "",
+        total: int | None = None,
     ) -> Response:
-        """`none`: what a list with nothing in it says (the generic sentence when blank); the way
+        """`total`: how many there are in all, when the caller knows it without asking more;
+        `none`: what a list with nothing in it says (the generic sentence when blank); the way
         out is the home page, so a reader is never left on a dead end."""
         page = who.page
         empty = (
@@ -193,21 +209,29 @@ def build_lite_router(
                 label=t("lite.home", page),
             )
         )  # fmt: skip
-        pager = _pager(page, make, offset, has_next=has_next) if make else ""
+        pager = _pager(page, make, offset, has_next=has_next, total=total) if make else ""
+        if total and rows and make and total > len(rows):
+            lead += fragment(
+                "note",
+                text=t("lite.range", page, first=offset + 1, last=offset + len(rows), total=total),
+            )
         body = render_fragment(
             "list", html_lead=lead, html_rows="".join(rows), html_empty=empty, html_pager=pager
         )
         return page_response(page, title=title, body=body, query=query, current=current)
 
     def _work_rows(who: Reader, works: list[VisibleWork]) -> list[str]:
-        paths, rows = who.page.paths, []
+        page, paths, rows = who.page, who.page.paths, []
         for work in works:
+            kind = t(f"lite.kind_{work.kind}", page) if work.kind in _KINDS else ""
+            meta = " · ".join(part for part in (work.author, kind) if part)
             digest = cover_hash(work.cover_ref) if work.cover_ref else None
             rows.append(
                 _row(
                     paths.work(work.work_id),
                     work.title,
                     paths.cover(digest, COVER) if digest else None,
+                    meta,
                 )
             )
         return rows
@@ -224,15 +248,18 @@ def build_lite_router(
         current: str = "",
     ) -> Response:
         with get_engine().connect() as connection:
+            scope = _scope(connection, who)
             found = list_visible_works(
                 connection,
-                _scope(connection, who),
+                scope,
                 limit=PAGE + 1,
                 offset=offset,
                 recent=recent,
                 shelf_id=shelf_id,
                 series_id=series_id,
             )
+            # the one count the lists of the app also make, with the same filters
+            total = count_visible_works(connection, scope, shelf_id=shelf_id, series_id=series_id)
         return _listing(
             who,
             title=title,
@@ -241,6 +268,7 @@ def build_lite_router(
             offset=offset,
             has_next=len(found) > PAGE,
             current=current,
+            total=total,
         )
 
     @router.get("/style.css", include_in_schema=False)
@@ -376,7 +404,7 @@ def build_lite_router(
         ]
         return _listing(
             who, title=t("lite.series", who.page), rows=rows, make=paths.series_list, offset=offset,
-            has_next=offset + PAGE < len(every), current="series",
+            has_next=offset + PAGE < len(every), current="series", total=len(every),
         )  # fmt: skip
 
     @router.get("/series/{series_id}", response_class=HTMLResponse)
@@ -428,7 +456,7 @@ def build_lite_router(
         return _listing(
             who, title=t("lite.results", page), rows=_work_rows(who, works_found),
             make=lambda o: page.paths.search(words, o), offset=offset,
-            has_next=offset + PAGE < total, query=words, none=none,
+            has_next=offset + PAGE < total, query=words, none=none, total=total,
         )  # fmt: skip
 
     @router.get("/works/{work_id}", response_class=HTMLResponse)
@@ -467,7 +495,13 @@ def build_lite_router(
                 notice = offer.notice or (
                     t("lite.excluded", page, count=offer.excluded) if offer.excluded else ""
                 )
-                name = safe_filename(offer.filename).rsplit(".", 1)[0]
+                # a person's title for the block: the title of the work, and which part of how
+                # many when it is several (never the name of the file)
+                name = (
+                    t("lite.part_of", page, title=title, part=offer.part, parts=len(offers))
+                    if len(offers) > 1
+                    else title
+                )
                 label = (
                     t("lite.download_sized", page, mb=f"{offer.size / 1_000_000:.1f}")
                     if offer.size is not None
