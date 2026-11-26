@@ -20,6 +20,7 @@
   import EmptyState from '#lib/ui/molecules/EmptyState.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
   import ProblemAlert, { blockKind, type BlockKind } from '#lib/ui/molecules/ProblemAlert.svelte';
+  import PageHead from '#lib/ui/organisms/PageHead.svelte';
 
   let items = $state<CollectionOut[]>([]);
   let loaded = $state(false);
@@ -109,12 +110,7 @@
 </svelte:head>
 
 <main class="page">
-  <div class="page-head">
-    <div class="page-head__text">
-      <h1 class="page-title">{t('collections.title')}</h1>
-      <p class="lede">{t('collections.intro')}</p>
-    </div>
-  </div>
+  <PageHead title={t('collections.title')} lede={t('collections.intro')} />
 
   {#if !loaded}
     <div aria-busy="true">
