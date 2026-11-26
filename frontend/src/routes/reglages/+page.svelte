@@ -13,7 +13,9 @@
   import type { IconName } from '#lib/ui/atoms/icons.ts';
   import Input from '#lib/ui/atoms/Input.svelte';
   import Skeleton from '#lib/ui/atoms/Skeleton.svelte';
+  import Button from '#lib/ui/atoms/Button.svelte';
   import Alert from '#lib/ui/molecules/Alert.svelte';
+  import ErrorState from '#lib/ui/molecules/ErrorState.svelte';
   import SettingRow from '#lib/ui/molecules/SettingRow.svelte';
   import PageHead from '#lib/ui/organisms/PageHead.svelte';
   import SettingsForm from '#lib/ui/organisms/SettingsForm.svelte';
@@ -189,7 +191,7 @@
     </section>
   </nav>
 
-  {#if message}
+  {#if message && !adminOnly}
     <Alert tone={failed ? 'danger' : 'success'} title={message} live={failed ? 'assertive' : 'polite'} />
   {/if}
 
@@ -198,7 +200,12 @@
       <p class="visually-hidden" role="status">{t('settings.loading')}</p>
       <Skeleton /><Skeleton /><Skeleton short />
     </div>
-  {:else if !adminOnly}
+  {:else if adminOnly}
+    <ErrorState kind="forbidden" title={t('error.forbidden.title')} headingLevel={2}>
+      <p>{t('error.forbidden.body')}</p>
+      {#snippet actions()}<Button href="/" icon="home">{t('error.back_home')}</Button>{/snippet}
+    </ErrorState>
+  {:else}
     {#each LEVELS as level (level)}
       <section class="section" data-level={level} aria-labelledby={`level-${level}`}>
         <div class="section-head"><h2 id={`level-${level}`}>{t(`settings.level.${level}`)}</h2></div>

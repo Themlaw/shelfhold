@@ -18,6 +18,7 @@
   // network. Never the raw message of the framework, never JSON. The shell (masthead, table of
   // contents, colophon) stays around it.
   import { t, type MessageKey } from '#lib/i18n/index.ts';
+  import { signInHref } from '#lib/session.ts';
   import Button from '../atoms/Button.svelte';
   import ErrorState from '../molecules/ErrorState.svelte';
   import SearchBar from '../molecules/SearchBar.svelte';
@@ -41,7 +42,9 @@
   const kind = $derived(errorKind(status, online));
   // the words of a child are said with « tu » (the voice of the children's screens)
   const voice = $derived(child && (kind === 'forbidden' || kind === 'not-found') ? '_child' : '');
-  const key = (name: string) => `error.${kind.replace('-', '_')}.${name}${voice}` as MessageKey;
+  // the 500 only points to « the id below » when there is one: never promise an id that is absent
+  const key = (name: string) =>
+    (name === 'body' && kind === 'server' && incident ? 'error.server.body_incident' : `error.${kind.replace('-', '_')}.${name}${voice}`) as MessageKey;
   const code = $derived(kind === 'offline' ? t('error.offline.code') : t('error.code', { status }));
 </script>
 
@@ -56,7 +59,7 @@
       {/if}
       <div class="btn-row">
         {#if kind === 'signed-out'}
-          <Button href="/login" variant="primary" icon="key" data-sveltekit-reload>{t('ui.account.sign_in')}</Button>
+          <Button href={signInHref(path)} variant="primary" icon="key" data-sveltekit-reload>{t('ui.account.sign_in')}</Button>
         {:else if kind === 'forbidden' && child}
           <Button href="/chercher" variant="primary" icon="send">{t('error.forbidden.ask_parent')}</Button>
           <Button href="/" icon="home">{t('error.back_home_child')}</Button>

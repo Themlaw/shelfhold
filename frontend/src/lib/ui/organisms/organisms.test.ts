@@ -370,3 +370,15 @@ describe("StatBar", () => {
     expect(within(group).getByText("14")).toBeInTheDocument();
   });
 });
+
+describe("ErrorScreen, the text of a 500", () => {
+  // req: EF-UX-003
+  it("points to the id below only when there is one", () => {
+    const { unmount } = render(ErrorScreen, { status: 500 });
+    expect(screen.queryByText(/ci-dessous/)).toBeNull();
+    unmount();
+    render(ErrorScreen, { status: 500, incident: "req-5" });
+    expect(screen.getByText(/ci-dessous/)).toBeInTheDocument();
+    expect(screen.getByText("req-5")).toBeInTheDocument();
+  });
+});

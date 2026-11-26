@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import { genericProblem, problemView } from '#lib/problems.ts';
 import ErrorPage from '../../../routes/+error.svelte';
-import ProblemAlert from './ProblemAlert.svelte';
+import ProblemAlert, { refusalOf } from './ProblemAlert.svelte';
 
 describe('ProblemAlert, as the one place a problem is told (EF-UX-003)', () => {
   // req: EF-UX-003
@@ -61,5 +61,29 @@ describe('ProblemAlert, as the one place a problem is told (EF-UX-003)', () => {
     // the kind of the failure decides the words (ErrorScreen); never the raw message, never JSON
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('main')).not.toHaveTextContent(/[{}]|Internal Error|Not Found/);
+  });
+});
+
+describe('ProblemAlert, the one way to tell a refusal (EF-UX-003)', () => {
+  // req: EF-UX-003
+  it('tells a 403 asked as a block as the locked volume, without the raw code', () => {
+    const problem = problemView({ code: 'forbidden', title: 'Accès refusé', status: 403, request_id: 'req-9' });
+    render(ProblemAlert, { problem, kind: refusalOf(problem) });
+    expect(screen.getByRole('heading', { level: 2, name: /hors de votre portée/ })).toBeInTheDocument();
+    expect(screen.queryByText('forbidden')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Revenir à l’accueil' })).toBeInTheDocument();
+  });
+
+  // req: EF-UX-003
+  it('sends a 401 to the sign-in page, asking to come back', () => {
+    const problem = problemView({ code: 'unauthenticated', title: 'Session', status: 401 });
+    render(ProblemAlert, { problem, kind: refusalOf(problem) });
+    expect(screen.getByRole('link', { name: 'Se connecter' }).getAttribute('href')).toMatch(/^\/login(\?next=.*)?$/);
+  });
+
+  // req: EF-UX-003
+  it('keeps a refusal not asked as a block as an alert', () => {
+    render(ProblemAlert, { problem: problemView({ code: 'forbidden', title: 'Accès refusé', status: 403 }) });
+    expect(screen.getByRole('alert')).toHaveTextContent('Accès refusé');
   });
 });

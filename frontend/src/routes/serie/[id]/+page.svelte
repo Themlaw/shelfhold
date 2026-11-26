@@ -24,7 +24,7 @@
   } from '#lib/api/types.gen.ts';
   import Bindings from '#lib/components/Bindings.svelte';
   import Gaps from '#lib/components/Gaps.svelte';
-  import ProblemAlert from '#lib/ui/molecules/ProblemAlert.svelte';
+  import ProblemAlert, { refusalOf } from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
   import { formatDateTime, t, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
@@ -228,7 +228,7 @@
 
   {#if problem}
     <h1 class="visually-hidden">{t('sheet.title')}</h1>
-    <ProblemAlert {problem} />
+    <ProblemAlert {problem} kind={refusalOf(problem)} />
   {:else if !sheet}
     <h1 class="visually-hidden">{t('sheet.title')}</h1>
     <div class="page-head" role="status" aria-busy="true">

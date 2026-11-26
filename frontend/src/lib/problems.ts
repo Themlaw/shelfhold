@@ -12,6 +12,8 @@ export interface ProblemView {
   action: string | null;
   /** The identifier a person can report; always shown when there is one. */
   requestId: string | null;
+  /** The HTTP status the problem body states (401, 403…), when it states one. */
+  status?: number | null;
 }
 
 const CODE = /^[a-z][a-z0-9_.]{0,63}$/;
@@ -22,6 +24,10 @@ function text(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed ? trimmed.slice(0, MAX_TEXT) : null;
+}
+
+function statusOf(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599 ? value : null;
 }
 
 /** An answer with no usable code: the generic text, and the request id when we have one. */
@@ -42,17 +48,19 @@ export function problemView(body: unknown, headerRequestId: string | null = null
   const code = text(record.code);
   const title = text(record.title);
   if (code === null || !CODE.test(code) || title === null) return genericProblem(requestId);
-  return { code, title, cause: text(record.cause), action: text(record.action), requestId };
+  return { code, title, cause: text(record.cause), action: text(record.action), requestId, status: statusOf(record.status) };
 }
 
 /** The view of a failed response: reads the body only when it is a problem+json, never throws. */
 export async function problemFromResponse(response: Response): Promise<ProblemView> {
   const requestId = response.headers.get(REQUEST_ID_HEADER);
   const type = response.headers.get('content-type') ?? '';
-  if (!type.startsWith('application/problem+json')) return genericProblem(requestId);
+  const status = statusOf(response.status);
+  if (!type.startsWith('application/problem+json')) return { ...genericProblem(requestId), status };
   try {
-    return problemView(await response.json(), requestId);
+    const view = problemView(await response.json(), requestId);
+    return { ...view, status: view.status ?? status };
   } catch {
-    return genericProblem(requestId);
+    return { ...genericProblem(requestId), status };
   }
 }
