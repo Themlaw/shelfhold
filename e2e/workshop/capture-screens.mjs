@@ -55,7 +55,7 @@ const MAX_HEIGHT = 8000;
 // the SPA. `states` lists what is forced besides the default state.
 // ---------------------------------------------------------------------------------------------
 const LIST = ['empty', 'loading', 'error', '403'];
-/** @type {{id:string, path:string|((ids:Record<string,string>)=>string|null), role?:string, states?:string[], viewport?:boolean}[]} */
+/** @type {{id:string, path:string|((ids:Record<string,string>)=>string|null), tab?:string, role?:string, states?:string[], viewport?:boolean}[]} */
 const SCREENS = [
   { id: 'accueil', path: '/', states: LIST },
   { id: 'accueil-membre', path: '/', role: 'membre' },
@@ -66,6 +66,8 @@ const SCREENS = [
   { id: 'bibliotheque-selections', path: '/bibliotheque/selections', states: LIST },
   { id: 'bibliotheque-membre', path: '/bibliotheque', role: 'membre' },
   { id: 'serie', path: (ids) => (ids.edition ? `/serie/${ids.edition}` : null), states: ['loading', 'error', '403', '404'] },
+  { id: 'serie-chapitres', path: (ids) => (ids.edition ? `/serie/${ids.edition}` : null), tab: 'Chapitres', states: ['empty'] },
+  { id: 'serie-exports', path: (ids) => (ids.edition ? `/serie/${ids.edition}` : null), tab: 'Exports' },
   { id: 'serie-migrer', path: (ids) => (ids.edition ? `/serie/${ids.edition}/migrer` : null) },
   { id: 'collections', path: '/collections', states: LIST },
   { id: 'collection', path: (ids) => (ids.collection ? `/collections/${ids.collection}` : null), states: ['404'] },
@@ -389,6 +391,10 @@ async function captureScreens(ids) {
             await shoot(page, `${screen.id}--loading--${size}--${scheme}`, { full: false });
           } else {
             await settle(page);
+            if (screen.tab) {
+              await page.getByRole('tab', { name: screen.tab }).click();
+              await settle(page);
+            }
             await shoot(page, `${screen.id}${state === 'default' ? '' : `--${state}`}--${size}--${scheme}`);
           }
         } catch (error) {
