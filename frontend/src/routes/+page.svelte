@@ -11,7 +11,7 @@
   import type { ContinueItemOut, QueueItemOut, RequestOut, WorkItemOut } from '#lib/api/types.gen.ts';
   import HealthStatus from '#lib/components/HealthStatus.svelte';
   import RequestItem from '#lib/components/RequestItem.svelte';
-  import { formatDate, formatNumber, hasMessage, t } from '#lib/i18n/index.ts';
+  import { formatDate, formatNumber, formatPercent, formatRelative, hasMessage, t } from '#lib/i18n/index.ts';
   import { webAddress } from '#lib/links.ts';
   import { reloadOnStream } from '#lib/live.ts';
   import Badge from '#lib/ui/atoms/Badge.svelte';
@@ -94,6 +94,14 @@
       ...(item.approximate ? [t('home.continue_approximate')] : [])
     ].join(' · ');
 
+  // where the reading stands: how far, on which device, how long ago (what the server did not say is not written)
+  const trace = (item: ContinueItemOut): string =>
+    [
+      ...(typeof item.percent === 'number' ? [t('home.continue_percent', { percent: formatPercent(item.percent) })] : []),
+      ...(item.device ? [t('home.continue_device', { device: item.device })] : []),
+      ...(item.last_read_at ? [formatRelative(item.last_read_at)] : [])
+    ].join(' · ');
+
   const hero = $derived(resume[0] ?? null);
   // the continue entry names no author nor kind: the list of works does, when it holds the work
   const heroWork = $derived(hero ? (works.find((work) => work.work_id === hero.work_id) ?? null) : null);
@@ -157,7 +165,10 @@
           <p class="hero__title">{hero.title}</p>
           {#if heroWork?.author}<p class="hero__by">{heroWork.author}</p>{/if}
           {#if hero.unit_title}<p class="hero__unit">{hero.unit_title}</p>{/if}
-          <p class="hero__where">{where(hero)}</p>
+          <p class="hero__where">
+            {where(hero)}
+            {#if trace(hero)}<span class="hero__trace">{trace(hero)}</span>{/if}
+          </p>
           {#if open}
             <div class="btn-row">
               <Button
@@ -190,6 +201,7 @@
               <div class="resume__text">
                 <p class="resume__title">{item.title}</p>
                 <p class="resume__where">{where(item)}</p>
+                {#if trace(item)}<p class="resume__where">{trace(item)}</p>{/if}
                 {#if open}
                   <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- an address of this app, or of the reader's server -->
                   <a class="resume__open standalone" href={open.href} aria-label={open.label} rel={open.external ? 'noopener noreferrer' : undefined}>{open.verb}</a>
@@ -341,6 +353,10 @@
     margin: 0;
     font: var(--step-0) / 1.3 var(--font-text);
     color: var(--color-muted);
+  }
+  .hero__trace {
+    display: block;
+    font-size: var(--step--1);
   }
   .hero__where {
     margin: 0 0 var(--space-3);

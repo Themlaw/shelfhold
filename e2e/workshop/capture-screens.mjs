@@ -63,6 +63,8 @@ const SCREENS = [
   { id: 'chercher', path: '/chercher', states: ['error', '403'] },
   { id: 'chercher-enfant', path: '/chercher', role: 'enfant' },
   { id: 'bibliotheque', path: '/bibliotheque', states: LIST },
+  { id: 'bibliotheque-recherche', path: '/bibliotheque?q=Vingt' },
+  { id: 'bibliotheque-recherche-vide', path: '/bibliotheque?q=zzzzzz' },
   { id: 'bibliotheque-selections', path: '/bibliotheque/selections', states: LIST },
   { id: 'bibliotheque-membre', path: '/bibliotheque', role: 'membre' },
   { id: 'serie', path: (ids) => (ids.edition ? `/serie/${ids.edition}` : null), states: ['loading', 'error', '403', '404'] },

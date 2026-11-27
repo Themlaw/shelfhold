@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { formatCurrency, formatDate, formatDateTime, formatNumber, formatPercent, typeset } from './format';
+import { formatCurrency, formatDate, formatDateTime, formatNumber, formatPartialDate, formatPercent, formatRelative, typeset } from './format';
 
 const NNBSP = '\u202f';
 const NBSP = '\u00a0';
@@ -22,6 +22,17 @@ describe('dates and numbers (ENF-I18N-003)', () => {
     expect(formatDate(NOON, { timeZone: 'UTC' })).toBe('03/11/2026');
     expect(formatDate('2026-02-01T00:00:00Z', { dateStyle: 'full', timeZone: 'UTC' })).toBe('dimanche 1 février 2026');
     expect(formatDateTime(NOON, { timeZone: 'UTC' })).toMatch(/^3 nov\. 2026.*14:05$/);
+  });
+
+  // req: ENF-I18N-003
+  it('says how long ago in the interface language, and shows a date as far as it is known', () => {
+    const now = new Date('2026-11-27T12:00:00Z');
+    expect(formatRelative('2026-11-25T12:00:00Z', now)).toBe('avant-hier');
+    expect(formatRelative('2026-11-27T09:00:00Z', now)).toBe('il y a 3 heures');
+    expect(formatPartialDate('1870')).toBe('1870');
+    expect(formatPartialDate('2019-05')).toBe('mai 2019');
+    expect(formatPartialDate('2019-05-04')).toBe('4 mai 2019');
+    expect(formatPartialDate('autre')).toBe('autre');
   });
 
   // req: ENF-I18N-003

@@ -66,6 +66,17 @@ const sheet = (over: Record<string, unknown> = {}) => ({
   merges: [],
   attach: null,
   can: CAN,
+  authors: [],
+  kind: 'manga',
+  first_published: null,
+  published_on: null,
+  summary: null,
+  unit_count: 0,
+  shelf_name: null,
+  added_at: '2026-11-10T09:30:00Z',
+  added_source: null,
+  progress: null,
+  first_unit_id: null,
   ...over
 });
 const problem = (status: number, code: string, title: string, extra: Record<string, unknown> = {}) =>
@@ -379,5 +390,36 @@ describe('Series sheet', () => {
     const { container } = render(Page);
     await screen.findByText('src-A');
     expect(container.querySelector('img')?.getAttribute('src')).toBe(`/api/v1/thumbnails/${'a'.repeat(64)}/320`);
+  });
+
+  // req: EF-BIB-005
+  it('completes the header with what the server knows, and writes nothing for what it does not', async () => {
+    current = sheet({
+      authors: ['Auteur Un', 'Auteur Deux'],
+      summary: 'Un résumé d’essai.',
+      unit_count: 12,
+      shelf_name: 'Étagère d’essai',
+      first_published: '1870',
+      published_on: '2019-05',
+      added_source: 'src-A'
+    });
+    server.use(serve());
+    const first = render(Page);
+    expect(await screen.findByText('Auteur Un, Auteur Deux')).toBeInTheDocument();
+    expect(screen.getByText('Un résumé d’essai.')).toBeInTheDocument();
+    const facts = screen.getByLabelText('Informations de l’édition');
+    expect(facts).toHaveTextContent('Chapitres12');
+    expect(facts).toHaveTextContent('Étagère d’essai');
+    expect(facts).toHaveTextContent('1870');
+    expect(facts).toHaveTextContent('mai 2019');
+    expect(facts).toHaveTextContent('via src-A');
+    first.unmount();
+
+    current = sheet();
+    render(Page);
+    await screen.findByRole('heading', { level: 1, name: 'Une série' });
+    expect(screen.queryByText('Étagère')).toBeNull();
+    expect(screen.queryByText('Première publication')).toBeNull();
+    expect(screen.queryByText('Cette édition')).toBeNull();
   });
 });

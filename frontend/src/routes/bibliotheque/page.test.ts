@@ -230,4 +230,48 @@ describe('Library screen', () => {
     expect(seen.at(-1)?.searchParams.get('offset')).toBe('24');
     expect(goto).toHaveBeenLastCalledWith(expect.stringMatching(/\?page=2$/), expect.anything());
   });
+
+  // req: EF-SRC-039
+  it('searches the list by q after a pause, and says so with the query when nothing matches', async () => {
+    const user = userEvent.setup();
+    server.use(
+      me('admin'),
+      shelves([]),
+      works((url) => {
+        const q = url.searchParams.get('q');
+        return q === 'zzz'
+          ? { items: [], total: 0, series: null, since: 's', removed: [] }
+          : { items: [work(1), work(2)], total: 2, series: [], since: 's', removed: [] };
+      })
+    );
+    render(Page);
+    await screen.findByText('2 œuvres');
+    expect(seen[0]?.searchParams.has('q')).toBe(false);
+    await user.type(screen.getByRole('searchbox', { name: 'Rechercher dans la bibliothèque' }), 'zzz');
+    await waitFor(() => expect(seen.at(-1)?.searchParams.get('q')).toBe('zzz'));
+    // one request for the whole word, not one per letter
+    expect(seen.filter((u) => u.searchParams.has('q'))).toHaveLength(1);
+    expect(await screen.findByText('Aucune Œuvre pour ce filtre')).toBeInTheDocument();
+    expect(screen.getByText(/zzz/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Effacer' }));
+    await screen.findByText('2 œuvres');
+    expect(seen.at(-1)?.searchParams.has('q')).toBe(false);
+  });
+
+  // req: EF-USR-006
+  it('gives a member and a child a link to read the first unit when the server gives one, never a sheet', async () => {
+    server.use(
+      me('member'),
+      shelves(null),
+      works(() => ({
+        items: [{ ...work(1), read_unit_id: 'U1' }, { ...work(2), read_unit_id: null }],
+        total: 2, series: [], since: 's', removed: []
+      }))
+    );
+    render(Page);
+    await screen.findByText('2 œuvres');
+    const hrefs = screen.getAllByRole('link').map((l) => l.getAttribute('href'));
+    expect(hrefs).toContain('/lire/unit/U1');
+    expect(hrefs.some((h) => h?.startsWith('/serie/'))).toBe(false);
+  });
 });

@@ -25,6 +25,34 @@ export function formatDateTime(value: DateInput, options?: Intl.DateTimeFormatOp
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short', ...options }).format(toDate(value));
 }
 
+const RELATIVE_STEPS: readonly [Intl.RelativeTimeFormatUnit, number][] = [
+  ['year', 31_536_000],
+  ['month', 2_592_000],
+  ['day', 86_400],
+  ['hour', 3_600],
+  ['minute', 60]
+];
+
+/** « il y a 2 jours », « 3 hours ago »: how long ago `value` was, in the language of the interface. */
+export function formatRelative(value: DateInput, now: DateInput = new Date()): string {
+  const seconds = Math.round((toDate(value).getTime() - toDate(now).getTime()) / 1000);
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  for (const [unit, size] of RELATIVE_STEPS) {
+    if (Math.abs(seconds) >= size) return formatter.format(Math.trunc(seconds / size), unit);
+  }
+  return formatter.format(0, 'minute');
+}
+
+/** A date known to the year, the month or the day (`YYYY`, `YYYY-MM`, `YYYY-MM-DD`), as far as it is known. */
+export function formatPartialDate(value: string): string {
+  const match = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/.exec(value);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  if (!month) return year!;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day ?? 1)));
+  return formatDate(date, { timeZone: 'UTC', year: 'numeric', month: 'long', ...(day ? { day: 'numeric' } : {}) });
+}
+
 export function formatNumber(value: number, options?: Intl.NumberFormatOptions): string {
   return new Intl.NumberFormat(locale, options).format(value);
 }

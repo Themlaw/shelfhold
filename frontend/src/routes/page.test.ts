@@ -220,6 +220,20 @@ describe('home page', () => {
   });
 
   // req: EF-LEC-008
+  it('shows how far, on which device and how long ago the reading was left, and nothing when the server does not say', async () => {
+    const ago = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    resume = [
+      { work_id: 'w1', title: 'Série A', unit_id: 'u2', number: '2', unit_title: null, state: 'in_progress', target: 'kept_copy', approximate: false, carrier_type: 'content', carrier_id: 'c2', percent: 0.42, device: 'Liseuse d’essai', last_read_at: ago },
+      { work_id: 'w2', title: 'Série B', unit_id: 'u9', number: '9', unit_title: null, state: 'next', target: 'kept_copy', approximate: false, carrier_type: 'content', carrier_id: 'c9', percent: null, device: null, last_read_at: null }
+    ];
+    render(Page);
+    const hero = await screen.findByRole('region', { name: 'Vous en étiez là' });
+    expect(hero).toHaveTextContent(/42\s?% lu · sur Liseuse d’essai · avant-hier/);
+    const other = within(screen.getByRole('region', { name: 'Aussi en cours' }));
+    expect(other.queryByText(/% lu|sur |il y a/)).toBeNull();
+  });
+
+  // req: EF-LEC-008
   it('test_continue_reading_label_names_destination_type', async () => {
     // the target carries the type of the destination: a Komga server is not Kavita
     server.use(
