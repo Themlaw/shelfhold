@@ -200,6 +200,7 @@ def test_units_page_bounds_are_checked(world: World) -> None:
     assert units_of(world, world.admin, "ok", limit=0).status_code == 422
     assert units_of(world, world.admin, "ok", limit=201).status_code == 422
     assert units_of(world, world.admin, "ok", offset=-1).status_code == 422
+    assert units_of(world, world.admin, "ok", offset=10**30).status_code == 422  # never a 500
 
 
 # -- the exports of an Edition -------------------------------------------------------------------
@@ -256,15 +257,18 @@ def test_admin_reads_what_was_exported_of_an_edition(world: World) -> None:
     _record(world, destination_id, planned, "planned")
     _record(world, destination_id, failed, "error", error_code="io")
     kid = user_id_of(world.seed.engine, "kid")
+    mum = user_id_of(world.seed.engine, "mum")
     with write_transaction(world.seed.engine) as connection:
-        connection.execute(
-            sa.insert(bundle.bundle_version).values(
-                id=new_ulid(), edition_id=world.seed.editions["ok"], part_index=1,
-                profile_user_id=kid, number=1, content_fp="ab" * 32,
-                koreader_md5="md5:" + "c" * 32, state_key="cd" * 32, size=1234,
-                entry_count=3, page_count=30, member_count=3, created_at=T0,
-            )
-        )  # fmt: skip
+        # the block of a private adult is her reading: it is not shown to the admin
+        for who in (kid, mum):
+            connection.execute(
+                sa.insert(bundle.bundle_version).values(
+                    id=new_ulid(), edition_id=world.seed.editions["ok"], part_index=1,
+                    profile_user_id=who, number=1, content_fp="ab" * 32,
+                    koreader_md5="md5:" + "c" * 32, state_key="cd" * 32, size=1234,
+                    entry_count=3, page_count=30, member_count=3, created_at=T0,
+                )
+            )  # fmt: skip
     got = world.admin.get(f"/api/v1/editions/{world.seed.editions['ok']}/exports")
     assert got.status_code == 200, got.text
     body = got.json()
@@ -405,6 +409,17 @@ def test_overview_profiles_carry_their_count_last_reading_and_e_readers(world: W
         {"id": kobo, "label": "Kobo Clara", "kind": "kobo", "last_seen_at": "2026-11-01T12:00:00Z"}
     ]  # the retired one is gone
     assert profiles["mum"]["last_read"] is None  # private: her reading is hers
+    # the latest position whose file is gone since does not hide the reading before it
+    with write_transaction(world.seed.engine) as connection:
+        connection.execute(
+            sa.insert(reading.reading_position).values(
+                id=new_ulid(), user_id=kid, carrier_type="content", carrier_id=new_ulid(),
+                content_hash=HASH, locator={"page": 1}, client_ts=T0 + timedelta(hours=2),
+                server_ts=T0 + timedelta(hours=2), source="device",
+            )
+        )  # fmt: skip
+    again = {p["username"]: p for p in world.admin.get(OVERVIEW).json()["profiles"]}
+    assert again["kid"]["last_read"] == kid_row["last_read"]
     assert profiles["mum"]["works"] == profiles["admin"]["works"] == body["total_works"]
     assert profiles["admin"]["max_age_rating"] is None
 

@@ -10,7 +10,9 @@ wrote:
 * `kepub_items`: the items a Kobo is offered as KEPUB (a live record and an EPUB content, the rule
   of `reading.application.kepub_delivery`);
 * `blocks`: the blocks of the series made for an e-reader (`bundle_version`, not purged), with the
-  profile they were made for.
+  profile they were made for. A block is a profile's reading (its e-reader fetched the series):
+  the block of a `private` adult is shown to nobody but herself, like her last reading in the
+  profiles register (EF-USR-016).
 """
 
 from dataclasses import dataclass
@@ -19,6 +21,7 @@ from typing import Final
 
 import sqlalchemy as sa
 
+from shelfhold.identity.public import effective_visibility
 from shelfhold.infrastructure.export_states import LIVE_STATES
 from shelfhold.infrastructure.ids import is_ulid
 from shelfhold.infrastructure.schema import bundle, catalog, export, identity, storage
@@ -64,8 +67,11 @@ class EditionExports:
     blocks: list[EditionBlock]
 
 
-def edition_exports(connection: sa.Connection, edition_id: str) -> EditionExports | None:
-    """The exports of the Edition, or None when it does not exist."""
+def edition_exports(
+    connection: sa.Connection, edition_id: str, *, viewer_id: str
+) -> EditionExports | None:
+    """The exports of the Edition as the admin `viewer_id` reads them, or None when it does not
+    exist."""
     if not is_ulid(edition_id):
         return None
     found = connection.execute(
@@ -86,7 +92,7 @@ def edition_exports(connection: sa.Connection, edition_id: str) -> EditionExport
         items=items,
         destinations=_destinations(connection, edition_id),
         kepub_items=_kepub_items(connection, edition_id),
-        blocks=_blocks(connection, edition_id),
+        blocks=_blocks(connection, edition_id, viewer_id),
     )
 
 
@@ -141,12 +147,13 @@ def _kepub_items(connection: sa.Connection, edition_id: str) -> int:
     )
 
 
-def _blocks(connection: sa.Connection, edition_id: str) -> list[EditionBlock]:
+def _blocks(connection: sa.Connection, edition_id: str, viewer_id: str) -> list[EditionBlock]:
     version, user = bundle.bundle_version, identity.user
     rows = connection.execute(
         sa.select(
-            version.c.profile_user_id, user.c.username, version.c.part_index, version.c.number,
-            version.c.size, version.c.created_at, version.c.last_used_at,
+            version.c.profile_user_id, user.c.username, user.c.role, user.c.visibility,
+            version.c.part_index, version.c.number, version.c.size, version.c.created_at,
+            version.c.last_used_at,
         )
         .select_from(version.join(user, user.c.id == version.c.profile_user_id))
         .where(version.c.edition_id == edition_id, version.c.purged_at.is_(None))
@@ -159,4 +166,6 @@ def _blocks(connection: sa.Connection, edition_id: str) -> list[EditionBlock]:
             created_at=r.created_at, last_used_at=r.last_used_at,
         )
         for r in rows
+        if r.profile_user_id == viewer_id
+        or effective_visibility(str(r.role), r.visibility) == "household"
     ]  # fmt: skip

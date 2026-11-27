@@ -15,7 +15,7 @@ it sees, its last reading and its e-readers (EF-USR-005, EF-USR-006, EF-USR-008,
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Final
+from typing import Any, Final
 
 import sqlalchemy as sa
 
@@ -35,6 +35,7 @@ __all__ = [
 
 DEFAULT_CEILINGS: Final = (0, 10, 12, 13, 16, 18)  # the marks of the rule of the profiles screen
 _PROFILE_ROLES: Final = ("admin", "member", "child")
+_LAST_READ_TRIES: Final = 20
 
 
 class NotAChildError(ValueError):
@@ -133,15 +134,22 @@ def _devices(connection: sa.Connection) -> dict[str, list[OverviewDevice]]:
 
 
 def _last_read(connection: sa.Connection, user_id: str) -> LastRead | None:
+    """The latest position whose file still leads to a Work: a file gone since does not hide the
+    reading before it. Bounded: `_LAST_READ_TRIES` positions at most."""
     position = reading.reading_position
-    latest = connection.execute(
+    for latest in connection.execute(
         sa.select(position.c.carrier_type, position.c.carrier_id, position.c.server_ts)
         .where(position.c.user_id == user_id)
         .order_by(position.c.server_ts.desc(), position.c.id.desc())
-        .limit(1)
-    ).first()
-    if latest is None:
-        return None
+        .limit(_LAST_READ_TRIES)
+    ).all():
+        found = _read_at(connection, latest)
+        if found is not None:
+            return found
+    return None
+
+
+def _read_at(connection: sa.Connection, latest: Any) -> LastRead | None:
     edition = catalog.edition
     if latest.carrier_type == "content":
         edition_of = (
@@ -163,7 +171,7 @@ def _last_read(connection: sa.Connection, user_id: str) -> LastRead | None:
         .select_from(edition.join(catalog.work, catalog.work.c.id == edition.c.work_id))
         .where(edition.c.id == edition_of)
     ).first()
-    if work is None:  # the file is gone since: the moment is still hers, the Work is not known
+    if work is None:  # the file is gone since: the Work is not known
         return None
     return LastRead(
         at=latest.server_ts, work_id=str(work.work_id), edition_id=str(work.id),

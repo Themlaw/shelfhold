@@ -39,6 +39,7 @@ __all__ = ["build_edition_views_router"]
 Admin = Annotated[Principal, Depends(require_admin)]
 Reader = Annotated[Principal, Depends(require_principal)]
 MAX_CEILINGS = 16
+MAX_OFFSET = 1_000_000  # an Edition holds far fewer Units; a larger one is no page
 _ABSENT = {"Cache-Control": "no-store"}
 
 
@@ -150,7 +151,7 @@ def build_edition_views_router(get_engine: Callable[[], Engine]) -> APIRouter:
         response: Response,
         principal: Reader,
         limit: Annotated[int, Query(ge=1, le=MAX_UNITS)] = 50,
-        offset: Annotated[int, Query(ge=0)] = 0,
+        offset: Annotated[int, Query(ge=0, le=MAX_OFFSET)] = 0,
     ) -> EditionUnitsOut:
         response.headers["Cache-Control"] = "no-store"  # the read state is the profile's
         try:
@@ -183,7 +184,7 @@ def build_edition_views_router(get_engine: Callable[[], Engine]) -> APIRouter:
     def exports(edition_id: str, response: Response, _admin: Admin) -> EditionExportsOut:
         response.headers["Cache-Control"] = "no-store"
         with get_engine().connect() as connection:
-            found = edition_exports(connection, edition_id)
+            found = edition_exports(connection, edition_id, viewer_id=_admin.user_id)
         if found is None:
             raise ProblemError("not_found", headers=_ABSENT)
         return EditionExportsOut(
