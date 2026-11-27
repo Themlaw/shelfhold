@@ -227,6 +227,8 @@ OPEN = {
     # every surface; a hidden series, though a pull reports it, is exactly absent
     # (`test_m5_l14_continue_reading.py`)
     "GET /api/reader/continue": "continue_reading",
+    # API-1: her progress on one Edition; a hidden Edition is the 404 of an absent one
+    "GET /api/reader/editions/{edition_id}/progress": "continue_reading",
     "GET /api/reader/{carrier_type}/{carrier_id}/publication": "reader",
     # M5 L07: where the reader is, its history, and the choice between two places: hers only, on a
     # carrier she may see; the rest is the answer for an absent one (`test_m5_l07_positions.py`)
@@ -1503,6 +1505,14 @@ def _surface_continue_reading(world: World) -> None:
         world.clean(got.text)
     final = {i["work_id"] for i in world.kid.get(home).json()["items"]}
     assert final == {seed.works["ok"]}  # the control: what is hers is there
+    # API-1: the progress of one Edition is hers and filtered; a hidden one is an absent one
+    absent = world.kid.get(f"/api/reader/editions/{ULID}/progress")
+    for key in ("twelve", "above", "adult_edition", "misfiled", "reserved", "mixed_new"):
+        got = world.kid.get(f"/api/reader/editions/{seed.editions[key]}/progress")
+        assert _shape(got) == _shape(absent), key
+        world.clean(got.text)
+    mine = world.kid.get(f"/api/reader/editions/{seed.editions['ok']}/progress")
+    assert mine.status_code == 200 and mine.json()["progress"]["device"] == "server:kavita"
 
 
 def _surface_opds(world: World) -> None:
