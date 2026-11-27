@@ -208,11 +208,12 @@ def test_a_problem_document_keeps_no_cache_policy_of_its_own(api: AuthEnv) -> No
 
 def test_a_route_that_sets_its_own_cache_policy_keeps_it(api: AuthEnv) -> None:
     """A list answered with a content ETag is revalidated by its client: `no-store` would throw
-    that away. A page of the server and a file of the build keep their own policy too."""
+    that away, so it is `private, no-cache` (never a shared cache's). A page of the server and a
+    file of the build keep their own policy too."""
     assert api.login().status_code == 200
     jobs = api.client.get("/api/v1/jobs")
     assert jobs.status_code == 200 and jobs.headers["ETag"]
-    assert "Cache-Control" not in jobs.headers
+    assert jobs.headers["Cache-Control"] == "private, no-cache"
     again = api.client.get("/api/v1/jobs", headers={"If-None-Match": jobs.headers["ETag"]})
     assert again.status_code == 304 and "Cache-Control" not in again.headers
     assert api.client.get("/pages/login.js").headers["Cache-Control"] == "no-cache"
