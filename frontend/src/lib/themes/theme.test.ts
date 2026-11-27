@@ -145,6 +145,31 @@ describe('theme B "Console"', () => {
   });
 });
 
+describe('variants of Papier et encre', () => {
+  const read = (name: string) =>
+    JSON.parse(readFileSync(join(here, name, 'tokens.json'), 'utf8')) as {
+      light: { color: Record<string, { $value: string }> };
+      dark: { color: Record<string, { $value: string }> };
+      shared: { font: unknown; radius: unknown };
+    };
+
+  // req: EF-UX-012
+  it.each(['console', 'galerie', 'calme'])('%s has the type and the covers of the default theme', (name) => {
+    const base = read('bibliotheque');
+    const variant = read(name);
+    expect(variant.shared.font).toEqual(base.shared.font);
+    expect(variant.shared.radius).toEqual(base.shared.radius);
+  });
+
+  // req: EF-UX-012
+  it.each(['console', 'galerie', 'calme'])('%s keeps no violet or bright orange accent', (name) => {
+    const variant = read(name);
+    for (const scheme of [variant.light, variant.dark]) {
+      expect(scheme.color['accent']!.$value).not.toMatch(/^#(6D28D9|A78BFA|D93400|FF7A45)$/i);
+    }
+  });
+});
+
 describe('theme variants', () => {
   // req: EF-UX-012
   it('is a closed list of the points a component reads, as CSS properties', () => {

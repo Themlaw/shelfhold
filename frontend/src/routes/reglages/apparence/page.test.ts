@@ -72,7 +72,12 @@ describe('Appearance screen', () => {
     render(Page);
     const select = await screen.findByLabelText('Thème');
     const names = Array.from((select as HTMLSelectElement).options).map((o) => o.textContent);
-    expect(names).toEqual(['Bibliothèque', 'Console', 'Galerie', 'Calme']);
+    expect(names).toEqual([
+      'Papier et encre',
+      'Papier et encre — dense',
+      'Papier et encre — contraste',
+      'Papier et encre — sépia, sans animation'
+    ]);
     expect((select as HTMLSelectElement).value).toBe('bibliotheque');
   });
 
@@ -87,7 +92,7 @@ describe('Appearance screen', () => {
       })
     );
     render(Page);
-    await userEvent.setup().selectOptions(await screen.findByLabelText('Thème'), 'Console');
+    await userEvent.setup().selectOptions(await screen.findByLabelText('Thème'), 'Papier et encre — dense');
     expect(await screen.findByText('Enregistré.')).toBeTruthy();
     expect(patched).toEqual({ theme: 'console' });
     expect(invalidateAll).toHaveBeenCalledOnce();
@@ -101,7 +106,7 @@ describe('Appearance screen', () => {
     );
     render(Page);
     const select = (await screen.findByLabelText('Thème')) as HTMLSelectElement;
-    await userEvent.setup().selectOptions(select, 'Console');
+    await userEvent.setup().selectOptions(select, 'Papier et encre — dense');
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(select.value).toBe('bibliotheque');
     expect(invalidateAll).not.toHaveBeenCalled();

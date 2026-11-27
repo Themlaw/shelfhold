@@ -1,5 +1,5 @@
 /* E-ink rendering of the SPA, at best (L17b, ENF-COMP-002). A slow display (`update: slow`, what
-   a Boox or a recent Kindle reports) or the quiet theme gets: no animation, no transition, no
+   a Boox or a recent Kindle reports) or the sepia, no-motion variant gets: no animation, no transition, no
    smooth scroll, no shadow, black on white. The browser says what its screen is: nothing here
    reads who the browser claims to be. The e-ink path that always works is `/lite`. */
 @media (update: slow) {
@@ -25,8 +25,4 @@
   scroll-behavior: auto !important;
   box-shadow: none;
   text-shadow: none;
-}
-
-:root[data-theme='calme'] img {
-  filter: grayscale(1);
 }
