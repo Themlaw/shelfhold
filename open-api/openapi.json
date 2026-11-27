@@ -2099,6 +2099,29 @@
             ],
             "title": "Carrier Type"
           },
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "last_read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Read At"
+          },
           "number": {
             "title": "Number",
             "type": "string"
@@ -2113,6 +2136,17 @@
               }
             ],
             "title": "Open Url"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
           },
           "state": {
             "enum": [
@@ -2161,7 +2195,10 @@
           "approximate",
           "carrier_type",
           "carrier_id",
-          "open_url"
+          "open_url",
+          "percent",
+          "device",
+          "last_read_at"
         ],
         "title": "ContinueItemOut",
         "type": "object"
@@ -3195,6 +3232,105 @@
           "format"
         ],
         "title": "EditionOut",
+        "type": "object"
+      },
+      "EditionProgressAnswer": {
+        "properties": {
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EditionProgressOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "edition_id",
+          "progress"
+        ],
+        "title": "EditionProgressAnswer",
+        "type": "object"
+      },
+      "EditionProgressOut": {
+        "description": "What a profile has read of an Edition: the Unit touched last, where in it, on which device,\nand when (« Reprendre au chapitre N »).",
+        "properties": {
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "last_read_at": {
+            "format": "date-time",
+            "title": "Last Read At",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "read_count": {
+            "title": "Read Count",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "in_progress",
+              "read"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unit_id": {
+            "title": "Unit Id",
+            "type": "string"
+          },
+          "unit_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Title"
+          }
+        },
+        "required": [
+          "unit_id",
+          "number",
+          "unit_title",
+          "state",
+          "percent",
+          "device",
+          "last_read_at",
+          "read_count"
+        ],
+        "title": "EditionProgressOut",
         "type": "object"
       },
       "EditionShelfIn": {
@@ -10737,6 +10873,22 @@
       },
       "SheetOut": {
         "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "added_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Added Source"
+          },
           "attach": {
             "anyOf": [
               {
@@ -10746,6 +10898,24 @@
                 "type": "null"
               }
             ]
+          },
+          "author_death_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Death Year"
+          },
+          "authors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Authors",
+            "type": "array"
           },
           "bindings": {
             "items": {
@@ -10779,6 +10949,17 @@
             "title": "Fields",
             "type": "array"
           },
+          "first_published": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Published"
+          },
           "first_unit_id": {
             "anyOf": [
               {
@@ -10801,6 +10982,10 @@
             "title": "Gaps",
             "type": "array"
           },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
           "lang": {
             "title": "Lang",
             "type": "string"
@@ -10811,6 +10996,27 @@
             },
             "title": "Merges",
             "type": "array"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EditionProgressOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published On"
           },
           "relations": {
             "items": {
@@ -10830,6 +11036,28 @@
             ],
             "title": "Shelf Id"
           },
+          "shelf_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shelf Name"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
           "teams": {
             "items": {
               "$ref": "#/components/schemas/SheetTeamOut"
@@ -10840,6 +11068,10 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "unit_count": {
+            "title": "Unit Count",
+            "type": "integer"
           },
           "upstream_status": {
             "enum": [
@@ -10873,6 +11105,7 @@
           "title",
           "lang",
           "shelf_id",
+          "shelf_name",
           "cover_hash",
           "upstream_status",
           "upstream_status_by",
@@ -10885,6 +11118,16 @@
           "attach",
           "relations",
           "first_unit_id",
+          "kind",
+          "authors",
+          "first_published",
+          "published_on",
+          "author_death_year",
+          "summary",
+          "unit_count",
+          "added_at",
+          "added_source",
+          "progress",
           "can"
         ],
         "title": "SheetOut",
@@ -13754,6 +13997,17 @@
             "title": "Kind",
             "type": "string"
           },
+          "read_unit_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Unit Id"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -14949,6 +15203,72 @@
           }
         },
         "summary": "Continue Reading",
+        "tags": [
+          "reader"
+        ]
+      }
+    },
+    "/api/reader/editions/{edition_id}/progress": {
+      "get": {
+        "description": "What the profile has read of an Edition (« Reprendre au chapitre N »): her own reading\nalone. An Edition she may not see, or that does not exist, is one and the same 404.",
+        "operationId": "reader_edition_progress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditionProgressAnswer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Edition Progress",
         "tags": [
           "reader"
         ]
@@ -34241,6 +34561,23 @@
               "default": false,
               "title": "Facets",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
             }
           },
           {

@@ -8,6 +8,7 @@ of the index. The order is the sort key of the title in the language of the Work
 the articles Le, La, Les, L', The (and their kin) are ignored.
 """
 
+import json
 from dataclasses import dataclass
 
 import sqlalchemy as sa
@@ -24,7 +25,15 @@ from shelfhold.catalog.application.search.tables import fts_tables
 from shelfhold.catalog.domain.sort_key import sort_key
 from shelfhold.infrastructure.schema import catalog
 
-__all__ = ["DEFAULT_LIMIT", "MAX_LIMIT", "SearchHit", "SearchPage", "search_page"]
+__all__ = [
+    "DEFAULT_LIMIT",
+    "MAX_LIMIT",
+    "SearchHit",
+    "SearchPage",
+    "matching_clause",
+    "matching_work_ids",
+    "search_page",
+]
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
@@ -68,7 +77,33 @@ def _by_like(connection: sa.Connection, term: Term) -> set[str]:
     return found
 
 
-def _matching(connection: sa.Connection, terms: list[Term], caps: SearchCapability) -> set[str]:
+def _by_metadata_names(connection: sa.Connection, term: Term) -> set[str]:
+    """The Works whose `contributors` metadata (on the Work, or on one of its Editions) holds the
+    word: the authors a source named, which the index of credits does not carry. A substring,
+    folded for case only (the value is stored as JSON text)."""
+    field, edition = catalog.metadata_field.c, catalog.edition.c
+    rows = connection.execute(
+        sa.select(field.entity_type, field.entity_id).where(
+            field.field == "contributors",
+            field.entity_type.in_(("work", "edition")),
+            field.value.like(like_pattern(term), escape="\\"),
+        )
+    ).all()
+    found = {str(r.entity_id) for r in rows if r.entity_type == "work"}
+    editions = [str(r.entity_id) for r in rows if r.entity_type == "edition"]
+    for start in range(0, len(editions), 500):
+        found.update(
+            str(r.work_id)
+            for r in connection.execute(
+                sa.select(edition.work_id).where(edition.id.in_(editions[start : start + 500]))
+            )
+        )
+    return found
+
+
+def _matching(
+    connection: sa.Connection, terms: list[Term], caps: SearchCapability, *, named: bool = False
+) -> set[str]:
     result: set[str] | None = None
     for term in terms:
         if not caps.fts5 or (term.cjk and (len(term) < 3 or not caps.trigram)):
@@ -77,10 +112,36 @@ def _matching(connection: sa.Connection, terms: list[Term], caps: SearchCapabili
             ids = _by_match(connection, fts_tables.TRIGRAM_TABLE, term, trigram=True)
         else:
             ids = _by_match(connection, fts_tables.FTS_TABLE, term, trigram=False)
+        if named:
+            ids = ids | _by_metadata_names(connection, term)
         result = ids if result is None else result & ids
         if not result:
             return set()
     return result or set()
+
+
+def matching_work_ids(connection: sa.Connection, query: str) -> set[str] | None:
+    """The Works whose title or author holds every word of `query` — a candidate set, never a
+    permission: the caller ANDs it with the reader's own filter (`visible_works_clause`). `None`
+    when the query has no word at all (it is then no condition), an empty set when nothing holds
+    them all."""
+    terms = terms_of(query)
+    if not terms:
+        return None
+    return _matching(connection, terms, search_capability(connection), named=True)
+
+
+def matching_clause(connection: sa.Connection, query: str | None) -> list[sa.ColumnElement[bool]]:
+    """`matching_work_ids` as the conditions to add (`extra=`) to the one filter of a list and of
+    its total. A blank query is no condition; words with nothing to match on (punctuation) find
+    nothing. The candidates go through `json_each`, so their number is not bound by SQLite's."""
+    if query is None or not query.strip():
+        return []
+    found = matching_work_ids(connection, query)
+    if found is None:
+        return [sa.false()]
+    each = sa.func.json_each(json.dumps(sorted(found))).table_valued("value")
+    return [catalog.work.c.id.in_(sa.select(each.c.value))]
 
 
 @dataclass(frozen=True)

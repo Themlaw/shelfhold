@@ -6,10 +6,14 @@
 
 | Route | Qui | Corps |
 |---|---|---|
-| `GET /api/v1/works?limit=&offset=&since=` | tout profil connecté, session ou clé ; **la vue du lecteur** (un enfant ne reçoit que ce que son plafond laisse passer) | `{items: [{work_id, title, kind}], total, since, removed}` |
+| `GET /api/v1/works?limit=&offset=&since=&q=` | tout profil connecté, session ou clé ; **la vue du lecteur** (un enfant ne reçoit que ce que son plafond laisse passer) | `{items: [{work_id, title, kind, edition_id, cover_hash, author, read_unit_id}], total, since, removed}` |
 | `GET /api/v1/shelves?since=` | administrateur seulement | `{items: [{id, name, max_age_rating}], since, removed}` |
 
 `since` est le jeton à envoyer à l'appel suivant. Sans `?since=`, `removed` est vide.
+
+`q` : les mots d'un titre ou d'un auteur (tous doivent être présents), sans tenir compte de la casse ni des accents tels que l'index de recherche les replie ; un auteur nommé seulement dans les métadonnées ne se replie que pour la casse. `q` s'ajoute au filtre du lecteur, jamais à sa place : `total` ne compte que ce que le lecteur voit. `read_unit_id` : l'Unité qu'un lecteur ouvre (celle en cours, sinon la première qui a un fichier lisible, dans une Édition que le lecteur voit), `null` sans fichier ; elle s'ouvre par `GET /api/reader/unit/{id}/publication`.
+
+La progression d'une Édition pour le profil qui la demande : `GET /api/reader/editions/{edition_id}/progress` (session) → `{edition_id, progress: null | {unit_id, number, unit_title, state, percent, device, last_read_at, read_count}}` ; 404 identique pour une Édition absente et pour une Édition que le profil ne voit pas. La fiche d'une édition (administrateur) porte la même `progress`, celle de l'administrateur.
 
 ## Le jeton
 

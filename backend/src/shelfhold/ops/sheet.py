@@ -20,19 +20,26 @@ Everything else the sheet does goes through the doors that already exist (`follo
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Final
 
 import sqlalchemy as sa
 
-from shelfhold.catalog.public import COVER_FIELD, MERGE_WINDOW_DAYS, Catalog, relations_of
+from shelfhold.catalog.public import (
+    COVER_FIELD,
+    MERGE_WINDOW_DAYS,
+    Catalog,
+    contributor_names,
+    relations_of,
+)
 from shelfhold.infrastructure.db import write_transaction
 from shelfhold.infrastructure.ids import is_ulid
-from shelfhold.infrastructure.schema import acquisition, catalog, storage
+from shelfhold.infrastructure.schema import acquisition, catalog, export, storage
 from shelfhold.library.public import cover_hash
 from shelfhold.ops.errors import InvalidChoiceError, UnknownSubjectError
 from shelfhold.progress_lease import build_progress_lease
-from shelfhold.reading.public import prefer_edition
+from shelfhold.reading.public import edition_progress, prefer_edition
 
 if TYPE_CHECKING:
     from shelfhold.composition import Composition
@@ -58,7 +65,8 @@ class SheetOps:
         row = connection.execute(
             sa.select(
                 ed.id, ed.work_id, ed.lang, ed.upstream_status, ed.upstream_status_by, ed.shelf_id,
-                work.title,
+                ed.created_at, ed.published_on, ed.author_death_year,
+                work.title, work.kind, work.description, work.first_published,
             ).select_from(catalog.edition.join(catalog.work, work.id == ed.work_id))
             .where(ed.id == edition_id)
         ).first()  # fmt: skip
@@ -66,7 +74,7 @@ class SheetOps:
             raise UnknownSubjectError("no such Edition")
         return row
 
-    def sheet(self, edition_id: str) -> dict[str, Any]:
+    def sheet(self, edition_id: str, viewer_id: str | None = None) -> dict[str, Any]:
         now = self._comp.clock.now()
         with self._comp.engine.connect() as connection:
             edition = self._edition(connection, edition_id)
@@ -85,6 +93,8 @@ class SheetOps:
             cover = self._cover(connection, edition_id)
             relations = self._relations(connection, work_id)
             first_unit = self._first_unit(connection, edition_id)
+            facts = self._facts(connection, edition, fields)
+            mine = edition_progress(connection, viewer_id, [edition_id]) if viewer_id else {}
         paused = follow is not None and follow.check_override == "paused"
         active = [b for b in bindings if b["active"]]
         return {
@@ -95,7 +105,8 @@ class SheetOps:
             "upstream_status_by": edition.upstream_status_by,
             "followed": follow is not None, "bindings": bindings, "gaps": gaps,
             "teams": teams, "fields": fields, "merges": merges, "attach": attach,
-            "relations": relations, "first_unit_id": first_unit,
+            "relations": relations, "first_unit_id": first_unit, **facts,
+            "progress": asdict(mine[edition_id]) if edition_id in mine else None,
             "can": {
                 "check": follow is not None and not paused and bool(active),
                 "reorder": len(active) > 1,
@@ -107,6 +118,52 @@ class SheetOps:
                 "confirm_attach": attach is not None,
             },
         }  # fmt: skip
+
+    def _facts(
+        self, connection: sa.Connection, edition: Any, fields: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """What the Work and its Edition say of themselves, read only (API-1): the type, the
+        authors, the dates, the summary, the number of chapters, the shelf and how it came. Each
+        is empty or None when nobody said it; nothing is derived from a guess."""
+        edition_id, work_id = str(edition.id), str(edition.work_id)
+        shelf = None
+        if edition.shelf_id is not None:
+            shelf = connection.execute(
+                sa.select(export.shelf.c.name).where(export.shelf.c.id == edition.shelf_id)
+            ).scalar()
+        units = connection.execute(
+            sa.select(sa.func.count()).where(
+                catalog.unit.c.edition_id == edition_id, catalog.unit.c.track == "main"
+            )
+        ).scalar_one()
+        source = connection.execute(
+            sa.select(acquisition.source_item.c.source_key)
+            .select_from(
+                acquisition.source_binding.join(
+                    acquisition.source_item,
+                    acquisition.source_item.c.id == acquisition.source_binding.c.source_item_id,
+                )
+            )
+            .where(acquisition.source_binding.c.edition_id == edition_id)
+            .order_by(acquisition.source_binding.c.created_at, acquisition.source_binding.c.id)
+            .limit(1)
+        ).scalar()
+        described = [
+            f["value"] for f in fields if f["field"] == "description" and f["value"].strip()
+        ]
+        summary = (edition.description or "").strip() or (described[0] if described else None)
+        return {
+            "kind": str(edition.kind),
+            "authors": contributor_names(connection, work_id, edition_id),
+            "first_published": edition.first_published,
+            "published_on": edition.published_on,
+            "author_death_year": edition.author_death_year,
+            "summary": summary,
+            "unit_count": int(units),
+            "shelf_name": None if shelf is None else str(shelf),
+            "added_at": edition.created_at,
+            "added_source": None if source is None else str(source),
+        }
 
     def _bindings(self, connection: sa.Connection, edition_id: str) -> list[dict[str, Any]]:
         b, s = acquisition.source_binding.c, acquisition.source_item.c

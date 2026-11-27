@@ -549,6 +549,42 @@ def _first_name(raw: str) -> str | None:
     return (first.strip() or None) if isinstance(first, str) else None
 
 
+def _names(raw: str) -> list[str]:
+    """Every name of a `contributors` value (names, or `{"name": ...}`), none empty."""
+    try:
+        decoded = json.loads(raw)
+    except ValueError:
+        return []
+    found: list[str] = []
+    for entry in decoded if isinstance(decoded, list) else [decoded]:
+        name = entry.get("name") if isinstance(entry, dict) else entry
+        if isinstance(name, str) and name.strip():
+            found.append(name.strip())
+    return found
+
+
+def contributor_names(connection: sa.Connection, work_id: str, edition_id: str) -> list[str]:
+    """The contributors named on the Work, else on the Edition, in the order they were given; none
+    when nobody said. Unscoped: the caller has already decided that this reader may see both."""
+    field = catalog.metadata_field.c
+    rows = connection.execute(
+        sa.select(field.entity_type, field.value)
+        .where(
+            field.field == CONTRIBUTORS_FIELD,
+            sa.or_(
+                sa.and_(field.entity_type == "work", field.entity_id == work_id),
+                sa.and_(field.entity_type == "edition", field.entity_id == edition_id),
+            ),
+        )
+        .order_by(field.entity_type.desc(), field.lang)  # `work` before `edition`
+    ).all()
+    for kind in ("work", "edition"):
+        for row in rows:
+            if row.entity_type == kind and (names := _names(row.value)):
+                return names
+    return []
+
+
 def _first_authors(
     connection: sa.Connection, covers: dict[str, tuple[str, str | None]]
 ) -> dict[str, str]:
