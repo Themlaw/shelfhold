@@ -53,6 +53,10 @@ Le mécanisme livré suit la décision (option C : socle unique, jetons W3C dans
 
 B est livré avec le sélecteur de thème par personne (L32b) ; C et D restent à venir. Le script d'amorçage d'`app.html` et la liste de l'API suivent `THEMES` (deux tests les maintiennent de niveau avec les dossiers de jetons). L'API rend la liste des thèmes livrés, et la page Apparence la propose sans connaître un seul nom. Détails : `docs/decisions/M4.md` (L32b).
 
+## Amendement (2026-11-27) : trois variantes de Papier et encre
+
+Le porteur garde `console`, `galerie` et `calme`, déclarés **variantes de Papier et encre** : même typographie et mêmes illustrations, avec pour seules différences la teinte du papier, l'encre et l'accent, et la densité. Le violet de Galerie et l'orange de Calme disparaissent au profit d'encres d'imprimerie (bleu nuit, vert bouteille, sépia). Les identifiants stockés sont inchangés ; les libellés deviennent « Papier et encre — dense / contraste / sépia, sans animation ». Détail : `docs/design/papier-et-encre.md`.
+
 ## Exigences liées
 EF-UX-012, ENF-A11Y-001, ENF-I18N-001, ENF-SEC-004, I51, ADR-0013.
 

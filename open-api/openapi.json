@@ -425,6 +425,24 @@
         "title": "AdoptedLibraryIn",
         "type": "object"
       },
+      "AgeStepOut": {
+        "properties": {
+          "ceiling": {
+            "title": "Ceiling",
+            "type": "integer"
+          },
+          "works": {
+            "title": "Works",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ceiling",
+          "works"
+        ],
+        "title": "AgeStepOut",
+        "type": "object"
+      },
       "AllowanceIn": {
         "additionalProperties": false,
         "properties": {
@@ -3036,6 +3054,44 @@
         "title": "Done",
         "type": "object"
       },
+      "EditionExportsOut": {
+        "properties": {
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/ExportBlockOut"
+            },
+            "title": "Blocks",
+            "type": "array"
+          },
+          "destinations": {
+            "items": {
+              "$ref": "#/components/schemas/ExportDestinationOut"
+            },
+            "title": "Destinations",
+            "type": "array"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "items": {
+            "$ref": "#/components/schemas/ExportItemsOut"
+          },
+          "kepub_items": {
+            "title": "Kepub Items",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "edition_id",
+          "items",
+          "destinations",
+          "kepub_items",
+          "blocks"
+        ],
+        "title": "EditionExportsOut",
+        "type": "object"
+      },
       "EditionLineOut": {
         "properties": {
           "edition_id": {
@@ -3379,6 +3435,115 @@
         "title": "EditionSuggestionOut",
         "type": "object"
       },
+      "EditionUnitOut": {
+        "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "read_state": {
+            "enum": [
+              "unread",
+              "in_progress",
+              "read"
+            ],
+            "title": "Read State",
+            "type": "string"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "track": {
+            "title": "Track",
+            "type": "string"
+          },
+          "volume_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Id"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "title",
+          "kind",
+          "track",
+          "volume_id",
+          "added_at",
+          "read_state",
+          "readable"
+        ],
+        "title": "EditionUnitOut",
+        "type": "object"
+      },
+      "EditionUnitsOut": {
+        "properties": {
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EditionUnitOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "edition_id",
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "EditionUnitsOut",
+        "type": "object"
+      },
       "EditionsOut": {
         "properties": {
           "items": {
@@ -3485,6 +3650,124 @@
         "title": "EstimateOut",
         "type": "object"
       },
+      "ExportBlockOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "part_index": {
+            "title": "Part Index",
+            "type": "integer"
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile_id",
+          "username",
+          "part_index",
+          "number",
+          "size",
+          "created_at",
+          "last_used_at"
+        ],
+        "title": "ExportBlockOut",
+        "type": "object"
+      },
+      "ExportDestinationOut": {
+        "properties": {
+          "destination_id": {
+            "title": "Destination Id",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "exported": {
+            "title": "Exported",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "last_exported_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Exported At"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "shelf_name": {
+            "title": "Shelf Name",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_kind": {
+            "title": "Target Kind",
+            "type": "string"
+          },
+          "target_name": {
+            "title": "Target Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination_id",
+          "target_id",
+          "target_name",
+          "target_kind",
+          "shelf_name",
+          "enabled",
+          "exported",
+          "pending",
+          "failed",
+          "last_exported_at"
+        ],
+        "title": "ExportDestinationOut",
+        "type": "object"
+      },
       "ExportItemOut": {
         "properties": {
           "closed": {
@@ -3552,6 +3835,39 @@
           "kept_problem"
         ],
         "title": "ExportItemOut",
+        "type": "object"
+      },
+      "ExportItemsOut": {
+        "properties": {
+          "adopted": {
+            "title": "Adopted",
+            "type": "integer"
+          },
+          "bundle": {
+            "title": "Bundle",
+            "type": "integer"
+          },
+          "opds_bundle": {
+            "title": "Opds Bundle",
+            "type": "integer"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "integer"
+          },
+          "volume": {
+            "title": "Volume",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unit",
+          "volume",
+          "bundle",
+          "adopted",
+          "opds_bundle"
+        ],
+        "title": "ExportItemsOut",
         "type": "object"
       },
       "ExternalIdOut": {
@@ -5169,6 +5485,35 @@
           "languages"
         ],
         "title": "LanguagesOut",
+        "type": "object"
+      },
+      "LastReadOut": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "edition_id": {
+            "title": "Edition Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "work_id": {
+            "title": "Work Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "work_id",
+          "edition_id",
+          "title"
+        ],
+        "title": "LastReadOut",
         "type": "object"
       },
       "LinkIn": {
@@ -7434,6 +7779,49 @@
         "title": "Problem",
         "type": "object"
       },
+      "ProfileDeviceOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "kind",
+          "last_seen_at"
+        ],
+        "title": "ProfileDeviceOut",
+        "type": "object"
+      },
       "ProfileIn": {
         "additionalProperties": false,
         "properties": {
@@ -7560,6 +7948,65 @@
         "title": "ProfileOut",
         "type": "object"
       },
+      "ProfileOverviewOut": {
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileDeviceOut"
+            },
+            "title": "Devices",
+            "type": "array"
+          },
+          "last_read": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastReadOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max_age_rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Age Rating"
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          },
+          "works": {
+            "title": "Works",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "profile_id",
+          "username",
+          "role",
+          "max_age_rating",
+          "works",
+          "last_read",
+          "devices"
+        ],
+        "title": "ProfileOverviewOut",
+        "type": "object"
+      },
       "ProfilePatch": {
         "additionalProperties": false,
         "properties": {
@@ -7665,6 +8112,35 @@
           "profiles"
         ],
         "title": "ProfilesOut",
+        "type": "object"
+      },
+      "ProfilesOverviewOut": {
+        "properties": {
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileOverviewOut"
+            },
+            "title": "Profiles",
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/AgeStepOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "total_works": {
+            "title": "Total Works",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_works",
+          "steps",
+          "profiles"
+        ],
+        "title": "ProfilesOverviewOut",
         "type": "object"
       },
       "ProgressIn": {
@@ -20800,6 +21276,71 @@
         ]
       }
     },
+    "/api/v1/editions/{edition_id}/exports": {
+      "get": {
+        "operationId": "edition_exports",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditionExportsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Exports",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
     "/api/v1/editions/{edition_id}/external-ids/renumber": {
       "post": {
         "operationId": "renumber_id",
@@ -22239,6 +22780,95 @@
         "summary": "Team Switch Apply",
         "tags": [
           "teams"
+        ]
+      }
+    },
+    "/api/v1/editions/{edition_id}/units": {
+      "get": {
+        "operationId": "edition_units",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edition_id",
+            "required": true,
+            "schema": {
+              "title": "Edition Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditionUnitsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "404": {
+            "description": "not-found"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Units",
+        "tags": [
+          "catalog"
         ]
       }
     },
@@ -26177,6 +26807,95 @@
         "summary": "Create Profile",
         "tags": [
           "profiles"
+        ]
+      }
+    },
+    "/api/v1/profiles/overview": {
+      "get": {
+        "operationId": "profiles_overview",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ceiling",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ceiling"
+            }
+          },
+          {
+            "in": "query",
+            "name": "profile_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 26,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfilesOverviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Connexion requise, ou mot de passe à confirmer (reauth-required)."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée)."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Détail du problème (RFC 9457)."
+          }
+        },
+        "summary": "Overview",
+        "tags": [
+          "catalog"
         ]
       }
     },

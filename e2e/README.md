@@ -48,7 +48,11 @@ sont retenues), erreur 500, 403, 401 et hors ligne. La liste des écrans reprend
 front. Le lecteur est joué sur des œuvres du domaine public (les Fables de La Fontaine,
 `workshop/capture-books.mjs`) dans chacun de ses états ; les copies hors ligne passent par les vraies
 réserves du navigateur (IndexedDB, Cache Storage). Accueil, bibliothèque et page introuvable sont
-pris dans chacun des quatre thèmes.
+pris dans chacun des quatre thèmes. L'étape `serverpages` photographie les pages rendues par le serveur : la
+connexion (erreur sous le champ, mot de passe affiché) et `/lite` (connexion, accueil, liste paginée,
+œuvre). `/lite` demande un jeton d'appareil : `LITE_IDENTIFIER` et `LITE_SECRET` (sortie de
+`shelfhold admin device-tokens create --profile membre`) et un serveur lancé avec
+`SHELFHOLD_DEVICE_ALLOW_PLAIN_HTTP=true`.
 
 ## Navigation fencing (ENF-PRIV-001)
 

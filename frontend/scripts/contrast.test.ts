@@ -47,9 +47,9 @@ describe('contrast', () => {
   // req: EF-UX-012
   it('test_every_theme_tokens_pass_wcag_aa_console', () => {
     const tokens = JSON.parse(readFileSync(join(themesDir, 'console', 'tokens.json'), 'utf8'));
-    expect(tokens.light.color.accent.$value).toBe('#2563EB');
-    expect(tokens.dark.color.accent.$value).toBe('#58A6FF');
-    expect(tokens.dark.color.bg.$value).toBe('#0E1116');
+    expect(tokens.light.color.accent.$value).toBe('#12305F');
+    expect(tokens.dark.color.accent.$value).toBe('#3C6CB0');
+    expect(tokens.dark.color.bg.$value).toBe('#14171C');
     for (const scheme of ['light', 'dark'] as const) {
       expect(pairsOf(tokens[scheme]).length, scheme).toBe(54);
     }

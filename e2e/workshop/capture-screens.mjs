@@ -20,7 +20,7 @@
 //   --base <url>      the server (default http://localhost:8792)
 //   --only a,b        only the screens whose id starts with one of these
 //   --sizes d1440,m390  --schemes light,dark
-//   --steps screens,themes,search,library,focus,reader,outside   only these parts (to run several at once)
+//   --steps screens,themes,search,library,focus,reader,outside,serverpages   only these parts (to run several at once)
 //   --full            every size and scheme for every screen (the default is shorter, for a slow machine)
 //   --list            print the screens and exit
 import { chromium } from '@playwright/test';
@@ -39,7 +39,7 @@ const SIZES = {
   d1440: { width: 1440, height: 900 },
   m390: { width: 390, height: 844 }
 };
-const STEPS = flag('steps', 'screens,themes,search,library,focus,reader,outside').split(',');
+const STEPS = flag('steps', 'screens,themes,search,library,focus,reader,outside,serverpages').split(',');
 const SIZE_NAMES = flag('sizes', 'd1440,m390').split(',');
 const SCHEMES = flag('schemes', 'light,dark').split(',');
 const THEMES = ['bibliotheque', 'console', 'galerie', 'calme'];
@@ -772,6 +772,70 @@ async function captureOutsideSpa() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The pages the server renders: the sign-in with its error and the password shown, and `/lite`
+// ---------------------------------------------------------------------------------------------
+// `/lite` signs in with a device token: `LITE_IDENTIFIER` and `LITE_SECRET` (the output of
+// `shelfhold device-tokens create`) and a server started with `SHELFHOLD_DEVICE_ALLOW_PLAIN_HTTP=true`.
+async function captureServerPages() {
+  const lite = { identifier: process.env.LITE_IDENTIFIER, secret: process.env.LITE_SECRET };
+  for (const size of SIZE_NAMES) {
+    for (const scheme of SCHEMES) {
+      const ctx = await context({ size, scheme, role: null, blockWorkers: true });
+      if (wanted('login-')) {
+        const page = await ctx.newPage();
+        await visit(page, '/login');
+        await page.fill('#username', 'inconnu');
+        await page.fill('#password', 'un-mot-de-passe-refuse');
+        await page.click('#login button[type=submit]');
+        await page.waitForSelector('#password-error:not([hidden])', { timeout: 20000 }).catch(() => report.problems.push(`login-erreur--${size}--${scheme}: no error under the field`));
+        await shoot(page, `login-erreur--${size}--${scheme}`);
+        await page.click('#reveal');
+        await shoot(page, `login-mdp-visible--${size}--${scheme}`);
+        await page.close();
+      }
+      if (wanted('lite')) {
+        const page = await ctx.newPage();
+        await visit(page, '/lite/sign-in');
+        await shoot(page, `lite-connexion--${size}--${scheme}`);
+        if (!lite.identifier || !lite.secret) {
+          report.problems.push('lite: LITE_IDENTIFIER and LITE_SECRET are not set, the signed-in pages are skipped');
+        } else {
+          await page.getByLabel('Identifiant').fill('x'.repeat(lite.identifier.length));
+          await page.getByLabel('Secret').fill('x'.repeat(lite.secret.length));
+          await page.getByRole('button').click();
+          await settle(page);
+          await shoot(page, `lite-connexion-erreur--${size}--${scheme}`);
+          await page.getByLabel('Identifiant').fill(lite.identifier);
+          await page.getByLabel('Secret').fill(lite.secret);
+          await page.getByRole('button').click();
+          await settle(page);
+          await shoot(page, `lite-accueil--${size}--${scheme}`);
+          await visit(page, '/lite/works');
+          await shoot(page, `lite-liste--${size}--${scheme}`);
+          const next = page.getByRole('link', { name: /suivant|next/i }).first();
+          if (await next.count()) {
+            await next.click();
+            await settle(page);
+            await shoot(page, `lite-liste-page-2--${size}--${scheme}`);
+            await visit(page, '/lite/works');
+          } else report.problems.push('lite: the list of works has a single page, no pager to photograph');
+          // a work that has files (the blocks to download): the Fables of the synthetic base, else the first row
+          const withFiles = page.locator('ul.lite__rows a', { hasText: 'Fables' }).first();
+          const first = (await withFiles.count()) ? withFiles : page.locator('ul.lite__rows a').first();
+          if (await first.count()) {
+            await first.click();
+            await settle(page);
+            await shoot(page, `lite-oeuvre--${size}--${scheme}`);
+          }
+        }
+        await page.close();
+      }
+      await ctx.close();
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 if (args.includes('--list')) {
   for (const s of SCREENS) console.log(s.id, typeof s.path === 'string' ? s.path : '(from the base)', (s.states ?? []).join(','));
   console.log(READER_SCENES.map((s) => `lecteur-${s.id}`).join('\n'));
@@ -792,7 +856,8 @@ const PARTS = {
   library: captureLibraryFilter,
   focus: captureKeyboardFocus,
   reader: () => captureReader(ids),
-  outside: captureOutsideSpa
+  outside: captureOutsideSpa,
+  serverpages: captureServerPages
 };
 for (const name of STEPS) {
   try {

@@ -254,6 +254,20 @@ export type AdoptedLibraryIn = {
 };
 
 /**
+ * AgeStepOut
+ */
+export type AgeStepOut = {
+    /**
+     * Ceiling
+     */
+    ceiling: number;
+    /**
+     * Works
+     */
+    works: number;
+};
+
+/**
  * AllowanceIn
  */
 export type AllowanceIn = {
@@ -1781,6 +1795,29 @@ export type Done = {
 };
 
 /**
+ * EditionExportsOut
+ */
+export type EditionExportsOut = {
+    /**
+     * Blocks
+     */
+    blocks: Array<ExportBlockOut>;
+    /**
+     * Destinations
+     */
+    destinations: Array<ExportDestinationOut>;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    items: ExportItemsOut;
+    /**
+     * Kepub Items
+     */
+    kepub_items: number;
+};
+
+/**
  * EditionLineOut
  */
 export type EditionLineOut = {
@@ -1996,6 +2033,74 @@ export type EditionSuggestionOut = {
 };
 
 /**
+ * EditionUnitOut
+ */
+export type EditionUnitOut = {
+    /**
+     * Added At
+     */
+    added_at: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Read State
+     */
+    read_state: 'unread' | 'in_progress' | 'read';
+    /**
+     * Readable
+     */
+    readable: boolean;
+    /**
+     * Title
+     */
+    title: string | null;
+    /**
+     * Track
+     */
+    track: string;
+    /**
+     * Volume Id
+     */
+    volume_id: string | null;
+};
+
+/**
+ * EditionUnitsOut
+ */
+export type EditionUnitsOut = {
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Items
+     */
+    items: Array<EditionUnitOut>;
+    /**
+     * Limit
+     */
+    limit: number;
+    /**
+     * Offset
+     */
+    offset: number;
+    /**
+     * Total
+     */
+    total: number;
+};
+
+/**
  * EditionsOut
  */
 export type EditionsOut = {
@@ -2064,6 +2169,86 @@ export type EstimateOut = {
 };
 
 /**
+ * ExportBlockOut
+ */
+export type ExportBlockOut = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Last Used At
+     */
+    last_used_at: string | null;
+    /**
+     * Number
+     */
+    number: number;
+    /**
+     * Part Index
+     */
+    part_index: number;
+    /**
+     * Profile Id
+     */
+    profile_id: string;
+    /**
+     * Size
+     */
+    size: number;
+    /**
+     * Username
+     */
+    username: string;
+};
+
+/**
+ * ExportDestinationOut
+ */
+export type ExportDestinationOut = {
+    /**
+     * Destination Id
+     */
+    destination_id: string;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Exported
+     */
+    exported: number;
+    /**
+     * Failed
+     */
+    failed: number;
+    /**
+     * Last Exported At
+     */
+    last_exported_at: string | null;
+    /**
+     * Pending
+     */
+    pending: number;
+    /**
+     * Shelf Name
+     */
+    shelf_name: string;
+    /**
+     * Target Id
+     */
+    target_id: string;
+    /**
+     * Target Kind
+     */
+    target_kind: string;
+    /**
+     * Target Name
+     */
+    target_name: string;
+};
+
+/**
  * ExportItemOut
  */
 export type ExportItemOut = {
@@ -2099,6 +2284,32 @@ export type ExportItemOut = {
      * Units
      */
     units: number;
+};
+
+/**
+ * ExportItemsOut
+ */
+export type ExportItemsOut = {
+    /**
+     * Adopted
+     */
+    adopted: number;
+    /**
+     * Bundle
+     */
+    bundle: number;
+    /**
+     * Opds Bundle
+     */
+    opds_bundle: number;
+    /**
+     * Unit
+     */
+    unit: number;
+    /**
+     * Volume
+     */
+    volume: number;
 };
 
 /**
@@ -3034,6 +3245,28 @@ export type LanguagesOut = {
      * Languages
      */
     languages: Array<string>;
+};
+
+/**
+ * LastReadOut
+ */
+export type LastReadOut = {
+    /**
+     * At
+     */
+    at: string;
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Work Id
+     */
+    work_id: string;
 };
 
 /**
@@ -4431,6 +4664,28 @@ export type Problem = {
 };
 
 /**
+ * ProfileDeviceOut
+ */
+export type ProfileDeviceOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Label
+     */
+    label: string | null;
+    /**
+     * Last Seen At
+     */
+    last_seen_at: string | null;
+};
+
+/**
  * ProfileIn
  */
 export type ProfileIn = {
@@ -4505,6 +4760,37 @@ export type ProfileOut = {
 };
 
 /**
+ * ProfileOverviewOut
+ */
+export type ProfileOverviewOut = {
+    /**
+     * Devices
+     */
+    devices: Array<ProfileDeviceOut>;
+    last_read: LastReadOut | null;
+    /**
+     * Max Age Rating
+     */
+    max_age_rating: number | null;
+    /**
+     * Profile Id
+     */
+    profile_id: string;
+    /**
+     * Role
+     */
+    role: string;
+    /**
+     * Username
+     */
+    username: string;
+    /**
+     * Works
+     */
+    works: number;
+};
+
+/**
  * ProfilePatch
  */
 export type ProfilePatch = {
@@ -4566,6 +4852,24 @@ export type ProfilesOut = {
      * Profiles
      */
     profiles: Array<string>;
+};
+
+/**
+ * ProfilesOverviewOut
+ */
+export type ProfilesOverviewOut = {
+    /**
+     * Profiles
+     */
+    profiles: Array<ProfileOverviewOut>;
+    /**
+     * Steps
+     */
+    steps: Array<AgeStepOut>;
+    /**
+     * Total Works
+     */
+    total_works: number;
 };
 
 /**
@@ -12524,6 +12828,48 @@ export type FollowCheckResponses = {
 
 export type FollowCheckResponse = FollowCheckResponses[keyof FollowCheckResponses];
 
+export type EditionExportsData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/v1/editions/{edition_id}/exports';
+};
+
+export type EditionExportsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type EditionExportsError = EditionExportsErrors[keyof EditionExportsErrors];
+
+export type EditionExportsResponses = {
+    /**
+     * Successful Response
+     */
+    200: EditionExportsOut;
+};
+
+export type EditionExportsResponse = EditionExportsResponses[keyof EditionExportsResponses];
+
 export type RenumberIdData = {
     body: RenumberIn;
     path: {
@@ -13321,6 +13667,57 @@ export type TeamSwitchApplyResponses = {
 };
 
 export type TeamSwitchApplyResponse = TeamSwitchApplyResponses[keyof TeamSwitchApplyResponses];
+
+export type EditionUnitsData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
+    };
+    url: '/api/v1/editions/{edition_id}/units';
+};
+
+export type EditionUnitsErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type EditionUnitsError = EditionUnitsErrors[keyof EditionUnitsErrors];
+
+export type EditionUnitsResponses = {
+    /**
+     * Successful Response
+     */
+    200: EditionUnitsOut;
+};
+
+export type EditionUnitsResponse = EditionUnitsResponses[keyof EditionUnitsResponses];
 
 export type UpstreamStatusSetData = {
     body: UpstreamStatusIn;
@@ -15652,6 +16049,48 @@ export type CreateProfileResponses = {
 };
 
 export type CreateProfileResponse = CreateProfileResponses[keyof CreateProfileResponses];
+
+export type ProfilesOverviewData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Ceiling
+         */
+        ceiling?: Array<number> | null;
+        /**
+         * Profile Id
+         */
+        profile_id?: string | null;
+    };
+    url: '/api/v1/profiles/overview';
+};
+
+export type ProfilesOverviewErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ProfilesOverviewError = ProfilesOverviewErrors[keyof ProfilesOverviewErrors];
+
+export type ProfilesOverviewResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProfilesOverviewOut;
+};
+
+export type ProfilesOverviewResponse = ProfilesOverviewResponses[keyof ProfilesOverviewResponses];
 
 export type RemoveProfileData = {
     body?: never;

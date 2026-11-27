@@ -30,6 +30,25 @@ Contraste mesuré par `node scripts/contrast.ts` (CI, `contrast.test.ts`) : text
 les fonds de page, 3:1 pour les filets forts, le focus et la tablette. Thème par défaut, clair :
 encre 14,6:1, gris 7,9:1, gris discret 6,0:1, bleu 7,6:1 ; sombre : 14,3:1, 9,2:1, 6,4:1, 10,1:1.
 
+## Variantes de la direction
+
+Les trois autres thèmes, `console`, `galerie` et `calme`, sont des **variantes de Papier et encre**,
+pas des directions à part : mêmes polices (Alegreya, Alegreya Sans), mêmes illustrations et mêmes
+couvertures, même rayon (1 px). Seuls changent la teinte du papier, l'encre et l'accent, et la
+densité (la disposition des couvertures). Les identifiants stockés restent ceux des réglages
+existants ; seuls les libellés affichés changent.
+
+| Identifiant | Libellé (FR) | Papier | Accent (encre d'imprimerie) | Densité |
+| --- | --- | --- | --- | --- |
+| `bibliotheque` | Papier et encre | papier journal chaud | bleu des cahiers `#1F4A80` | couvertures en grille |
+| `console` | Papier et encre — dense | gris froid | bleu nuit `#12305F` | couvertures en liste |
+| `galerie` | Papier et encre — contraste | papier clair, encre presque noire | vert bouteille `#1E4D36` | couvertures en grille |
+| `calme` | Papier et encre — sépia, sans animation | papier sépia | sépia `#7A3E12` | couvertures en liste ; aucun mouvement ni ombre |
+
+Chacune a sa palette claire et sa palette sombre, passées au contrôle de contraste (CI,
+`contrast.test.ts`) : texte 4,5:1, filets forts, focus et tablette 3:1. Pas de violet ni d'orange
+vif : le rouge reste réservé à l'erreur.
+
 ## Composants
 
 Dans `frontend/src/lib/ui/`, par niveau ; chacun a ses tests de comportement et d'accessibilité.
