@@ -242,9 +242,11 @@ def test_a_read_key_of_the_admin_is_proposed_no_pause(world: World) -> None:
 
     _bindable(world)
     edition = world.seed.editions["ok"]
-    key = local_auth(world.seed.engine, world.env.settings).create_api_key(
-        name="adminread", read_only=True
-    ).value
+    key = (
+        local_auth(world.seed.engine, world.env.settings)
+        .create_api_key(name="adminread", read_only=True)
+        .value
+    )
     keyed = world.env.other_client("10.0.0.55")
     got = keyed.get(
         f"/api/v1/editions/{edition}/support-author", headers={"Authorization": f"Bearer {key}"}
