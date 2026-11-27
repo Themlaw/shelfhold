@@ -3096,6 +3096,7 @@
   "key_expiring",
   "key_id",
   "key_not_revoked",
+  "key_scope_read_only_conflict",
   "keyring",
   "keyring.age",
   "keyring_unavailable",

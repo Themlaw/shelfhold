@@ -41,12 +41,12 @@ def api(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> Iterator[AuthEnv
         yield env
 
 
-def _key_of(api: AuthEnv, username: str) -> str:
+def _key_of(api: AuthEnv, username: str, *, read_only: bool = True) -> str:
     engine = create_db_engine(api.settings.database_path)
     try:
         return (
             local_auth(engine, api.settings)
-            .create_api_key(name="k", username=username, read_only=True)
+            .create_api_key(name="k", username=username, read_only=read_only)
             .value
         )
     finally:
@@ -98,9 +98,14 @@ def test_health_page_refused_without_a_session(api: AuthEnv) -> None:
 def test_health_page_admin_session_and_key_read_the_same_page(api: AuthEnv) -> None:
     seed_sources(api.settings)
     body = _page(api)
+    # the admin's key of scope `admin`; her read key reads as her profile, not the page (SEC-1)
     keyed = api.other_client("10.0.0.23").get(
+        HEALTH_PATH, headers={"Authorization": f"Bearer {_key_of(api, 'admin', read_only=False)}"}
+    )
+    read_key = api.other_client("10.0.0.24").get(
         HEALTH_PATH, headers={"Authorization": f"Bearer {_key_of(api, 'admin')}"}
     )
+    assert read_key.status_code == 403
     assert keyed.status_code == 200
     assert {s["plugin_id"] for s in keyed.json()["sources"]} == {
         s["plugin_id"] for s in body["sources"]

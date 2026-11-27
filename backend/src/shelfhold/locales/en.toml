@@ -911,6 +911,7 @@
   key_created = "Key created (prefix {prefix}). It will never be displayed again:"
   key_expires = "Expires on {date}."
   key_subject_required = "A key with the request scope acts for an account: name it with --subject."
+  key_scope_read_only_conflict = "Key refused: --read-only only goes with --scope read or metrics; an admin or request key writes. Drop --read-only, or choose --scope read. No key was created."
   key_scope_refused = "Scope or account refused: the admin scope belongs to an administrator, for themselves."
   key_never_expires = "Without expiration (recommended: --expires-days 90)."
   key_rotated = "Key {old} replaced (new prefix {prefix}) and revoked. The new key will never be displayed again:"
@@ -2812,6 +2813,11 @@
     title = "The archive could not be read for the normalization."
     action = "Check the integrity of the library (shelfhold status), then run the command again."
     cause = "The file is missing, unreadable or not a valid archive: the normalization leaves it as it is."
+
+  [errors.key_scope_read_only_conflict]
+    title = "A read-only key cannot have the admin or request scope: those scopes write."
+    action = "Drop --read-only for an admin or request key, or choose --scope read (or metrics)."
+    cause = "Read-only and a scope that writes contradict each other: no key was created."
 
   [errors.session_not_found]
     title = "This session does not exist or is already closed."

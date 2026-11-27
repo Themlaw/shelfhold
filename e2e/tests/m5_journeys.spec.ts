@@ -52,9 +52,9 @@ test('test_m5_journey_read_excerpt_without_export: a kept book is read as an exc
   const { admin, book } = world();
   await signIn(page, admin);
 
-  // the sheet of the series offers the kept copy ("Lire"): it is the administrator's, in full
+  // the sheet of the series offers the kept copy ("Commencer": nothing read yet): it is the administrator's, in full
   await page.goto(`/serie/${book.series_id}`);
-  await expect(page.getByRole('link', { name: 'Lire', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Commencer', exact: true })).toBeVisible();
 
   // the ticket of the excerpt (bound to this session) opens the excerpt's chapters, and not the third
   const manifest = await (await page.request.get(`/api/reader/unit/${book.unit_id}/publication?scope=excerpt`)).json();

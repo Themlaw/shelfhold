@@ -40,7 +40,10 @@ from sqlalchemy import Engine
 from shelfhold.headless.actor import Actor
 from shelfhold.i18n import negotiate, t_lang
 from shelfhold.identity.public import RESERVED_ACTIONS, Credential, Principal, audit_actor
-from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
+from shelfhold.interfaces.http_api.auth import (
+    require_admin_surface,
+    reserved_action,
+)
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.plugin_host import install as guard
 from shelfhold.plugin_host import lifecycle
@@ -218,10 +221,7 @@ def build_plugins_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["sources"])
 
-    def admin_only(principal: Principal = Depends(require_principal)) -> Principal:  # noqa: B008
-        if principal.role != "admin":
-            raise ProblemError("forbidden")
-        return principal
+    admin_only = require_admin_surface  # her session or her writing admin key (SEC-1)
 
     def schema(key: str) -> SettingsSchema:
         found = schema_for(key)

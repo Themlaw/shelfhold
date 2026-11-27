@@ -26,7 +26,8 @@
   import Gaps from '#lib/components/Gaps.svelte';
   import ProblemAlert, { refusalOf } from '#lib/ui/molecules/ProblemAlert.svelte';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
-  import { formatDateTime, t, uiLanguage, type MessageKey } from '#lib/i18n/index.ts';
+  import { coverKind } from '#lib/ui/atoms/cover.ts';
+  import { formatDate, formatDateTime, formatNumber, formatPartialDate, formatPercent, t, uiLanguage, type MessageKey } from '#lib/i18n/index.ts';
   import { csrfToken } from '#lib/passkeys.ts';
   import { problemView, type ProblemView } from '#lib/problems.ts';
   import { needsReauth, problemOf } from '#lib/triage.ts';
@@ -90,6 +91,23 @@
   const edits = $derived<SheetFieldOut[]>(sheet?.fields ?? []);
   const merge = $derived(sheet?.merges[0] ?? null);
   const selected = $derived(edits.find((f) => `${f.on}|${f.field}|${f.lang}` === fieldKey) ?? null);
+
+  // The facts of the edition the server knows: what it does not know is not written.
+  const facts = $derived.by(() => {
+    if (!sheet) return [];
+    const list: { label: string; value: string }[] = [];
+    if (sheet.unit_count > 0) list.push({ label: t('sheet.fact.units'), value: formatNumber(sheet.unit_count) });
+    if (sheet.shelf_name) list.push({ label: t('sheet.fact.shelf'), value: sheet.shelf_name });
+    if (sheet.first_published) list.push({ label: t('sheet.fact.published'), value: formatPartialDate(sheet.first_published) });
+    if (sheet.published_on) list.push({ label: t('sheet.fact.edition_published'), value: formatPartialDate(sheet.published_on) });
+    list.push({
+      label: t('sheet.fact.added'),
+      value: sheet.added_source
+        ? t('sheet.added_from', { date: formatDate(sheet.added_at, { dateStyle: 'medium' }), source: sheet.added_source })
+        : formatDate(sheet.added_at, { dateStyle: 'medium' })
+    });
+    return list;
+  });
 
   async function load(): Promise<void> {
     const { data, error } = await editionSheet({ path: { edition_id: editionId } });
@@ -274,7 +292,11 @@
       </div>
       <div class="page-head__text">
         <h1 class="page-title page-title--work sheet__title">{sheet.title}</h1>
+        {#if sheet.authors.length > 0}
+          <p class="sheet__by"><span class="visually-hidden">{t('sheet.authors')} : </span>{sheet.authors.join(', ')}</p>
+        {/if}
         <p class="sheet__meta">
+          <Badge>{t(`library.kind_${coverKind(sheet.kind)}` as MessageKey)}</Badge>
           <Badge>{languageName(sheet.lang)}</Badge>
           {#if sheet.upstream_status !== 'unknown'}
             <Badge>{t(STATUS_LABELS[sheet.upstream_status])}</Badge>
@@ -282,11 +304,22 @@
           {#if sheet.followed}<Badge>{t('sheet.followed')}</Badge>{/if}
         </p>
         <div class="btn-row sheet__actions">
-          <ReadButton unitId={sheet.first_unit_id} bind:scope={readScope} />
+          <ReadButton unitId={sheet.first_unit_id} progress={sheet.progress} bind:scope={readScope} />
           {#if sheet.can.check}
             <Button variant="secondary" size="lg" onclick={checkNow}>{t('sheet.check')}</Button>
           {/if}
         </div>
+        {#if sheet.progress?.percent != null}
+          <p class="hint sheet__progress">{t('sheet.progress', { percent: formatPercent(sheet.progress.percent) })}</p>
+        {/if}
+        {#if sheet.summary}<p class="sheet__summary">{sheet.summary}</p>{/if}
+        {#if facts.length > 0}
+          <dl class="sheet__facts" aria-label={t('sheet.facts')}>
+            {#each facts as fact (fact.label)}
+              <div><dt>{fact.label}</dt><dd>{fact.value}</dd></div>
+            {/each}
+          </dl>
+        {/if}
         {#if !sheet.first_unit_id}
           <p class="hint sheet__empty">
             {t('sheet.no_unit')}
@@ -501,6 +534,35 @@
   }
   .crumb-sep {
     margin-inline: var(--space-2);
+  }
+  .sheet__by {
+    margin: var(--space-2) 0 0;
+    font: italic var(--step-1) / 1.3 var(--font-text);
+    color: var(--color-muted);
+  }
+  .sheet__progress {
+    margin-top: var(--space-2);
+  }
+  .sheet__summary {
+    max-width: var(--measure);
+    margin: var(--space-4) 0 0;
+  }
+  .sheet__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: var(--space-3) var(--space-5);
+    max-width: 44rem;
+    margin: var(--space-5) 0 0;
+    padding-top: var(--space-3);
+    border-top: var(--rule-hair) solid var(--color-rule);
+  }
+  .sheet__facts dt {
+    color: var(--color-muted);
+    font-size: var(--step--1);
+  }
+  .sheet__facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
   }
   .sheet__meta {
     display: flex;

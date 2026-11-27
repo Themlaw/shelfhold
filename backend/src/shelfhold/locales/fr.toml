@@ -900,6 +900,7 @@ sessions_revoked = "{count, plural, one {# session fermée} other {# sessions fe
 key_created = "Clé créée (préfixe {prefix}). Elle ne sera plus jamais affichée :"
 key_expires = "Expire le {date}."
 key_subject_required = "Une clé de portée request agit au nom d'un compte : indiquez-le avec --subject."
+key_scope_read_only_conflict = "Clé refusée : --read-only n'est possible qu'avec --scope read ou metrics ; une clé admin ou request écrit. Retirez --read-only, ou choisissez --scope read. Aucune clé n'a été créée."
 key_scope_refused = "Portée ou compte refusé : la portée admin est celle d'un administrateur, pour lui-même."
 key_never_expires = "Sans expiration (recommandé : --expires-days 90)."
 key_rotated = "Clé {old} remplacée (nouveau préfixe {prefix}) et révoquée. La nouvelle clé ne sera plus jamais affichée :"
@@ -3104,6 +3105,11 @@ cause = "Le processus isolé de décodage s'est arrêté (mémoire, délai) : ce
 title = "L'archive n'a pas pu être lue pour la normalisation."
 action = "Vérifiez l'intégrité de la bibliothèque (shelfhold status), puis relancez la commande."
 cause = "Le fichier est absent, illisible ou n'est pas une archive valide : la normalisation le laisse tel quel."
+
+[errors."key_scope_read_only_conflict"]
+title = "Une clé en lecture seule ne peut pas avoir la portée admin ou request : ces portées écrivent."
+action = "Retirez --read-only pour une clé admin ou request, ou choisissez --scope read (ou metrics)."
+cause = "La lecture seule et une portée qui écrit se contredisent : aucune clé n'a été créée."
 
 [errors."session_not_found"]
 title = "Cette session n'existe pas ou est déjà fermée."

@@ -18,8 +18,8 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import Engine
 
 from shelfhold.acquisition.application.blocklist import list_blocks
-from shelfhold.identity.public import Credential, Principal
-from shelfhold.interfaces.http_api.auth import require_principal
+from shelfhold.identity.public import Principal
+from shelfhold.interfaces.http_api.auth import require_admin_surface
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.ops.activity_history import (
     BlockView,
@@ -32,22 +32,6 @@ from shelfhold.ops.activity_history import (
 from shelfhold.ops.storage_dashboard import MAX_DAYS, storage_dashboard
 
 __all__ = ["build_ops_dashboard_router", "require_admin_surface"]
-
-
-def require_admin_surface(principal: Annotated[Principal, Depends(require_principal)]) -> Principal:
-    """The administrator's session, or her key of scope `admin`. A read-only key is not enough, and
-    nor is any other credential."""
-    if principal.role != "admin":
-        raise ProblemError("forbidden")
-    if principal.credential is Credential.SESSION:
-        return principal
-    if (
-        principal.credential is Credential.API_KEY
-        and "admin" in principal.scopes
-        and not principal.read_only
-    ):
-        return principal
-    raise ProblemError("forbidden")
 
 
 Admin = Annotated[Principal, Depends(require_admin_surface)]

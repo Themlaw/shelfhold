@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from shelfhold.infrastructure.http_headers import apply_security_headers
+from shelfhold.infrastructure.http_headers import apply_api_cache_default, apply_security_headers
 
 REQUEST_ID_HEADER = "X-Request-ID"
 _SAFE_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
@@ -74,7 +74,8 @@ def _logged_path(path: str) -> str:
 
 
 class SecurityHeadersMiddleware:
-    """Discretion headers on every HTTP response, errors and JSON included (ENF-PRIV-002)."""
+    """Discretion headers on every HTTP response, errors and JSON included (ENF-PRIV-002); a JSON
+    answer of the API is `no-store` unless its route chose a policy (SEC-1)."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -86,7 +87,9 @@ class SecurityHeadersMiddleware:
 
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
-                apply_security_headers(MutableHeaders(scope=message))
+                headers = MutableHeaders(scope=message)
+                apply_security_headers(headers)
+                apply_api_cache_default(headers, str(scope.get("path", "")), message["status"])
             await send(message)
 
         await self.app(scope, receive, send_with_headers)

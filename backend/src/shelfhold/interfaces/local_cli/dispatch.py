@@ -48,6 +48,7 @@ _PASSWORD_REASONS = frozenset(
     {
         "invalid_username", "password_too_short", "password_too_long", "invalid_expiry",
         "invalid_scope", "scope_requires_admin", "subject_not_allowed", "subject_required",
+        "key_scope_read_only_conflict",
         "unknown_reference",  # `admin acknowledge-passkeys --through`: nothing waits under it
     }
 )  # fmt: skip
