@@ -260,8 +260,8 @@ def test_admin_reads_what_was_exported_of_an_edition(world: World) -> None:
         connection.execute(
             sa.insert(bundle.bundle_version).values(
                 id=new_ulid(), edition_id=world.seed.editions["ok"], part_index=1,
-                profile_user_id=kid, number=1, content_fp="ab" * 16,
-                koreader_md5="md5:" + "c" * 32, state_key="cd" * 16, size=1234,
+                profile_user_id=kid, number=1, content_fp="ab" * 32,
+                koreader_md5="md5:" + "c" * 32, state_key="cd" * 32, size=1234,
                 entry_count=3, page_count=30, member_count=3, created_at=T0,
             )
         )  # fmt: skip
@@ -329,9 +329,7 @@ def test_overview_counts_works_per_ceiling_with_the_one_filter(world: World) -> 
     body = got.json()
     assert set(body) == {"total_works", "steps", "profiles"}
     with world.seed.engine.connect() as connection:
-        expected = {
-            c: count_visible_works(connection, scope_of("child", c)) for c in (0, 10, 13)
-        }
+        expected = {c: count_visible_works(connection, scope_of("child", c)) for c in (0, 10, 13)}
         total = count_visible_works(connection, scope_of("admin", None))
     assert body["steps"] == [{"ceiling": c, "works": expected[c]} for c in (0, 10, 13)]
     assert expected[10] == 3 and expected[13] == 4  # `twelve` is opened by 13, not by 10
@@ -386,7 +384,13 @@ def test_overview_profiles_carry_their_count_last_reading_and_e_readers(world: W
     assert set(profiles) >= {"admin", "kid", "mum"}
     kid_row = profiles["kid"]
     assert set(kid_row) == {
-        "profile_id", "username", "role", "max_age_rating", "works", "last_read", "devices"
+        "profile_id",
+        "username",
+        "role",
+        "max_age_rating",
+        "works",
+        "last_read",
+        "devices",
     }
     assert kid_row["profile_id"] == kid and kid_row["max_age_rating"] == 10
     with world.seed.engine.connect() as connection:
@@ -409,7 +413,7 @@ def test_overview_profiles_carry_their_count_last_reading_and_e_readers(world: W
 def test_overview_ceiling_bounds_are_checked(world: World) -> None:
     assert world.admin.get(OVERVIEW, params={"ceiling": 100}).status_code == 422
     assert world.admin.get(OVERVIEW, params={"ceiling": -1}).status_code == 422
-    many = [("ceiling", c) for c in range(17)]
+    many: list[tuple[str, str | int | float | bool | None]] = [("ceiling", c) for c in range(17)]
     assert world.admin.get(OVERVIEW, params=many).status_code == 422
     default = world.admin.get(OVERVIEW).json()
     assert [s["ceiling"] for s in default["steps"]] == [0, 10, 12, 13, 16, 18]

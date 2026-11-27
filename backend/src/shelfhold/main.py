@@ -73,6 +73,7 @@ from shelfhold.interfaces.http_api.destination_accounts import (
     build_destination_accounts_router,
 )
 from shelfhold.interfaces.http_api.destinations import build_destinations_router
+from shelfhold.interfaces.http_api.edition_views import build_edition_views_router
 from shelfhold.interfaces.http_api.follows import build_follows_router
 from shelfhold.interfaces.http_api.headless import build_headless_router
 from shelfhold.interfaces.http_api.health import build_health_page_router
@@ -588,6 +589,7 @@ def create_app(
         build_follows_router(ops_services),  # EF-SRC-029: follow, unfollow
         build_series_sheet_router(ops_services),  # M3 L43: the series sheet and its settings
         build_bundle_slices_router(lambda: engine, clock.now),  # M4 L49b: slices of a block
+        build_edition_views_router(lambda: engine),  # units, exports, profiles register
         build_support_author_router(lambda: engine),  # M4 L23: official links, pause proposal
         build_requests_router(  # EF-USR-010: ask, approve, refuse, follow a request
             lambda: ops_services().requests,
