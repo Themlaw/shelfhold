@@ -3105,6 +3105,11 @@ title = "L'archive n'a pas pu être lue pour la normalisation."
 action = "Vérifiez l'intégrité de la bibliothèque (shelfhold status), puis relancez la commande."
 cause = "Le fichier est absent, illisible ou n'est pas une archive valide : la normalisation le laisse tel quel."
 
+[errors."key_scope_read_only_conflict"]
+title = "Une clé en lecture seule ne peut pas avoir la portée admin ou request : ces portées écrivent."
+action = "Retirez --read-only pour une clé admin ou request, ou choisissez --scope read (ou metrics)."
+cause = "La lecture seule et une portée qui écrit se contredisent : aucune clé n'a été créée."
+
 [errors."session_not_found"]
 title = "Cette session n'existe pas ou est déjà fermée."
 action = "Actualisez la liste des sessions."

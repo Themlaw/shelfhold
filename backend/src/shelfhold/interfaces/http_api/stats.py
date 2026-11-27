@@ -19,7 +19,7 @@ from shelfhold.infrastructure.stats import (
     compute_stats,
     parse_since,
 )
-from shelfhold.interfaces.http_api.auth import require_principal
+from shelfhold.interfaces.http_api.auth import require_admin_surface
 from shelfhold.interfaces.http_api.problems import ProblemError
 
 __all__ = ["build_stats_router"]
@@ -53,10 +53,9 @@ class StatsOut(BaseModel):
     requests_by_profile: list[ProfileRequests]
 
 
-def require_admin(principal: Annotated[Principal, Depends(require_principal)]) -> Principal:
-    if principal.role != "admin":
-        raise ProblemError("forbidden")
-    return principal
+# The guard of the admin surfaces, shared by the modules that import it from here (SEC-1): her
+# session or her key of scope `admin` that may write, never a read key of hers.
+require_admin = require_admin_surface
 
 
 def build_stats_router(get_engine: Callable[[], Engine], now: Callable[[], datetime]) -> APIRouter:

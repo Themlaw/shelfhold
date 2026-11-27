@@ -31,7 +31,7 @@ from shelfhold.acquisition.application.federated_search import (
 )
 from shelfhold.catalog.public import search_page
 from shelfhold.identity.public import Credential, Principal, reader_scope
-from shelfhold.interfaces.http_api.auth import require_principal
+from shelfhold.interfaces.http_api.auth import holds_admin_power, require_principal
 from shelfhold.interfaces.http_api.ops import refusals
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.ops import OpsServices
@@ -186,7 +186,9 @@ def build_search_router(
                 if principal.credential is not Credential.SESSION:
                     raise ProblemError("forbidden")
                 return _family(principal, q, limit, offset, cursor)
-            if principal.role != "admin" or not viewer.unrestricted:
+            # the sources are asked on the admin's behalf: her session or her writing admin key,
+            # never a read key of hers (SEC-1)
+            if not holds_admin_power(principal) or not viewer.unrestricted:
                 raise ProblemError(
                     "forbidden"
                 )  # before the query is read, before a source is asked

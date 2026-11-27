@@ -21,6 +21,7 @@ from shelfhold.config import ResolvedSettings, Settings
 from shelfhold.identity.public import Principal
 from shelfhold.infrastructure.http_headers import attachment_disposition
 from shelfhold.interfaces.cli import status as status_cli
+from shelfhold.interfaces.http_api.auth import holds_admin_power
 from shelfhold.interfaces.http_api.stats import require_admin
 from shelfhold.ops.diagnostic import build_bundle
 from shelfhold.ops.health import build_health_page
@@ -108,7 +109,7 @@ def _paused(health: HealthPort) -> list[dict[str, str]]:
 
 def _is_admin(request: Request) -> bool:
     principal = request.scope.get("state", {}).get("principal")
-    return getattr(principal, "role", None) == "admin"
+    return isinstance(principal, Principal) and holds_admin_power(principal)
 
 
 def build_health_router(health: HealthPort, *, version: str | None = None) -> APIRouter:

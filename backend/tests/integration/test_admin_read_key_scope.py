@@ -25,9 +25,36 @@ pytestmark = pytest.mark.req("EF-USR-024", "ENF-SEC-010")
 
 ULID = "01HZZZZZZZZZZZZZZZZZZZZZZZ"
 
-# Routes a member's session is refused (403) that a read key of the admin MUST still read, each
-# with its reason. Anything else a member is refused, the key is refused too.
-READ_KEY_READS: dict[str, str] = {}
+# Routes a member's session is refused (403) that a read key of the admin must still read, each
+# with its reason. None today: every such route is a surface of the administrator (the profiles'
+# overview, the statistics, the configuration, the plugins, the queues, a search that asks the
+# sources...), and a program holding her read key reads what her profile reads, not what her role
+# administers. A route added here needs a reason a reviewer agrees with.
+ADMIN_SURFACES_A_READ_KEY_READS: dict[str, str] = {}
+
+# What the read key of the admin must keep reading: her profile's view of the library. The routes
+# of one's own account (`/me`, sessions, passkeys) are a session's alone, for any key (unchanged).
+READ_KEY_READS: dict[str, str] = {
+    "/api/v1/works": "the catalogue, filtered by her profile like any profile's",
+    "/api/v1/collections": "her collections and the shared ones, as her profile sees them",
+    "/api/v1/selections": "her saved selections",
+    "/api/v1/activity": "the activity, read as the integration role (never her payloads)",
+    "/api/v1/auth/session": "who the key is: the program checks its credential",
+    "/api/v1/about": "the version, as for anyone signed in",
+}
+
+# Surfaces the audit found open to the key (a sample): the meta-test must keep walking them.
+AUDITED = (
+    "/api/v1/profiles/overview",
+    "/api/v1/stats",
+    "/api/v1/config",
+    "/api/v1/plugins",
+    "/api/v1/plugin-repos",
+    "/api/v1/devices/connect",
+    "/api/v1/audit/komga-accounts",
+    "/api/v1/sources/{source_key}/search",
+    "/api/v1/sources/{source_key}/series/{remote_id}/estimate",
+)
 
 
 @pytest.fixture
@@ -66,21 +93,33 @@ def test_a_read_key_of_the_admin_is_refused_every_route_a_member_is_refused(api:
     member = _member(api)
     read_key = _key(api, read_only=True)
     keyed = api.other_client("10.0.0.30")
-    failures, refused_to_member = [], set()
+    failures: list[tuple[str, object]] = []
+    refused_to_member: set[str] = set()
     for route in _get_routes(api):
         path = _fill(route)
         if member.get(path).status_code != 403:
             continue
         refused_to_member.add(route)
         status = keyed.get(path, headers=read_key).status_code
-        if route in READ_KEY_READS:
+        if route in ADMIN_SURFACES_A_READ_KEY_READS:
             if status == 403:
                 failures.append((route, "listed as read by the key, refused"))
         elif status != 403:
             failures.append((route, status))
     assert not failures, failures
-    stale = set(READ_KEY_READS) - refused_to_member
+    stale = set(ADMIN_SURFACES_A_READ_KEY_READS) - refused_to_member
     assert not stale, f"exceptions that a member is no longer refused: {sorted(stale)}"
+    assert set(AUDITED) <= refused_to_member, sorted(set(AUDITED) - refused_to_member)
+    assert len(refused_to_member) >= 30  # the walk is not empty: the admin surfaces are many
+
+
+def test_a_read_key_of_the_admin_still_reads_as_her_profile(api: AuthEnv) -> None:
+    read_key = _key(api, read_only=True)
+    keyed = api.other_client("10.0.0.34")
+    routes = set(_get_routes(api))
+    for route in READ_KEY_READS:
+        assert route in routes, route
+        assert keyed.get(route, headers=read_key).status_code == 200, route
 
 
 def test_the_admin_session_and_her_admin_key_still_open_her_surfaces(api: AuthEnv) -> None:
@@ -117,7 +156,9 @@ def test_an_admin_scope_cannot_be_read_only(api: AuthEnv) -> None:
         with pytest.raises(ValueError, match="key_scope_read_only_conflict"):
             auth.create_api_key(name="k", scope="admin", read_only=True)
         with pytest.raises(ValueError, match="key_scope_read_only_conflict"):
-            auth.create_api_key(name="k", scope="request", subject_username="member", read_only=True)
+            auth.create_api_key(
+                name="k", scope="request", subject_username="member", read_only=True
+            )
         assert auth.create_api_key(name="k", scope="read", read_only=True).prefix
         assert auth.create_api_key(name="k", scope="metrics", read_only=True).prefix
     finally:

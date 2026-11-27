@@ -2,6 +2,14 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versionnement : [SemVer](https://semver.org/lang/fr/). Procédure de release : `docs/releasing.md`.
 
+## Non publié
+
+### Sécurité
+
+- **Portée des clés d'API (SEC-1, EF-USR-024)** : une clé de lecture de l'admin lit comme son profil et n'ouvre plus aucune surface d'administration (vue d'ensemble des profils, statistiques, configuration, plugins, audits de comptes, connexion d'appareils, recherche fédérée, recherche et estimation sur une source…) : 403. Une seule règle partagée (session de l'admin ou clé de portée `admin` qui écrit), vérifiée route par route par un méta-test sur tout le document OpenAPI.
+- `admin keys create --scope admin --read-only` (ou `--scope request --read-only`) est refusé avec `key-scope-read-only-conflict` au lieu de créer en silence une clé admin qui écrit.
+- Les réponses JSON de `/api/v1/` portent `Cache-Control: no-store` par défaut ; une route qui fixe sa politique (`ETag`, `Cache-Control`) la garde.
+
 ## 1.3.0 - 2026-11-25
 
 Clôture de M6 : plugins tiers isolés et index signé, SDK 2.0 prêt à publier sur PyPI, trackers, synchronisation Kobo minimale, dossier Kobo et KEPUB, caches et quotas, écrans (modules, trackers, webhooks, « Même œuvre ? »), copies hors ligne pour tout profil, annulation d'une marque de lecture, Komga (relais de scan, audit quotidien, preuve fraîche), une seule requête « lu ailleurs ». Candidate : `1.3.0-rc.1`. **La 1.2.0 n'a pas été publiée** : la 1.3.0 la contient (section suivante), on passe directement de la 1.1.0 à la 1.3.0.

@@ -38,6 +38,29 @@ Il n'existe pas de lien « parent » : **un adulte compte comme parent**.
 | clé d'API (`read`, `request`, `admin`) | **jamais** : 403 `credential-not-allowed`, portée `admin` comprise |
 | jeton d'appareil | **jamais** |
 
+### Ce que lit une clé de lecture de l'admin
+
+Une clé `read` (ou `--read-only`) créée par l'admin est un programme qui **lit comme le profil de
+l'admin, rien de plus** :
+
+- elle lit ce que son profil voit de la bibliothèque : catalogue (`/api/v1/works`), collections,
+  sélections enregistrées, activité (lue avec le rôle `integration`, jamais avec les détails réservés à
+  l'admin), `/api/v1/auth/session`, `/api/v1/about` ;
+- elle n'ouvre **aucune surface d'administration** : vue d'ensemble des profils, statistiques,
+  configuration (et `path_map`), plugins et dépôts de plugins, audits de comptes, connexion d'appareils,
+  files et tâches, maintenance, corbeille, page Santé, journal des opérations, webhooks, recherche
+  fédérée (`/api/v1/search?scope=all`), recherche et estimation sur une source. Toutes répondent 403 ;
+- comme toute clé, elle n'ouvre pas non plus les routes du compte (`/me`, sessions, passkeys), réservées à
+  une session, et n'écrit rien (403 sur tout verbe autre que `GET`).
+
+Les surfaces d'administration s'ouvrent à la session de l'admin ou à **sa clé de portée `admin`**, qui
+peut écrire. Une clé en lecture seule ne peut pas avoir la portée `admin` ni `request` :
+`admin keys create --scope admin --read-only` est refusé (`key-scope-read-only-conflict`) et aucune clé
+n'est créée.
+
+Les réponses JSON de `/api/v1/` portent `Cache-Control: no-store`, sauf quand la route fixe sa propre
+politique (une liste servie avec un `ETag`, par exemple).
+
 ## Les actions réservées
 
 Une action est réservée quand elle supprime pour de bon, révèle ou modifie un secret, touche aux
@@ -78,6 +101,7 @@ HTTP ([restauration.md](restauration.md)).
 ## Ouvrir et fermer des accès
 
     shelfhold admin keys create --name <usage> [--read-only] [--expires-days 90]
+    shelfhold admin keys create --name <usage> --scope admin    # surfaces d'administration
     shelfhold admin sessions revoke --all
     shelfhold admin sessions revoke --user <compte>
     shelfhold admin reset-password --username <compte> --password-file <fichier>

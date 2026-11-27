@@ -347,6 +347,9 @@ def run_keys_create(args: argparse.Namespace, auth: IdentityCommands) -> int:
     except UnknownUserError:
         return _fail(t("admin.unknown_user", username=args.subject or "admin"))
     except ValueError as error:
+        if str(error) == "key_scope_read_only_conflict":
+            conflict = "errors.key_scope_read_only_conflict"
+            return _fail(f"{t(conflict + '.title')} {t(conflict + '.action')}")
         if str(error) in {"invalid_scope", "scope_requires_admin", "subject_not_allowed"}:
             return _fail(t("admin.key_scope_refused"))
         return _fail(t("cli.admin_key_expires_help"))

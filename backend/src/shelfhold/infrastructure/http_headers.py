@@ -72,6 +72,23 @@ def apply_security_headers(headers: HeaderBag) -> None:
     headers["Content-Security-Policy"] = with_frame_ancestors(csp)
 
 
+NO_STORE = "no-store"
+API_PREFIX = "/api/v1/"
+
+
+def apply_api_cache_default(headers: HeaderBag, path: str) -> None:
+    """A JSON answer of the API is kept in no cache (a shared one or the browser's) unless its
+    route set its own policy: a `Cache-Control`, or an `ETag` its client revalidates with."""
+    if not path.startswith(API_PREFIX):
+        return
+    media_type = headers.get("Content-Type", "").split(";")[0].strip().lower()
+    if not (media_type == "application/json" or media_type.endswith("+json")):
+        return
+    if headers.get("Cache-Control", "") or headers.get("ETag", ""):
+        return
+    headers["Cache-Control"] = NO_STORE
+
+
 def attachment_disposition(filename: str) -> str:
     """`Content-Disposition: attachment` with an ASCII fallback and an RFC 5987 name."""
     safe = (
