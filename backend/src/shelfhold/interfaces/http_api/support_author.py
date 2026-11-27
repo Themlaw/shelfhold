@@ -18,7 +18,7 @@ from sqlalchemy import Engine
 
 from shelfhold.catalog.public import pause_community_binding_of, support_author
 from shelfhold.identity.public import Principal, reader_scope
-from shelfhold.interfaces.http_api.auth import require_principal
+from shelfhold.interfaces.http_api.auth import holds_admin_power, require_principal
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.stats import require_admin
 
@@ -57,7 +57,7 @@ def build_support_author_router(get_engine: Callable[[], Engine]) -> APIRouter:
                 connection,
                 reader_scope(connection, principal.user_id),
                 edition_id,
-                is_admin=principal.role == "admin",
+                is_admin=holds_admin_power(principal),
             )
         if found is None:
             raise ProblemError("not_found")

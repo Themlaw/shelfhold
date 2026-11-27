@@ -38292,6 +38292,10 @@
       "code": "kavita.scan_abandoned",
       "status": 409
     },
+    "/api/v1/problems/key-scope-read-only-conflict": {
+      "code": "key_scope_read_only_conflict",
+      "status": 422
+    },
     "/api/v1/problems/kosync-registration-disabled": {
       "code": "kosync_registration_disabled",
       "status": 402

@@ -24,7 +24,10 @@ from shelfhold.headless import (
 from shelfhold.headless.actor import Actor
 from shelfhold.headless.keys import PATH_MAP_PREFIX, SECRET_KEYS
 from shelfhold.identity.public import RESERVED_ACTIONS, Credential, Principal, audit_actor
-from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
+from shelfhold.interfaces.http_api.auth import (
+    require_admin_surface,
+    reserved_action,
+)
 from shelfhold.interfaces.http_api.problems import ProblemError
 
 __all__ = ["build_headless_router"]
@@ -124,10 +127,7 @@ def build_headless_router(
             ]
         )  # fmt: skip
 
-    def admin_only(principal: Principal = Depends(require_principal)) -> Principal:  # noqa: B008
-        if principal.role != "admin":
-            raise ProblemError("forbidden")
-        return principal
+    admin_only = require_admin_surface  # her session or her writing admin key (SEC-1)
 
     @router.get("/config")
     def read_config(_principal: Principal = Depends(admin_only)) -> ConfigOut:  # noqa: B008

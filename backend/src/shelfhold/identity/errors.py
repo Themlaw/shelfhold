@@ -38,6 +38,9 @@ CODES: tuple[ErrorCode, ...] = (
     ErrorCode("oidc_not_linked", 404, "user"),  # M5 L04: nothing to unlink, or to prove again
     # Sessions (M3 L07): another profile's session answers like one that is not there (no probing)
     ErrorCode("session_not_found", 404, "user"),
+    # SEC-1: a read-only key asked with a scope that writes (`admin`, `request`): refused, never
+    # made with a scope that would quietly write
+    ErrorCode("key_scope_read_only_conflict", 422, "admin"),
     # Household profiles (M3 L05): the rule that refused is in the `reason` extension
     ErrorCode("profile_not_found", 404, "user"),
     ErrorCode("profile_conflict", 409, "user"),

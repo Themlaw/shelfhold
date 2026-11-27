@@ -232,3 +232,23 @@ def _active(world: World, binding: str) -> bool:
                 )
             ).scalar_one()
         )
+
+
+@pytest.mark.req("EF-BIB-032")
+def test_a_read_key_of_the_admin_is_proposed_no_pause(world: World) -> None:
+    """The proposal is the admin's power (SEC-1): a read key of hers reads the links as her
+    profile, and is told nothing about bindings."""
+    from shelfhold.identity.public import local_auth
+
+    _bindable(world)
+    edition = world.seed.editions["ok"]
+    key = (
+        local_auth(world.seed.engine, world.env.settings)
+        .create_api_key(name="adminread", read_only=True)
+        .value
+    )
+    keyed = world.env.other_client("10.0.0.55")
+    got = keyed.get(
+        f"/api/v1/editions/{edition}/support-author", headers={"Authorization": f"Bearer {key}"}
+    )
+    assert got.status_code == 200 and got.json()["pause_suggestions"] == []

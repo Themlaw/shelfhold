@@ -34,9 +34,9 @@ from shelfhold.export.application.restore import RestoredBehindError
 from shelfhold.export.application.target_state import DestinationPausedError
 from shelfhold.export.domain.naming import DEFAULT_TEMPLATE, NamingTemplate
 from shelfhold.identity.domain.catalogue import RESERVED_ACTIONS
-from shelfhold.identity.public import Credential, Principal
+from shelfhold.identity.public import Principal
 from shelfhold.interfaces.http_api.accepted import JobAccepted, accepted_job
-from shelfhold.interfaces.http_api.auth import require_principal, reserved_action
+from shelfhold.interfaces.http_api.auth import holds_admin_power, require_principal, reserved_action
 from shelfhold.interfaces.http_api.preconditions import etag_for_version
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.ops import OpsError
@@ -200,13 +200,7 @@ def _if_match_version(header: str | None) -> str:
 def require_admin(request: Request) -> Principal:
     """Plans touch the library on disk: an admin session or an API key with the `admin` scope."""
     principal = require_principal(request)
-    is_admin_session = principal.credential is Credential.SESSION and principal.role == "admin"
-    is_admin_key = (
-        principal.credential is Credential.API_KEY
-        and principal.role == "admin"
-        and "admin" in principal.scopes
-    )
-    if not (is_admin_session or is_admin_key):
+    if not holds_admin_power(principal):  # never a read-only key, whatever its scopes
         raise ProblemError("forbidden")
     return principal
 

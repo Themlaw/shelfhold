@@ -25,12 +25,12 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from http.cookies import SimpleCookie
-from typing import Any
+from typing import Annotated, Any
 from uuid import uuid4
 
 import sqlalchemy as sa
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
@@ -510,6 +510,27 @@ def require_principal(request: Request) -> Principal:
     if principal.credential is Credential.DEVICE_TOKEN:  # never resolved here; belt and braces
         raise ProblemError("forbidden")
     if request.method not in SAFE_METHODS and not principal.may_write:
+        raise ProblemError("forbidden")
+    return principal
+
+
+def holds_admin_power(principal: Principal) -> bool:
+    """The administrator's power: her session, or her key of scope `admin` that may write. A read
+    key of the admin (or any read-only key) is a program reading as her profile, and no more."""
+    if principal.role != "admin":
+        return False
+    if principal.credential is Credential.SESSION:
+        return True
+    return (
+        principal.credential is Credential.API_KEY
+        and "admin" in principal.scopes
+        and not principal.read_only
+    )
+
+
+def require_admin_surface(principal: Annotated[Principal, Depends(require_principal)]) -> Principal:
+    """The guard of every surface of the administrator (`holds_admin_power`)."""
+    if not holds_admin_power(principal):
         raise ProblemError("forbidden")
     return principal
 
