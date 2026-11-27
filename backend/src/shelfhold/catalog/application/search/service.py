@@ -13,7 +13,12 @@ from dataclasses import dataclass
 
 import sqlalchemy as sa
 
-from shelfhold.catalog.application.queries import ReaderScope, visible_works_clause
+from shelfhold.catalog.application.queries import (
+    ReaderScope,
+    names_in,
+    visible_editions_clause,
+    visible_works_clause,
+)
 from shelfhold.catalog.application.search.capability import SearchCapability, search_capability
 from shelfhold.catalog.application.search.query import (
     Term,
@@ -22,6 +27,7 @@ from shelfhold.catalog.application.search.query import (
     terms_of,
 )
 from shelfhold.catalog.application.search.tables import fts_tables
+from shelfhold.catalog.domain.fold import fold_title
 from shelfhold.catalog.domain.sort_key import sort_key
 from shelfhold.infrastructure.schema import catalog
 
@@ -77,32 +83,41 @@ def _by_like(connection: sa.Connection, term: Term) -> set[str]:
     return found
 
 
-def _by_metadata_names(connection: sa.Connection, term: Term) -> set[str]:
-    """The Works whose `contributors` metadata (on the Work, or on one of its Editions) holds the
-    word: the authors a source named, which the index of credits does not carry. A substring,
-    folded for case only (the value is stored as JSON text)."""
+def _credited_names(connection: sa.Connection, scope: ReaderScope | None) -> dict[str, str]:
+    """For each Work, the authors its `contributors` metadata names — on the Work, and on those of
+    its Editions this reader may see (`visible_editions_clause`: an Edition on a shelf reserved to
+    another profile, or not yet classified, lends nothing) — as one folded text. The value is
+    decoded (a list of names, or of `{"name": ...}`), never read as JSON text, and folded like a
+    title: case and accents."""
     field, edition = catalog.metadata_field.c, catalog.edition.c
-    rows = connection.execute(
-        sa.select(field.entity_type, field.entity_id).where(
-            field.field == "contributors",
-            field.entity_type.in_(("work", "edition")),
-            field.value.like(like_pattern(term), escape="\\"),
-        )
-    ).all()
-    found = {str(r.entity_id) for r in rows if r.entity_type == "work"}
-    editions = [str(r.entity_id) for r in rows if r.entity_type == "edition"]
-    for start in range(0, len(editions), 500):
-        found.update(
-            str(r.work_id)
-            for r in connection.execute(
-                sa.select(edition.work_id).where(edition.id.in_(editions[start : start + 500]))
+    rows = list(
+        connection.execute(
+            sa.select(field.value, field.entity_id.label("work_id")).where(
+                field.field == "contributors", field.entity_type == "work"
             )
         )
-    return found
+    )
+    rows += connection.execute(
+        sa.select(field.value, edition.work_id)
+        .select_from(catalog.metadata_field.join(catalog.edition, edition.id == field.entity_id))
+        .where(
+            field.field == "contributors",
+            field.entity_type == "edition",
+            sa.true() if scope is None else visible_editions_clause(scope),
+        )
+    ).all()
+    named: dict[str, list[str]] = {}
+    for row in rows:
+        named.setdefault(str(row.work_id), []).extend(fold_title(n) for n in names_in(row.value))
+    return {work_id: "\n".join(names) for work_id, names in named.items()}
 
 
 def _matching(
-    connection: sa.Connection, terms: list[Term], caps: SearchCapability, *, named: bool = False
+    connection: sa.Connection,
+    terms: list[Term],
+    caps: SearchCapability,
+    *,
+    credited: dict[str, str] | None = None,
 ) -> set[str]:
     result: set[str] | None = None
     for term in terms:
@@ -112,15 +127,18 @@ def _matching(
             ids = _by_match(connection, fts_tables.TRIGRAM_TABLE, term, trigram=True)
         else:
             ids = _by_match(connection, fts_tables.FTS_TABLE, term, trigram=False)
-        if named:
-            ids = ids | _by_metadata_names(connection, term)
+        if credited is not None:
+            wanted = fold_title(term)
+            ids = ids | {w for w, names in credited.items() if wanted and wanted in names}
         result = ids if result is None else result & ids
         if not result:
             return set()
     return result or set()
 
 
-def matching_work_ids(connection: sa.Connection, query: str) -> set[str] | None:
+def matching_work_ids(
+    connection: sa.Connection, query: str, scope: ReaderScope | None
+) -> set[str] | None:
     """The Works whose title or author holds every word of `query` — a candidate set, never a
     permission: the caller ANDs it with the reader's own filter (`visible_works_clause`). `None`
     when the query has no word at all (it is then no condition), an empty set when nothing holds
@@ -128,16 +146,19 @@ def matching_work_ids(connection: sa.Connection, query: str) -> set[str] | None:
     terms = terms_of(query)
     if not terms:
         return None
-    return _matching(connection, terms, search_capability(connection), named=True)
+    credited = _credited_names(connection, scope)
+    return _matching(connection, terms, search_capability(connection), credited=credited)
 
 
-def matching_clause(connection: sa.Connection, query: str | None) -> list[sa.ColumnElement[bool]]:
+def matching_clause(
+    connection: sa.Connection, query: str | None, scope: ReaderScope | None
+) -> list[sa.ColumnElement[bool]]:
     """`matching_work_ids` as the conditions to add (`extra=`) to the one filter of a list and of
     its total. A blank query is no condition; words with nothing to match on (punctuation) find
     nothing. The candidates go through `json_each`, so their number is not bound by SQLite's."""
     if query is None or not query.strip():
         return []
-    found = matching_work_ids(connection, query)
+    found = matching_work_ids(connection, query, scope)
     if found is None:
         return [sa.false()]
     each = sa.func.json_each(json.dumps(sorted(found))).table_valued("value")

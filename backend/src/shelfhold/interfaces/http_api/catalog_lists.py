@@ -153,7 +153,7 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
                 return removed_ids(connection, scope, seq)
 
             token, removed = _removals(connection, raw, key, WORKS_KIND, scope_code(scope), read)
-            matching = matching_clause(connection, q)
+            matching = matching_clause(connection, q, scope)
             page = list_visible_works(
                 connection, scope, limit=limit, offset=offset, recent=sort == "recent",
                 shelf_id=shelf_id, series_id=series_id, extra=matching,

@@ -549,7 +549,7 @@ def _first_name(raw: str) -> str | None:
     return (first.strip() or None) if isinstance(first, str) else None
 
 
-def _names(raw: str) -> list[str]:
+def names_in(raw: str) -> list[str]:
     """Every name of a `contributors` value (names, or `{"name": ...}`), none empty."""
     try:
         decoded = json.loads(raw)
@@ -580,7 +580,7 @@ def contributor_names(connection: sa.Connection, work_id: str, edition_id: str) 
     ).all()
     for kind in ("work", "edition"):
         for row in rows:
-            if row.entity_type == kind and (names := _names(row.value)):
+            if row.entity_type == kind and (names := names_in(row.value)):
                 return names
     return []
 
