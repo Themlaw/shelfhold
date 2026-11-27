@@ -911,6 +911,7 @@
   key_created = "Key created (prefix {prefix}). It will never be displayed again:"
   key_expires = "Expires on {date}."
   key_subject_required = "A key with the request scope acts for an account: name it with --subject."
+  key_scope_read_only_conflict = "Key refused: --read-only only goes with --scope read or metrics; an admin or request key writes. Drop --read-only, or choose --scope read. No key was created."
   key_scope_refused = "Scope or account refused: the admin scope belongs to an administrator, for themselves."
   key_never_expires = "Without expiration (recommended: --expires-days 90)."
   key_rotated = "Key {old} replaced (new prefix {prefix}) and revoked. The new key will never be displayed again:"
