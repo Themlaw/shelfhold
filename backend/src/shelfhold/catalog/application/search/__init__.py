@@ -10,6 +10,8 @@ from shelfhold.catalog.application.search.index import index_work, rebuild, remo
 from shelfhold.catalog.application.search.service import (
     SearchHit,
     SearchPage,
+    matching_clause,
+    matching_work_ids,
     search_page,
 )
 
@@ -19,6 +21,8 @@ __all__ = [
     "SearchPage",
     "ensure_tables",
     "index_work",
+    "matching_clause",
+    "matching_work_ids",
     "rebuild",
     "remove_works",
     "search_capability",

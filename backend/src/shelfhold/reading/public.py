@@ -1,5 +1,10 @@
 """What the interfaces and other contexts may use from the reading context."""
 
+from shelfhold.reading.application.edition_progress import (
+    EditionProgress,
+    edition_progress,
+    reading_units,
+)
 from shelfhold.reading.application.kobo_sync import (
     KoboSync,
     SyncPage,
@@ -26,6 +31,7 @@ from shelfhold.reading.application.progress import (
 from shelfhold.reading.application.transfer import TransferReport, prefer_edition
 
 __all__ = [
+    "EditionProgress",
     "InvalidLocatorError",
     "InvalidProgressError",
     "KoboSync",
@@ -38,12 +44,14 @@ __all__ = [
     "UnitProgress",
     "UnknownCarrierError",
     "UnknownCounter",
+    "edition_progress",
     "entitlement_of",
     "live_member_account",
     "normalise_locator",
     "prefer_edition",
     "progress_of",
     "read_marks",
+    "reading_units",
     "record_position",
     "undo_read_mark",
 ]

@@ -22,11 +22,12 @@ copy): two sources that agree are one row per (profile, Unit), so a series is ne
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Final, Literal
 
 import sqlalchemy as sa
 
-from shelfhold.catalog.public import visible_editions_clause
+from shelfhold.catalog.public import visible_edition_ids, visible_editions_clause
 from shelfhold.identity.public import reader_scope
 from shelfhold.infrastructure.schema import catalog, reading, storage
 from shelfhold.reading.application.content_access import (
@@ -36,6 +37,7 @@ from shelfhold.reading.application.content_access import (
     read_elsewhere,
     read_elsewhere_of_unit,
 )
+from shelfhold.reading.application.edition_progress import EditionProgress, edition_progress
 from shelfhold.reading.application.progress import UnknownCarrierError
 from shelfhold.reading.application.publication import PublicationService
 
@@ -76,6 +78,11 @@ class ContinueEntry:
     open_url: str | None = None
     # the id of that target: two servers of one kind are two destinations, each entry opens its own
     target_id: str | None = None
+    # where she is in this Unit (`in_progress` only: the next Unit is not begun), and the device
+    # and the date of the last reading of the series (the Unit last touched), when known
+    percent: float | None = None
+    device: str | None = None
+    last_read_at: datetime | None = None
 
 
 def _order(row: Any) -> tuple[bool, float, int, int, str]:
@@ -115,6 +122,17 @@ class ContinueReading:
                         if len(found) == limit:
                             break
         return found
+
+    def edition_progress(self, user_id: str, edition_id: str) -> EditionProgress | None:
+        """What `user_id` has read of one Edition, if she may see it (else, as if nothing)."""
+        with self._engine.connect() as connection:
+            return edition_progress(connection, user_id, [edition_id]).get(edition_id)
+
+    def edition_visible(self, user_id: str, edition_id: str) -> bool:
+        """Whether the Edition is in what `user_id` may see (the filter of every surface)."""
+        with self._engine.connect() as connection:
+            scope = reader_scope(connection, user_id)
+            return visible_edition_ids(connection, scope, [edition_id]) == {edition_id}
 
     # -- which series ---------------------------------------------------------------------------
 
@@ -177,6 +195,10 @@ class ContinueReading:
                 progress.c.state,
                 progress.c.approximate,
                 touched.label("ts"),
+                position.c.percent,
+                position.c.device_id,
+                position.c.client_ts,
+                position.c.server_ts,
             )
             .select_from(
                 progress.join(unit, unit.c.id == progress.c.unit_id)
@@ -197,8 +219,9 @@ class ContinueReading:
         if under_way:
             for current in sorted(under_way, key=lambda r: (str(r.ts), _order(r)), reverse=True):
                 made = self._described(
-                    connection, user_id, str(current.id), "in_progress", bool(current.approximate)
-                )
+                    connection, user_id, str(current.id), "in_progress",
+                    bool(current.approximate), current,
+                )  # fmt: skip
                 if made is not None:
                     return made  # the latest one that can still be opened
         latest = max(rows, key=lambda r: (str(r.ts), _order(r)))
@@ -219,15 +242,17 @@ class ContinueReading:
         ).all()
         ahead = sorted((r for r in later if _order(r) > furthest), key=_order)
         for candidate in ahead[:MAX_CANDIDATES]:
-            made = self._described(connection, user_id, str(candidate.id), "next", False)
+            made = self._described(connection, user_id, str(candidate.id), "next", False, latest)
             if made is not None:
                 return made  # the first Unit after the furthest that can be opened
         return None
 
     def _described(
         self, connection: sa.Connection, user_id: str, unit_id: str,
-        state: Literal["in_progress", "next"], approximate: bool,
+        state: Literal["in_progress", "next"], approximate: bool, seen: Any,
     ) -> ContinueEntry | None:  # fmt: skip
+        """`seen`: the row of the Unit last touched, which says the device and the date; its
+        place in the Unit is the entry's only when that Unit is the one being read."""
         found = self._target(connection, user_id, unit_id)
         if found is None:
             return None
@@ -253,6 +278,8 @@ class ContinueReading:
             carrier_type="content" if carrier else None, carrier_id=carrier,
             open_url=elsewhere.url if elsewhere else None,
             target_id=elsewhere.target_id if elsewhere else None,
+            percent=None if state == "next" or seen.percent is None else float(seen.percent),
+            device=seen.device_id, last_read_at=min(seen.client_ts, seen.server_ts),
         )  # fmt: skip
 
     def _target(

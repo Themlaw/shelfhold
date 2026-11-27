@@ -1270,6 +1270,14 @@ export type ContinueItemOut = {
      */
     carrier_type: 'content' | null;
     /**
+     * Device
+     */
+    device: string | null;
+    /**
+     * Last Read At
+     */
+    last_read_at: string | null;
+    /**
      * Number
      */
     number: string;
@@ -1277,6 +1285,10 @@ export type ContinueItemOut = {
      * Open Url
      */
     open_url: string | null;
+    /**
+     * Percent
+     */
+    percent: number | null;
     /**
      * State
      */
@@ -1931,6 +1943,58 @@ export type EditionOut = {
      * Title
      */
     title: string;
+};
+
+/**
+ * EditionProgressAnswer
+ */
+export type EditionProgressAnswer = {
+    /**
+     * Edition Id
+     */
+    edition_id: string;
+    progress: EditionProgressOut | null;
+};
+
+/**
+ * EditionProgressOut
+ *
+ * What a profile has read of an Edition: the Unit touched last, where in it, on which device,
+ * and when (« Reprendre au chapitre N »).
+ */
+export type EditionProgressOut = {
+    /**
+     * Device
+     */
+    device: string | null;
+    /**
+     * Last Read At
+     */
+    last_read_at: string;
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Percent
+     */
+    percent: number | null;
+    /**
+     * Read Count
+     */
+    read_count: number;
+    /**
+     * State
+     */
+    state: 'in_progress' | 'read';
+    /**
+     * Unit Id
+     */
+    unit_id: string;
+    /**
+     * Unit Title
+     */
+    unit_title: string | null;
 };
 
 /**
@@ -6767,7 +6831,23 @@ export type SheetMergeOut = {
  * SheetOut
  */
 export type SheetOut = {
+    /**
+     * Added At
+     */
+    added_at: string;
+    /**
+     * Added Source
+     */
+    added_source: string | null;
     attach: SheetAttachOut | null;
+    /**
+     * Author Death Year
+     */
+    author_death_year: number | null;
+    /**
+     * Authors
+     */
+    authors: Array<string>;
     /**
      * Bindings
      */
@@ -6786,6 +6866,10 @@ export type SheetOut = {
      */
     fields: Array<SheetFieldOut>;
     /**
+     * First Published
+     */
+    first_published: string | null;
+    /**
      * First Unit Id
      */
     first_unit_id: string | null;
@@ -6798,6 +6882,10 @@ export type SheetOut = {
      */
     gaps: Array<SheetGapOut>;
     /**
+     * Kind
+     */
+    kind: string;
+    /**
      * Lang
      */
     lang: string;
@@ -6805,6 +6893,11 @@ export type SheetOut = {
      * Merges
      */
     merges: Array<SheetMergeOut>;
+    progress: EditionProgressOut | null;
+    /**
+     * Published On
+     */
+    published_on: string | null;
     /**
      * Relations
      */
@@ -6814,6 +6907,14 @@ export type SheetOut = {
      */
     shelf_id: string | null;
     /**
+     * Shelf Name
+     */
+    shelf_name: string | null;
+    /**
+     * Summary
+     */
+    summary: string | null;
+    /**
      * Teams
      */
     teams: Array<SheetTeamOut>;
@@ -6821,6 +6922,10 @@ export type SheetOut = {
      * Title
      */
     title: string;
+    /**
+     * Unit Count
+     */
+    unit_count: number;
     /**
      * Upstream Status
      */
@@ -8614,6 +8719,10 @@ export type WorkItemOut = {
      */
     kind: string;
     /**
+     * Read Unit Id
+     */
+    read_unit_id?: string | null;
+    /**
      * Title
      */
     title: string;
@@ -9354,6 +9463,48 @@ export type ReaderContinueResponses = {
 };
 
 export type ReaderContinueResponse = ReaderContinueResponses[keyof ReaderContinueResponses];
+
+export type ReaderEditionProgressData = {
+    body?: never;
+    path: {
+        /**
+         * Edition Id
+         */
+        edition_id: string;
+    };
+    query?: never;
+    url: '/api/reader/editions/{edition_id}/progress';
+};
+
+export type ReaderEditionProgressErrors = {
+    /**
+     * Connexion requise, ou mot de passe à confirmer (reauth-required).
+     */
+    401: Problem;
+    /**
+     * Action refusée à cette session ou à cette clé (CSRF, clé en lecture seule, action réservée).
+     */
+    403: Problem;
+    /**
+     * not-found
+     */
+    404: unknown;
+    /**
+     * Détail du problème (RFC 9457).
+     */
+    default: Problem;
+};
+
+export type ReaderEditionProgressError = ReaderEditionProgressErrors[keyof ReaderEditionProgressErrors];
+
+export type ReaderEditionProgressResponses = {
+    /**
+     * Successful Response
+     */
+    200: EditionProgressAnswer;
+};
+
+export type ReaderEditionProgressResponse = ReaderEditionProgressResponses[keyof ReaderEditionProgressResponses];
 
 export type ReaderPutPositionData = {
     body: PositionIn;
@@ -20717,6 +20868,10 @@ export type ListWorksData = {
          * Facets
          */
         facets?: boolean;
+        /**
+         * Q
+         */
+        q?: string | null;
         /**
          * Since
          */

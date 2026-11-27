@@ -27,6 +27,7 @@ from shelfhold.catalog.public import (
     history_marker,
     list_visible_series,
     list_visible_works,
+    matching_clause,
     removed_edition_ids,
     removed_ids,
     restore_epoch,
@@ -45,6 +46,7 @@ from shelfhold.interfaces.http_api.lists import (
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.stats import require_admin
 from shelfhold.library.public import cover_hash
+from shelfhold.reading.public import reading_units
 
 __all__ = ["build_catalog_lists_router"]
 
@@ -59,6 +61,9 @@ class WorkItemOut(BaseModel):
     edition_id: str | None = None  # the first Edition she may see
     cover_hash: str | None = None  # the address of its thumbnail (`/thumbnails/{hash}/{size}`)
     author: str | None = None  # the first of its contributors, when the metadata names one
+    # the Unit a reader opens (`/api/reader/unit/{id}/publication`): the one she has under way,
+    # else the first with a file, in an Edition she may see; None when no file can be opened
+    read_unit_id: str | None = None
 
 
 class SeriesChoiceOut(BaseModel):
@@ -137,6 +142,7 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
         shelf_id: Annotated[str | None, Query(min_length=26, max_length=26)] = None,
         series_id: Annotated[str | None, Query(min_length=26, max_length=26)] = None,
         facets: Annotated[bool, Query()] = False,
+        q: Annotated[str | None, Query(max_length=200)] = None,
     ) -> WorksPageOut:
         with get_engine().connect() as connection:
             scope = reader_scope(connection, principal.user_id)
@@ -147,11 +153,15 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
                 return removed_ids(connection, scope, seq)
 
             token, removed = _removals(connection, raw, key, WORKS_KIND, scope_code(scope), read)
+            matching = matching_clause(connection, q, scope)
             page = list_visible_works(
                 connection, scope, limit=limit, offset=offset, recent=sort == "recent",
-                shelf_id=shelf_id, series_id=series_id,
+                shelf_id=shelf_id, series_id=series_id, extra=matching,
             )  # fmt: skip
-            total = count_visible_works(connection, scope, shelf_id=shelf_id, series_id=series_id)
+            total = count_visible_works(
+                connection, scope, shelf_id=shelf_id, series_id=series_id, extra=matching
+            )
+            units = reading_units(connection, principal.user_id, [w.work_id for w in page])
             series = (
                 [SeriesChoiceOut(id=i, title=n) for i, n in list_visible_series(connection, scope)]
                 if facets else None
@@ -161,7 +171,7 @@ def build_catalog_lists_router(get_engine: Callable[[], Engine], key: SinceKey) 
                 WorkItemOut(
                     work_id=w.work_id, title=w.title, kind=w.kind, edition_id=w.edition_id,
                     cover_hash=cover_hash(w.cover_ref) if w.cover_ref else None,
-                    author=w.author,
+                    author=w.author, read_unit_id=units.get(w.work_id),
                 )
                 for w in page
             ],
