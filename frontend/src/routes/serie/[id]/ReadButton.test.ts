@@ -24,8 +24,8 @@ const publication = (scope: 'full' | 'excerpt') => ({
 });
 const problem = (status: number, code: string) =>
   HttpResponse.json({ type: `/api/v1/problems/${code}`, title: code, status, code }, { status });
-const answer = (reply: () => Response) =>
-  http.get(`${BASE}/api/reader/unit/U1/publication`, reply);
+const answer = (reply: () => Response, unit = 'U1') =>
+  http.get(`${BASE}/api/reader/unit/${unit}/publication`, reply);
 
 beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' } as never);
@@ -98,5 +98,22 @@ describe('the read button of the series sheet', () => {
     const { container } = render(ReadButton, { unitId: 'U1' });
     await screen.findByRole('link');
     expect(container.textContent).not.toMatch(/export/i);
+  });
+
+  // req: EF-LEC-001
+  it('resumes at the chapter under way when the sheet gives a reading, and starts when it gives none', async () => {
+    const progress = {
+      unit_id: 'U7', number: '7', unit_title: null, state: 'in_progress' as const,
+      percent: 0.4, device: null, last_read_at: '2026-11-20T10:00:00Z', read_count: 6
+    };
+    server.use(answer(() => HttpResponse.json(publication('full')), 'U7'), answer(() => HttpResponse.json(publication('full'))));
+    const first = render(ReadButton, { unitId: 'U1', progress });
+    const link = await screen.findByRole('link', { name: 'Reprendre au chapitre 7' });
+    expect(link).toHaveAttribute('href', '/lire/unit/U7');
+    first.unmount();
+
+    render(ReadButton, { unitId: 'U1', progress: null });
+    const start = await screen.findByRole('link', { name: 'Commencer' });
+    expect(start).toHaveAttribute('href', '/lire/unit/U1');
   });
 });

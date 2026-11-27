@@ -26,6 +26,7 @@
   import Field from '#lib/ui/molecules/Field.svelte';
   import Pagination from '#lib/ui/molecules/Pagination.svelte';
   import ProblemAlert, { blockKind, type BlockKind } from '#lib/ui/molecules/ProblemAlert.svelte';
+  import SearchBar from '#lib/ui/molecules/SearchBar.svelte';
   import SeriesCard from '#lib/ui/molecules/SeriesCard.svelte';
   import PageHead from '#lib/ui/organisms/PageHead.svelte';
   import Shelf from '#lib/ui/organisms/Shelf.svelte';
@@ -33,13 +34,14 @@
   const PAGE = 24;
   type Sort = 'title' | 'recent';
   type Layout = 'grid' | 'list';
-  type View = { series: string; shelf: string; sort: Sort; layout: Layout | null; page: number };
+  type View = { q: string; series: string; shelf: string; sort: Sort; layout: Layout | null; page: number };
 
-  /** The view the address describes: `series`, `etagere`, `tri` (`recent`), `vue` (`liste`), `page`. */
+  /** The view the address describes: `q`, `series`, `etagere`, `tri` (`recent`), `vue` (`liste`), `page`. */
   function parse(params: Pick<URLSearchParams, 'get'>): View {
     const n = Number.parseInt(params.get('page') ?? '', 10);
     const vue = params.get('vue');
     return {
+      q: (params.get('q') ?? '').trim(),
       series: params.get('series') ?? '',
       shelf: params.get('etagere') ?? '',
       sort: params.get('tri') === 'recent' ? 'recent' : 'title',
@@ -49,7 +51,7 @@
   }
 
   const same = (a: View, b: View): boolean =>
-    a.series === b.series && a.shelf === b.shelf && a.sort === b.sort && a.layout === b.layout && a.page === b.page;
+    a.q === b.q && a.series === b.series && a.shelf === b.shelf && a.sort === b.sort && a.layout === b.layout && a.page === b.page;
 
   let view = $state<View>(parse(page.url.searchParams));
   let works = $state<WorkItemOut[]>([]);
@@ -67,7 +69,7 @@
 
   const layout = $derived<Layout>(view.layout ?? themeLayout);
   const pages = $derived(Math.max(1, Math.ceil(total / PAGE)));
-  const filtered = $derived(view.series !== '' || view.shelf !== '');
+  const filtered = $derived(view.q !== '' || view.series !== '' || view.shelf !== '');
   const from = $derived((view.page - 1) * PAGE + 1);
   const to = $derived((view.page - 1) * PAGE + works.length);
   const seriesName = $derived(series.find((s) => s.id === view.series)?.title ?? '');
@@ -83,11 +85,14 @@
 
   const thumb = (hash: string | null | undefined, size: 160 | 320): string | null =>
     hash && /^[0-9a-f]{64}$/.test(hash) ? `/api/v1/thumbnails/${hash}/${size}` : null;
-  const href = (work: WorkItemOut): string | null => (isAdmin && work.edition_id ? `/serie/${work.edition_id}` : null);
+  // the sheet is the admin's door; anyone else opens the first readable unit when the server gives one
+  const href = (work: WorkItemOut): string | null =>
+    isAdmin ? (work.edition_id ? `/serie/${work.edition_id}` : null) : work.read_unit_id ? `/lire/unit/${work.read_unit_id}` : null;
   const kindLabel = (work: WorkItemOut): string => t(`library.kind_${coverKind(work.kind)}` as MessageKey);
 
   function address(v: View): string {
     const params = new SvelteURLSearchParams();
+    if (v.q) params.set('q', v.q);
     if (v.series) params.set('series', v.series);
     if (v.shelf) params.set('etagere', v.shelf);
     if (v.sort !== 'title') params.set('tri', v.sort);
@@ -104,6 +109,7 @@
         limit: PAGE,
         offset: (view.page - 1) * PAGE,
         sort: view.sort,
+        ...(view.q ? { q: view.q } : {}),
         ...(view.series ? { series_id: view.series } : {}),
         ...(view.shelf ? { shelf_id: view.shelf } : {}),
         ...(facets ? { facets: true } : {})
@@ -133,8 +139,19 @@
   }
 
   function clearFilters(): void {
-    change({ series: '', shelf: '' });
+    draft = '';
+    change({ q: '', series: '', shelf: '' });
   }
+
+  // the search follows the typing after a short pause, and at once on Enter
+  const DEBOUNCE_MS = 300;
+  let draft = $state(parse(page.url.searchParams).q);
+  $effect(() => {
+    const typed = draft.trim();
+    if (typed === untrack(() => view.q)) return;
+    const timer = setTimeout(() => change({ q: typed }), DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  });
 
   // back and forward: the address changed under us
   const wanted = $derived(parse(page.url.searchParams));
@@ -142,8 +159,9 @@
     const next = wanted;
     untrack(() => {
       if (!ready || same(next, view)) return;
-      const reload = next.series !== view.series || next.shelf !== view.shelf || next.sort !== view.sort || next.page !== view.page;
+      const reload = next.q !== view.q || next.series !== view.series || next.shelf !== view.shelf || next.sort !== view.sort || next.page !== view.page;
       view = next;
+      draft = next.q;
       if (reload) void load();
     });
   });
@@ -171,6 +189,14 @@
   </PageHead>
 
   <div class="toolbar" role="group" aria-label={t('library.toolbar')}>
+    <div class="toolbar__search">
+      <SearchBar
+        bind:value={draft}
+        label={t('library.search')}
+        placeholder={t('library.search_placeholder')}
+        onsearch={(typed) => change({ q: typed })}
+      />
+    </div>
     {#if series.length > 0}
       <div class="toolbar__item">
         <Field label={t('library.filter_series')}>
@@ -218,7 +244,7 @@
     </div>
   </div>
 
-  {#if filtered}
+  {#if view.series || view.shelf}
     <ul class="chips" aria-label={t('library.active_filters')}>
       {#if view.series}
         <li>
@@ -254,9 +280,14 @@
   {:else if problem}
     <ProblemAlert {problem} kind={blocked} onretry={() => load()} />
   {:else if works.length === 0 && filtered}
-    <EmptyState variant="filtered" title={t('library.filtered_title')}>
-      <p>{t('library.filtered_description')}</p>
-      {#snippet actions()}<Button onclick={clearFilters}>{t('library.clear_filters')}</Button>{/snippet}
+    <EmptyState
+      variant="filtered"
+      title={t('library.filtered_title')}
+      query={view.q || undefined}
+      onclear={view.q && !view.series && !view.shelf ? clearFilters : undefined}
+    >
+      <p>{view.q ? t('library.search_empty_description') : t('library.filtered_description')}</p>
+      {#snippet actions()}{#if view.series || view.shelf}<Button onclick={clearFilters}>{t('library.clear_filters')}</Button>{/if}{/snippet}
     </EmptyState>
   {:else if works.length === 0}
     <EmptyState title={t('library.empty_title')}>
@@ -321,6 +352,10 @@
 </main>
 
 <style>
+  .toolbar__search {
+    flex: 1 1 16rem;
+    min-width: 0;
+  }
   .toolbar {
     display: flex;
     flex-wrap: wrap;
