@@ -154,3 +154,59 @@ def test_the_reading_id_opens_the_reading_for_a_child(world: World) -> None:  # 
     assert item["read_unit_id"] == unit
     opened = world.kid.get(f"/api/reader/unit/{item['read_unit_id']}/publication")
     assert opened.status_code == 200, opened.text
+
+
+# -- the authors named on an Edition, and how the value is read ----------------------------------
+
+
+def _credit(world: World, entity: str, entity_id: str, value: object) -> None:  # noqa: F811
+    with write_transaction(world.seed.engine) as connection:
+        connection.execute(
+            sa.insert(catalog.metadata_field).values(
+                entity_type=entity, entity_id=entity_id, field="contributors", lang="und",
+                value=json.dumps(value), provider="source-a", provenance="provider",
+                fetched_at=datetime(2026, 11, 25, 9, 0, tzinfo=UTC),
+            )
+        )  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("hidden_edition", "work_key"), [("ok_reserved", "ok"), ("mixed_new", "mixed")]
+)
+def test_q_never_reads_the_authors_of_an_edition_she_may_not_see(
+    world: World,  # noqa: F811
+    hidden_edition: str,
+    work_key: str,
+) -> None:
+    """A Work is visible as soon as one Edition is: the authors named on another Edition (reserved
+    to another profile, or still unclassified) are not hers, so no word of them finds the Work,
+    nor moves the total, nor is rebuilt letter by letter. The child's answer is the one for a word
+    nobody has; the administrator finds it."""
+    seed = world.seed
+    _credit(world, "edition", seed.editions[hidden_edition], ["Private Author"])
+    absent = listing(world.kid, q="zzzqqq")
+    for word in ("private", "Private Author", "priv", "p", "rivate auth"):
+        got = listing(world.kid, q=word)
+        assert {k: v for k, v in got.items() if k != "since"} == {
+            k: v for k, v in absent.items() if k != "since"
+        }, word
+    assert seed.works[work_key] in ids(
+        world.admin, q="private"
+    )  # the administrator sees every Edition
+
+
+def test_q_reads_the_authors_named_on_an_edition_she_may_see(world: World) -> None:  # noqa: F811
+    seed = world.seed
+    _credit(world, "edition", seed.editions["ok"], ["Open Author"])
+    assert ids(world.kid, q="open author") == {seed.works["ok"]}
+
+
+def test_q_reads_the_decoded_names_not_the_json_text(world: World) -> None:  # noqa: F811
+    seed = world.seed
+    _credit(world, "work", seed.works["ok"], ["Hervé Tullet", {"name": "Zoé Dupont"}])
+    assert ids(world.admin, q="hervé") == {seed.works["ok"]}
+    assert ids(world.admin, q="herve") == {seed.works["ok"]}  # accents fold on names too
+    assert ids(world.admin, q="ZOÉ") == {seed.works["ok"]}
+    assert ids(world.admin, q="name") == set()  # the key of an object is no author
+    assert ids(world.admin, q="u00e9") == set()  # nor the escape of a letter
+    assert ids(world.kid, q="hervé") == {seed.works["ok"]}
