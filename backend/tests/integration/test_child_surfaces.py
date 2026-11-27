@@ -244,6 +244,9 @@ OPEN = {
     "POST /api/reader/read-marks/{unit_id}/undo": "reader",
     # M4 L23: the official links of an Edition she may see; a hidden one is an absent one
     "GET /api/v1/editions/{edition_id}/support-author": "support_author",
+    # the Units of an Edition she may see, with her own read state; a hidden Edition is an absent
+    # one (`test_edition_views_api.py`)
+    "GET /api/v1/editions/{edition_id}/units": "edition_units",
     # M4 L18a: the collections and reading lists, made of the Works she may see and a list of her
     # own; another profile's list is an absent one (`test_m4_l18a_collections.py`)
     "GET /api/v1/collections": "collections",
@@ -335,6 +338,9 @@ CLOSED = (
     "POST /api/v1/editions/{edition_id}/gaps/ack",  # M3 L43: the sheet's doors, all the admin's
     "GET /api/v1/editions/{edition_id}/sheet",
     "GET /api/v1/editions/{edition_id}/bundle",  # M4 L49b: the slice of a block, the admin's
+    # what was exported of an Edition and the profiles register: the admin's
+    "GET /api/v1/editions/{edition_id}/exports",
+    "GET /api/v1/profiles/overview",
     "POST /api/v1/editions/{edition_id}/bundle-slice",
     "POST /api/v1/editions/{edition_id}/bindings/order",
     "POST /api/v1/editions/{edition_id}/upstream-status",
@@ -577,7 +583,7 @@ SURFACES = (
     "search", "search_pages", "search_key", "federated", "me_state_get", "me_state_put",
     "me_state_list", "me_title", "activity", "notification", "works_since", "sse", "thumbnail",
     "content", "reader", "continue_reading", "work_redirect", "opds", "support_author",
-    "collections", "relations", "selections",
+    "collections", "relations", "selections", "edition_units",
     "lite",
 )  # fmt: skip
 METHODS = ("get", "post", "put", "patch", "delete")
@@ -1110,6 +1116,28 @@ def _surface_support_author(world: World) -> None:
         world.clean(answer.text)
     shown = world.kid.get(f"/api/v1/editions/{world.seed.editions['ok']}/support-author")
     assert shown.status_code == 200 and shown.json()["pause_suggestions"] == []
+
+
+def _surface_edition_units(world: World) -> None:
+    """The Units of an Edition she may not see are those of an absent one, by id and by title."""
+    from tests.integration.test_schema_catalog import add_unit
+
+    hidden = ("above", "twelve", "adult_edition", "misfiled", "mixed_new", "reserved")
+    with world.seed.engine.begin() as connection:
+        for key in hidden:
+            add_unit(connection, world.seed.editions[key], "0.5", title=f"Hidden unit {key}")
+        add_unit(connection, world.seed.editions["ok"], "0.5", title="Open unit")
+    absent = world.kid.get(f"/api/v1/editions/{MISSING}/units")
+    assert absent.status_code == 404
+    for key in hidden:
+        answer = world.kid.get(f"/api/v1/editions/{world.seed.editions[key]}/units")
+        assert _shape(answer) == _shape(absent), key
+        assert "Hidden unit" not in answer.text
+        world.clean(answer.text)
+    shown = world.kid.get(f"/api/v1/editions/{world.seed.editions['ok']}/units")
+    assert shown.status_code == 200
+    assert [i["title"] for i in shown.json()["items"]] == ["Open unit"]
+    world.clean(shown.text)
 
 
 def _surface_collections(world: World) -> None:
