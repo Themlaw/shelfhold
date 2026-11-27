@@ -27,7 +27,12 @@ from shelfhold.interfaces.http_api.auth import require_principal
 from shelfhold.interfaces.http_api.problems import ProblemError
 from shelfhold.interfaces.http_api.stats import require_admin
 from shelfhold.ops.edition_exports import edition_exports
-from shelfhold.ops.profile_overview import DEFAULT_CEILINGS, NotAChildError, profiles_overview
+from shelfhold.ops.profile_overview import (
+    DEFAULT_CEILINGS,
+    LastRead,
+    NotAChildError,
+    profiles_overview,
+)
 from shelfhold.reading.application.edition_units import (
     MAX_UNITS,
     UnknownEditionError,
@@ -137,6 +142,14 @@ class ProfilesOverviewOut(BaseModel):
     profiles: list[ProfileOverviewOut]
 
 
+def _last_read(found: LastRead | None) -> LastReadOut | None:
+    if found is None:
+        return None
+    return LastReadOut(
+        at=found.at, work_id=found.work_id, edition_id=found.edition_id, title=found.title
+    )
+
+
 def build_edition_views_router(get_engine: Callable[[], Engine]) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["catalog"])
 
@@ -190,9 +203,34 @@ def build_edition_views_router(get_engine: Callable[[], Engine]) -> APIRouter:
         return EditionExportsOut(
             edition_id=found.edition_id,
             items=ExportItemsOut(**found.items),
-            destinations=[ExportDestinationOut(**vars(d)) for d in found.destinations],
+            destinations=[
+                ExportDestinationOut(
+                    destination_id=d.destination_id,
+                    target_id=d.target_id,
+                    target_name=d.target_name,
+                    target_kind=d.target_kind,
+                    shelf_name=d.shelf_name,
+                    enabled=d.enabled,
+                    exported=d.exported,
+                    pending=d.pending,
+                    failed=d.failed,
+                    last_exported_at=d.last_exported_at,
+                )
+                for d in found.destinations
+            ],
             kepub_items=found.kepub_items,
-            blocks=[ExportBlockOut(**vars(b)) for b in found.blocks],
+            blocks=[
+                ExportBlockOut(
+                    profile_id=b.profile_id,
+                    username=b.username,
+                    part_index=b.part_index,
+                    number=b.number,
+                    size=b.size,
+                    created_at=b.created_at,
+                    last_used_at=b.last_used_at,
+                )
+                for b in found.blocks
+            ],
         )
 
     @router.get(
@@ -223,8 +261,13 @@ def build_edition_views_router(get_engine: Callable[[], Engine]) -> APIRouter:
                 ProfileOverviewOut(
                     profile_id=p.profile_id, username=p.username, role=p.role,
                     max_age_rating=p.max_age_rating, works=p.works,
-                    last_read=None if p.last_read is None else LastReadOut(**vars(p.last_read)),
-                    devices=[ProfileDeviceOut(**vars(d)) for d in p.devices],
+                    last_read=_last_read(p.last_read),
+                    devices=[
+                        ProfileDeviceOut(
+                            id=d.id, label=d.label, kind=d.kind, last_seen_at=d.last_seen_at
+                        )
+                        for d in p.devices
+                    ],
                 )
                 for p in found.profiles
             ],
