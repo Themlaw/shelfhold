@@ -80,9 +80,10 @@ API_PREFIX = "/api/v1/"
 def apply_api_cache_default(headers: HeaderBag, path: str, status: int) -> None:
     """A JSON answer of the API that carries data (2xx) is kept in no cache (a shared one or the
     browser's) unless its route set its own `Cache-Control`. One with an `ETag` its client
-    revalidates with is `private, no-cache`: kept by the browser alone, asked again each time, never
-    by a shared cache for a request a cookie authenticated. A problem document carries none, and stays as it was: Chromium never ends a
-    `no-store` request whose body the page did not read, and the SPA reads no refused body."""
+    revalidates with is `private, no-cache`: kept by the browser alone, asked again each time,
+    never by a shared cache for a request a cookie authenticated. A problem document carries none,
+    and stays as it was: Chromium never ends a `no-store` request whose body the page did not read,
+    and the SPA reads no refused body."""
     if not path.startswith(API_PREFIX) or not 200 <= status < 300:
         return
     media_type = headers.get("Content-Type", "").split(";")[0].strip().lower()
