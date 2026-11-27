@@ -41,6 +41,7 @@ from shelfhold.reading.application.continue_reading import (
     ContinueEntry,
     ContinueReading,
 )
+from shelfhold.reading.application.edition_progress import EditionProgress
 from shelfhold.reading.application.lease import ProgressBusyError
 from shelfhold.reading.application.positions import (
     ClientTsInFutureError,
@@ -118,6 +119,33 @@ def _out(found: Publication) -> PublicationOut:
     )
 
 
+class EditionProgressOut(BaseModel):
+    """What a profile has read of an Edition: the Unit touched last, where in it, on which device,
+    and when (« Reprendre au chapitre N »)."""
+
+    unit_id: str
+    number: str  # the number of that Unit as the catalogue spells it
+    unit_title: str | None
+    state: Literal["in_progress", "read"]
+    percent: float | None  # 0..1 in that Unit, when the position stored one
+    device: str | None  # what the reader called its device
+    last_read_at: AwareDatetime
+    read_count: int  # Units of the Edition read to the end
+
+
+class EditionProgressAnswer(BaseModel):
+    edition_id: str
+    progress: EditionProgressOut | None  # None: nothing read yet
+
+
+def _progress_out(found: EditionProgress) -> EditionProgressOut:
+    return EditionProgressOut(
+        unit_id=found.unit_id, number=found.number, unit_title=found.unit_title,
+        state=found.state, percent=found.percent, device=found.device,  # type: ignore[arg-type]
+        last_read_at=found.last_read_at, read_count=found.read_count,
+    )  # fmt: skip
+
+
 class ContinueItemOut(BaseModel):
     work_id: str
     title: str
@@ -134,6 +162,11 @@ class ContinueItemOut(BaseModel):
     # `target` names a destination: the address this entry opens — its own server's, the one the
     # profile's account is on (two servers of one kind are two addresses), else None
     open_url: str | None
+    # where she is: in the Unit being read (`in_progress`), else None (the next Unit is not begun)
+    percent: float | None
+    # the device and the date of the last reading of the series (what the entry follows)
+    device: str | None
+    last_read_at: AwareDatetime | None
 
 
 class ContinueOut(BaseModel):
@@ -151,6 +184,7 @@ def _item(found: ContinueEntry) -> ContinueItemOut:
         carrier_id=found.carrier_id, open_url=None if found.carrier_type else web_address(
             found.open_url
         ),
+        percent=found.percent, device=found.device, last_read_at=found.last_read_at,
     )  # fmt: skip
 
 
@@ -383,6 +417,28 @@ def build_reader_router(
             undone=get_marks().undo(
                 viewer_id=principal.user_id, subject_id=user_id, unit_id=unit_id
             )
+        )
+
+    @router.get(
+        "/editions/{edition_id}/progress",
+        operation_id="reader_edition_progress",
+        response_model=EditionProgressAnswer,
+        responses={404: {"description": "not-found"}},
+    )
+    def edition_progress(
+        edition_id: str, response: Response, principal: Session
+    ) -> EditionProgressAnswer:
+        """What the profile has read of an Edition (« Reprendre au chapitre N »): her own reading
+        alone. An Edition she may not see, or that does not exist, is one and the same 404."""
+        _own_session(principal)
+        response.headers["Cache-Control"] = "no-store"
+        if not is_ulid(edition_id) or not get_continue().edition_visible(
+            principal.user_id, edition_id
+        ):
+            raise ProblemError("not_found", headers=_ABSENT)
+        found = get_continue().edition_progress(principal.user_id, edition_id)
+        return EditionProgressAnswer(
+            edition_id=edition_id, progress=None if found is None else _progress_out(found)
         )
 
     @router.get("/continue", operation_id="reader_continue", response_model=ContinueOut)

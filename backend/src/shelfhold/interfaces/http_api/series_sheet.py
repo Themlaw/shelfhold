@@ -20,6 +20,7 @@ from shelfhold.identity.public import Principal
 from shelfhold.interfaces.http_api.auth import reserved_action
 from shelfhold.interfaces.http_api.ops import refusals
 from shelfhold.interfaces.http_api.problems import ProblemError
+from shelfhold.interfaces.http_api.reader import EditionProgressOut
 from shelfhold.interfaces.http_api.stats import require_admin
 from shelfhold.ops import OpsServices
 from shelfhold.reading.application.lease import ProgressBusyError
@@ -102,6 +103,7 @@ class SheetOut(BaseModel):
     title: str
     lang: str
     shelf_id: str | None
+    shelf_name: str | None  # the label of that shelf
     cover_hash: str | None
     upstream_status: UpstreamStatus
     upstream_status_by: str | None
@@ -114,6 +116,17 @@ class SheetOut(BaseModel):
     attach: SheetAttachOut | None
     relations: list[SheetRelationOut]  # M4 L19: related Works, read from this Work's side
     first_unit_id: str | None  # M5 L10: the Unit the "Lire" button opens, if one has a file
+    # API-1, all read only; None / empty when nobody said it, never a guess
+    kind: str  # the type of the Work
+    authors: list[str]  # the contributors named on the Work, else on the Edition
+    first_published: str | None  # the Work's first publication, `YYYY[-MM[-DD]]`
+    published_on: str | None  # this Edition's, same form
+    author_death_year: int | None
+    summary: str | None
+    unit_count: int  # the Units of the main track
+    added_at: datetime  # when the Edition entered the catalogue
+    added_source: str | None  # the first source bound to it, None when no source brought it
+    progress: EditionProgressOut | None  # the reading of the administrator who asks
     can: SheetCanOut
 
 
@@ -182,9 +195,9 @@ def build_series_sheet_router(get_ops: Callable[[], OpsServices]) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["series-sheet"])
 
     @router.get("/editions/{edition_id}/sheet")
-    def edition_sheet(edition_id: str, _admin: Admin) -> SheetOut:
+    def edition_sheet(edition_id: str, admin: Admin) -> SheetOut:
         with refusals():
-            return SheetOut(**get_ops().sheet.sheet(edition_id))
+            return SheetOut(**get_ops().sheet.sheet(edition_id, admin.user_id))
 
     @router.post("/editions/{edition_id}/bindings/order")
     def bindings_order(edition_id: str, body: BindingOrderIn, _admin: Admin) -> BindingOrderOut:
