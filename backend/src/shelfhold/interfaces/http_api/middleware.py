@@ -89,7 +89,7 @@ class SecurityHeadersMiddleware:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
                 apply_security_headers(headers)
-                apply_api_cache_default(headers, str(scope.get("path", "")))
+                apply_api_cache_default(headers, str(scope.get("path", "")), message["status"])
             await send(message)
 
         await self.app(scope, receive, send_with_headers)

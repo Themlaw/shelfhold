@@ -118,11 +118,16 @@ def test_federated_route_admin_key_may_search(
 ) -> None:
     alpha, beta = sources()
     with instance(monkeypatch, settings, alpha, beta) as api:
-        key = api_key_of(api, "admin")
+        key = api_key_of(api, "admin", read_only=False)  # scope `admin` (SEC-1)
         found = api.other_client("10.0.0.30").get(
             "/api/v1/search", params=ALL, headers={"Authorization": f"Bearer {key}"}
         )
         assert found.status_code == 200 and found.json()["items"]
+        read_key = api_key_of(api, "admin")  # her read key asks no source
+        refused = api.other_client("10.0.0.31").get(
+            "/api/v1/search", params=ALL, headers={"Authorization": f"Bearer {read_key}"}
+        )
+        assert refused.status_code == 403
 
 
 @pytest.mark.req("EF-USR-014", "EF-SRC-005")

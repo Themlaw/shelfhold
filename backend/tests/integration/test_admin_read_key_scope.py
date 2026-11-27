@@ -191,9 +191,19 @@ def test_the_conflict_is_in_the_error_catalogue() -> None:
 
 def test_json_answers_of_the_api_are_no_store_by_default(api: AuthEnv) -> None:
     assert api.login().status_code == 200
-    for path in ("/api/v1/stats", "/api/v1/profiles/overview", "/api/v1/me", "/api/v1/nope"):
+    for path in ("/api/v1/stats", "/api/v1/profiles/overview", "/api/v1/me"):
         response = api.client.get(path)
+        assert response.status_code == 200, path
         assert response.headers["Cache-Control"] == "no-store", path
+
+
+def test_a_problem_document_keeps_no_cache_policy_of_its_own(api: AuthEnv) -> None:
+    """A refusal carries no data; Chromium never ends a `no-store` request whose body the page
+    left unread (the SPA reads no refused body), which would keep a page from going idle."""
+    for path in ("/api/v1/me", "/api/v1/nope"):
+        response = api.client.get(path)
+        assert response.status_code in (401, 404), path
+        assert "Cache-Control" not in response.headers, path
 
 
 def test_a_route_that_sets_its_own_cache_policy_keeps_it(api: AuthEnv) -> None:
