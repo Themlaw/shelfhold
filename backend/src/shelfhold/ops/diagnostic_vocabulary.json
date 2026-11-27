@@ -2227,6 +2227,7 @@
   "shelfhold.reading.application",
   "shelfhold.reading.application.content_access",
   "shelfhold.reading.application.continue_reading",
+  "shelfhold.reading.application.edition_progress",
   "shelfhold.reading.application.kepub_delivery",
   "shelfhold.reading.application.kobo_sync",
   "shelfhold.reading.application.kosync",
