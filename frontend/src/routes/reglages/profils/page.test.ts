@@ -39,10 +39,12 @@ beforeEach(() => {
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
+let overview: Record<string, unknown> = { total_works: 0, steps: [], profiles: [] };
 const list = (items: unknown[]) =>
   server.use(
     http.get(`${BASE}/api/v1/profiles`, () => HttpResponse.json({ items })),
-    http.get(`${BASE}/api/v1/profiles/:id/source-policies`, () => HttpResponse.json({ items: [] }))
+    http.get(`${BASE}/api/v1/profiles/:id/source-policies`, () => HttpResponse.json({ items: [] })),
+    http.get(`${BASE}/api/v1/profiles/overview`, () => HttpResponse.json(overview))
   );
 
 describe('Profils', () => {
@@ -207,5 +209,40 @@ describe('Profils', () => {
     await user.click(screen.getByRole('button', { name: 'Nouveau profil' }));
     expect(screen.queryByTestId('profile-editor')).toBeNull();
     expect(screen.getByLabelText('Nom')).toBeTruthy();
+  });
+
+  // req: EF-USR-001
+  it('prints the works per mark of the age rule, and the last reading and e-readers of each profile', async () => {
+    overview = {
+      total_works: 120,
+      steps: [{ ceiling: 0, works: 4 }, { ceiling: 10, works: 30 }, { ceiling: 12, works: 55 }, { ceiling: 13, works: 70 }, { ceiling: 16, works: 90 }, { ceiling: 18, works: 110 }],
+      profiles: [
+        { profile_id: 'p1', username: 'admin', role: 'admin', max_age_rating: null, works: 120, last_read: { at: '2026-11-20T10:00:00Z', work_id: 'w1', edition_id: 'e1', title: 'Une série d’essai' }, devices: [{ id: 'd1', label: 'Liseuse du salon', kind: 'kobo', last_seen_at: null }] },
+        { profile_id: 'p2', username: 'Lea', role: 'child', max_age_rating: 10, works: 30, last_read: null, devices: [] }
+      ]
+    };
+    list([profile('p1', 'admin', 'admin'), profile('p2', 'Lea', 'child', { max_age_rating: 10 })]);
+    render(Page);
+    const user = userEvent.setup();
+    const register = await screen.findByRole('table');
+    expect(await within(register).findByText('Une série d’essai')).toBeTruthy();
+    expect(within(register).getByText('Liseuse du salon')).toBeTruthy();
+    // a profile that read nothing and has no e-reader: nothing is written for it
+    const lea = within(register).getByRole('button', { name: 'Lea' }).closest('tr') as HTMLElement;
+    expect(within(lea).queryByText('Une série d’essai')).toBeNull();
+    await user.click(within(register).getByRole('button', { name: 'Lea' }));
+    const scale = await screen.findByRole('group', { name: 'Âge maximal' });
+    expect(within(scale).getByText('30')).toBeTruthy();
+    expect(within(scale).getByText('120')).toBeTruthy();
+  });
+
+  // req: EF-USR-001
+  it('keeps the screen when the overview cannot be read: no figure, no error', async () => {
+    list([profile('p1', 'Lea', 'child', { max_age_rating: 10 })]);
+    server.use(http.get(`${BASE}/api/v1/profiles/overview`, () => HttpResponse.json({ title: 'x', status: 500, code: 'internal' }, { status: 500 })));
+    render(Page);
+    const scale = await screen.findByRole('group', { name: 'Âge maximal' });
+    expect(within(scale).getAllByRole('radio').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

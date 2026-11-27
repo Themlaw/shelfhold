@@ -6,15 +6,16 @@
   import {
     createProfile,
     listProfiles,
+    profilesOverview,
     removeProfile,
     setSourcePolicy,
     setVisibility,
     sourcePolicies,
     updateProfile
   } from '#lib/api/index.ts';
-  import type { PolicyOut, ProfileOut } from '#lib/api/types.gen.ts';
+  import type { PolicyOut, ProfileOut, ProfileOverviewOut, ProfilesOverviewOut } from '#lib/api/types.gen.ts';
   import ReauthPrompt from '#lib/components/ReauthPrompt.svelte';
-  import { t, formatNumber, type MessageKey } from '#lib/i18n/index.ts';
+  import { t, formatDate, formatNumber, type MessageKey } from '#lib/i18n/index.ts';
   import Avatar from '#lib/ui/atoms/Avatar.svelte';
   import Badge from '#lib/ui/atoms/Badge.svelte';
   import Button from '#lib/ui/atoms/Button.svelte';
@@ -36,11 +37,13 @@
   import { csrfToken } from '#lib/passkeys.ts';
   import { isForbidden, needsReauth, problemOf } from '#lib/triage.ts';
 
+  const MARKS = [0, 10, 12, 13, 16, 18]; // the marks of the age rule, below
   const ROLES = ['admin', 'member', 'child'] as const;
   const VISIBILITIES = ['private', 'household'] as const;
 
   let profiles = $state<ProfileOut[]>([]);
   let policies = $state<Record<string, PolicyOut[]>>({});
+  let overview = $state<ProfilesOverviewOut | null>(null);
   let adminOnly = $state(false);
   let failed = $state(false);
   let loaded = $state(false);
@@ -58,7 +61,9 @@
     { key: 'username', label: t('profiles.name'), primary: true },
     { key: 'role', label: t('profiles.role') },
     { key: 'age', label: t('profiles.age') },
-    { key: 'visibility', label: t('profiles.visibility') }
+    { key: 'visibility', label: t('profiles.visibility') },
+    { key: 'last_read', label: t('profiles.last_read') },
+    { key: 'devices', label: t('profiles.devices') }
   ];
 
   let newName = $state('');
@@ -93,6 +98,24 @@
       }
     }
     policies = read;
+    await loadOverview();
+  }
+
+  // What the library shows at each mark of the age rule, and per profile the last reading and the
+  // e-readers. A failure is not an error of the screen: the figures are simply not printed.
+  async function loadOverview(): Promise<void> {
+    const own = profiles.flatMap((profile) =>
+      profile.max_age_rating !== null && !MARKS.includes(profile.max_age_rating) ? [profile.max_age_rating] : []
+    );
+    try {
+      const { data } = await profilesOverview({
+        query: { ceiling: [...new Set([...MARKS, ...own])] },
+        throwOnError: true
+      });
+      overview = data;
+    } catch {
+      overview = null;
+    }
   }
 
   async function first(): Promise<void> {
@@ -102,7 +125,6 @@
 
   // The marks of the age rule: the ceilings the library knows, plus the child's own when it is
   // none of them (a ceiling of 7 must not be shown as another one).
-  const MARKS = [0, 10, 12, 13, 16, 18];
   function steps(current: number | null): AgeStep[] {
     const values = current !== null && !MARKS.includes(current) ? [...MARKS, current].sort((a, b) => a - b) : MARKS;
     return [
@@ -110,6 +132,16 @@
       { value: null, label: t('profiles.age_none') }
     ];
   }
+  // works per mark (the key of an AgeScale step), when the server gave them
+  const counts = $derived<Record<string, number> | undefined>(
+    overview
+      ? {
+          ...Object.fromEntries(overview.steps.map((step) => [String(step.ceiling), step.works])),
+          none: overview.total_works
+        }
+      : undefined
+  );
+  const overviewOf = (id: string): ProfileOverviewOut | undefined => overview?.profiles.find((p) => p.profile_id === id);
   const ageText = (age: number | null) => (age === null ? t('profiles.age_none') : age === 0 ? t('age.0') : `${formatNumber(age)}+`);
   const roleName = (role: string) => t(`profiles.role.${role}` as MessageKey);
   const kindOf = (role: string): 'admin' | 'child' | 'adult' => (role === 'admin' ? 'admin' : role === 'child' ? 'child' : 'adult');
@@ -293,8 +325,20 @@
             {:else}
               <span class="muted" aria-hidden="true">—</span>
             {/if}
-          {:else}
+          {:else if column.key === 'visibility'}
             {t(`profiles.visibility.${profile.visibility}` as MessageKey)}
+          {:else if column.key === 'last_read'}
+            {@const last = overviewOf(profile.id)?.last_read}
+            {#if last}
+              <span class="last-read"><span class="last-read__title">{last.title}</span> <span class="muted">{formatDate(last.at)}</span></span>
+            {/if}
+          {:else}
+            {@const devices = overviewOf(profile.id)?.devices ?? []}
+            {#if devices.length > 0}
+              <ul class="devices" role="list">
+                {#each devices as device (device.id)}<li>{device.label ?? t(`profiles.device.${device.kind}` as MessageKey)}</li>{/each}
+              </ul>
+            {/if}
           {/if}
         {/snippet}
       </DataTable>
@@ -348,6 +392,7 @@
                 legend={t('profiles.age')}
                 hideLegend
                 steps={steps(profile.max_age_rating)}
+                {counts}
                 value={profile.max_age_rating}
                 onchange={(age) => update(profile, { max_age_rating: age })}
               />
@@ -462,6 +507,19 @@
   .pick:focus-visible {
     outline: 2px solid var(--color-focus);
     outline-offset: 2px;
+  }
+  .last-read {
+    display: inline-flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .last-read__title {
+    overflow-wrap: anywhere;
+  }
+  .devices {
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
   .muted {
     color: var(--color-muted);

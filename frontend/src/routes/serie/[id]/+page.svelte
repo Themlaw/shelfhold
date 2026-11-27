@@ -40,7 +40,10 @@
   import Tabs from '#lib/ui/molecules/Tabs.svelte';
   import Alert from '#lib/ui/molecules/Alert.svelte';
   import Field from '#lib/ui/molecules/Field.svelte';
+  import { roleOf } from '#lib/nav.ts';
   import BundleSlices from './BundleSlices.svelte';
+  import Chapters from './Chapters.svelte';
+  import Exports from './Exports.svelte';
   import OfflineButton from './OfflineButton.svelte';
   import ReadButton from './ReadButton.svelte';
   import ReadMarks from './ReadMarks.svelte';
@@ -67,6 +70,8 @@
   }
 
   const editionId = $derived(page.params.id ?? '');
+  // the exports are the admin's: the other roles do not see the tab, and the route is not asked
+  const canExports = $derived(roleOf((page.data as { user?: { role?: unknown } } | undefined)?.user?.role) === 'admin');
   let sheet = $state<SheetOut | null>(null);
   let readScope = $state<'full' | 'excerpt' | null>(null); // what the read button found: a copy is kept only for a full read
   let problem = $state<ProblemView | null>(null);
@@ -340,11 +345,13 @@
       label={t('sheet.tabs.label')}
       items={[
         { value: 'sources', label: t('sheet.tab.sources') },
+        { value: 'chapters', label: t('sheet.tab.chapters') },
         {
           value: 'reading',
           label: t('sheet.tab.reading'),
           short: t('sheet.tab.reading_short')
         },
+        ...(canExports ? [{ value: 'exports', label: t('sheet.tab.exports') }] : []),
         { value: 'manage', label: t('sheet.tab.manage') }
       ]}
     >
@@ -364,6 +371,10 @@
           {#if sheet!.can.acknowledge_gap}
             <Gaps gaps={sheet!.gaps} editionId={sheet!.edition_id} />
           {/if}
+        {:else if item.value === 'chapters'}
+          <Chapters editionId={sheet!.edition_id} />
+        {:else if item.value === 'exports'}
+          <Exports editionId={sheet!.edition_id} />
         {:else if item.value === 'reading'}
           <BundleSlices editionId={sheet!.edition_id} />
           <ReadMarks editionId={sheet!.edition_id} />

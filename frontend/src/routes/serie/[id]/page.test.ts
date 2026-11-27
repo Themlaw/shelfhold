@@ -3,11 +3,12 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { page } from '$app/state';
 import { client } from '#lib/api/client.gen.ts';
 import { t } from '#lib/i18n/index.ts';
 import Page from './+page.svelte';
 
-vi.mock('$app/state', () => ({ page: { params: { id: 'ED1' } } }));
+vi.mock('$app/state', () => ({ page: { params: { id: 'ED1' }, data: {} as Record<string, unknown> } }));
 
 const BASE = 'http://shelfhold.test';
 const API = `${BASE}/api/v1/editions/ED1`;
@@ -96,6 +97,7 @@ beforeEach(() => {
   document.cookie = 'csrf=tok123';
   current = sheet();
   bodies = [];
+  page.data = {};
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
@@ -390,6 +392,31 @@ describe('Series sheet', () => {
     const { container } = render(Page);
     await screen.findByText('src-A');
     expect(container.querySelector('img')?.getAttribute('src')).toBe(`/api/v1/thumbnails/${'a'.repeat(64)}/320`);
+  });
+
+  // req: EF-INT-007
+  it('draws the Exports tab for the administrator only, and never asks the route of anyone else', async () => {
+    let asked = 0;
+    server.use(
+      serve(),
+      http.get(`${API}/exports`, () => {
+        asked += 1;
+        return HttpResponse.json({
+          edition_id: 'ED1', items: { unit: 0, volume: 0, bundle: 0, adopted: 0, opds_bundle: 0 },
+          kepub_items: 0, destinations: [], blocks: []
+        });
+      })
+    );
+    page.data = { user: { role: 'member' } };
+    const first = render(Page);
+    await screen.findByRole('tab', { name: 'Chapitres' });
+    expect(screen.queryByRole('tab', { name: 'Exports' })).toBeNull();
+    expect(asked).toBe(0);
+    first.unmount();
+
+    page.data = { user: { role: 'admin' } };
+    render(Page);
+    expect(await screen.findByRole('tab', { name: 'Exports' })).toBeInTheDocument();
   });
 
   // req: EF-BIB-005
