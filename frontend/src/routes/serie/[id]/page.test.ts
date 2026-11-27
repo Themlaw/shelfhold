@@ -407,7 +407,7 @@ describe('Series sheet', () => {
     const first = render(Page);
     expect(await screen.findByText('Auteur Un, Auteur Deux')).toBeInTheDocument();
     expect(screen.getByText('Un résumé d’essai.')).toBeInTheDocument();
-    const facts = screen.getByLabelText('Informations de l’édition');
+    const facts = screen.getByLabelText('Détails de l’édition');
     expect(facts).toHaveTextContent('Chapitres12');
     expect(facts).toHaveTextContent('Étagère d’essai');
     expect(facts).toHaveTextContent('1870');
