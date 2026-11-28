@@ -65,7 +65,7 @@ dev = [
 ]
 # Documentation site (D17, ENF-DOC-001): pinned exactly, built offline by docs.yml and by a unit
 # test. 0.0.74 is the newest release older than the 14-day window (ADR-0016).
-docs = ["zensical==0.0.74"]
+docs = ["zensical==0.1.3"]
 
 [project.scripts]
 shelfhold = "shelfhold.interfaces.cli:main"
